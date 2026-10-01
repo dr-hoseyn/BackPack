@@ -46,7 +46,7 @@ jobs:
         run: |
           sudo mkdir -p /etc/backpack
           sudo chmod 777 /etc/backpack
-          go test ./internal/tunnel/direct ./internal/tunnel/limits ./internal/manage/health -run 'TestRecovery' -count=3 -race -v -timeout 10m
+          go test ./internal/tunnel/direct ./internal/tunnel/limits ./internal/tunnel/bridge ./internal/manage/health -run 'TestRecovery' -count=3 -race -v -timeout 10m
   suite:
     runs-on: ubuntu-latest
     timeout-minutes: 55
@@ -65,7 +65,7 @@ jobs:
           sudo chmod 777 /etc/backpack
       - name: Formatting and vet
         run: |
-          test -z "$(gofmt -l internal/tunnel/direct/edge.go internal/tunnel/direct/origin.go internal/tunnel/direct/session.go internal/tunnel/direct/sessions.go internal/tunnel/limits/limits.go internal/manage/health/directhealth.go)"
+          test -z "$(gofmt -l internal/tunnel/direct/edge.go internal/tunnel/direct/origin.go internal/tunnel/direct/session.go internal/tunnel/direct/sessions.go internal/tunnel/limits/limits.go internal/tunnel/bridge/bridge.go internal/manage/health/directhealth.go)"
           go vet ./...
       - name: Full suite
         run: go test ./... -count=1 -timeout 20m
