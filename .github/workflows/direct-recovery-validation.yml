@@ -1,0 +1,77 @@
+name: Direct recovery validation
+on:
+  push:
+    branches: [codex/validate-direct-tunnel-recovery]
+permissions:
+  contents: read
+jobs:
+  baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Reproduce regressions on the unchanged baseline
+        run: |
+          sudo mkdir -p /etc/backpack
+          sudo chmod 777 /etc/backpack
+          git worktree add /tmp/backpack-recovery-baseline ff86354
+          for pkg in internal/tunnel/direct internal/tunnel/limits internal/manage/health; do
+            cp "$pkg/recovery_regression_test.go" "/tmp/backpack-recovery-baseline/$pkg/"
+          done
+          cd /tmp/backpack-recovery-baseline
+          set +e
+          go test ./internal/tunnel/direct ./internal/tunnel/limits ./internal/manage/health -run 'TestRecoveryRegression(ForwarderBindFailure|OriginHandshakeCancellation|EdgeHandshakeCancellation|ReportsAuthenticatedSessions|CloseCancelsBandwidthWait|DirectSnapshotOverridesSocketTable)$' -count=1 -v -timeout 5m 2>&1 | tee /tmp/baseline.log
+          result=${PIPESTATUS[0]}
+          set -e
+          test "$result" -ne 0
+          for failure in ForwarderBindFailure OriginHandshakeCancellation EdgeHandshakeCancellation ReportsAuthenticatedSessions CloseCancelsBandwidthWait DirectSnapshotOverridesSocketTable; do
+            grep -q -- "--- FAIL: TestRecoveryRegression${failure}" /tmp/baseline.log
+          done
+  regressions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Check the fixed scenarios repeatedly with race detection
+        run: |
+          sudo mkdir -p /etc/backpack
+          sudo chmod 777 /etc/backpack
+          go test ./internal/tunnel/direct ./internal/tunnel/limits ./internal/manage/health -run 'TestRecovery' -count=3 -race -v -timeout 10m
+  suite:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      - name: Prepare isolated snapshot fixtures
+        run: |
+          sudo mkdir -p /etc/backpack
+          sudo chmod 777 /etc/backpack
+      - name: Formatting and vet
+        run: |
+          test -z "$(gofmt -l internal/tunnel/direct/edge.go internal/tunnel/direct/origin.go internal/tunnel/direct/session.go internal/tunnel/direct/sessions.go internal/tunnel/limits/limits.go internal/manage/health/directhealth.go)"
+          go vet ./...
+      - name: Full suite
+        run: go test ./... -count=1 -timeout 20m
+      - name: Full race suite
+        run: go test ./... -race -count=1 -timeout 20m
+      - name: Build Linux amd64 and arm64
+        run: |
+          GOOS=linux GOARCH=amd64 go build -o /tmp/backpack-amd64 .
+          GOOS=linux GOARCH=arm64 go build -o /tmp/backpack-arm64 .
