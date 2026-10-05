@@ -4,6 +4,8 @@ package network
 
 import (
 	"context"
+	"errors"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -36,6 +38,7 @@ import (
 // rules rather than sixteen.
 type pckGuard struct {
 	key, id string
+	owned   bool
 	rules   [][]string // each entry is a full rule body, table first
 	added   [][]string
 }
@@ -76,15 +79,22 @@ func installPckGuard(id string, legacy [][][]string, rules [][]string) (*pckGuar
 		return sh.g, nil
 	}
 
-	first := !tunnelGuardInUse(id)
-	if err := acquirePckOwnership(id); err != nil {
-		return nil, err
-	}
 	g := &pckGuard{key: key, id: id, rules: rules}
 	if _, err := exec.LookPath("iptables"); err != nil {
 		guardShared[key] = &sharedGuard{g: g, ref: 1}
 		return g, nil
 	}
+	first := pckOwners[id] == nil
+	if err := acquirePckOwnership(id); err != nil {
+		if errors.Is(err, os.ErrPermission) {
+			// CAP_NET_RAW alone can still open the carrier, as before. Never
+			// mutate firewall rules without ownership; report a missing guard.
+			guardShared[key] = &sharedGuard{g: g, ref: 1}
+			return g, nil
+		}
+		return nil, err
+	}
+	g.owned = true
 	if first {
 		sweepTunnelRules(id)
 	}
@@ -206,7 +216,9 @@ func (g *pckGuard) remove() {
 		args := append([]string{"-t", table, "-D"}, body...)
 		_, _ = pckIptables(args...)
 	}
-	releasePckOwnership(g.id)
+	if g.owned {
+		releasePckOwnership(g.id)
+	}
 }
 
 // Installed reports whether every rule is in place, so the carrier can warn
