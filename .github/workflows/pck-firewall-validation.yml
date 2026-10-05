@@ -1,0 +1,92 @@
+name: PCK firewall validation
+on:
+  push:
+    branches: [codex/validate-pck-firewall-lifecycle]
+permissions:
+  contents: read
+jobs:
+  baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Reproduce the incident on the unchanged baseline
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git worktree add /tmp/backpack-pck-baseline ff86354
+          cp internal/utils/network/pck_incident_regression_test.go /tmp/backpack-pck-baseline/internal/utils/network/
+          cd /tmp/backpack-pck-baseline
+          go test -c ./internal/utils/network -o /tmp/backpack-pck-baseline-tests
+          set +e
+          sudo unshare -n bash -c '
+            set -eu
+            ip link set lo up
+            ip link add bp-test type dummy
+            ip addr add 192.0.2.1/24 dev bp-test
+            ip link set bp-test up
+            BACKPACK_PCK_NAMESPACE=1 /tmp/backpack-pck-baseline-tests -test.run="^TestPckIncident" -test.v -test.timeout=3m
+          ' 2>&1 | tee /tmp/pck-baseline.log
+          result=${PIPESTATUS[0]}
+          set -e
+          test "$result" -ne 0
+          for failure in LoopbackResetReachesBackend PortCannotBeReusedByKernelTCP QuotedTagCanBeDeleted; do
+            grep -q -- "--- FAIL: TestPckIncident${failure}" /tmp/pck-baseline.log
+          done
+  regressions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Compile the isolated network regressions with race detection
+        run: go test -c -race ./internal/utils/network -o /tmp/backpack-pck-tests
+      - name: Verify recovery and ownership in a private network namespace
+        run: |
+          sudo unshare -n bash -c '
+            set -eu
+            ip link set lo up
+            ip link add bp-test type dummy
+            ip addr add 192.0.2.1/24 dev bp-test
+            ip link set bp-test up
+            BACKPACK_PCK_NAMESPACE=1 /tmp/backpack-pck-tests -test.run="^TestPck(Incident|Lifecycle)" -test.count=3 -test.v -test.timeout=10m
+          '
+  suite:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      - name: Prepare snapshot fixtures
+        run: |
+          sudo mkdir -p /etc/backpack
+          sudo chmod 777 /etc/backpack
+      - name: Formatting and vet
+        run: |
+          test -z "$(gofmt -l cmd/cmd.go internal/manage/core/tunnel.go internal/utils/network/pckconn_linux.go internal/utils/network/pckguard_linux.go internal/utils/network/pckport.go internal/utils/network/pckownership_linux.go internal/utils/network/pckownership_other.go main.go)"
+          go vet ./...
+      - name: Full suite
+        run: go test ./... -count=1 -timeout 20m
+      - name: Full race suite
+        run: go test ./... -race -count=1 -timeout 20m
+      - name: Static analysis of the changed packages
+        run: go run honnef.co/go/tools/cmd/staticcheck@latest ./cmd ./internal/manage/core ./internal/utils/network
+      - name: Build Linux amd64 and arm64
+        run: |
+          GOOS=linux GOARCH=amd64 go build -o /tmp/backpack-amd64 .
+          GOOS=linux GOARCH=arm64 go build -o /tmp/backpack-arm64 .
