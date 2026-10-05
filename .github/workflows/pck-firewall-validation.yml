@@ -52,6 +52,7 @@ jobs:
         run: |
           go test -c -race ./internal/utils/network -o /tmp/backpack-pck-tests
           go test -c -race ./internal/manage/core -o /tmp/backpack-pck-core-tests
+          go build -o /tmp/backpack-pck-engine .
       - name: Verify recovery and ownership in a private network namespace
         run: |
           sudo unshare -n bash -c '
@@ -62,6 +63,7 @@ jobs:
             ip link set bp-test up
             BACKPACK_PCK_NAMESPACE=1 /tmp/backpack-pck-tests -test.run="^TestPck(Incident|Lifecycle)" -test.count=3 -test.v -test.timeout=10m
             BACKPACK_PCK_NAMESPACE=1 /tmp/backpack-pck-core-tests -test.run="^TestPckDeletion" -test.count=3 -test.v -test.timeout=3m
+            BACKPACK_PCK_BINARY=/tmp/backpack-pck-engine python3 internal/e2e/testdata/pck-lifecycle-validation.py
           '
   wire:
     runs-on: ubuntu-latest

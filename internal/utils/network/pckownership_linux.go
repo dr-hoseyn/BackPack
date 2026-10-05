@@ -80,19 +80,32 @@ func releasePckOwnership(id string) {
 // CleanupPckGuards removes tagged leftovers belonging to these tokens, without
 // touching any live carrier or another tunnel. It also works after a transport
 // change, when no PCK carrier will be opened to perform its normal sweep.
+// With no tokens, it recovers all provably unowned tagged rule sets, including
+// ones left behind before a tunnel's token or configuration file was replaced.
 func CleanupPckGuards(tokens ...string) {
 	guardMu.Lock()
 	defer guardMu.Unlock()
-	seen := map[string]bool{}
+	ids := map[string]bool{}
 	for _, token := range tokens {
-		if token == "" {
+		if token != "" {
+			ids[pckTunnelID(token)] = true
+		}
+	}
+	if len(tokens) == 0 {
+		for _, table := range []string{"filter", "raw"} {
+			out, err := pckIptables("-t", table, "-S")
+			if err != nil {
+				continue
+			}
+			for _, id := range pckRuleIDs(string(out)) {
+				ids[id] = true
+			}
+		}
+	}
+	for id := range ids {
+		if pckOwners[id] != nil {
 			continue
 		}
-		id := pckTunnelID(token)
-		if seen[id] || pckOwners[id] != nil {
-			continue
-		}
-		seen[id] = true
 		f, err := lockPckTunnel(id)
 		if err != nil {
 			continue

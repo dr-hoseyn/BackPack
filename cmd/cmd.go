@@ -187,7 +187,9 @@ func runEngine(cfg *config.Config, ctx context.Context, configPath string, apply
 	cleanupPck := func() {
 		network.CleanupPckGuards(cfg.Server.Token, cfg.Client.Token, cfg.Direct.Token, cfg.L3.Token)
 	}
-	cleanupPck()
+	// Recover orphaned tags even if an earlier tunnel was deleted or its token
+	// was replaced. The ownership checks preserve every live PCK carrier.
+	network.CleanupPckGuards()
 	defer cleanupPck()
 
 	// A layer-3 tunnel is a different thing from a port forwarder and shares

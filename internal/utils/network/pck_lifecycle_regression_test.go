@@ -225,3 +225,20 @@ func TestPckLifecycleRawCarrierStillStartsWithoutIptables(t *testing.T) {
 		t.Fatal("raw-only carrier retained firewall ownership")
 	}
 }
+
+func TestPckLifecycleRecoversReplacedTokensAndPreservesLiveOwner(t *testing.T) {
+	incidentNamespace(t)
+	c := incidentCarrier(t, true, "lifecycle-live-global-token", 52786)
+	insertIncidentRules(t, "lifecycle-old-deleted-token", 47000)
+	insertIncidentRules(t, "lifecycle-old-replaced-token", 48000)
+	CleanupPckGuards()
+	for _, token := range []string{"lifecycle-old-deleted-token", "lifecycle-old-replaced-token"} {
+		if incidentRules(t, pckTunnelID(token)) != 0 {
+			t.Fatal("replaced-token orphan survived startup cleanup")
+		}
+	}
+	if incidentRules(t, c.tunnelID) != 3 {
+		t.Fatal("startup cleanup removed the live owner's rules")
+	}
+	c.Close()
+}

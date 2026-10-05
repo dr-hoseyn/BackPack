@@ -211,6 +211,32 @@ func scopedPckRules(id string, lo, hi uint16, iface, local, peer string, peerPor
 // pckRulePrefix is how every rule of one tunnel's comment begins.
 func pckRulePrefix(id string) string { return "backpack-pck-" + id + "-" }
 
+// pckRuleIDs finds only the tagged format; untagged legacy ranges have no
+// reliable tunnel owner and are handled separately during PCK initialization.
+func pckRuleIDs(listing string) []string {
+	seen := map[string]bool{}
+	var ids []string
+	for _, del := range tunnelRuleDeletions(listing, "backpack-pck-") {
+		for i := 0; i+1 < len(del); i++ {
+			if del[i] != "--comment" {
+				continue
+			}
+			tag := strings.TrimPrefix(del[i+1], "backpack-pck-")
+			parts := strings.SplitN(tag, "-", 2)
+			if len(parts) != 2 || len(parts[0]) != 8 {
+				continue
+			}
+			id := parts[0]
+			if _, err := hex.DecodeString(id); err != nil || seen[id] {
+				continue
+			}
+			seen[id] = true
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
 // tunnelRuleDeletions turns `iptables -S` output into the delete commands for
 // the rules whose comment starts with prefix. Our comments carry no spaces, so
 // the listing splits on whitespace exactly as it was written.
