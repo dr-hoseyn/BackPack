@@ -198,3 +198,23 @@ func TestPckLifecyclePartialGuardInstallationIsRemoved(t *testing.T) {
 		t.Fatal("wire scope was not preserved")
 	}
 }
+
+func TestPckLifecycleRawCarrierStillStartsWithoutIptables(t *testing.T) {
+	incidentNamespace(t)
+	t.Setenv("PATH", t.TempDir())
+	const token = "lifecycle-raw-only-token"
+	pc, err := newPckConn(true, 52785, PcapCarrier{Port: 52785, Token: token, Interface: "bp-test", GatewayMAC: "02:00:00:00:00:02"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := pc.(*pckConn)
+	if c.GuardInstalled() {
+		t.Fatal("missing iptables was reported as a complete guard")
+	}
+	c.Close()
+	guardMu.Lock()
+	defer guardMu.Unlock()
+	if pckOwners[pckTunnelID(token)] != nil {
+		t.Fatal("raw-only carrier retained firewall ownership")
+	}
+}

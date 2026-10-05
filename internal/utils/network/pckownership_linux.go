@@ -161,7 +161,7 @@ func otherPckProcess(id string) bool {
 		}
 		token := ""
 		switch {
-		case cfg.L3.Enabled() && cfg.L3.Carrier == "pck":
+		case cfg.L3.Enabled() && (cfg.L3.Carrier == "pck" || cfg.L3.Carrier == "sni"):
 			token = cfg.L3.Token
 		case cfg.Server.Transport == config.PCK:
 			token = cfg.Server.Token

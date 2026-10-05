@@ -153,31 +153,6 @@ func sweepPckRule(table string, body []string) {
 	}
 }
 
-// tunnelGuardInUse reports whether this process already holds rules for the
-// tunnel — a server's range and a client's are never both live, but a client
-// whose old range is still closing must not have its rules swept from under it.
-func tunnelGuardInUse(id string) bool {
-	prefix := pckRulePrefix(id)
-	for _, sh := range guardShared {
-		for _, r := range sh.g.rules {
-			if ruleComment(r) != "" && strings.HasPrefix(ruleComment(r), prefix) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-// ruleComment is the comment a rule is tagged with.
-func ruleComment(r []string) string {
-	for i := 0; i+1 < len(r); i++ {
-		if r[i] == "--comment" {
-			return r[i+1]
-		}
-	}
-	return ""
-}
-
 // sweepTunnelRules deletes every rule in the tables the guard writes to whose
 // comment carries this tunnel's tag.
 func sweepTunnelRules(id string) {

@@ -49,7 +49,9 @@ jobs:
           go-version-file: go.mod
           cache: true
       - name: Compile the isolated network regressions with race detection
-        run: go test -c -race ./internal/utils/network -o /tmp/backpack-pck-tests
+        run: |
+          go test -c -race ./internal/utils/network -o /tmp/backpack-pck-tests
+          go test -c -race ./internal/manage/core -o /tmp/backpack-pck-core-tests
       - name: Verify recovery and ownership in a private network namespace
         run: |
           sudo unshare -n bash -c '
@@ -59,7 +61,41 @@ jobs:
             ip addr add 192.0.2.1/24 dev bp-test
             ip link set bp-test up
             BACKPACK_PCK_NAMESPACE=1 /tmp/backpack-pck-tests -test.run="^TestPck(Incident|Lifecycle)" -test.count=3 -test.v -test.timeout=10m
+            BACKPACK_PCK_NAMESPACE=1 /tmp/backpack-pck-core-tests -test.run="^TestPckDeletion" -test.count=3 -test.v -test.timeout=3m
           '
+  wire:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install namespace test tools
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq netcat-openbsd bc tcpdump iptables
+      - name: Build both versions
+        run: |
+          go build -o /tmp/backpack-pck-current .
+          git worktree add /tmp/backpack-pck-previous ff86354
+          (cd /tmp/backpack-pck-previous && go build -o /tmp/backpack-pck-previous-bin .)
+      - name: Transfer bytes through real PCK tunnels and recover after failure
+        shell: bash
+        run: |
+          set -euxo pipefail
+          for scenario in normal restart blocked old-listener old-dialler; do
+            extra=()
+            case "$scenario" in
+              restart) extra=(RESTART=1);;
+              blocked) extra=(BLOCKFLOW=1);;
+              old-listener) extra=(BIN_LISTEN=/tmp/backpack-pck-previous-bin);;
+              old-dialler) extra=(BIN=/tmp/backpack-pck-previous-bin BIN_LISTEN=/tmp/backpack-pck-current);;
+            esac
+            sudo env BIN=/tmp/backpack-pck-current W="/tmp/pck-wire-$scenario" "${extra[@]}" timeout 360 unshare --net --mount --fork -- bash internal/e2e/testdata/l3live.sh pck 1 | tee "/tmp/pck-wire-$scenario.log"
+            grep -q '^RESULT OK' "/tmp/pck-wire-$scenario.log"
+          done
   suite:
     runs-on: ubuntu-latest
     timeout-minutes: 55
