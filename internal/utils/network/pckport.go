@@ -187,6 +187,27 @@ func pckRules(id string, lo, hi uint16) [][]string {
 	}
 }
 
+// scopedPckRules keeps kernel suppression on the carrier's wire path. In
+// particular, a backend connection routed over lo must never lose its RST.
+func scopedPckRules(id string, lo, hi uint16, iface, local, peer string, peerPort uint16) [][]string {
+	rules := pckRules(id, lo, hi)
+	for i, r := range rules {
+		scope := []string{"-o", iface, "-s", local}
+		if r[1] == "PREROUTING" {
+			scope = []string{"-i", iface, "-d", local}
+		}
+		if peer != "" {
+			if r[1] == "PREROUTING" {
+				scope = append(scope, "-s", peer, "--sport", portSpec(peerPort, peerPort))
+			} else {
+				scope = append(scope, "-d", peer, "--dport", portSpec(peerPort, peerPort))
+			}
+		}
+		rules[i] = append(append(append([]string{}, r[:4]...), scope...), r[4:]...)
+	}
+	return rules
+}
+
 // pckRulePrefix is how every rule of one tunnel's comment begins.
 func pckRulePrefix(id string) string { return "backpack-pck-" + id + "-" }
 
@@ -207,6 +228,13 @@ func tunnelRuleDeletions(listing, prefix string) [][]string {
 			}
 		}
 		if mine {
+			// iptables -S quotes comment values. exec.Command receives arguments
+			// directly, so shell quotes must not become part of the comment.
+			for i := 0; i+1 < len(f); i++ {
+				if f[i] == "--comment" {
+					f[i+1] = strings.Trim(f[i+1], `"`)
+				}
+			}
 			out = append(out, append([]string{"-D"}, f[1:]...))
 		}
 	}

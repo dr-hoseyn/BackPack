@@ -3,10 +3,11 @@
 package network
 
 import (
+	"context"
 	"os/exec"
-	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Keeping the host kernel out of a conversation it is not part of.
@@ -34,9 +35,9 @@ import (
 // newPckConn). They are refcounted so that a pool of sixteen installs one set of
 // rules rather than sixteen.
 type pckGuard struct {
-	lo, hi uint16
-	rules  [][]string // each entry is a full rule body, table first
-	added  [][]string
+	key, id string
+	rules   [][]string // each entry is a full rule body, table first
+	added   [][]string
 }
 
 // Guards are shared per port range within a process, so the pool's carriers all
@@ -51,13 +52,9 @@ type sharedGuard struct {
 	ref int
 }
 
-func guardKey(lo, hi uint16) string {
-	return strconv.Itoa(int(lo)) + ":" + strconv.Itoa(int(hi))
-}
-
 // installPckGuard adds the rules for a port range and returns a handle that
 // remembers which of them took, so remove undoes exactly that much. Calling it
-// again for the same range takes a reference on the rules already installed.
+// again for the same tunnel, range and wire path takes a reference on its rules.
 //
 // Best effort throughout: a machine without iptables still runs the tunnel, and
 // the carrier says so at startup rather than failing. What it must not do is
@@ -65,31 +62,39 @@ func guardKey(lo, hi uint16) string {
 //
 // id tags the rules with the tunnel they belong to (pckTunnelID), and legacy is
 // the rule sets an older build would have written for it. Before anything is
-// added, every rule carrying the tunnel's tag and every legacy copy is removed:
+// added, leftover rules carrying the tunnel's tag are removed:
 // they were left by a run of this tunnel that did not exit cleanly, and since a
 // client's ports are no longer the same from one run to the next, only the tag
-// can find them.
-func installPckGuard(id string, legacy [][][]string, lo, hi uint16) *pckGuard {
+// can find them. Untagged legacy rules are swept only without another owner.
+func installPckGuard(id string, legacy [][][]string, rules [][]string) (*pckGuard, error) {
 	guardMu.Lock()
 	defer guardMu.Unlock()
 
-	key := guardKey(lo, hi)
+	key := id + "\x00" + strings.Join(rules[0], "\x00")
 	if sh, ok := guardShared[key]; ok {
 		sh.ref++
-		return sh.g
+		return sh.g, nil
 	}
 
-	g := &pckGuard{lo: lo, hi: hi, rules: pckRules(id, lo, hi)}
+	first := !tunnelGuardInUse(id)
+	if err := acquirePckOwnership(id); err != nil {
+		return nil, err
+	}
+	g := &pckGuard{key: key, id: id, rules: rules}
 	if _, err := exec.LookPath("iptables"); err != nil {
 		guardShared[key] = &sharedGuard{g: g, ref: 1}
-		return g
+		return g, nil
 	}
-	if !tunnelGuardInUse(id) {
+	if first {
 		sweepTunnelRules(id)
 	}
-	for _, set := range legacy {
-		for _, r := range set {
-			sweepPckRule(r[0], r[1:])
+	// Untagged rules predate ownership. Only remove them when no other PCK
+	// process or guard can own an overlapping range.
+	if first && len(pckOwners) == 1 && !otherPckProcess("") {
+		for _, set := range legacy {
+			for _, r := range set {
+				sweepPckRule(r[0], r[1:])
+			}
 		}
 	}
 	for _, r := range g.rules {
@@ -98,20 +103,26 @@ func installPckGuard(id string, legacy [][][]string, lo, hi uint16) *pckGuard {
 		// process that did not exit cleanly. See sweepPckRule.
 		sweepPckRule(table, body)
 		args := append([]string{"-t", table, "-I"}, body...)
-		if err := exec.Command("iptables", args...).Run(); err == nil {
+		if _, err := pckIptables(args...); err == nil {
 			g.added = append(g.added, r)
 		}
 	}
 	guardShared[key] = &sharedGuard{g: g, ref: 1}
-	return g
+	return g, nil
+}
+
+func pckIptables(args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	return exec.CommandContext(ctx, "iptables", append([]string{"-w", "5"}, args...)...).Output()
 }
 
 // sweepPckRule deletes every copy of one rule before it is installed again.
 //
 // The rules are only removed when a carrier closes cleanly. A crash, a kill, a
-// `systemctl restart` or a failed start leaves them in the table — and because
-// the port is derived from the tunnel's token rather than drawn at random, the
-// next start asks for the *identical* rule. iptables is happy to hold a
+// interrupted restart or a failed start can leave them in the table. A server
+// keeps its configured port, so its next start asks for the identical rule.
+// iptables is happy to hold a
 // thousand copies of the same line, so without this they accumulate for as
 // long as the tunnel is ever restarted, and every packet is matched against
 // all of them.
@@ -126,7 +137,7 @@ func installPckGuard(id string, legacy [][][]string, lo, hi uint16) *pckGuard {
 func sweepPckRule(table string, body []string) {
 	args := append([]string{"-t", table, "-D"}, body...)
 	for i := 0; i < 1024; i++ {
-		if err := exec.Command("iptables", args...).Run(); err != nil {
+		if _, err := pckIptables(args...); err != nil {
 			return // no more copies, which is the ordinary first-start case
 		}
 	}
@@ -162,12 +173,12 @@ func ruleComment(r []string) string {
 func sweepTunnelRules(id string) {
 	prefix := pckRulePrefix(id)
 	for _, table := range []string{"filter", "raw"} {
-		out, err := exec.Command("iptables", "-t", table, "-S").Output()
+		out, err := pckIptables("-t", table, "-S")
 		if err != nil {
 			continue
 		}
 		for _, del := range tunnelRuleDeletions(string(out), prefix) {
-			_ = exec.Command("iptables", append([]string{"-t", table}, del...)...).Run()
+			_, _ = pckIptables(append([]string{"-t", table}, del...)...)
 		}
 	}
 }
@@ -181,27 +192,28 @@ func (g *pckGuard) remove() {
 	guardMu.Lock()
 	defer guardMu.Unlock()
 
-	key := guardKey(g.lo, g.hi)
-	sh, ok := guardShared[key]
-	if !ok {
+	sh, ok := guardShared[g.key]
+	if !ok || sh.g != g {
 		return // already torn down
 	}
 	if sh.ref--; sh.ref > 0 {
 		return // another carrier is still using the rules
 	}
-	delete(guardShared, key)
+	delete(guardShared, g.key)
 
 	for _, r := range g.added {
 		table, body := r[0], r[1:]
 		args := append([]string{"-t", table, "-D"}, body...)
-		_ = exec.Command("iptables", args...).Run()
+		_, _ = pckIptables(args...)
 	}
-	g.added = nil
+	releasePckOwnership(g.id)
 }
 
 // Installed reports whether every rule is in place, so the carrier can warn
 // when the tunnel is running without the protection.
 func (g *pckGuard) Installed() bool {
+	guardMu.Lock()
+	defer guardMu.Unlock()
 	return g != nil && len(g.added) == len(g.rules)
 }
 
