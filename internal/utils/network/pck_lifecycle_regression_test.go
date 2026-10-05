@@ -77,7 +77,14 @@ func TestPckLifecycleProcessHelper(t *testing.T) {
 
 func externalIncidentOwner(t *testing.T, mode string) (*exec.Cmd, io.WriteCloser) {
 	t.Helper()
-	cmd := exec.Command(os.Args[0], "-test.run=^TestPckLifecycleProcessHelper$")
+	binary := os.Args[0]
+	if mode == "legacy" {
+		binary = filepath.Join(t.TempDir(), "renamed-carrier")
+		if err := os.Link(os.Args[0], binary); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cmd := exec.Command(binary, "-test.run=^TestPckLifecycleProcessHelper$")
 	cmd.Env = append(os.Environ(), "BACKPACK_PCK_HELPER="+mode)
 	in, err := cmd.StdinPipe()
 	if err != nil {

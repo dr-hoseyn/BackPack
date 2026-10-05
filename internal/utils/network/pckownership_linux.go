@@ -3,6 +3,7 @@
 package network
 
 import (
+	"debug/buildinfo"
 	"errors"
 	"fmt"
 	"os"
@@ -10,8 +11,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/BurntSushi/toml"
-	"github.com/backpack/backpack/config"
 	"golang.org/x/sys/unix"
 )
 
@@ -141,37 +140,6 @@ func otherPckProcess(id string) bool {
 		if err != nil || !os.SameFile(ns, peerNS) {
 			continue
 		}
-		args, _ := os.ReadFile(root + "/cmdline")
-		a := strings.Split(string(args), "\x00")
-		var cfg config.Config
-		for i := 1; i < len(a); i++ {
-			path := ""
-			if a[i] == "-c" && i+1 < len(a) {
-				path = a[i+1]
-			} else if strings.HasPrefix(a[i], "-c=") {
-				path = strings.TrimPrefix(a[i], "-c=")
-			}
-			if path != "" {
-				if !filepath.IsAbs(path) {
-					path = filepath.Join(root, "cwd", path)
-				}
-				_, _ = toml.DecodeFile(path, &cfg)
-				break
-			}
-		}
-		token := ""
-		switch {
-		case cfg.L3.Enabled() && (cfg.L3.Carrier == "pck" || cfg.L3.Carrier == "sni"):
-			token = cfg.L3.Token
-		case cfg.Server.Transport == config.PCK:
-			token = cfg.Server.Token
-		case cfg.Client.Transport == config.PCK:
-			token = cfg.Client.Token
-		}
-		exe, _ := os.Readlink(root + "/exe")
-		if token == "" && !strings.Contains(filepath.Base(exe), "backpack") {
-			continue
-		}
 		fds, err := os.ReadDir(root + "/fd")
 		if err != nil {
 			if !errors.Is(err, os.ErrNotExist) {
@@ -195,9 +163,24 @@ func otherPckProcess(id string) bool {
 				otherOwner = true
 			}
 		}
-		if ownsPacket && !otherOwner {
+		if ownsPacket && !otherOwner && pckExecutable(root) {
 			return true
 		}
 	}
 	return false
+}
+
+// Build metadata survives renaming and stripping the binary, and does not
+// depend on a configuration file that may already describe the next engine.
+func pckExecutable(root string) bool {
+	path := root + "/exe"
+	exe, _ := os.Readlink(path)
+	if strings.Contains(filepath.Base(exe), "backpack") {
+		return true
+	}
+	info, err := buildinfo.ReadFile(path)
+	if err != nil {
+		return errors.Is(err, os.ErrPermission)
+	}
+	return info.Main.Path == "github.com/backpack/backpack" || strings.HasPrefix(info.Path, "github.com/backpack/backpack/")
 }
