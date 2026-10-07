@@ -43,7 +43,11 @@ func TCPConnectionHandler(ctx context.Context, proxyProtocol bool, from net.Conn
 		done <- struct{}{}
 	}()
 
-	awaitRelay(ctx, done, from, to)
+	if plainTCP(from) != nil && plainTCP(to) != nil {
+		awaitTCPRelay(ctx, done, from, to)
+	} else {
+		awaitRelay(ctx, done, from, to)
+	}
 }
 
 // awaitRelay waits for a two-directional copy to finish, or for the context to
@@ -116,8 +120,7 @@ func transferData(from net.Conn, to net.Conn, logger *logrus.Logger, usage *web.
 			} else {
 				logger.Trace("unable to read from the connection: ", err)
 			}
-			from.Close()
-			to.Close()
+			finishDirection(from, to, err)
 			return
 		}
 	}
@@ -203,7 +206,55 @@ func spliceTransfer(from net.Conn, to net.Conn, logger *logrus.Logger, usage *we
 		logger.Trace("zero-copy transfer ended: ", err)
 	}
 
+	finishDirection(from, to, err)
+	return true
+}
+
+// Only plain TCP can represent directional EOF on the existing tunnel wire.
+// Unwrapping here does not bypass pacing or metrics on the copy path.
+func plainTCP(c net.Conn) *net.TCPConn {
+	for range 8 {
+		if tcp, ok := c.(*net.TCPConn); ok {
+			return tcp
+		}
+		raw, counted := metrics.Uncount(c)
+		if counted {
+			c = raw
+			continue
+		}
+		if wrapper, ok := c.(interface{ UnderlyingConn() net.Conn }); ok {
+			c = wrapper.UnderlyingConn()
+			continue
+		}
+		return nil
+	}
+	return nil
+}
+func finishDirection(from, to net.Conn, err error) {
+	if (err == nil || errors.Is(err, io.EOF)) && plainTCP(from) != nil {
+		if tcp := plainTCP(to); tcp != nil && tcp.CloseWrite() == nil {
+			return
+		}
+	}
 	from.Close()
 	to.Close()
-	return true
+}
+func awaitTCPRelay(ctx context.Context, done <-chan struct{}, from, to net.Conn) {
+	finished := 0
+	for finished < 2 {
+		select {
+		case <-done:
+			finished++
+		case <-ctx.Done():
+			from.Close()
+			to.Close()
+			for finished < 2 {
+				<-done
+				finished++
+			}
+			return
+		}
+	}
+	from.Close()
+	to.Close()
 }
