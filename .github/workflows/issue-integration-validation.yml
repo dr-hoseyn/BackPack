@@ -8,7 +8,7 @@ jobs:
     steps:
     - uses: actions/checkout@v7
       with:
-        ref: 2b02f6aef3eddc69135b04d1ed27ae27145817a0
+        ref: 9b13a329adde98ec8302cb49e1f3f92ac59e6a3a
     - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
 
         sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
@@ -38,7 +38,7 @@ jobs:
     steps:
     - uses: actions/checkout@v7
       with:
-        ref: 2b02f6aef3eddc69135b04d1ed27ae27145817a0
+        ref: 9b13a329adde98ec8302cb49e1f3f92ac59e6a3a
     - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
 
         sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
@@ -59,7 +59,7 @@ jobs:
     steps:
     - uses: actions/checkout@v7
       with:
-        ref: 2b02f6aef3eddc69135b04d1ed27ae27145817a0
+        ref: 9b13a329adde98ec8302cb49e1f3f92ac59e6a3a
     - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
 
         sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
@@ -101,7 +101,7 @@ jobs:
     steps:
     - uses: actions/checkout@v7
       with:
-        ref: 2b02f6aef3eddc69135b04d1ed27ae27145817a0
+        ref: 9b13a329adde98ec8302cb49e1f3f92ac59e6a3a
     - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
 
         sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
@@ -122,7 +122,7 @@ jobs:
     - uses: actions/checkout@v7
       with:
         fetch-depth: 0
-        ref: 2b02f6aef3eddc69135b04d1ed27ae27145817a0
+        ref: 9b13a329adde98ec8302cb49e1f3f92ac59e6a3a
     - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
 
         sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
@@ -151,7 +151,7 @@ jobs:
     steps:
     - uses: actions/checkout@v7
       with:
-        ref: 2b02f6aef3eddc69135b04d1ed27ae27145817a0
+        ref: 9b13a329adde98ec8302cb49e1f3f92ac59e6a3a
     - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
 
         sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
@@ -186,7 +186,7 @@ jobs:
     steps:
     - uses: actions/checkout@v7
       with:
-        ref: 2b02f6aef3eddc69135b04d1ed27ae27145817a0
+        ref: 9b13a329adde98ec8302cb49e1f3f92ac59e6a3a
     - uses: actions/setup-go@v7
       with:
         go-version-file: go.mod
