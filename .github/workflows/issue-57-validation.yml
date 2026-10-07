@@ -213,6 +213,88 @@ jobs:
           '
         retention-days: 14
     timeout-minutes: 55
+  regressions:
+    name: Issue 57 runtime regressions
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: bf45f31a3a33df9990648c5e0c2c35dee377adec
+        fetch-depth: 0
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+    - run: 'sudo mkdir -p /etc/backpack
+
+        sudo chmod 777 /etc/backpack'
+    - name: Generate temporary behavior regressions
+      run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/webui/issue57_audit_test.go'').write_text(''package webui\nimport("testing";"os";"net/url";"net/http";"net/http/httptest";"sync";"sync/atomic";"time";"strings";"net";"github.com/gorilla/websocket")\nfunc
+        TestIssue57MissingCredentials(t *testing.T){useConfigFile(t,Config{Password:"pw"});if
+        err:=os.Remove(configPath());err!=nil{t.Fatal(err)};w:=postLogin(t,loginServer(),url.Values{"password":
+        {""}});if cookieNamed(w,sessionCookie)!=nil{t.Fatal("runtime missing credentials
+        admitted empty password")}}\nfunc TestIssue57PendingPasswordRotation(t *testing.T){secret,_:=newTOTPSecret();useConfigFile(t,Config{Password:"old",TOTPSecret:secret});s:=loginServer();pending:=s.pending.create("203.0.113.7");if
+        err:=s.updatePassword("new");err!=nil{t.Fatal(err)};code,_:=totpCode(secret,time.Now());w:=postLogin(t,s,url.Values{"code":{code}},&http.Cookie{Name:pendingCookie,Value:pending});if
+        cookieNamed(w,sessionCookie)!=nil{t.Fatal("old password pending sign-in survived
+        rotation")}}\nfunc TestIssue57RecoveryAtomic(t *testing.T){codes,hashes,err:=newRecoveryCodes();if
+        err!=nil{t.Fatal(err)};secret,_:=newTOTPSecret();useConfigFile(t,Config{Password:"pw",TOTPSecret:secret,RecoveryHashes:hashes});var
+        wg sync.WaitGroup;var successes atomic.Int32;start:=make(chan struct{});for
+        range 32{wg.Add(1);go func(){defer wg.Done();<-start;if checkSecondFactor(codes[0]){successes.Add(1)}}()};close(start);wg.Wait();if
+        successes.Load()!=1{t.Fatalf("single recovery code accepted %d times",successes.Load())}}\nfunc
+        TestIssue57TerminalLifetime(t *testing.T){for _,expiry:=range []bool{false,true}{t.Run(map[bool]string{false:"revocation",true:"expiry"}[expiry],func(t
+        *testing.T){s:=loginServer();tok:=s.sessions.create("127.0.0.1");if expiry{s.sessions.mu.Lock();entry:=s.sessions.entries[tok];entry.expires=time.Now().Add(700*time.Millisecond);s.sessions.entries[tok]=entry;s.sessions.mu.Unlock()};done:=make(chan
+        struct{});srv:=httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter,r
+        *http.Request){defer close(done);s.handleTerminal(w,r)}));defer srv.Close();ws,_,err:=websocket.DefaultDialer.Dial(strings.Replace(srv.URL,"http:","ws:",1),http.Header{"Cookie":{sessionCookie+"="+tok}});if
+        err!=nil{t.Fatal(err)};defer func(){ws.Close();select{case <-done:case <-time.After(5*time.Second):t.Error("terminal
+        handler did not stop")}}();if !expiry{s.sessions.destroy(tok)};ws.SetReadDeadline(time.Now().Add(2*time.Second));for{_,_,err:=ws.ReadMessage();if
+        err!=nil{if ne,ok:=err.(net.Error);ok&&ne.Timeout(){t.Error("terminal remained
+        open after session ended")};break}}})}}\n'')
+
+        Path(''cmd/issue57_audit_test.go'').write_text(''package cmd\nimport("testing";"context";"os";"path/filepath";"time";"github.com/backpack/backpack/internal/quota")\nfunc
+        TestIssue57QuotaFailsClosed(t *testing.T){dir:=t.TempDir();path:=filepath.Join(dir,"audit.toml");if
+        err:=os.WriteFile(quota.Path(dir,"audit"),[]byte("{"),0600);err!=nil{t.Fatal(err)};if
+        !quotaReached(path){t.Fatal("invalid quota permits start")};ctx,cancel:=context.WithTimeout(context.Background(),20*time.Millisecond);defer
+        cancel();ok,waited:=awaitQuota(ctx,path);if ok||!waited{t.Fatal("invalid quota
+        permits resume")};gen,end:=context.WithCancel(context.Background());defer
+        end();stopped:=make(chan struct{});done:=make(chan struct{});go func(){defer
+        close(done);watchQuota(gen,path,func(){close(stopped)})}();select{case <-stopped:case
+        <-time.After(300*time.Millisecond):t.Error("initial quota read error ignored")};end();<-done}\n'')
+
+        Path(''internal/node/issue57_audit_test.go'').write_text(''package node\nimport("testing";"context";"net";"time";"strconv")\nfunc
+        TestIssue57HandshakeCancellation(t *testing.T){ln,err:=net.Listen("tcp","127.0.0.1:0");if
+        err!=nil{t.Fatal(err)};defer ln.Close();peer:=make(chan net.Conn,1);go func(){c,e:=ln.Accept();if
+        e==nil{peer<-c}}();host,port,_:=net.SplitHostPort(ln.Addr().String());number,_:=strconv.Atoi(port);ctx,cancel:=context.WithTimeout(context.Background(),100*time.Millisecond);defer
+        cancel();done:=make(chan error,1);go func(){c,_,e:=dialSSH(ctx,"audit",SSHTarget{Host:host,Port:number,User:"audit"});if
+        c!=nil{c.Close()};done<-e}();c:=<-peer;defer c.Close();select{case e:=<-done:if
+        e==nil{t.Fatal("handshake unexpectedly accepted")};case <-time.After(600*time.Millisecond):c.Close();<-done;t.Fatal("SSH
+        handshake ignored cancellation")}}\n'')
+
+        PY'
+    - name: Prove baseline defects
+      run: 'git worktree add --detach /tmp/issue57-baseline ff86354bcafbd054e7888e48343145323c9b2207
+
+        for file in internal/webui/issue57_audit_test.go cmd/issue57_audit_test.go
+        internal/node/issue57_audit_test.go; do cp "$file" "/tmp/issue57-baseline/$file";
+        done
+
+        cd /tmp/issue57-baseline
+
+        if go test ./internal/webui ./cmd ./internal/node -run TestIssue57 -count=1
+        -timeout 3m > /tmp/baseline.log 2>&1; then cat /tmp/baseline.log; exit 1;
+        fi
+
+        cat /tmp/baseline.log
+
+        if grep -q ''build failed'' /tmp/baseline.log; then exit 1; fi
+
+        '
+    - name: Fixed behavior and race detector
+      run: go test ./internal/webui ./cmd ./internal/node -run TestIssue57 -race -count=3
+        -v -timeout 5m
 'on':
   push:
     branches:
