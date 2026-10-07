@@ -44,6 +44,16 @@ them both ends have to agree on. This says what exists.
 | `pck_gateway_mac` | `string` | PckGatewayMAC is the next hop's hardware address, used when frames are injected at the link layer. Empty means read it from the kernel's neighbour table, which is where it already is. Set it only where that lookup is wrong — some virtualised networks answer ARP with an address the hypervisor then rewrites. |
 | `pck_interface` | `string` | PckInterface pins the carrier to a named egress device. Empty — the normal case — lets the route to the peer choose, which is right on every host with one uplink and on most with several. |
 
+## [client.naive]
+
+| Key | Type | Description |
+|---|---|---|
+| `binary` | `string` | Binary is the absolute path to the official NaiveProxy client binary; Backpack never downloads or replaces it. |
+| `ca_file` | `string` | CAFile optionally trusts a PEM CA for this helper alone; empty uses the official client's normal certificate verification. |
+| `password` | `string` | Password is the HTTP/2 proxy secret; keep the tunnel configuration readable only by its owner. |
+| `server` | `string` | Server is the HTTP/2 proxy's host:port, reached from the outside client toward the Iran server. |
+| `username` | `string` | Username authenticates the HTTP/2 proxy independently of the reverse tunnel token. |
+
 ## [client]
 
 | Key | Type | Description |
@@ -68,6 +78,7 @@ them both ends have to agree on. This says what exists.
 | `mux_session` | `int` | MuxSession is how many multiplexed sessions the tunnel keeps open. Only the mux transports read it; a preset fills it in. |
 | `mux_streambuffer` | `int` | MaxStreamBuffer is the per-stream receive window, in bytes. Filled from a preset. |
 | `mux_version` | `int` | MuxVersion is the smux protocol version. Negotiated with the peer, so the two ends may differ and the lower wins. |
+| `naive` | `NaiveClientConfig` | Naive optionally reaches the loopback reverse target through a tunnel-owned official Chromium Naive helper; experimental and disabled when empty. |
 | `nodelay` | `bool` | Nodelay disables Nagle's algorithm on the tunnel's sockets. Off unless set; every preset sets it. It trades a little bandwidth for latency, which is what an interactive session wants and a bulk transfer does not notice. |
 | `pprof` | `bool` | PPROF exposes Go's profiling endpoint on loopback. Off by default, and loopback-only on purpose: its heap dump contains this tunnel's token. |
 | `preset` | `string` | Preset records which performance profile the tuning values came from — balance, turbo or aggressive. A label: the engine reads the values, never this. |
@@ -171,6 +182,17 @@ them both ends have to agree on. This says what exists.
 | `spoof_uplink` | `string` | SpoofUplink and SpoofDownlink set the profile per direction, for a path whose filtering is not symmetric — e.g. ICMP survives client→server while UDP survives server→client. Uplink is client→server, downlink is server→client; both ends must set the same pair. Empty falls back to SpoofProfile, which is the symmetric case. |
 | `spoof_xdp_interface` | `string` | SpoofXDPInterface, when set to a NIC name (e.g. "eth0"), attaches an XDP/eBPF program to that device to receive the tunnel's forged-source packets in the kernel fast path, before the normal socket stack — higher throughput and lower CPU under load than the default raw-socket receive. Pure Go (no clang or libbpf), opt-in, and best-effort: if the kernel is too old or the attach or verifier fails, the carrier logs it and silently falls back to the ordinary raw/UDP receive, so a working tunnel is never lost to it. Empty disables it. Linux only; needs CAP_BPF/CAP_NET_ADMIN in addition to the carrier's CAP_NET_RAW. |
 
+## [server.naive]
+
+| Key | Type | Description |
+|---|---|---|
+| `binary` | `string` | Binary is the absolute path to the compatible sing-box server binary; the initial integration is tested with v1.14.2. |
+| `certificate` | `string` | Certificate is the absolute path to the PEM certificate chain; certificate renewal remains the operator's responsibility. |
+| `key` | `string` | Key is the absolute path to the certificate's PEM private key. |
+| `listen` | `string` | Listen is the public TCP host:port for HTTP/2, separate from the loopback server.bind_addr. |
+| `password` | `string` | Password is the proxy account's secret, separate from server.token. |
+| `username` | `string` | Username is the proxy account accepted from the official Naive client. |
+
 ## [server]
 
 | Key | Type | Description |
@@ -195,6 +217,7 @@ them both ends have to agree on. This says what exists.
 | `mux_session` | `int` | MuxSession is how many multiplexed sessions the tunnel keeps open. Only the mux transports read it; a preset fills it in. |
 | `mux_streambuffer` | `int` | MaxStreamBuffer is the per-stream receive window, in bytes. Filled from a preset. |
 | `mux_version` | `int` | MuxVersion is the smux protocol version. Negotiated with the peer, so the two ends may differ and the lower wins. |
+| `naive` | `NaiveServerConfig` | Naive optionally wraps the loopback TCP reverse listener in HTTP/2 with a tunnel-owned sing-box helper; experimental and disabled when empty. |
 | `nodelay` | `bool` | Nodelay disables Nagle's algorithm on the tunnel's sockets. Off unless set; every preset sets it. It trades a little bandwidth for latency, which is what an interactive session wants and what a bulk transfer does not notice. |
 | `ports` | `[]string` | Ports are the forwarded ports this server exposes, as "443", "8080=127.0.0.1:80", "443-450" or "10.0.0.5:443". See docs/port-mappings.md for every form. |
 | `pprof` | `bool` | PPROF exposes Go's profiling endpoint on 127.0.0.1:6060. Off by default and loopback-only: its heap dump contains this tunnel's token. |
@@ -238,4 +261,4 @@ them both ends have to agree on. This says what exists.
 
 ---
 
-*Generated from `config/` on 2026-09-27. Last verified against Backpack v1.8.5.*
+*Generated from `config/` on 2026-10-08. Last verified against Backpack v1.8.5.*
