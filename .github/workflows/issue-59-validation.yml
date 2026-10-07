@@ -8,7 +8,7 @@ jobs:
     steps:
     - uses: actions/checkout@v7
       with:
-        ref: bb0a85e7014918d476ddf3d32fa13a7533e7ec06
+        ref: 903053a6fea30e8ed7ad1c8b9e1404c262ddeeb2
     - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
 
         sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
@@ -66,7 +66,7 @@ jobs:
     steps:
     - uses: actions/checkout@v7
       with:
-        ref: bb0a85e7014918d476ddf3d32fa13a7533e7ec06
+        ref: 903053a6fea30e8ed7ad1c8b9e1404c262ddeeb2
     - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
 
         sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
@@ -87,7 +87,7 @@ jobs:
     steps:
     - uses: actions/checkout@v7
       with:
-        ref: bb0a85e7014918d476ddf3d32fa13a7533e7ec06
+        ref: 903053a6fea30e8ed7ad1c8b9e1404c262ddeeb2
     - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
 
         sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
@@ -129,7 +129,7 @@ jobs:
     steps:
     - uses: actions/checkout@v7
       with:
-        ref: bb0a85e7014918d476ddf3d32fa13a7533e7ec06
+        ref: 903053a6fea30e8ed7ad1c8b9e1404c262ddeeb2
     - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
 
         sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
@@ -150,7 +150,7 @@ jobs:
     - uses: actions/checkout@v7
       with:
         fetch-depth: 0
-        ref: bb0a85e7014918d476ddf3d32fa13a7533e7ec06
+        ref: 903053a6fea30e8ed7ad1c8b9e1404c262ddeeb2
     - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
 
         sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
@@ -179,7 +179,7 @@ jobs:
     steps:
     - uses: actions/checkout@v7
       with:
-        ref: bb0a85e7014918d476ddf3d32fa13a7533e7ec06
+        ref: 903053a6fea30e8ed7ad1c8b9e1404c262ddeeb2
     - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
 
         sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
@@ -214,7 +214,7 @@ jobs:
     steps:
     - uses: actions/checkout@v7
       with:
-        ref: bb0a85e7014918d476ddf3d32fa13a7533e7ec06
+        ref: 903053a6fea30e8ed7ad1c8b9e1404c262ddeeb2
         fetch-depth: 0
     - uses: actions/setup-go@v7
       with:
@@ -270,6 +270,20 @@ jobs:
         out struct{Changes []struct{At string `json:"at"`}};if err:=json.Unmarshal(w.Body.Bytes(),&out);err!=nil{t.Fatal("browser
         identifier is not an exact string",err)};if out.Changes[0].At!=strconv.FormatInt(hist[0].At.UnixNano(),10){t.Fatal("history
         identifier lost precision")}}\n'')
+
+        Path("internal/manage/issue59_preset_audit_test.go").write_text(''package
+        manage\nimport("testing";"os";"path/filepath";"github.com/backpack/backpack/internal/manage/tunnelspec")\nfunc
+        TestIssue59Layer4PresetFlow(t *testing.T){\n name:="audit59-presets"\n audit59Config(t,name,`[direct]\nrole="iran"\naddr="127.0.0.1:9000"\ntransport="tcp"\ntoken="pw"\nports=["8080=80"]\npreset="turbo"\n`)\n
+        settings,err:=DirectSettingsOf(name);if err!=nil{t.Fatal(err)}\n values:=map[string]bool{};for
+        _,p:=range settings.Presets{values[p["value"]]=true}\n if !values[PresetTurbo]||!values[PresetBalance]||!values[PresetThroughput]||values[PresetAggressive]{t.Fatal("wrong
+        layer4 preset menu",settings.Presets)}\n dir:=t.TempDir();if err:=os.WriteFile(filepath.Join(dir,"systemctl"),[]byte("#!/bin/sh\\nif
+        [ \\"$1\\" = is-active ]; then echo active; fi\\nexit 0\\n"),0700);err!=nil{t.Fatal(err)}\n
+        t.Setenv("PATH",dir+":"+os.Getenv("PATH"));old:=tunnelspec.HistoryRoot;tunnelspec.HistoryRoot=t.TempDir();defer
+        func(){tunnelspec.HistoryRoot=old}()\n preset:=PresetThroughput;if err:=EditDirectSettings(name,DirectEdit{Preset:&preset});err!=nil{t.Fatal(err)}\n
+        cfg,err:=LoadTunnelConfig(name);if err!=nil{t.Fatal(err)};d:=cfg.Direct\n
+        if d.Preset!=PresetThroughput||d.Sessions<4||d.MaxStreamBuffer!=16*1024*1024||d.Keepalive!=75||!d.Nodelay{t.Fatal("layer4
+        preset differs from CLI",d)}\n if d.Addr!="127.0.0.1:9000"||len(d.Ports)!=1||d.Ports[0]!="8080=80"{t.Fatal("preset
+        erased local settings",d)}\n}\n'')
 
         PY'
     - name: Baseline reproductions
