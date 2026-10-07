@@ -1,4 +1,4 @@
-name: Final race and KCP probe diagnosis
+name: Final TCP stability validation
 'on':
   push:
     branches:
@@ -13,7 +13,7 @@ jobs:
     - &id001
       uses: actions/checkout@v7
       with:
-        ref: 87816876ece221d5d830a698ec8bb86775e3203e
+        ref: 5ada977ccb3712fa41cc359fd4f49b6a97f33ed3
         fetch-depth: 0
     - &id002
       uses: actions/setup-go@v7
@@ -53,3 +53,266 @@ jobs:
         \ -race -count=5 -v -timeout 15m || result=$?\ntouch /tmp/kcp-testdone\nwait\
         \ \"$monitor\"\nif [ \"$result\" -ne 0 ]; then\n  find /tmp/kcp-capture -type\
         \ f -exec tail -n 150 {} \\;\nfi\nexit \"$result\"\n"
+  test:
+    name: Existing coverage floors
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 5ada977ccb3712fa41cc359fd4f49b6a97f33ed3
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - uses: actions/setup-node@v7
+      with:
+        node-version: '22'
+    - name: Prepare existing fixtures
+      run: 'sudo mkdir -p /etc/backpack
+
+        sudo chmod 777 /etc/backpack'
+    - name: Verify formatting
+      run: "unformatted=\"$(gofmt -l . || true)\"\nif [ -n \"$unformatted\" ]; then\n\
+        \  echo \"These files are not gofmt'd:\"\n  echo \"$unformatted\"\n  exit\
+        \ 1\nfi\n"
+    - name: Vet
+      run: go vet ./...
+    - name: Transport packages with race detector after removing obsolete handlers
+      run: go test ./internal/client/transport ./internal/server/transport -race -count=1
+        -timeout 5m
+    - name: Coverage
+      run: "go test ./... -coverpkg=./... -coverprofile=coverage.out -timeout 20m\n\
+        total=\"$(go tool cover -func=coverage.out | tail -1 | grep -oE '[0-9.]+')\"\
+        \necho \"total coverage: ${total}%\"\nfloor=50\nawk -v t=\"$total\" -v f=\"\
+        $floor\" 'BEGIN {\n  if (t+0 < f+0) {\n    printf \"coverage %.1f%% is below\
+        \ the floor of %d%%\\n\", t, f\n    exit 1\n  }\n}'\n"
+    - name: Per-package coverage floors
+      run: "set -eu\ncheck() {\n  pkg=\"$1\"; floor=\"$2\"; why=\"$3\"\n  got=\"$(go\
+        \ tool cover -func=coverage.out \\\n          | grep \"^github.com/backpack/backpack/$pkg/\"\
+        \ \\\n          | awk '{gsub(/%/,\"\",$3); s+=$3; n++} END {if (n) printf\
+        \ \"%.1f\", s/n; else print \"0\"}')\"\n  echo \"  $pkg: ${got}% (floor ${floor}%)\
+        \ \u2014 $why\"\n  awk -v g=\"$got\" -v f=\"$floor\" -v p=\"$pkg\" 'BEGIN\
+        \ {\n    if (g+0 < f+0) { printf \"%s fell below its floor\\n\", p; exit 1\
+        \ }\n  }'\n}\ncheck internal/tunnel/l3      60 \"the layer-3 data path\"\n\
+        check internal/tunnel/chain   80 \"transport fallback: a wrong decision here\
+        \ takes a tunnel down\"\ncheck internal/control        50 \"the fleet and\
+        \ the job runner\"\ncheck internal/cli            60 \"the scriptable surface;\
+        \ scripts depend on its exit codes\"\ncheck internal/node           40 \"\
+        the fleet RPC and the staged rollout\"\ncheck internal/metrics        60 \"\
+        what every other component reads to decide anything\"\ncheck internal/menu\
+        \           25 \"the screens an operator actually meets this product through\"\
+        \ncheck internal/server/transport 85 \"the Iran side of every reverse transport:\
+        \ lifecycle, forwarder, control loop\"\ncheck internal/client/transport 83\
+        \ \"the kharej side of every reverse transport\"\ncheck internal/controlwire\
+        \    95 \"the control channel's wire, shared by both ends\"\ncheck internal/utils/acceptloop\
+        \ 90 \"accept backoff and the pre-authentication gate (ADR 0004)\"\ncheck\
+        \ internal/manage/tunnelspec 70 \"a tunnel's configuration: render, load,\
+        \ apply with revert\"\ncheck internal/manage/host    60 \"this machine's addresses,\
+        \ ports and certificates\"\ncheck internal/manage/health  40 \"tunnel health,\
+        \ the watchdog and the Health Check\"\n"
+    - name: Final Linux builds
+      run: 'GOOS=linux GOARCH=amd64 go build -o /tmp/backpack-amd64 .
+
+        GOOS=linux GOARCH=arm64 go build -o /tmp/backpack-arm64 .'
+    timeout-minutes: 30
+  audit:
+    name: Vulnerabilities and static analysis
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 5ada977ccb3712fa41cc359fd4f49b6a97f33ed3
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - name: Known vulnerabilities
+      run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+    - name: Static analysis
+      run: 'go run honnef.co/go/tools/cmd/staticcheck@latest ./...
+
+        '
+    timeout-minutes: 30
+  fuzz:
+    name: Fuzz the parsers
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 5ada977ccb3712fa41cc359fd4f49b6a97f33ed3
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - name: Fuzz
+      run: 'set -eux
+
+        go test ./internal/tunnel/l3/        -run=X -fuzz=FuzzParseHeader        -fuzztime=30s
+
+        go test ./internal/tunnel/l3/        -run=X -fuzz=FuzzParseReplyPayload  -fuzztime=30s
+
+        go test ./internal/utils/network/    -run=X -fuzz=FuzzParsePckFrame      -fuzztime=30s
+
+        go test ./internal/utils/network/    -run=X -fuzz=FuzzDecodeXdiPayload   -fuzztime=30s
+
+        go test ./internal/utils/network/    -run=X -fuzz=FuzzParseTCPFlags      -fuzztime=20s
+
+        go test ./internal/utils/network/    -run=X -fuzz=FuzzParseSpoofProfile  -fuzztime=20s
+
+        go test ./internal/manage/           -run=X -fuzz=FuzzDecodeShareLink    -fuzztime=30s
+
+        go test ./internal/manage/           -run=X -fuzz=FuzzShareLinkRoundTrip -fuzztime=30s
+
+        '
+    - name: Report a crasher
+      if: failure()
+      run: 'echo "A fuzz target failed. The input that did it:"
+
+        find . -path ''*/testdata/fuzz/*'' -type f -print -exec cat {} \;
+
+        '
+    timeout-minutes: 30
+  compat:
+    name: Wire compatibility with the previous release
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        fetch-depth: 0
+        ref: 5ada977ccb3712fa41cc359fd4f49b6a97f33ed3
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - name: Build the previous release
+      id: prev
+      run: "tag=\"$(git describe --tags --abbrev=0 2>/dev/null || true)\"\nif [ -z\
+        \ \"$tag\" ]; then\n  echo \"no previous tag to compare against; skipping\"\
+        \n  echo \"binary=\" >> \"$GITHUB_OUTPUT\"\n  exit 0\nfi\necho \"previous\
+        \ release: $tag\"\ngit worktree add --detach /tmp/prev \"$tag\"\n(cd /tmp/prev\
+        \ && go build -o /tmp/backpack-prev .)\necho \"binary=/tmp/backpack-prev\"\
+        \ >> \"$GITHUB_OUTPUT\"\n"
+    - name: Old and new ends of one tunnel, both directions
+      if: steps.prev.outputs.binary != ''
+      env:
+        BACKPACK_PREV_BINARY: ${{ steps.prev.outputs.binary }}
+      run: go test ./internal/e2e/ -run TestThePreviousReleaseStillTalksToThisOne
+        -count=1 -v
+    timeout-minutes: 30
+  regressions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 5ada977ccb3712fa41cc359fd4f49b6a97f33ed3
+        fetch-depth: 0
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - name: Run temporary reproductions without adding tests to the PR
+      shell: bash
+      run: "set -euxo pipefail\ngit rev-parse HEAD\ncat > internal/server/transport/audit_temporary_test.go\
+        \ <<'AUDIT_GO'\npackage transport\nimport (\n \"context\"\n \"net\"\n \"sync/atomic\"\
+        \n \"testing\"\n \"time\"\n \"github.com/backpack/backpack/internal/utils\"\
+        \n \"github.com/xtaci/smux\"\n)\nfunc TestAuditBlockedAnnouncementCancels(t\
+        \ *testing.T) {\n ctx,cancel := context.WithCancel(context.Background());\
+        \ defer cancel()\n a,b:=net.Pipe(); defer a.Close(); defer b.Close()\n local:=&pairedConn{};\
+        \ lim:=takenLimiter(t)\n q:=make(chan net.Conn,1); q<-a\n entered:=make(chan\
+        \ struct{}); done:=make(chan struct{})\n p:=pairing[net.Conn]{ctx:ctx,local:LocalTCPConn{conn:local,remoteAddr:\"\
+        80\",timeCreated:nowMillis()},tunnel:q,limits:lim,log:quietLog(),announce:func(c\
+        \ net.Conn,s string)error {close(entered); return utils.SendBinaryString(c,s)},discard:func(c\
+        \ net.Conn){c.Close()},relay:func(net.Conn,LocalTCPConn){t.Error(\"relayed\
+        \ after cancellation\")}}\n go func(){p.run();close(done)}()\n <-entered;\
+        \ cancel()\n select {case <-done: case <-time.After(500*time.Millisecond):\
+        \ t.Fatal(\"announcement prevented cancellation\")}\n if lim.active.Load()!=0\
+        \ || !local.wasClosed(){t.Fatal(\"unpaired connection leaked its slot\")}\n\
+        }\nfunc TestAuditClosedMuxSessionReturnsCapacity(t *testing.T) {\n a,b:=net.Pipe();\
+        \ defer a.Close(); defer b.Close()\n session,err:=smux.Client(a,smux.DefaultConfig());if\
+        \ err!=nil{t.Fatal(err)}\n session.Close()\n var streams int32; var sessions\
+        \ int32=1\n m:=muxSession{ctx:context.Background(),local:make(chan LocalTCPConn,1),muxCon:1,log:quietLog(),streams:&streams,sessions:&sessions}\n\
+        \ done:=make(chan struct{});go func(){m.run(session);close(done)}()\n select\
+        \ {case <-done:case <-time.After(time.Second):t.Fatal(\"closed session remained\
+        \ parked\")}\n if atomic.LoadInt32(&sessions)!=0 {t.Fatal(\"closed session\
+        \ retained advertised capacity\")}\n}\nAUDIT_GO\ncat > internal/client/transport/audit_temporary_test.go\
+        \ <<'AUDIT_GO'\npackage transport\nimport (\n \"context\"\n \"net\"\n \"io\"\
+        \n \"sync\"\n \"sync/atomic\"\n \"testing\"\n \"time\"\n \"github.com/backpack/backpack/internal/utils/network\"\
+        \n)\nfunc TestAuditIdleTCPPoolEndsWithGeneration(t *testing.T){\n ln,err:=net.Listen(\"\
+        tcp\",\"127.0.0.1:0\");if err!=nil{t.Fatal(err)};defer ln.Close()\n accepted:=make(chan\
+        \ net.Conn,1);go func(){c,_:=ln.Accept();accepted<-c}()\n ctx,cancel:=context.WithCancel(context.Background());defer\
+        \ cancel()\n c:=NewTCPClient(ctx,&TcpConfig{RemoteAddr:ln.Addr().String(),Endpoints:network.NewEndpoints(ln.Addr().String()),ConnPoolSize:1,DialTimeOut:time.Second,KeepAlive:time.Second},silentLogger())\n\
+        \ c.state.Go(c.tunnelDialer)\n peer:=<-accepted;defer peer.Close()\n until:=time.Now().Add(time.Second);for\
+        \ atomic.LoadInt32(&c.poolConnections)!=1&&time.Now().Before(until){time.Sleep(time.Millisecond)}\n\
+        \ c.state.Stop();done:=make(chan struct{});go func(){c.state.Wait();close(done)}()\n\
+        \ select{case <-done:case <-time.After(500*time.Millisecond):t.Fatal(\"idle\
+        \ pool connection outlived generation\")}\n if atomic.LoadInt32(&c.poolConnections)!=0||atomic.LoadInt32(&c.dialingConnections)!=0{t.Fatal(\"\
+        generation counters did not settle\")}\n}\nfunc TestAuditFailedPoolIsReplenished(t\
+        \ *testing.T){\n ctx,cancel:=context.WithCancel(context.Background());defer\
+        \ cancel()\n var open,taken,pending,calls int32\n p:=poolSizer{ctx:ctx,log:silentLogger(),size:1,open:&open,taken:&taken,pending:&pending,shrink:make(chan\
+        \ struct{},1),dial:func(){atomic.AddInt32(&calls,1)}}\n done:=make(chan struct{});go\
+        \ func(){p.maintain();close(done)}()\n time.Sleep(1200*time.Millisecond);cancel();<-done\n\
+        \ if atomic.LoadInt32(&calls)<2{t.Fatal(\"failed initial dial left the configured\
+        \ pool empty\")}\n}\nfunc TestAuditConcurrentDialReservationsStayBounded(t\
+        \ *testing.T){\n var l lifecycle;l.firstGeneration(context.Background(),silentLogger(),usageSpec{});defer\
+        \ l.state.Stop()\n var held atomic.Int32;var wg sync.WaitGroup;var releases\
+        \ []func();var mu sync.Mutex\n for i:=0;i<100;i++{wg.Add(1);go func(){defer\
+        \ wg.Done();release,ok:=l.beginPoolDial(3);if ok{held.Add(1);mu.Lock();releases=append(releases,release);mu.Unlock()}}()};wg.Wait()\n\
+        \ if held.Load()!=3{t.Fatalf(\"reserved %d places, want 3\",held.Load())};for\
+        \ _,release:=range releases{release();release()}\n if atomic.LoadInt32(&l.dialingConnections)!=0{t.Fatal(\"\
+        reservation release was not balanced\")}\n}\nAUDIT_GO\ngit worktree add /tmp/backpack-tcp-baseline\
+        \ ff86354\ncp internal/server/transport/audit_temporary_test.go /tmp/backpack-tcp-baseline/internal/server/transport/\n\
+        set +e\n(cd /tmp/backpack-tcp-baseline && go test ./internal/server/transport\
+        \ -run '^TestAudit' -count=1 -v -timeout 2m) > /tmp/baseline.log 2>&1\nresult=$?\n\
+        set -e\ncat /tmp/baseline.log\ntest \"$result\" -ne 0\ngrep -q -- '--- FAIL:\
+        \ TestAuditBlockedAnnouncementCancels' /tmp/baseline.log\ngrep -q -- '---\
+        \ FAIL: TestAuditClosedMuxSessionReturnsCapacity' /tmp/baseline.log\ncat >>\
+        \ internal/server/transport/audit_temporary_test.go <<'AUDIT_EXTRA'\nfunc\
+        \ TestAuditControlReplacementKeepsTheNewChannel(t *testing.T) {\n parent,cancel:=context.WithCancel(context.Background());defer\
+        \ cancel()\n s:=NewTCPServer(parent,&TcpConfig{Token:\"t\",ChannelSize:2,KeepAlive:time.Second,Heartbeat:time.Second},quietLog())\n\
+        \ g:=s.newGen(s.run.context())\n a,b:=net.Pipe();defer a.Close();defer b.Close()\n\
+        \ c,d:=net.Pipe();defer c.Close();defer d.Close()\n s.seatClient(g,controlCandidate{conn:a})\n\
+        \ s.seatClient(g,controlCandidate{conn:c})\n d.SetReadDeadline(time.Now().Add(time.Second))\n\
+        \ if _,err:=utils.ReceiveBinaryByte(d);err!=nil{t.Fatal(err)}\n time.Sleep(300*time.Millisecond)\n\
+        \ d.SetWriteDeadline(time.Now().Add(500*time.Millisecond))\n if err:=utils.SendBinaryByte(d,utils.SG_HB);err!=nil{t.Fatal(\"\
+        old control worker closed the replacement:\",err)}\n}\nfunc TestAuditRetiredWorkersCannotChangeNewCounters(t\
+        \ *testing.T) {\n var life lifecycle\n ctx,cancel:=context.WithCancel(context.Background());cancel()\n\
+        \ var sessions int32=7\n if life.countGeneration(ctx,&sessions,-1){t.Fatal(\"\
+        retired worker was accepted\")}\n if atomic.LoadInt32(&sessions)!=7{t.Fatal(\"\
+        old worker changed replacement capacity\")}\n}\nAUDIT_EXTRA\ncat >> internal/client/transport/audit_temporary_test.go\
+        \ <<'AUDIT_EXTRA'\nfunc TestAuditRetiredControlLoopCannotRequestRecovery(t\
+        \ *testing.T) {\n var life lifecycle;life.firstGeneration(context.Background(),silentLogger(),usageSpec{})\n\
+        \ var recoveries atomic.Int32\n loop:=life.control(nil,time.Second,func(){},func(){recoveries.Add(1)})\n\
+        \ life.state.Stop();ctx,cancel:=context.WithCancel(context.Background());defer\
+        \ cancel();life.publish(ctx,cancel)\n loop.restart()\n if recoveries.Load()!=0{t.Fatal(\"\
+        old loop requested a restart of the new generation\")}\n}\nAUDIT_EXTRA\ncat\
+        \ >> internal/client/transport/audit_temporary_test.go <<'AUDIT_LATE'\nfunc\
+        \ TestAuditLateControlPublicationIsClosed(t *testing.T) {\n var state clientState\n\
+        \ ctx,cancel:=context.WithCancel(context.Background());defer cancel()\n state.Reset(ctx,cancel,nil);state.Stop()\n\
+        \ a,b:=net.Pipe();defer a.Close();defer b.Close()\n if state.SetConn(a) ||\
+        \ state.Conn()!=nil {t.Fatal(\"stopped generation accepted a control connection\"\
+        )}\n b.SetReadDeadline(time.Now().Add(500*time.Millisecond))\n if _,err:=b.Read(make([]byte,1));err!=io.EOF\
+        \ {t.Fatalf(\"late control connection was left open: %v\",err)}\n}\nAUDIT_LATE\n\
+        go test ./internal/client/transport ./internal/server/transport -run '^TestAudit'\
+        \ -race -count=5 -v -timeout 5m\n"
+  traffic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 5ada977ccb3712fa41cc359fd4f49b6a97f33ed3
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - name: Sustained concurrent traffic and resource trend
+      env:
+        BACKPACK_SOAK_SECONDS: '120'
+      run: go test ./internal/e2e -run '^TestASustainedRunDoesNotLeak$' -race -count=1
+        -v -timeout 10m
+    - name: Throughput and repeated recovery
+      env:
+        BP_THROUGHPUT: '1'
+      run: go test ./internal/e2e -run '^(TestTransportThroughput|TestTransportConcurrentConnections|TestNetworkPartitionRecovery|TestServerRestartRecovery|TestEveryTransportComesBackAfterTheTunnelRestarts)$'
+        -count=2 -v -timeout 10m
