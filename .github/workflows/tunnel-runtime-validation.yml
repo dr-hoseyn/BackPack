@@ -1,0 +1,97 @@
+name: Tunnel runtime baseline proofs
+'on':
+  push:
+    branches:
+    - codex/validate-tunnel-runtime
+permissions:
+  contents: read
+jobs:
+  baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 19304c58a82423efe992df9bebb900ccab132673
+        fetch-depth: 0
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+    - name: Create temporary runtime regressions
+      run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path("internal/tunnel/l3/runtime_audit_test.go").write_text(''package l3\nimport("bytes";"context";"errors";"io";"net";"sync";"testing";"time";"syscall")\ntype
+        runtimeBatchCarrier struct{*memCarrier;sent int;err error; singles int}\nfunc(c
+        *runtimeBatchCarrier)WriteBatch(_ [][]byte,_ net.Addr)(int,error){return c.sent,c.err}\nfunc(c
+        *runtimeBatchCarrier)WriteTo(p []byte,_ net.Addr)(int,error){c.singles++;return
+        len(p),nil}\nfunc TestRuntimeAuditBatchPrefix(t *testing.T){for _,tc:=range
+        []struct{name string;err error;wantPackets,wantBytes,wantDrop uint64;wantSingles
+        int}{{"short",nil,1,60,1,0},{"error",io.ErrShortWrite,1,60,1,0},{"fallback",errNoBatch,2,1260,0,1}}{t.Run(tc.name,func(t
+        *testing.T){c:=&runtimeBatchCarrier{memCarrier:newMemCarrier(1),sent:1,err:tc.err};tun:=&Tunnel{carrier:c,log:quietLogger()};ready:=[][]byte{make([]byte,60),make([]byte,1200)};if
+        !tun.send(context.Background(),c,ready,[]int{60,1200},&net.UDPAddr{},1260){t.Fatal("send
+        stopped")};s:=tun.Stats();if s.PacketsOut!=tc.wantPackets||s.BytesOut!=tc.wantBytes||s.Dropped!=tc.wantDrop||c.singles!=tc.wantSingles{t.Fatalf("partial
+        batch accounting/replay: %+v, singles=%d",s,c.singles)}})}}\ntype runtimeWriteDevice
+        struct{*fakeDevice;n int;err error;failed chan struct{};once sync.Once}\nfunc(d
+        *runtimeWriteDevice)Write(_ [][]byte)(int,error){if d.failed!=nil{d.once.Do(func(){close(d.failed)})};return
+        d.n,d.err}\nfunc TestRuntimeAuditTUNProgress(t *testing.T){for _,tc:=range
+        []struct{name string;n int;err error;drop uint64}{{"zero",0,nil,3},{"partial-packet-error",1,syscall.EINVAL,2}}{t.Run(tc.name,func(t
+        *testing.T){d:=&runtimeWriteDevice{fakeDevice:newFakeDevice(1400),n:tc.n,err:tc.err};tun:=&Tunnel{tun:d,log:quietLogger()};tun.writeToDevice([][]byte{{1},{2},{3}});if
+        tun.Stats().Dropped!=tc.drop{t.Fatalf("drops=%d want %d",tun.Stats().Dropped,tc.drop)}})}}\nfunc
+        TestRuntimeAuditFatalWriteEndsGeneration(t *testing.T){ctx,cancel:=context.WithCancel(context.Background());defer
+        cancel();d:=&runtimeWriteDevice{fakeDevice:newFakeDevice(1400),err:syscall.EIO,failed:make(chan
+        struct{})};listener,err:=New(Config{Mode:ModeListen,Addr:"127.0.0.1:0",Token:"runtime-audit",Encap:"gre",LocalIP:"10.30.0.2/30",PeerIP:"10.30.0.1",MTU:1400},quietLogger());if
+        err!=nil{t.Fatal(err)};listener.openDevice=func(deviceSpec)(packetDevice,error){return
+        d,nil};done:=make(chan error,1);go func(){done<-listener.Run(ctx)}();ended:=false;t.Cleanup(func(){cancel();if
+        !ended{<-done}});bind:=awaitBind(t,listener);txd:=newFakeDevice(1400);dialer,err:=New(Config{Mode:ModeDial,Addr:bind.String(),Token:"runtime-audit",Encap:"gre",LocalIP:"10.30.0.1/30",PeerIP:"10.30.0.2",MTU:1400},quietLogger());if
+        err!=nil{t.Fatal(err)};dialer.openDevice=func(deviceSpec)(packetDevice,error){return
+        txd,nil};start(t,ctx,cancel,dialer,txd);awaitSession(t,dialer,3*time.Second);txd.inject<-ipv4Packet(1,2,3);select{case<-d.failed:case<-time.After(time.Second):t.Fatal("packet
+        did not reach TUN writer")};select{case err:=<-done:ended=true;if err==nil{t.Fatal("fatal
+        TUN error reported success")};if ctx.Err()!=nil{t.Fatal("needed external cancellation")};sock,e:=net.ListenPacket("udp",bind.String());if
+        e!=nil{t.Fatal("failed generation retained port",e)};sock.Close();case<-time.After(500*time.Millisecond):t.Error("fatal
+        TUN write left generation running")}}\ntype runtimeFECCarrier struct{*memCarrier;frame
+        []byte;seq uint32}\nfunc(c *runtimeFECCarrier)WriteTo(p []byte,_ net.Addr)(int,error){return
+        len(p),nil}\nfunc(c *runtimeFECCarrier)ReadFrom(p []byte)(int,net.Addr,error){putFECHeader(c.frame,fecKindData,c.seq/10,byte(c.seq%10));c.seq++;return
+        copy(p,c.frame),&net.UDPAddr{},nil}\nfunc runtimeFECBelow()*runtimeFECCarrier{p:=&runtimeFECCarrier{memCarrier:newMemCarrier(1),frame:make([]byte,fecHeaderLen+fecLenPrefix+1200)};p.frame[fecHeaderLen]=4;p.frame[fecHeaderLen+1]=176;return
+        p}\nfunc TestRuntimeAuditFECWarmSend(t *testing.T){c,_:=newFECCarrier(runtimeFECBelow(),FECConfig{Data:10,Parity:3});p:=make([]byte,1200);for
+        i:=0;i<30;i++{c.WriteTo(p,nil)};allocs:=testing.AllocsPerRun(1000,func(){_,err:=c.WriteTo(p,nil);if
+        err!=nil{panic(err)}});if allocs>0.1{t.Fatalf("warmed FEC sender allocates
+        %.2f objects per datagram",allocs)}}\nfunc BenchmarkRuntimeAuditFECSend(b
+        *testing.B){c,_:=newFECCarrier(runtimeFECBelow(),FECConfig{Data:10,Parity:3});p:=make([]byte,1200);for
+        i:=0;i<30;i++{c.WriteTo(p,nil)};b.ReportAllocs();b.ResetTimer();for i:=0;i<b.N;i++{c.WriteTo(p,nil)}}\nfunc
+        BenchmarkRuntimeAuditFECRead(b *testing.B){c,_:=newFECCarrier(runtimeFECBelow(),FECConfig{Data:10,Parity:3});p:=make([]byte,maxMTU+256);for
+        i:=0;i<30;i++{c.ReadFrom(p)};b.ReportAllocs();b.ResetTimer();for i:=0;i<b.N;i++{c.ReadFrom(p)}}\nfunc
+        TestRuntimeAuditFECVaryingGroups(t *testing.T){send,recv:=newLossyPair(nil);send.drop=func(n
+        int)bool{return n%6==1||n%6==3};tx,_:=newFECCarrier(send,FECConfig{Data:4,Parity:2});rx,_:=newFECCarrier(recv,FECConfig{Data:4,Parity:2});for
+        group:=0;group<5;group++{want:=map[string]bool{};for j:=0;j<4;j++{p:=bytes.Repeat([]byte{byte(group*4+j)},1+(group+j)%3*599);want[string(p)]=true;if
+        _,err:=tx.WriteTo(p,nil);err!=nil{t.Fatal(err)}};got:=drain(t,rx);if len(got)!=4{t.Fatalf("group
+        %d got %d packets",group,len(got))};for _,p:=range got{if !want[string(p)]{t.Fatalf("group
+        %d corrupted/replayed bytes",group)};delete(want,string(p))};if len(want)!=0{t.Fatal("missing
+        payloads")}}}\nfunc TestRuntimeAuditFECShortWrite(t *testing.T){c:=&runtimeBatchCarrier{memCarrier:newMemCarrier(1)};_
+        = c;below:=&runtimeShortCarrier{memCarrier:newMemCarrier(1)};fec,_:=newFECCarrier(below,FECConfig{Data:10,Parity:3});if
+        _,err:=fec.WriteTo([]byte("payload"),nil);!errors.Is(err,io.ErrShortWrite){t.Fatalf("short
+        datagram was accepted: %v",err)}}\ntype runtimeShortCarrier struct{*memCarrier}\nfunc(c
+        *runtimeShortCarrier)WriteTo(p []byte,_ net.Addr)(int,error){return len(p)-1,nil}\n'')
+
+        Path("internal/tunnel/l3/runtime_tun_audit_test.go").write_text(''//go:build
+        linux\npackage l3\nimport("testing")\ntype runtimeByteDevice struct{*growingDevice}\nfunc(d
+        *runtimeByteDevice)Write(bufs [][]byte,offset int)(int,error){total:=0;for
+        _,p:=range bufs{total+=len(p)};return total,nil}\nfunc TestRuntimeAuditTUNByteCount(t
+        *testing.T){d:=&runtimeByteDevice{growingDevice:&growingDevice{}};td:=&tunDevice{dev:d,wbuf:make([]byte,tunStageSize),wbufs:make([][]byte,0,batchSize)};packets:=make([][]byte,batchSize+5);for
+        i:=range packets{packets[i]=make([]byte,1400)};n,err:=td.Write(packets);if
+        err!=nil||n!=batchSize{t.Fatalf("TUN byte count leaked as packet count: %d,
+        %v",n,err)}}\n'')
+
+        PY'
+    - name: Reproduce baseline failures
+      run: 'if go test ./internal/tunnel/l3 -run TestRuntimeAudit -v -count=1 -timeout
+        3m > /tmp/runtime-baseline.log 2>&1; then cat /tmp/runtime-baseline.log; exit
+        1; fi
+
+        cat /tmp/runtime-baseline.log
+
+        if grep -q "build failed" /tmp/runtime-baseline.log; then exit 1; fi'
+    - name: Baseline FEC allocation measurement
+      run: go test ./internal/tunnel/l3 -run ^$ -bench BenchmarkRuntimeAudit -benchmem
+        -count=3
