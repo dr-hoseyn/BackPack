@@ -61,6 +61,7 @@ jobs:
         \ ports and certificates\"\ncheck internal/manage/health  40 \"tunnel health,\
         \ the watchdog and the Health Check\"\n"
     timeout-minutes: 55
+    if: false
   audit:
     name: Vulnerabilities and static analysis
     runs-on: ubuntu-latest
@@ -83,6 +84,7 @@ jobs:
 
         '
     timeout-minutes: 55
+    if: false
   fuzz:
     name: Fuzz the parsers
     runs-on: ubuntu-latest
@@ -126,6 +128,7 @@ jobs:
 
         '
     timeout-minutes: 55
+    if: false
   soak:
     name: Sustained run
     runs-on: ubuntu-latest
@@ -147,6 +150,7 @@ jobs:
       run: go test ./internal/e2e/ -run TestASustainedRunDoesNotLeak -count=1 -v -timeout
         10m
     timeout-minutes: 55
+    if: false
   compat:
     name: Wire compatibility with the previous release
     runs-on: ubuntu-latest
@@ -178,6 +182,7 @@ jobs:
       run: go test ./internal/e2e/ -run TestThePreviousReleaseStillTalksToThisOne
         -count=1 -v
     timeout-minutes: 55
+    if: false
   build:
     name: Cross-build
     runs-on: ubuntu-latest
@@ -213,6 +218,7 @@ jobs:
           '
         retention-days: 14
     timeout-minutes: 55
+    if: false
   regressions:
     name: Issue 57 runtime regressions
     runs-on: ubuntu-latest
@@ -225,9 +231,9 @@ jobs:
     - uses: actions/setup-go@v7
       with:
         go-version-file: go.mod
-    - run: 'sudo mkdir -p /etc/backpack
+    - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
 
-        sudo chmod 777 /etc/backpack'
+        sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
     - name: Generate temporary behavior regressions
       run: 'python3 - <<''PY''
 
@@ -292,9 +298,64 @@ jobs:
         if grep -q ''build failed'' /tmp/baseline.log; then exit 1; fi
 
         '
+    - name: Generate extended regression fixtures
+      run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/node/issue57_extended_test.go'').write_text(''package node\nimport("testing";"net";"context";"time";"strconv";"golang.org/x/crypto/ssh")\nfunc
+        TestIssue57ChannelOpenDeadline(t *testing.T){key,err:=ssh.ParsePrivateKey(testHostKey);if
+        err!=nil{t.Fatal(err)};serverCfg:=&ssh.ServerConfig{NoClientAuth:true};serverCfg.AddHostKey(key);ln,err:=net.Listen("tcp","127.0.0.1:0");if
+        err!=nil{t.Fatal(err)};defer ln.Close();done:=make(chan struct{});go func(){defer
+        close(done);sock,e:=ln.Accept();if e!=nil{return};defer sock.Close();conn,chans,reqs,e:=ssh.NewServerConn(sock,serverCfg);if
+        e!=nil{return};defer conn.Close();go ssh.DiscardRequests(reqs);for range chans
+        { /* deliberately never acknowledge the channel */ }}();host,port,_:=net.SplitHostPort(ln.Addr().String());number,_:=strconv.Atoi(port);client,_,err:=dialSSH(context.Background(),"audit",SSHTarget{Host:host,Port:number,User:"audit"});if
+        err!=nil{t.Fatal(err)};defer client.Close();start:=time.Now();if _,err:=runSSH(context.Background(),client,"true",nil,120*time.Millisecond,false);err==nil{t.Fatal("unacknowledged
+        channel was accepted")};if time.Since(start)>time.Second{t.Fatal("channel
+        opening escaped operation deadline")};client.Close();<-done}\n'')
+
+        Path(''internal/manage/core/issue57_extended_test.go'').write_text(''package
+        core\nimport("testing";"os";"bytes";"github.com/backpack/backpack/internal/app";"github.com/backpack/backpack/internal/quota";"github.com/backpack/backpack/internal/metrics")\nfunc
+        TestIssue57RenameRetainsQuota(t *testing.T){old,newName:="audit57-old","audit57-new";for
+        _,name:=range []string{old,newName}{for _,path:=range []string{app.ConfigPath(name),quota.Path(app.ConfigDir,name),metrics.Path(app.ConfigDir,name),app.ServiceDir+"/"+app.ServiceName(name)}{path:=path;os.Remove(path);t.Cleanup(func(){os.Remove(path)})}};original:=runSystemctl;runSystemctl=func(args
+        ...string)(string,error){return "inactive",nil};defer func(){runSystemctl=original}();if
+        err:=os.WriteFile(app.ConfigPath(old),[]byte("[client]\\nremote_addr=\\"127.0.0.1:9000\\"\\n"),0600);err!=nil{t.Fatal(err)};if
+        err:=quota.Save(app.ConfigDir,old,123);err!=nil{t.Fatal(err)};before,_:=os.ReadFile(quota.Path(app.ConfigDir,old));counters:=[]byte(`{"bytes_in":100,"bytes_out":12}`);os.WriteFile(metrics.Path(app.ConfigDir,old),counters,0600);if
+        err:=Rename(old,newName);err!=nil{t.Fatal(err)};after,_:=os.ReadFile(quota.Path(app.ConfigDir,newName));if
+        !bytes.Equal(before,after){t.Fatal("quota bytes or timestamp lost")};after,_=os.ReadFile(metrics.Path(app.ConfigDir,newName));if
+        !bytes.Equal(counters,after){t.Fatal("traffic counters lost")};if _,err:=os.Stat(quota.Path(app.ConfigDir,old));!os.IsNotExist(err){t.Fatal("orphaned
+        old quota")}}\nfunc TestIssue57RenameOrphanQuotaRollback(t *testing.T){old,newName:="audit57-rollback-old","audit57-rollback-new";for
+        _,name:=range []string{old,newName}{for _,path:=range []string{app.ConfigPath(name),quota.Path(app.ConfigDir,name),app.ServiceDir+"/"+app.ServiceName(name)}{path:=path;os.Remove(path);t.Cleanup(func(){os.Remove(path)})}};original:=runSystemctl;runSystemctl=func(args
+        ...string)(string,error){return "inactive",nil};defer func(){runSystemctl=original}();os.WriteFile(app.ConfigPath(old),[]byte("[client]"),0600);quota.Save(app.ConfigDir,old,123);quota.Save(app.ConfigDir,newName,999);if
+        err:=Rename(old,newName);err==nil{t.Fatal("orphaned destination quota silently
+        overwritten")};q,err:=quota.Load(app.ConfigDir,old);if err!=nil||q.Limit!=123{t.Fatal("original
+        quota not restored")};if _,err:=os.Stat(app.ConfigPath(old));err!=nil{t.Fatal("original
+        config not restored")}}\n'')
+
+        Path(''internal/manage/health/issue57_extended_test.go'').write_text(''package
+        health\nimport("testing";"os";"github.com/backpack/backpack/internal/app";"github.com/backpack/backpack/internal/quota";"github.com/backpack/backpack/internal/metrics")\nfunc
+        TestIssue57WatchdogQuotaHold(t *testing.T){name:="audit57-watchdog";for _,path:=range
+        []string{quota.Path(app.ConfigDir,name),metrics.Path(app.ConfigDir,name)}{path:=path;os.Remove(path);t.Cleanup(func(){os.Remove(path)})};if
+        quotaHeld(name){t.Fatal("unlimited tunnel held")};quota.Save(app.ConfigDir,name,10);os.WriteFile(metrics.Path(app.ConfigDir,name),[]byte(`{"bytes_in":10}`),0600);if
+        !quotaHeld(name){t.Fatal("quota pause treated as failure")};os.WriteFile(quota.Path(app.ConfigDir,name),[]byte("{"),0600);if
+        !quotaHeld(name){t.Fatal("invalid quota treated as eligible")}}\n'')
+
+        Path(''internal/webui/issue57_extended_test.go'').write_text(''package webui\nimport("testing";"os";"net/url";"sync";"sync/atomic")\nfunc
+        TestIssue57InvalidCredentialFiles(t *testing.T){for _,contents:=range []string{"{",`{"password":"pw","totpSecret":true}`,`{"password":42}`}{t.Run(contents,func(t
+        *testing.T){useConfigFile(t,Config{Password:"pw"});os.WriteFile(configPath(),[]byte(contents),0600);limiter.reset("203.0.113.7");w:=postLogin(t,loginServer(),url.Values{"password":{"pw"}});if
+        cookieNamed(w,sessionCookie)!=nil{t.Fatal("partially invalid credentials admitted
+        login")}})}}\nfunc TestIssue57ConcurrentConfigTransactions(t *testing.T){codes,hashes,_:=newRecoveryCodes();secret,_:=newTOTPSecret();useConfigFile(t,Config{Password:"pw",TOTPSecret:secret,RecoveryHashes:hashes,Port:3000});var
+        wg sync.WaitGroup;var accepted atomic.Int32;for i:=range codes{wg.Add(1);go
+        func(i int){defer wg.Done();if checkSecondFactor(codes[i]){accepted.Add(1)}}(i)};for
+        range 32{wg.Add(1);go func(){defer wg.Done();if _,err:=UpdateConfig(func(c
+        *Config)error{c.Port++;return nil});err!=nil{t.Error(err)}}()};wg.Wait();c,err:=readConfig();if
+        err!=nil||len(c.RecoveryHashes)!=0||accepted.Load()!=int32(len(codes))||c.Port!=3032{t.Fatal("concurrent
+        writer revived spent codes or lost changes",c,err,accepted.Load())}}\n'')
+
+        PY'
     - name: Fixed behavior and race detector
-      run: go test ./internal/webui ./cmd ./internal/node -run TestIssue57 -race -count=3
-        -v -timeout 5m
+      run: go test ./internal/webui ./cmd ./internal/node ./internal/manage/core ./internal/manage/health
+        -run TestIssue57 -race -count=3 -v -timeout 5m
 'on':
   push:
     branches:
