@@ -341,7 +341,7 @@ jobs:
         !quotaHeld(name){t.Fatal("invalid quota treated as eligible")}}\n'')
 
         Path(''internal/webui/issue57_extended_test.go'').write_text(''package webui\nimport("testing";"os";"net/url";"sync";"sync/atomic")\nfunc
-        TestIssue57InvalidCredentialFiles(t *testing.T){for _,contents:=range []string{"{",`{"password":"pw","totpSecret":true}`,`{"password":42}`}{t.Run(contents,func(t
+        TestIssue57InvalidCredentialFiles(t *testing.T){for _,contents:=range []string{"{",`{"password":"pw","totp_secret":true}`,`{"password":42}`}{t.Run(contents,func(t
         *testing.T){useConfigFile(t,Config{Password:"pw"});os.WriteFile(configPath(),[]byte(contents),0600);limiter.reset("203.0.113.7");w:=postLogin(t,loginServer(),url.Values{"password":{"pw"}});if
         cookieNamed(w,sessionCookie)!=nil{t.Fatal("partially invalid credentials admitted
         login")}})}}\nfunc TestIssue57ConcurrentConfigTransactions(t *testing.T){codes,hashes,_:=newRecoveryCodes();secret,_:=newTOTPSecret();useConfigFile(t,Config{Password:"pw",TOTPSecret:secret,RecoveryHashes:hashes,Port:3000});var
