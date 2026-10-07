@@ -1,0 +1,149 @@
+name: Final standalone UDP pacing cancellation
+'on':
+  push:
+    branches:
+    - codex/validate-final-udp-cancellation
+permissions:
+  contents: read
+jobs:
+  baseline:
+    name: Prove standalone pre-fix cancellation failure
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: ec83368e385576779c6b3d909b33973974ab9c47
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - &id001
+      name: Temporary paced close regression
+      run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/tunnel/limits/runtime_close_audit_test.go'').write_text(''package limits\nimport("context";"io";"net";"testing";"time")\nfunc
+        TestRuntimePacedCloseCancelsWait(t *testing.T){\n a,b:=net.Pipe();defer b.Close();conn:=New(Config{BandwidthMbps:1}).Wrap(context.Background(),a);defer
+        conn.Close()\n go io.Copy(io.Discard,b)\n if _,err:=conn.Write(make([]byte,125000));err!=nil{t.Fatal(err)}\n done:=make(chan
+        error,1);go func(){_,err:=conn.Write(make([]byte,125000));done<-err}()\n select{case err:=<-done:t.Fatalf("second
+        write never paced: %v",err);case<-time.After(30*time.Millisecond):}\n conn.Close()\n select{case err:=<-done:if err==nil{t.Fatal("closed
+        pacing allowed a write")};case<-time.After(200*time.Millisecond):t.Fatal("closing paced flow left its token wait alive")}\n}\n'')
+
+        PY
+
+        gofmt -w internal/tunnel/limits/runtime_close_audit_test.go'
+    - run: 'set +e
+
+        go test ./internal/tunnel/limits -run TestRuntimePacedClose -v > /tmp/baseline.log 2>&1
+
+        rc=$?
+
+        cat /tmp/baseline.log
+
+        [ "$rc" -ne 0 ] && ! grep -q "build failed" /tmp/baseline.log'
+  flow:
+    name: PR69 final standalone cancellation checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 25c8eb547c4f8ca994e509480f9262cf2601084d
+        fetch-depth: 0
+    - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
+
+        sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - name: Temporary runtime regressions
+      run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/tunnel/l3/runtime_audit_multipath_close_test.go'').write_text(''package l3\n\nimport (\n "context"\n
+        "errors"\n "net"\n "sync"\n "testing"\n "time"\n)\n\ntype closureAuditPath struct { *memCarrier; once sync.Once }\nfunc
+        (p *closureAuditPath) Close() error { p.once.Do(func(){close(p.in)}); return nil }\nfunc newClosureAuditPath() *closureAuditPath
+        { return &closureAuditPath{memCarrier:newMemCarrier("closure-audit")} }\n\nfunc TestRuntimeAuditMultipathAllDead(t
+        *testing.T) {\n a,b:=newClosureAuditPath(),newClosureAuditPath()\n c:=newMultipathCarrier([]DatagramCarrier{a,b},nil).(*multipathCarrier)\n
+        defer c.Close()\n a.in<-[]byte("queued-a"); b.in<-[]byte("queued-b")\n deadline:=time.Now().Add(time.Second)\n for
+        len(c.in)<2 { if time.Now().After(deadline){t.Fatal("pumps did not queue packets")}; time.Sleep(time.Millisecond)
+        }\n a.Close(); b.Close()\n // Pumps see permanent closure before the reader starts. The queued packets\n // still
+        have to arrive, followed by a terminal error without any deadline.\n time.Sleep(20*time.Millisecond)\n buf:=make([]byte,64)\n
+        seen:=map[string]bool{}\n for range 2 { n,_,err:=c.ReadFrom(buf); if err!=nil{t.Fatal(err)};seen[string(buf[:n])]=true
+        }\n if !seen["queued-a"]||!seen["queued-b"] {t.Fatalf("lost queued packets: %v",seen)}\n result:=make(chan error,1)\n
+        go func(){ _,_,err:=c.ReadFrom(buf);result<-err }()\n select { case err:=<-result:if !errors.Is(err,net.ErrClosed){t.Fatalf("got
+        %v",err)}\n case <-time.After(300*time.Millisecond):t.Fatal("ReadFrom stayed blocked after every path permanently
+        closed") }\n}\n\nfunc TestRuntimeAuditMultipathOneDeadStillCarries(t *testing.T) {\n a,b:=newClosureAuditPath(),newClosureAuditPath()\n
+        c:=newMultipathCarrier([]DatagramCarrier{a,b},nil)\n defer c.Close()\n a.Close();b.in<-[]byte("surviving-path")\n
+        c.SetReadDeadline(time.Now().Add(time.Second))\n buf:=make([]byte,64);n,_,err:=c.ReadFrom(buf)\n if err!=nil||string(buf[:n])!="surviving-path"{t.Fatalf("surviving
+        path failed: n=%d err=%v",n,err)}\n}\n\nfunc TestRuntimeAuditMultipathListenerGeneration(t *testing.T) {\n tun,err:=New(Config{Mode:ModeListen,Addr:"127.0.0.1:0",Token:"multipath-generation-audit",LocalIP:"10.10.0.1/30",PeerIP:"10.10.0.2",MTU:1400,AutoMTU:true},quietLogger())\n
+        if err!=nil{t.Fatal(err)}\n a,b:=newClosureAuditPath(),newClosureAuditPath()\n c:=newMultipathCarrier([]DatagramCarrier{a,b},nil)\n
+        tun.wrapCarrier=func(raw DatagramCarrier) DatagramCarrier { raw.Close(); return c }\n dev:=newFakeDevice(1400)\n tun.openDevice=func(deviceSpec)(packetDevice,error){return
+        dev,nil}\n ctx,cancel:=context.WithCancel(context.Background())\n done:=make(chan error,1)\n go func(){done<-tun.Run(ctx)}()\n
+        t.Cleanup(func(){cancel();c.Close();dev.Close(); select{case <-done:case <-time.After(time.Second):}})\n awaitBind(t,tun)\n
+        a.Close();b.Close()\n select {case err:=<-done:if err==nil||ctx.Err()!=nil{t.Fatalf("generation result=%v parent=%v",err,ctx.Err())}\n
+        case <-time.After(500*time.Millisecond):t.Fatal("listening Run never returned after all paths permanently closed;
+        restart cannot run") }\n}\n'',encoding="utf-8")
+
+        Path(''internal/tunnel/direct/runtime_audit_udp_cap_test.go'').write_text(''package direct\nimport("bytes";"context";"fmt";"net";"testing";"time")\nfunc
+        runtimeLimitedUDPTunnel(t *testing.T, backend string) *tunnel {\n\tt.Helper()\n\tconst token = "a-udp-token"\n\n\torigin,
+        err := NewOrigin(Config{\n\t\tRole: RoleOrigin, Addr: "127.0.0.1:0", Token: token,\n\t}, testLogger(t))\n\tif err
+        != nil {\n\t\tt.Fatalf("NewOrigin: %v", err)\n\t}\n\tctx, cancel := context.WithCancel(context.Background())\n\tt.Cleanup(cancel)\n\n\toriginDone
+        := make(chan struct{})\n\tgo func() { defer close(originDone); _ = origin.Run(ctx) }()\n\tt.Cleanup(func() { cancel();
+        <-originDone })\n\n\tvar bound net.Addr\n\tfor deadline := time.Now().Add(3 * time.Second); time.Now().Before(deadline);
+        {\n\t\tif bound = origin.LocalAddr(); bound != nil {\n\t\t\tbreak\n\t\t}\n\t\ttime.Sleep(5 * time.Millisecond)\n\t}\n\tif
+        bound == nil {\n\t\tt.Fatal("the origin never bound a port")\n\t}\n\n\tport := freePort(t)\n\tedge, err := NewEdge(Config{\n\t\tRole:
+        RoleEdge, Addr: bound.String(), Token: token,\n\t\tPorts:      []string{fmt.Sprintf("127.0.0.1:%d=%s", port, backend)},\n\t\tAcceptUDP:  true,\n        BandwidthMbps:
+        1,\n\t\tRetryDelay: 200 * time.Millisecond,\n\t}, testLogger(t))\n\tif err != nil {\n\t\tt.Fatalf("NewEdge: %v", err)\n\t}\n\tedgeDone
+        := make(chan struct{})\n\tgo func() { defer close(edgeDone); _ = edge.Run(ctx) }()\n\tt.Cleanup(func() { cancel();
+        <-edgeDone })\n\n\ttn := &tunnel{edge: edge, origin: origin, port: port}\n\ttn.awaitSession(t, 5*time.Second)\n\treturn
+        tn\n}\n\n\nfunc TestRuntimeDirectUDPBandwidth(t *testing.T){\n tn:=runtimeLimitedUDPTunnel(t,echoUDPBackend(t,""));
+        conn:=tn.dialUDP(t)\n if _,ok:=udpExchange(t,conn,"warmup",40);!ok{t.Fatal("UDP did not establish")}\n payload:=bytes.Repeat([]byte{0x51},32768);buf:=make([]byte,65535)\n
+        start:=time.Now()\n for i:=0;i<6;i++{if _,err:=conn.Write(payload);err!=nil{t.Fatal(err)};conn.SetReadDeadline(time.Now().Add(8*time.Second));n,err:=conn.Read(buf);if
+        err!=nil{t.Fatal(err)};if !bytes.Equal(buf[:n],payload){t.Fatal("datagram corrupted")}}\n elapsed:=time.Since(start);t.Logf("393216
+        payload bytes round-trip at 1Mbit/s: %v",elapsed)\n if elapsed<1500*time.Millisecond{t.Fatalf("UDP bypassed shared
+        bandwidth cap: %v",elapsed)}\n}\n'',encoding="utf-8")
+
+        Path(''internal/tunnel/l3/runtime_audit_udp_cap_test.go'').write_text(''package l3\n\nimport (\n\t"bytes"\n\t"context"\n\t"fmt"\n\t"github.com/backpack/backpack/internal/tunnel/limits"\n\t"net"\n\t"sync"\n\t"testing"\n\t"time"\n)\n\nfunc
+        TestRuntimeAuditL3UDPCap(t *testing.T) {\n\tbackend := echoUDP(t, "")\n\tport := freePort(t)\n\tlisten := fmt.Sprintf("127.0.0.1:%d",
+        port)\n\tf, err := NewForwarder(Config{Ports: []string{listen + "=" + backend}, AcceptUDP: true, PeerIP: "127.0.0.1",
+        BandwidthMbps: 1}, quietLogger())\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tctx, cancel := context.WithCancel(context.Background())\n\tdone
+        := make(chan error, 1)\n\tgo func() { done <- f.Run(ctx) }()\n\tt.Cleanup(func() {\n\t\tcancel()\n\t\tselect {\n\t\tcase
+        err := <-done:\n\t\t\tif err != nil {\n\t\t\t\tt.Error(err)\n\t\t\t}\n\t\tcase <-time.After(time.Second):\n\t\t\tt.Error("forwarder
+        shutdown stalled")\n\t\t}\n\t})\n\tselect {\n\tcase <-f.Ready():\n\tcase <-time.After(time.Second):\n\t\tt.Fatal("not
+        bound")\n\t}\n\tclient, err := net.Dial("udp", listen)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tdefer client.Close()\n\tclient.SetDeadline(time.Now().Add(10
+        * time.Second))\n\tpayload := bytes.Repeat([]byte{42}, 4096)\n\tbuf := make([]byte, 8192)\n\tbegan := time.Now()\n\tfor
+        i := range 50 {\n\t\tif _, err := client.Write(payload); err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t\tn, err := client.Read(buf)\n\t\tif
+        err != nil {\n\t\t\tt.Fatalf("echo%d: %v", i, err)\n\t\t}\n\t\tif !bytes.Equal(buf[:n], payload) {\n\t\t\tt.Fatal("datagram
+        corrupted")\n\t\t}\n\t}\n\telapsed := time.Since(began)\n\tt.Logf("409600 aggregate UDP bytes at1Mbit/s: %s", elapsed)\n\tif
+        elapsed < time.Second {\n\t\tt.Fatalf("UDP bypassed shared bandwidth cap: %s", elapsed)\n\t}\n}\n\nfunc TestRuntimeAuditL3UDPFlowCloseCancelsPacing(t
+        *testing.T) {\n\tbackend, err := net.ListenPacket("udp", "127.0.0.1:0")\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tdefer
+        backend.Close()\n\tgo func() {\n\t\tbuf := make([]byte, 65535)\n\t\tfor {\n\t\t\tif _, _, err := backend.ReadFrom(buf);
+        err != nil {\n\t\t\t\treturn\n\t\t\t}\n\t\t}\n\t}()\n\tlocal, err := net.ListenPacket("udp", "127.0.0.1:0")\n\tif
+        err != nil {\n\t\tt.Fatal(err)\n\t}\n\tdefer local.Close()\n\tf := &Forwarder{limiter: limits.New(limits.Config{BandwidthMbps:
+        1}), log: quietLogger()}\n\tctx, cancel := context.WithCancel(context.Background())\n\tdefer cancel()\n\tvar flows
+        sync.Map\n\tflow, err := f.udpFlowFor(ctx, &flows, local, local.LocalAddr(), newBackendPool([]string{backend.LocalAddr().String()}))\n\tif
+        err != nil {\n\t\tt.Fatal(err)\n\t}\n\tdefer flow.backend.Close()\n\tp := make([]byte, 60000)\n\tfor range 2 {\n\t\tif
+        _, err := flow.backend.Write(p); err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t}\n\tresult := make(chan error, 1)\n\tgo
+        func() { _, err := flow.backend.Write(p); result <- err }()\n\tselect {\n\tcase err := <-result:\n\t\tt.Fatalf("third
+        datagram was not paced: %v", err)\n\tcase <-time.After(20 * time.Millisecond):\n\t}\n\tflow.backend.Close()\n\tselect
+        {\n\tcase err := <-result:\n\t\tif err == nil {\n\t\t\tt.Fatal("closed flow write unexpectedly succeeded")\n\t\t}\n\tcase
+        <-time.After(200 * time.Millisecond):\n\t\tt.Fatal("closed flow kept waiting for bandwidth")\n\t}\n\tif ctx.Err()
+        != nil {\n\t\tt.Fatal("closing one UDP flow canceled the forwarder")\n\t}\n}\n'',encoding="utf-8")
+
+        PY
+
+        gofmt -w internal/tunnel/l3/runtime_audit_multipath_close_test.go internal/tunnel/direct/runtime_audit_udp_cap_test.go
+        internal/tunnel/l3/runtime_audit_udp_cap_test.go'
+    - *id001
+    - name: Runtime regressions under race detector
+      run: go test ./internal/tunnel/l3 ./internal/tunnel/direct ./internal/tunnel/limits ./internal/utils/handlers -run "TestRuntime"
+        -race -count=3 -v -timeout 6m
+    - name: Existing package checks
+      run: 'go vet ./internal/tunnel/l3 ./internal/tunnel/direct ./internal/tunnel/limits ./internal/utils/handlers
+
+        go test ./internal/tunnel/l3 ./internal/tunnel/direct ./internal/tunnel/limits ./internal/utils/handlers -race -timeout
+        15m'
