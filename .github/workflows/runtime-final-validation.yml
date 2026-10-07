@@ -1,0 +1,1181 @@
+name: Final exact tunnel sources and combined Linux CI
+permissions:
+  contents: read
+jobs:
+  test:
+    name: Build and test
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 4b85e0d34c9ff4c13517734e4e270dfe62accd76
+        fetch-depth: 0
+    - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
+
+        sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - uses: actions/setup-node@v7
+      with:
+        node-version: '22'
+    - name: Verify formatting
+      run: "unformatted=\"$(gofmt -l . || true)\"\nif [ -n \"$unformatted\" ]; then\n  echo \"These files are not gofmt'd:\"\
+        \n  echo \"$unformatted\"\n  exit 1\nfi\n"
+    - name: Vet
+      run: go vet ./...
+    - name: Test
+      run: go test ./... -timeout 20m
+    - name: Test with the race detector
+      run: go test ./... -race -timeout 20m
+    - name: Coverage
+      run: "go test ./... -coverpkg=./... -coverprofile=coverage.out -timeout 20m\ntotal=\"$(go tool cover -func=coverage.out\
+        \ | tail -1 | grep -oE '[0-9.]+')\"\necho \"total coverage: ${total}%\"\nfloor=50\nawk -v t=\"$total\" -v f=\"$floor\"\
+        \ 'BEGIN {\n  if (t+0 < f+0) {\n    printf \"coverage %.1f%% is below the floor of %d%%\\n\", t, f\n    exit 1\n \
+        \ }\n}'\n"
+    - name: Per-package coverage floors
+      run: "set -eu\ncheck() {\n  pkg=\"$1\"; floor=\"$2\"; why=\"$3\"\n  got=\"$(go tool cover -func=coverage.out \\\n  \
+        \        | grep \"^github.com/backpack/backpack/$pkg/\" \\\n          | awk '{gsub(/%/,\"\",$3); s+=$3; n++} END {if\
+        \ (n) printf \"%.1f\", s/n; else print \"0\"}')\"\n  echo \"  $pkg: ${got}% (floor ${floor}%) \xE2\u20AC\u201D $why\"\
+        \n  awk -v g=\"$got\" -v f=\"$floor\" -v p=\"$pkg\" 'BEGIN {\n    if (g+0 < f+0) { printf \"%s fell below its floor\\\
+        n\", p; exit 1 }\n  }'\n}\ncheck internal/tunnel/l3      60 \"the layer-3 data path\"\ncheck internal/tunnel/chain\
+        \   80 \"transport fallback: a wrong decision here takes a tunnel down\"\ncheck internal/control        50 \"the fleet\
+        \ and the job runner\"\ncheck internal/cli            60 \"the scriptable surface; scripts depend on its exit codes\"\
+        \ncheck internal/node           40 \"the fleet RPC and the staged rollout\"\ncheck internal/metrics        60 \"what\
+        \ every other component reads to decide anything\"\ncheck internal/menu           25 \"the screens an operator actually\
+        \ meets this product through\"\ncheck internal/server/transport 85 \"the Iran side of every reverse transport: lifecycle,\
+        \ forwarder, control loop\"\ncheck internal/client/transport 83 \"the kharej side of every reverse transport\"\ncheck\
+        \ internal/controlwire    95 \"the control channel's wire, shared by both ends\"\ncheck internal/utils/acceptloop\
+        \ 90 \"accept backoff and the pre-authentication gate (ADR 0004)\"\ncheck internal/manage/tunnelspec 70 \"a tunnel's\
+        \ configuration: render, load, apply with revert\"\ncheck internal/manage/host    60 \"this machine's addresses, ports\
+        \ and certificates\"\ncheck internal/manage/health  40 \"tunnel health, the watchdog and the Health Check\"\n"
+  audit:
+    name: Vulnerabilities and static analysis
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 4b85e0d34c9ff4c13517734e4e270dfe62accd76
+        fetch-depth: 0
+    - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
+
+        sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - name: Known vulnerabilities
+      run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+    - name: Static analysis
+      run: 'go run honnef.co/go/tools/cmd/staticcheck@latest ./...
+
+        '
+  fuzz:
+    name: Fuzz the parsers
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 4b85e0d34c9ff4c13517734e4e270dfe62accd76
+        fetch-depth: 0
+    - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
+
+        sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - name: Fuzz
+      run: 'set -eux
+
+        go test ./internal/tunnel/l3/        -run=X -fuzz=FuzzParseHeader        -fuzztime=30s
+
+        go test ./internal/tunnel/l3/        -run=X -fuzz=FuzzParseReplyPayload  -fuzztime=30s
+
+        go test ./internal/utils/network/    -run=X -fuzz=FuzzParsePckFrame      -fuzztime=30s
+
+        go test ./internal/utils/network/    -run=X -fuzz=FuzzDecodeXdiPayload   -fuzztime=30s
+
+        go test ./internal/utils/network/    -run=X -fuzz=FuzzParseTCPFlags      -fuzztime=20s
+
+        go test ./internal/utils/network/    -run=X -fuzz=FuzzParseSpoofProfile  -fuzztime=20s
+
+        go test ./internal/manage/           -run=X -fuzz=FuzzDecodeShareLink    -fuzztime=30s
+
+        go test ./internal/manage/           -run=X -fuzz=FuzzShareLinkRoundTrip -fuzztime=30s
+
+        '
+    - name: Report a crasher
+      if: failure()
+      run: 'echo "A fuzz target failed. The input that did it:"
+
+        find . -path ''*/testdata/fuzz/*'' -type f -print -exec cat {} \;
+
+        '
+  soak:
+    name: Sustained run
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 4b85e0d34c9ff4c13517734e4e270dfe62accd76
+        fetch-depth: 0
+    - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
+
+        sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - name: Two minutes of steady traffic, watching for a leak
+      env:
+        BACKPACK_SOAK_SECONDS: '120'
+      run: go test ./internal/e2e/ -run TestASustainedRunDoesNotLeak -count=1 -v -timeout 10m
+  compat:
+    name: Wire compatibility with the previous release
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        fetch-depth: 0
+        ref: 4b85e0d34c9ff4c13517734e4e270dfe62accd76
+    - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
+
+        sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - name: Build the previous release
+      id: prev
+      run: "tag=\"$(git describe --tags --abbrev=0 2>/dev/null || true)\"\nif [ -z \"$tag\" ]; then\n  echo \"no previous\
+        \ tag to compare against; skipping\"\n  echo \"binary=\" >> \"$GITHUB_OUTPUT\"\n  exit 0\nfi\necho \"previous release:\
+        \ $tag\"\ngit worktree add --detach /tmp/prev \"$tag\"\n(cd /tmp/prev && go build -o /tmp/backpack-prev .)\necho \"\
+        binary=/tmp/backpack-prev\" >> \"$GITHUB_OUTPUT\"\n"
+    - name: Old and new ends of one tunnel, both directions
+      if: steps.prev.outputs.binary != ''
+      env:
+        BACKPACK_PREV_BINARY: ${{ steps.prev.outputs.binary }}
+      run: go test ./internal/e2e/ -run TestThePreviousReleaseStillTalksToThisOne -count=1 -v
+  build:
+    name: Cross-build
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 4b85e0d34c9ff4c13517734e4e270dfe62accd76
+        fetch-depth: 0
+    - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
+
+        sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - name: Check the version is in step
+      run: "embedded=\"$(grep -oE 'Version = \"v[0-9.]+\"' internal/app/app.go | grep -oE 'v[0-9.]+')\"\ndeclared=\"$(tr -d\
+        \ ' \\n' < VERSION)\"\necho \"embedded=$embedded declared=$declared\"\nif [ \"$embedded\" != \"$declared\" ]; then\n\
+        \  echo \"VERSION ($declared) does not match internal/app/app.go ($embedded).\"\n  echo \"Run: make version\"\n  exit\
+        \ 1\nfi\n"
+    - name: Build both architectures
+      run: make release
+    - uses: actions/upload-artifact@v7
+      with:
+        name: release-assets
+        path: 'release/backpack_linux_amd64.tar.gz
+
+          release/backpack_linux_arm64.tar.gz
+
+          release/SHA256SUMS
+
+          '
+        retention-days: 14
+  baseline:
+    name: Reproduce all new failures on the previous integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: b1c951573abdf037568ec91075859f6599e6398c
+        fetch-depth: 0
+    - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
+
+        sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - name: Temporary runtime regressions
+      run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/tunnel/bridge/runtime_audit_test.go'').write_text(''package bridge\n\nimport (\n "bytes"\n "context"\n
+        "io"\n "net"\n "testing"\n "time"\n\n "github.com/backpack/backpack/internal/metrics"\n "github.com/backpack/backpack/internal/tunnel/limits"\n)\n\nfunc
+        TestRuntimeAuditBridgeEOFResponse(t *testing.T) {\n variants := []struct{name string; wrap func(net.Conn) net.Conn}{\n  {"plain",func(c
+        net.Conn) net.Conn{return c}},\n  {"counted",metrics.CountedConn},\n  {"limited",func(c net.Conn) net.Conn{return
+        limits.New(limits.Config{BandwidthMbps:1}).Wrap(context.Background(),c)}},\n  {"counted-limited",func(c net.Conn)
+        net.Conn{return metrics.CountedConn(limits.New(limits.Config{BandwidthMbps:1}).Wrap(context.Background(),c))}},\n  {"limited-counted",func(c
+        net.Conn) net.Conn{return limits.New(limits.Config{BandwidthMbps:1}).Wrap(context.Background(),metrics.CountedConn(c))}},\n
+        }\n for _,variant:=range variants {t.Run(variant.name,func(t *testing.T){\n  user,left:=tcpPair(t); right,backend:=tcpPair(t)\n  ctx,cancel:=context.WithCancel(context.Background());defer
+        cancel()\n  done:=make(chan struct{});go func(){Join(ctx,variant.wrap(left),right);close(done)}()\n  user.SetDeadline(time.Now().Add(3*time.Second));backend.SetDeadline(time.Now().Add(3*time.Second))\n  user.Write([]byte("request"));user.(*net.TCPConn).CloseWrite()\n  request,err:=io.ReadAll(backend);if
+        err!=nil||string(request)!="request"{t.Fatalf("upload %q %v",request,err)}\n  time.Sleep(30*time.Millisecond)\n  response:=bytes.Repeat([]byte("reply"),4096)\n  if
+        _,err=backend.Write(response);err!=nil{t.Fatalf("response write: %v",err)}\n  backend.(*net.TCPConn).CloseWrite()\n  got,err:=io.ReadAll(user);if
+        err!=nil||!bytes.Equal(got,response){t.Fatalf("response length=%d want=%d error=%v",len(got),len(response),err)}\n  select{case<-done:case<-time.After(time.Second):t.Fatal("bridge
+        did not drain")}\n })}\n}\n\nfunc TestRuntimeAuditBridgeHalfCloseCancel(t *testing.T){\n user,left:=tcpPair(t);right,backend:=tcpPair(t)\n
+        ctx,cancel:=context.WithCancel(context.Background());defer cancel()\n done:=make(chan struct{});go func(){Join(ctx,left,right);close(done)}()\n
+        user.(*net.TCPConn).CloseWrite();backend.SetReadDeadline(time.Now().Add(time.Second))\n if _,err:=io.ReadAll(backend);err!=nil{t.Fatal(err)}\n
+        select{case<-done:t.Fatal("closed reverse direction before cancellation");case<-time.After(30*time.Millisecond):}\n
+        cancel();select{case<-done:case<-time.After(time.Second):t.Fatal("half-closed bridge outlived cancellation")}\n}\n\nfunc
+        TestRuntimeAuditBridgeMixedEOF(t *testing.T){\n user,left:=net.Pipe();right,backend:=tcpPair(t);defer user.Close()\n
+        ctx,cancel:=context.WithCancel(context.Background());defer cancel()\n done:=make(chan struct{});go func(){Join(ctx,left,right);close(done)}()\n
+        user.Close()\n select{case<-done:case<-time.After(time.Second):t.Fatal("non-TCP EOF did not tear down")}\n backend.SetReadDeadline(time.Now().Add(time.Second));if
+        _,err:=io.ReadAll(backend);err!=nil{t.Fatal(err)}\n}\n\nfunc TestRuntimeAuditBridgeRateRemainsActive(t *testing.T){\n
+        user,left:=tcpPair(t);right,backend:=tcpPair(t)\n ctx,cancel:=context.WithCancel(context.Background());defer cancel()\n
+        done:=make(chan struct{});go func(){Join(ctx,limits.New(limits.Config{BandwidthMbps:1}).Wrap(ctx,metrics.CountedConn(left)),right);close(done)}()\n
+        user.SetDeadline(time.Now().Add(5*time.Second));backend.SetDeadline(time.Now().Add(5*time.Second))\n user.(*net.TCPConn).CloseWrite();if
+        _,err:=io.ReadAll(backend);err!=nil{t.Fatal(err)}\n response:=bytes.Repeat([]byte{7},250000)\n go func(){backend.Write(response);backend.(*net.TCPConn).CloseWrite()}()\n
+        start:=time.Now();got,err:=io.ReadAll(user)\n if err!=nil||!bytes.Equal(got,response){t.Fatalf("paced response length=%d
+        error=%v",len(got),err)}\n if elapsed:=time.Since(start);elapsed<700*time.Millisecond{t.Fatalf("pacing bypassed: %v",elapsed)}\n
+        select{case<-done:case<-time.After(time.Second):t.Fatal("paced bridge did not drain")}\n}\n'',encoding="utf-8")
+
+        Path(''internal/utils/network/runtime_audit_quic_test.go'').write_text(''package network\n\nimport (\n\t"bytes"\n\t"context"\n\t"errors"\n\t"github.com/quic-go/quic-go"\n\t"io"\n\t"net"\n\t"sync"\n\t"testing"\n\t"time"\n)\n\nfunc
+        runtimeAuditQUICPair(t *testing.T) (*QUICStreamConn, *quic.Stream, *quic.Conn) {\n\tt.Helper()\n\tctx, cancel := context.WithTimeout(context.Background(),
+        20*time.Second)\n\tt.Cleanup(cancel)\n\tlistener, err := QUICListen("127.0.0.1:0", QUICSettings{KeepAlivePeriod: time.Second,
+        MaxIdleTimeout: 15 * time.Second})\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tt.Cleanup(func() { listener.Close()
+        })\n\taccepted := make(chan *quic.Conn, 1)\n\tgo func() {\n\t\tc, err := listener.Accept(ctx)\n\t\tif err == nil {\n\t\t\taccepted
+        <- c\n\t\t}\n\t}()\n\tcfg := (QUICSettings{KeepAlivePeriod: time.Second, MaxIdleTimeout: 15 * time.Second}).quicConfig()\n\tcfg.InitialStreamReceiveWindow
+        = 32 * 1024\n\tcfg.MaxStreamReceiveWindow = 32 * 1024\n\tpeer, err := quic.DialAddr(ctx, listener.Addr().String(),
+        quicClientTLS(), cfg)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tt.Cleanup(func() { peer.CloseWithError(0, "test
+        end") })\n\tvar server *quic.Conn\n\tselect {\n\tcase server = <-accepted:\n\tcase <-ctx.Done():\n\t\tt.Fatal(ctx.Err())\n\t}\n\tt.Cleanup(func()
+        { server.CloseWithError(0, "test end") })\n\tsender, err := peer.OpenStreamSync(ctx)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tif
+        _, err := sender.Write([]byte{1}); err != nil {\n\t\tt.Fatal(err)\n\t}\n\treceiver, err := server.AcceptStream(ctx)\n\tif
+        err != nil {\n\t\tt.Fatal(err)\n\t}\n\tif _, err := io.ReadFull(receiver, make([]byte, 1)); err != nil {\n\t\tt.Fatal(err)\n\t}\n\treturn
+        NewQUICStreamConn(receiver, server).(*QUICStreamConn), sender, peer\n}\n\nfunc TestRuntimeAuditQUICCloseUnblocksRead(t
+        *testing.T) {\n\tconn, _, peer := runtimeAuditQUICPair(t)\n\tdone := make(chan error, 1)\n\tgo func() { _, err :=
+        conn.Read(make([]byte, 1)); done <- err }()\n\tif err := conn.Close(); err != nil {\n\t\tt.Fatal(err)\n\t}\n\tselect
+        {\n\tcase err := <-done:\n\t\tif err == nil {\n\t\t\tt.Fatal("closed read succeeded")\n\t\t}\n\tcase <-time.After(time.Second):\n\t\tt.Fatal("net.Conn.Close
+        left QUIC Read blocked")\n\t}\n\tif peer.Context().Err() != nil {\n\t\tt.Fatal("closing stream closed carrier")\n\t}\n\tif
+        err := conn.Close(); err != nil {\n\t\tt.Fatal("second Close:", err)\n\t}\n}\n\nfunc TestRuntimeAuditQUICCloseUnblocksWrite(t
+        *testing.T) {\n\tconn, _, peer := runtimeAuditQUICPair(t)\n\tdone := make(chan error, 1)\n\tgo func() { _, err :=
+        conn.Write(make([]byte, 16*1024*1024)); done <- err }()\n\tselect {\n\tcase err := <-done:\n\t\tt.Fatalf("write did
+        not reach flow-control block: %v", err)\n\tcase <-time.After(100 * time.Millisecond):\n\t}\n\tclosed := make(chan
+        error, 1)\n\tgo func() { closed <- conn.Close() }()\n\tselect {\n\tcase err := <-closed:\n\t\tif err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\tcase
+        <-time.After(time.Second):\n\t\tt.Fatal("Close blocked behind Write")\n\t}\n\tselect {\n\tcase err := <-done:\n\t\tif
+        err == nil {\n\t\t\tt.Fatal("blocked Write survived Close")\n\t\t}\n\tcase <-time.After(time.Second):\n\t\tt.Fatal("net.Conn.Close
+        left QUIC Write blocked")\n\t}\n\tif peer.Context().Err() != nil {\n\t\tt.Fatal("closing stream closed carrier")\n\t}\n}\n\nfunc
+        TestRuntimeAuditQUICClosePreservesCompletedReply(t *testing.T) {\n\tconn, peer, _ := runtimeAuditQUICPair(t)\n\tpayload
+        := bytes.Repeat([]byte("reply"), 1600)\n\tif n, err := conn.Write(payload); err != nil || n != len(payload) {\n\t\tt.Fatalf("write
+        n=%d err=%v", n, err)\n\t}\n\tif err := conn.Close(); err != nil {\n\t\tt.Fatal(err)\n\t}\n\tpeer.SetReadDeadline(time.Now().Add(3
+        * time.Second))\n\tgot, err := io.ReadAll(peer)\n\tif err != nil || !bytes.Equal(got, payload) {\n\t\tt.Fatalf("completed
+        reply lost: got=%d err=%v", len(got), err)\n\t}\n}\n\nfunc TestRuntimeAuditQUICCloseConcurrentWriteAndClose(t *testing.T)
+        {\n\tconn, _, _ := runtimeAuditQUICPair(t)\n\tvar workers sync.WaitGroup\n\tstart := make(chan struct{})\n\tfor range
+        8 {\n\t\tworkers.Add(1)\n\t\tgo func() {\n\t\t\tdefer workers.Done()\n\t\t\t<-start\n\t\t\t_, err := conn.Write([]byte("reply"))\n\t\t\tif
+        err != nil && !errors.Is(err, net.ErrClosed) { /* active stream reset is also expected */\n\t\t\t}\n\t\t}()\n\t\tworkers.Add(1)\n\t\tgo
+        func() { defer workers.Done(); <-start; conn.Close() }()\n\t}\n\tclose(start)\n\tdone := make(chan struct{})\n\tgo
+        func() { workers.Wait(); close(done) }()\n\tselect {\n\tcase <-done:\n\tcase <-time.After(3 * time.Second):\n\t\tt.Fatal("concurrent
+        Write/Close hung")\n\t}\n\tif _, err := conn.Write([]byte{1}); !errors.Is(err, net.ErrClosed) {\n\t\tt.Fatalf("Write
+        after Close err=%v", err)\n\t}\n}\n'',encoding="utf-8")
+
+        Path(''internal/utils/handlers/runtime_audit_quic_test.go'').write_text(''package handlers\n\nimport (\n\t"context"\n\t"github.com/backpack/backpack/internal/utils/network"\n\t"github.com/quic-go/quic-go"\n\t"github.com/sirupsen/logrus"\n\t"io"\n\t"net"\n\t"sync/atomic"\n\t"testing"\n\t"time"\n)\n\nfunc
+        TestRuntimeAuditQUICBackendEOFRetiresRelay(t *testing.T) {\n\tctx, cancel := context.WithTimeout(context.Background(),
+        15*time.Second)\n\tdefer cancel()\n\tsettings := network.QUICSettings{KeepAlivePeriod: time.Second, MaxIdleTimeout:
+        15 * time.Second}\n\tlistener, err := network.QUICListen("127.0.0.1:0", settings)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tdefer
+        listener.Close()\n\taccepted := make(chan *quic.Conn, 1)\n\tgo func() {\n\t\tc, err := listener.Accept(ctx)\n\t\tif
+        err == nil {\n\t\t\taccepted <- c\n\t\t}\n\t}()\n\tclient, err := network.QUICDial(ctx, listener.Addr().String(),
+        settings)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tdefer client.CloseWithError(0, "test end")\n\tvar server *quic.Conn\n\tselect
+        {\n\tcase server = <-accepted:\n\tcase <-ctx.Done():\n\t\tt.Fatal(ctx.Err())\n\t}\n\tdefer server.CloseWithError(0,
+        "test end")\n\tsender, err := client.OpenStreamSync(ctx)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tsender.Write([]byte{1})\n\treceiver,
+        err := server.AcceptStream(ctx)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tif _, err := io.ReadFull(receiver, make([]byte,
+        1)); err != nil {\n\t\tt.Fatal(err)\n\t}\n\tbackend, service := net.Pipe()\n\tdefer backend.Close()\n\tdefer service.Close()\n\tlogger
+        := logrus.New()\n\tlogger.SetOutput(io.Discard)\n\tdone := make(chan struct{})\n\tvar admissionSlots atomic.Int32\n\tadmissionSlots.Store(1)\n\tgo
+        func() {\n\t\tTCPConnectionHandler(ctx, false, network.NewQUICStreamConn(receiver, server), backend, logger, nil,
+        0, false)\n\t\tadmissionSlots.Add(-1)\n\t\tclose(done)\n\t}()\n\tservice.Close()\n\tselect {\n\tcase <-done:\n\tcase
+        <-time.After(time.Second):\n\t\tt.Fatalf("backend EOF left relay and admission slot alive: slots=%d", admissionSlots.Load())\n\t}\n\tif
+        admissionSlots.Load() != 0 {\n\t\tt.Fatal("relay slot not released")\n\t}\n\tif client.Context().Err() != nil {\n\t\tt.Fatal("relay
+        teardown closed QUIC carrier")\n\t}\n}\n'',encoding="utf-8")
+
+        Path(''internal/server/transport/runtime_audit_quic_test.go'').write_text(''package transport\n\nimport (\n\t"context"\n\t"errors"\n\t"github.com/backpack/backpack/internal/utils"\n\t"github.com/backpack/backpack/internal/utils/network"\n\t"github.com/quic-go/quic-go"\n\t"io"\n\t"testing"\n\t"time"\n)\n\nfunc
+        TestRuntimeAuditQUICRejectedStreamStopsPeerWrite(t *testing.T) {\n\tctx, cancel := context.WithTimeout(context.Background(),
+        10*time.Second)\n\tdefer cancel()\n\tsettings := network.QUICSettings{KeepAlivePeriod: time.Second, MaxIdleTimeout:
+        15 * time.Second}\n\tlistener, err := network.QUICListen("127.0.0.1:0", settings)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tdefer
+        listener.Close()\n\taccepted := make(chan *quic.Conn, 1)\n\tgo func() {\n\t\tc, err := listener.Accept(ctx)\n\t\tif
+        err == nil {\n\t\t\taccepted <- c\n\t\t}\n\t}()\n\tclient, err := network.QUICDial(ctx, listener.Addr().String(),
+        settings)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tdefer client.CloseWithError(0, "test end")\n\tvar server *quic.Conn\n\tselect
+        {\n\tcase server = <-accepted:\n\tcase <-ctx.Done():\n\t\tt.Fatal(ctx.Err())\n\t}\n\tdefer server.CloseWithError(0,
+        "test end")\n\tsender, err := client.OpenStreamSync(ctx)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tconst token
+        = "a-long-enough-token"\n\tif err := utils.SendBinaryTransportString(network.NewQUICStreamConn(sender, client), token,
+        utils.SG_Ping); err != nil {\n\t\tt.Fatal(err)\n\t}\n\treceiver, err := server.AcceptStream(ctx)\n\tif err != nil
+        {\n\t\tt.Fatal(err)\n\t}\n\tsrv := NewQuicServer(ctx, &QuicConfig{Token: token, ChannelSize: 1}, quietLogger())\n\tgen
+        := srv.newGen(ctx)\n\tsrv.acceptStream(gen, server, receiver, make(chan quicClaim), &quicGate{pending: make(chan struct{},
+        unauthenticatedStreams)}, false)\n\tsender.SetReadDeadline(time.Now().Add(time.Second))\n\tif _, err := sender.Read(make([]byte,
+        1)); err != io.EOF {\n\t\tt.Fatalf("rejected stream did not close send side: %v", err)\n\t}\n\tsender.SetWriteDeadline(time.Now().Add(time.Second))\n\tvar
+        writeErr error\n\tfor i := 0; i < 2048; i++ {\n\t\tif _, writeErr = sender.Write(make([]byte, 4096)); writeErr !=
+        nil {\n\t\t\tbreak\n\t\t}\n\t}\n\tvar streamErr *quic.StreamError\n\tif !errors.As(writeErr, &streamErr) || !streamErr.Remote
+        {\n\t\tt.Fatalf("server retained rejected receive side: peer Write error=%v (want remote stream cancellation)", writeErr)\n\t}\n\tif
+        client.Context().Err() != nil {\n\t\tt.Fatal("rejecting one stream closed carrier")\n\t}\n}\n'',encoding="utf-8")
+
+        Path(''internal/tunnel/direct/runtime_audit_dns_test.go'').write_text(''package direct\n\nimport (\n "context"\n "errors"\n
+        "net"\n "sync"\n "testing"\n "time"\n\n "golang.org/x/net/dns/dnsmessage"\n)\n\nfunc auditStalledResolver(t *testing.T)(<-chan
+        struct{},func()){\n t.Helper();old:=net.DefaultResolver;release:=make(chan struct{});started:=make(chan struct{},1);var
+        once sync.Once\n unblock:=func(){once.Do(func(){close(release)})}\n net.DefaultResolver=&net.Resolver{PreferGo:true,Dial:func(ctx
+        context.Context,network,address string)(net.Conn,error){\n  select{case started<-struct{}{}:default:}\n  select{case<-release:return
+        nil,errors.New("audit DNS released");case<-ctx.Done():return nil,ctx.Err()}\n }}\n t.Cleanup(func(){unblock();net.DefaultResolver=old})\n
+        return started,unblock\n}\n\nfunc TestRuntimeAuditBackendDNSCancel(t *testing.T){\n started,unblock:=auditStalledResolver(t)\n
+        ctx,cancel:=context.WithCancel(context.Background());defer cancel();done:=make(chan error,1)\n go func(){_,err:=dialBackend(ctx,"tcp","cancel.backend-audit.invalid:443",time.Second);done<-err}()\n
+        select{case<-started:case<-time.After(time.Second):t.Fatal("resolver did not start")}\n cancel()\n select{case err:=<-done:if
+        !errors.Is(err,context.Canceled){t.Fatalf("error=%v",err)};case<-time.After(250*time.Millisecond):\n  t.Error("canceled
+        backend dial still blocked in metadata DNS");unblock();select{case<-done:case<-time.After(time.Second):t.Error("dial
+        did not leave after release")}\n }\n}\n\nfunc TestRuntimeAuditBackendDNSTimeout(t *testing.T){\n _,unblock:=auditStalledResolver(t)\n
+        done:=make(chan error,1)\n go func(){_,err:=dialBackend(context.Background(),"tcp","timeout.backend-audit.invalid:443",40*time.Millisecond);done<-err}()\n
+        select{case err:=<-done:if !errors.Is(err,context.DeadlineExceeded){t.Fatalf("error=%v",err)};case<-time.After(250*time.Millisecond):\n  t.Error("backend
+        DialTimeout does not cover metadata DNS");unblock();select{case<-done:case<-time.After(time.Second):t.Error("dial
+        did not leave after release")}\n }\n}\n\nfunc TestRuntimeAuditBackendDNSSharedBudget(t *testing.T){\n dns,err:=net.ListenPacket("udp","127.0.0.1:0");if
+        err!=nil{t.Fatal(err)};defer dns.Close()\n var queries sync.WaitGroup;done:=make(chan struct{})\n go func(){defer
+        close(done);buf:=make([]byte,2048);for{n,addr,err:=dns.ReadFrom(buf);if err!=nil{return};msg:=append([]byte(nil),buf[:n]...);queries.Add(1);go
+        func(){defer queries.Done();time.Sleep(60*time.Millisecond)\n  var request dnsmessage.Message;if request.Unpack(msg)!=nil{return}\n  response:=dnsmessage.Message{Header:dnsmessage.Header{ID:request.ID,Response:true,RecursionAvailable:true},Questions:request.Questions}\n  for
+        _,question:=range request.Questions{if question.Type==dnsmessage.TypeA{response.Answers=append(response.Answers,dnsmessage.Resource{Header:dnsmessage.ResourceHeader{Name:question.Name,Type:dnsmessage.TypeA,Class:dnsmessage.ClassINET},Body:&dnsmessage.AResource{A:[4]byte{127,0,0,1}}})}}\n  wire,err:=response.Pack();if
+        err==nil{dns.WriteTo(wire,addr)}\n }()}}()\n defer func(){dns.Close();<-done;queries.Wait()}()\n old:=net.DefaultResolver;defer
+        func(){net.DefaultResolver=old}()\n net.DefaultResolver=&net.Resolver{PreferGo:true,Dial:func(ctx context.Context,_,_
+        string)(net.Conn,error){return (&net.Dialer{}).DialContext(ctx,"udp",dns.LocalAddr().String())}}\n backend,err:=net.Listen("tcp","127.0.0.1:0");if
+        err!=nil{t.Fatal(err)};defer backend.Close()\n _,port,_:=net.SplitHostPort(backend.Addr().String());start:=time.Now()\n
+        conn,err:=dialBackend(context.Background(),"tcp",net.JoinHostPort("budget.backend-audit.invalid",port),100*time.Millisecond)\n
+        if conn!=nil{conn.Close()}\n if err==nil{t.Fatal("DNS checks and socket DNS each received a fresh timeout")}\n if
+        elapsed:=time.Since(start);elapsed>250*time.Millisecond{t.Fatalf("shared budget exceeded: %v",elapsed)}\n}\n\nfunc
+        TestRuntimeAuditBackendLiteralConnect(t *testing.T){\n for _,network:=range []string{"tcp","udp"}{t.Run(network,func(t
+        *testing.T){\n  if network=="tcp"{listener,err:=net.Listen("tcp","127.0.0.1:0");if err!=nil{t.Fatal(err)};defer listener.Close();conn,err:=dialBackend(context.Background(),network,listener.Addr().String(),time.Second);if
+        err!=nil{t.Fatal(err)};conn.Close()\n  }else{listener,err:=net.ListenPacket("udp","127.0.0.1:0");if err!=nil{t.Fatal(err)};defer
+        listener.Close();conn,err:=dialBackend(context.Background(),network,listener.LocalAddr().String(),time.Second);if
+        err!=nil{t.Fatal(err)};conn.Close()}\n })}\n for _,address:=range []string{"169.254.169.254:80","100.100.100.200:80","[fd00:ec2::254]:80"}{if
+        conn,err:=dialBackend(context.Background(),"tcp",address,time.Second);err==nil{conn.Close();t.Fatalf("metadata target
+        accepted: %s",address)}}\n}\n'',encoding="utf-8")
+
+        Path(''internal/tunnel/l3/runtime_audit_fec_reopen_test.go'').write_text(''package l3\n\nimport (\n\t"bytes"\n\t"fmt"\n\t"testing"\n)\n\nfunc
+        TestRuntimeAuditFECReopenedSender(t *testing.T) {\n\tsend, recv := newLossyPair(nil)\n\tcfg := FECConfig{Data: 4,
+        Parity: 2}\n\ttx, err := newFECCarrier(send, cfg)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\trx, err := newFECCarrier(recv,
+        cfg)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tfor i := range 8 {\n\t\tif _, err := tx.WriteTo([]byte(fmt.Sprintf("old-%d",
+        i)), recv.addr); err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t}\n\tif got := len(drain(t, rx)); got != 8 {\n\t\tt.Fatalf("old
+        sender delivered=%d", got)\n\t}\n\t// A sender process/carrier reopens; the receiver and its FEC cache survive.\n\t//
+        Reusing the same address is deliberate: restart recovery must work both\n\t// with a new source port and a NAT which
+        assigns the same port again.\n\treopened, err := newFECCarrier(send, cfg)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tattempt,
+        err := beginHandshakeFresh("fec-reopen-token", 0, "gre", 123456789)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tvar
+        expected [][]byte\n\tfor i := range 4 {\n\t\tp := []byte(fmt.Sprintf("new-%d", i))\n\t\tif i == 0 {\n\t\t\tp = attempt.datagram()\n\t\t}\n\t\texpected
+        = append(expected, p)\n\t\tif _, err := reopened.WriteTo(p, recv.addr); err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t}\n\tgot
+        := drain(t, rx)\n\tif len(got) != 4 {\n\t\tt.Fatalf("reopened sender delivered=%d want4; old FEC group/index suppresses
+        fresh packets", len(got))\n\t}\n\tfor _, want := range expected {\n\t\tfound := false\n\t\tfor _, actual := range
+        got {\n\t\t\tif bytes.Equal(want, actual) {\n\t\t\t\tfound = true\n\t\t\t}\n\t\t}\n\t\tif !found {\n\t\t\tt.Fatalf("fresh
+        payload %q lost", want)\n\t\t}\n\t}\n}\n'',encoding="utf-8")
+
+        Path(''internal/tunnel/l3/runtime_audit_multipath_close_test.go'').write_text(''package l3\n\nimport (\n "context"\n
+        "errors"\n "net"\n "sync"\n "testing"\n "time"\n)\n\ntype closureAuditPath struct { *memCarrier; once sync.Once }\nfunc
+        (p *closureAuditPath) Close() error { p.once.Do(func(){close(p.in)}); return nil }\nfunc newClosureAuditPath() *closureAuditPath
+        { return &closureAuditPath{memCarrier:newMemCarrier("closure-audit")} }\n\nfunc TestRuntimeAuditMultipathAllDead(t
+        *testing.T) {\n a,b:=newClosureAuditPath(),newClosureAuditPath()\n c:=newMultipathCarrier([]DatagramCarrier{a,b},nil).(*multipathCarrier)\n
+        defer c.Close()\n a.in<-[]byte("queued-a"); b.in<-[]byte("queued-b")\n deadline:=time.Now().Add(time.Second)\n for
+        len(c.in)<2 { if time.Now().After(deadline){t.Fatal("pumps did not queue packets")}; time.Sleep(time.Millisecond)
+        }\n a.Close(); b.Close()\n // Pumps see permanent closure before the reader starts. The queued packets\n // still
+        have to arrive, followed by a terminal error without any deadline.\n time.Sleep(20*time.Millisecond)\n buf:=make([]byte,64)\n
+        seen:=map[string]bool{}\n for range 2 { n,_,err:=c.ReadFrom(buf); if err!=nil{t.Fatal(err)};seen[string(buf[:n])]=true
+        }\n if !seen["queued-a"]||!seen["queued-b"] {t.Fatalf("lost queued packets: %v",seen)}\n result:=make(chan error,1)\n
+        go func(){ _,_,err:=c.ReadFrom(buf);result<-err }()\n select { case err:=<-result:if !errors.Is(err,net.ErrClosed){t.Fatalf("got
+        %v",err)}\n case <-time.After(300*time.Millisecond):t.Fatal("ReadFrom stayed blocked after every path permanently
+        closed") }\n}\n\nfunc TestRuntimeAuditMultipathOneDeadStillCarries(t *testing.T) {\n a,b:=newClosureAuditPath(),newClosureAuditPath()\n
+        c:=newMultipathCarrier([]DatagramCarrier{a,b},nil)\n defer c.Close()\n a.Close();b.in<-[]byte("surviving-path")\n
+        c.SetReadDeadline(time.Now().Add(time.Second))\n buf:=make([]byte,64);n,_,err:=c.ReadFrom(buf)\n if err!=nil||string(buf[:n])!="surviving-path"{t.Fatalf("surviving
+        path failed: n=%d err=%v",n,err)}\n}\n\nfunc TestRuntimeAuditMultipathListenerGeneration(t *testing.T) {\n tun,err:=New(Config{Mode:ModeListen,Addr:"127.0.0.1:0",Token:"multipath-generation-audit",LocalIP:"10.10.0.1/30",PeerIP:"10.10.0.2",MTU:1400,AutoMTU:true},quietLogger())\n
+        if err!=nil{t.Fatal(err)}\n a,b:=newClosureAuditPath(),newClosureAuditPath()\n c:=newMultipathCarrier([]DatagramCarrier{a,b},nil)\n
+        tun.wrapCarrier=func(raw DatagramCarrier) DatagramCarrier { raw.Close(); return c }\n dev:=newFakeDevice(1400)\n tun.openDevice=func(deviceSpec)(packetDevice,error){return
+        dev,nil}\n ctx,cancel:=context.WithCancel(context.Background())\n done:=make(chan error,1)\n go func(){done<-tun.Run(ctx)}()\n
+        t.Cleanup(func(){cancel();c.Close();dev.Close(); select{case <-done:case <-time.After(time.Second):}})\n awaitBind(t,tun)\n
+        a.Close();b.Close()\n select {case err:=<-done:if err==nil||ctx.Err()!=nil{t.Fatalf("generation result=%v parent=%v",err,ctx.Err())}\n
+        case <-time.After(500*time.Millisecond):t.Fatal("listening Run never returned after all paths permanently closed;
+        restart cannot run") }\n}\n'',encoding="utf-8")
+
+        Path(''internal/tunnel/direct/runtime_audit_udp_cap_test.go'').write_text(''package direct\nimport("bytes";"context";"fmt";"net";"testing";"time")\nfunc
+        runtimeLimitedUDPTunnel(t *testing.T, backend string) *tunnel {\n\tt.Helper()\n\tconst token = "a-udp-token"\n\n\torigin,
+        err := NewOrigin(Config{\n\t\tRole: RoleOrigin, Addr: "127.0.0.1:0", Token: token,\n\t}, testLogger(t))\n\tif err
+        != nil {\n\t\tt.Fatalf("NewOrigin: %v", err)\n\t}\n\tctx, cancel := context.WithCancel(context.Background())\n\tt.Cleanup(cancel)\n\n\toriginDone
+        := make(chan struct{})\n\tgo func() { defer close(originDone); _ = origin.Run(ctx) }()\n\tt.Cleanup(func() { cancel();
+        <-originDone })\n\n\tvar bound net.Addr\n\tfor deadline := time.Now().Add(3 * time.Second); time.Now().Before(deadline);
+        {\n\t\tif bound = origin.LocalAddr(); bound != nil {\n\t\t\tbreak\n\t\t}\n\t\ttime.Sleep(5 * time.Millisecond)\n\t}\n\tif
+        bound == nil {\n\t\tt.Fatal("the origin never bound a port")\n\t}\n\n\tport := freePort(t)\n\tedge, err := NewEdge(Config{\n\t\tRole:
+        RoleEdge, Addr: bound.String(), Token: token,\n\t\tPorts:      []string{fmt.Sprintf("127.0.0.1:%d=%s", port, backend)},\n\t\tAcceptUDP:  true,\n        BandwidthMbps:
+        1,\n\t\tRetryDelay: 200 * time.Millisecond,\n\t}, testLogger(t))\n\tif err != nil {\n\t\tt.Fatalf("NewEdge: %v", err)\n\t}\n\tedgeDone
+        := make(chan struct{})\n\tgo func() { defer close(edgeDone); _ = edge.Run(ctx) }()\n\tt.Cleanup(func() { cancel();
+        <-edgeDone })\n\n\ttn := &tunnel{edge: edge, origin: origin, port: port}\n\ttn.awaitSession(t, 5*time.Second)\n\treturn
+        tn\n}\n\n\nfunc TestRuntimeDirectUDPBandwidth(t *testing.T){\n tn:=runtimeLimitedUDPTunnel(t,echoUDPBackend(t,""));
+        conn:=tn.dialUDP(t)\n if _,ok:=udpExchange(t,conn,"warmup",40);!ok{t.Fatal("UDP did not establish")}\n payload:=bytes.Repeat([]byte{0x51},32768);buf:=make([]byte,65535)\n
+        start:=time.Now()\n for i:=0;i<6;i++{if _,err:=conn.Write(payload);err!=nil{t.Fatal(err)};conn.SetReadDeadline(time.Now().Add(8*time.Second));n,err:=conn.Read(buf);if
+        err!=nil{t.Fatal(err)};if !bytes.Equal(buf[:n],payload){t.Fatal("datagram corrupted")}}\n elapsed:=time.Since(start);t.Logf("393216
+        payload bytes round-trip at 1Mbit/s: %v",elapsed)\n if elapsed<1500*time.Millisecond{t.Fatalf("UDP bypassed shared
+        bandwidth cap: %v",elapsed)}\n}\n'',encoding="utf-8")
+
+        Path(''internal/tunnel/l3/runtime_audit_udp_cap_test.go'').write_text(''package l3\n\nimport (\n\t"bytes"\n\t"context"\n\t"fmt"\n\t"github.com/backpack/backpack/internal/tunnel/limits"\n\t"net"\n\t"sync"\n\t"testing"\n\t"time"\n)\n\nfunc
+        TestRuntimeAuditL3UDPCap(t *testing.T) {\n\tbackend := echoUDP(t, "")\n\tport := freePort(t)\n\tlisten := fmt.Sprintf("127.0.0.1:%d",
+        port)\n\tf, err := NewForwarder(Config{Ports: []string{listen + "=" + backend}, AcceptUDP: true, PeerIP: "127.0.0.1",
+        BandwidthMbps: 1}, quietLogger())\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tctx, cancel := context.WithCancel(context.Background())\n\tdone
+        := make(chan error, 1)\n\tgo func() { done <- f.Run(ctx) }()\n\tt.Cleanup(func() {\n\t\tcancel()\n\t\tselect {\n\t\tcase
+        err := <-done:\n\t\t\tif err != nil {\n\t\t\t\tt.Error(err)\n\t\t\t}\n\t\tcase <-time.After(time.Second):\n\t\t\tt.Error("forwarder
+        shutdown stalled")\n\t\t}\n\t})\n\tselect {\n\tcase <-f.Ready():\n\tcase <-time.After(time.Second):\n\t\tt.Fatal("not
+        bound")\n\t}\n\tclient, err := net.Dial("udp", listen)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tdefer client.Close()\n\tclient.SetDeadline(time.Now().Add(10
+        * time.Second))\n\tpayload := bytes.Repeat([]byte{42}, 4096)\n\tbuf := make([]byte, 8192)\n\tbegan := time.Now()\n\tfor
+        i := range 50 {\n\t\tif _, err := client.Write(payload); err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t\tn, err := client.Read(buf)\n\t\tif
+        err != nil {\n\t\t\tt.Fatalf("echo%d: %v", i, err)\n\t\t}\n\t\tif !bytes.Equal(buf[:n], payload) {\n\t\t\tt.Fatal("datagram
+        corrupted")\n\t\t}\n\t}\n\telapsed := time.Since(began)\n\tt.Logf("409600 aggregate UDP bytes at1Mbit/s: %s", elapsed)\n\tif
+        elapsed < time.Second {\n\t\tt.Fatalf("UDP bypassed shared bandwidth cap: %s", elapsed)\n\t}\n}\n\nfunc TestRuntimeAuditL3UDPFlowCloseCancelsPacing(t
+        *testing.T) {\n\tbackend, err := net.ListenPacket("udp", "127.0.0.1:0")\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tdefer
+        backend.Close()\n\tgo func() {\n\t\tbuf := make([]byte, 65535)\n\t\tfor {\n\t\t\tif _, _, err := backend.ReadFrom(buf);
+        err != nil {\n\t\t\t\treturn\n\t\t\t}\n\t\t}\n\t}()\n\tlocal, err := net.ListenPacket("udp", "127.0.0.1:0")\n\tif
+        err != nil {\n\t\tt.Fatal(err)\n\t}\n\tdefer local.Close()\n\tf := &Forwarder{limiter: limits.New(limits.Config{BandwidthMbps:
+        1}), log: quietLogger()}\n\tctx, cancel := context.WithCancel(context.Background())\n\tdefer cancel()\n\tvar flows
+        sync.Map\n\tflow, err := f.udpFlowFor(ctx, &flows, local, local.LocalAddr(), newBackendPool([]string{backend.LocalAddr().String()}))\n\tif
+        err != nil {\n\t\tt.Fatal(err)\n\t}\n\tdefer flow.backend.Close()\n\tp := make([]byte, 60000)\n\tfor range 2 {\n\t\tif
+        _, err := flow.backend.Write(p); err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t}\n\tresult := make(chan error, 1)\n\tgo
+        func() { _, err := flow.backend.Write(p); result <- err }()\n\tselect {\n\tcase err := <-result:\n\t\tt.Fatalf("third
+        datagram was not paced: %v", err)\n\tcase <-time.After(20 * time.Millisecond):\n\t}\n\tflow.backend.Close()\n\tselect
+        {\n\tcase err := <-result:\n\t\tif err == nil {\n\t\t\tt.Fatal("closed flow write unexpectedly succeeded")\n\t\t}\n\tcase
+        <-time.After(200 * time.Millisecond):\n\t\tt.Fatal("closed flow kept waiting for bandwidth")\n\t}\n\tif ctx.Err()
+        != nil {\n\t\tt.Fatal("closing one UDP flow canceled the forwarder")\n\t}\n}\n'',encoding="utf-8")
+
+        PY
+
+        gofmt -w internal/tunnel/bridge/runtime_audit_test.go internal/utils/network/runtime_audit_quic_test.go internal/utils/handlers/runtime_audit_quic_test.go
+        internal/server/transport/runtime_audit_quic_test.go internal/tunnel/direct/runtime_audit_dns_test.go internal/tunnel/l3/runtime_audit_fec_reopen_test.go
+        internal/tunnel/l3/runtime_audit_multipath_close_test.go internal/tunnel/direct/runtime_audit_udp_cap_test.go internal/tunnel/l3/runtime_audit_udp_cap_test.go'
+    - name: Prove pre-fix runtime failures
+      run: 'set +e
+
+        go test ./internal/tunnel/bridge ./internal/tunnel/direct ./internal/tunnel/l3 ./internal/utils/network ./internal/utils/handlers
+        ./internal/server/transport -run "TestRuntime" -count=1 -v -timeout 5m > /tmp/runtime-baseline.log 2>&1
+
+        rc=$?
+
+        cat /tmp/runtime-baseline.log
+
+        [ "$rc" -ne 0 ] && ! grep -q "build failed" /tmp/runtime-baseline.log'
+  regressions:
+    name: All runtime corrections together
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 4b85e0d34c9ff4c13517734e4e270dfe62accd76
+        fetch-depth: 0
+    - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
+
+        sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - name: Temporary runtime regressions
+      run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/tunnel/bridge/runtime_audit_test.go'').write_text(''package bridge\n\nimport (\n "bytes"\n "context"\n
+        "io"\n "net"\n "testing"\n "time"\n\n "github.com/backpack/backpack/internal/metrics"\n "github.com/backpack/backpack/internal/tunnel/limits"\n)\n\nfunc
+        TestRuntimeAuditBridgeEOFResponse(t *testing.T) {\n variants := []struct{name string; wrap func(net.Conn) net.Conn}{\n  {"plain",func(c
+        net.Conn) net.Conn{return c}},\n  {"counted",metrics.CountedConn},\n  {"limited",func(c net.Conn) net.Conn{return
+        limits.New(limits.Config{BandwidthMbps:1}).Wrap(context.Background(),c)}},\n  {"counted-limited",func(c net.Conn)
+        net.Conn{return metrics.CountedConn(limits.New(limits.Config{BandwidthMbps:1}).Wrap(context.Background(),c))}},\n  {"limited-counted",func(c
+        net.Conn) net.Conn{return limits.New(limits.Config{BandwidthMbps:1}).Wrap(context.Background(),metrics.CountedConn(c))}},\n
+        }\n for _,variant:=range variants {t.Run(variant.name,func(t *testing.T){\n  user,left:=tcpPair(t); right,backend:=tcpPair(t)\n  ctx,cancel:=context.WithCancel(context.Background());defer
+        cancel()\n  done:=make(chan struct{});go func(){Join(ctx,variant.wrap(left),right);close(done)}()\n  user.SetDeadline(time.Now().Add(3*time.Second));backend.SetDeadline(time.Now().Add(3*time.Second))\n  user.Write([]byte("request"));user.(*net.TCPConn).CloseWrite()\n  request,err:=io.ReadAll(backend);if
+        err!=nil||string(request)!="request"{t.Fatalf("upload %q %v",request,err)}\n  time.Sleep(30*time.Millisecond)\n  response:=bytes.Repeat([]byte("reply"),4096)\n  if
+        _,err=backend.Write(response);err!=nil{t.Fatalf("response write: %v",err)}\n  backend.(*net.TCPConn).CloseWrite()\n  got,err:=io.ReadAll(user);if
+        err!=nil||!bytes.Equal(got,response){t.Fatalf("response length=%d want=%d error=%v",len(got),len(response),err)}\n  select{case<-done:case<-time.After(time.Second):t.Fatal("bridge
+        did not drain")}\n })}\n}\n\nfunc TestRuntimeAuditBridgeHalfCloseCancel(t *testing.T){\n user,left:=tcpPair(t);right,backend:=tcpPair(t)\n
+        ctx,cancel:=context.WithCancel(context.Background());defer cancel()\n done:=make(chan struct{});go func(){Join(ctx,left,right);close(done)}()\n
+        user.(*net.TCPConn).CloseWrite();backend.SetReadDeadline(time.Now().Add(time.Second))\n if _,err:=io.ReadAll(backend);err!=nil{t.Fatal(err)}\n
+        select{case<-done:t.Fatal("closed reverse direction before cancellation");case<-time.After(30*time.Millisecond):}\n
+        cancel();select{case<-done:case<-time.After(time.Second):t.Fatal("half-closed bridge outlived cancellation")}\n}\n\nfunc
+        TestRuntimeAuditBridgeMixedEOF(t *testing.T){\n user,left:=net.Pipe();right,backend:=tcpPair(t);defer user.Close()\n
+        ctx,cancel:=context.WithCancel(context.Background());defer cancel()\n done:=make(chan struct{});go func(){Join(ctx,left,right);close(done)}()\n
+        user.Close()\n select{case<-done:case<-time.After(time.Second):t.Fatal("non-TCP EOF did not tear down")}\n backend.SetReadDeadline(time.Now().Add(time.Second));if
+        _,err:=io.ReadAll(backend);err!=nil{t.Fatal(err)}\n}\n\nfunc TestRuntimeAuditBridgeRateRemainsActive(t *testing.T){\n
+        user,left:=tcpPair(t);right,backend:=tcpPair(t)\n ctx,cancel:=context.WithCancel(context.Background());defer cancel()\n
+        done:=make(chan struct{});go func(){Join(ctx,limits.New(limits.Config{BandwidthMbps:1}).Wrap(ctx,metrics.CountedConn(left)),right);close(done)}()\n
+        user.SetDeadline(time.Now().Add(5*time.Second));backend.SetDeadline(time.Now().Add(5*time.Second))\n user.(*net.TCPConn).CloseWrite();if
+        _,err:=io.ReadAll(backend);err!=nil{t.Fatal(err)}\n response:=bytes.Repeat([]byte{7},250000)\n go func(){backend.Write(response);backend.(*net.TCPConn).CloseWrite()}()\n
+        start:=time.Now();got,err:=io.ReadAll(user)\n if err!=nil||!bytes.Equal(got,response){t.Fatalf("paced response length=%d
+        error=%v",len(got),err)}\n if elapsed:=time.Since(start);elapsed<700*time.Millisecond{t.Fatalf("pacing bypassed: %v",elapsed)}\n
+        select{case<-done:case<-time.After(time.Second):t.Fatal("paced bridge did not drain")}\n}\n'',encoding="utf-8")
+
+        Path(''internal/utils/network/runtime_audit_quic_test.go'').write_text(''package network\n\nimport (\n\t"bytes"\n\t"context"\n\t"errors"\n\t"github.com/quic-go/quic-go"\n\t"io"\n\t"net"\n\t"sync"\n\t"testing"\n\t"time"\n)\n\nfunc
+        runtimeAuditQUICPair(t *testing.T) (*QUICStreamConn, *quic.Stream, *quic.Conn) {\n\tt.Helper()\n\tctx, cancel := context.WithTimeout(context.Background(),
+        20*time.Second)\n\tt.Cleanup(cancel)\n\tlistener, err := QUICListen("127.0.0.1:0", QUICSettings{KeepAlivePeriod: time.Second,
+        MaxIdleTimeout: 15 * time.Second})\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tt.Cleanup(func() { listener.Close()
+        })\n\taccepted := make(chan *quic.Conn, 1)\n\tgo func() {\n\t\tc, err := listener.Accept(ctx)\n\t\tif err == nil {\n\t\t\taccepted
+        <- c\n\t\t}\n\t}()\n\tcfg := (QUICSettings{KeepAlivePeriod: time.Second, MaxIdleTimeout: 15 * time.Second}).quicConfig()\n\tcfg.InitialStreamReceiveWindow
+        = 32 * 1024\n\tcfg.MaxStreamReceiveWindow = 32 * 1024\n\tpeer, err := quic.DialAddr(ctx, listener.Addr().String(),
+        quicClientTLS(), cfg)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tt.Cleanup(func() { peer.CloseWithError(0, "test
+        end") })\n\tvar server *quic.Conn\n\tselect {\n\tcase server = <-accepted:\n\tcase <-ctx.Done():\n\t\tt.Fatal(ctx.Err())\n\t}\n\tt.Cleanup(func()
+        { server.CloseWithError(0, "test end") })\n\tsender, err := peer.OpenStreamSync(ctx)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tif
+        _, err := sender.Write([]byte{1}); err != nil {\n\t\tt.Fatal(err)\n\t}\n\treceiver, err := server.AcceptStream(ctx)\n\tif
+        err != nil {\n\t\tt.Fatal(err)\n\t}\n\tif _, err := io.ReadFull(receiver, make([]byte, 1)); err != nil {\n\t\tt.Fatal(err)\n\t}\n\treturn
+        NewQUICStreamConn(receiver, server).(*QUICStreamConn), sender, peer\n}\n\nfunc TestRuntimeAuditQUICCloseUnblocksRead(t
+        *testing.T) {\n\tconn, _, peer := runtimeAuditQUICPair(t)\n\tdone := make(chan error, 1)\n\tgo func() { _, err :=
+        conn.Read(make([]byte, 1)); done <- err }()\n\tif err := conn.Close(); err != nil {\n\t\tt.Fatal(err)\n\t}\n\tselect
+        {\n\tcase err := <-done:\n\t\tif err == nil {\n\t\t\tt.Fatal("closed read succeeded")\n\t\t}\n\tcase <-time.After(time.Second):\n\t\tt.Fatal("net.Conn.Close
+        left QUIC Read blocked")\n\t}\n\tif peer.Context().Err() != nil {\n\t\tt.Fatal("closing stream closed carrier")\n\t}\n\tif
+        err := conn.Close(); err != nil {\n\t\tt.Fatal("second Close:", err)\n\t}\n}\n\nfunc TestRuntimeAuditQUICCloseUnblocksWrite(t
+        *testing.T) {\n\tconn, _, peer := runtimeAuditQUICPair(t)\n\tdone := make(chan error, 1)\n\tgo func() { _, err :=
+        conn.Write(make([]byte, 16*1024*1024)); done <- err }()\n\tselect {\n\tcase err := <-done:\n\t\tt.Fatalf("write did
+        not reach flow-control block: %v", err)\n\tcase <-time.After(100 * time.Millisecond):\n\t}\n\tclosed := make(chan
+        error, 1)\n\tgo func() { closed <- conn.Close() }()\n\tselect {\n\tcase err := <-closed:\n\t\tif err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\tcase
+        <-time.After(time.Second):\n\t\tt.Fatal("Close blocked behind Write")\n\t}\n\tselect {\n\tcase err := <-done:\n\t\tif
+        err == nil {\n\t\t\tt.Fatal("blocked Write survived Close")\n\t\t}\n\tcase <-time.After(time.Second):\n\t\tt.Fatal("net.Conn.Close
+        left QUIC Write blocked")\n\t}\n\tif peer.Context().Err() != nil {\n\t\tt.Fatal("closing stream closed carrier")\n\t}\n}\n\nfunc
+        TestRuntimeAuditQUICClosePreservesCompletedReply(t *testing.T) {\n\tconn, peer, _ := runtimeAuditQUICPair(t)\n\tpayload
+        := bytes.Repeat([]byte("reply"), 1600)\n\tif n, err := conn.Write(payload); err != nil || n != len(payload) {\n\t\tt.Fatalf("write
+        n=%d err=%v", n, err)\n\t}\n\tif err := conn.Close(); err != nil {\n\t\tt.Fatal(err)\n\t}\n\tpeer.SetReadDeadline(time.Now().Add(3
+        * time.Second))\n\tgot, err := io.ReadAll(peer)\n\tif err != nil || !bytes.Equal(got, payload) {\n\t\tt.Fatalf("completed
+        reply lost: got=%d err=%v", len(got), err)\n\t}\n}\n\nfunc TestRuntimeAuditQUICCloseConcurrentWriteAndClose(t *testing.T)
+        {\n\tconn, _, _ := runtimeAuditQUICPair(t)\n\tvar workers sync.WaitGroup\n\tstart := make(chan struct{})\n\tfor range
+        8 {\n\t\tworkers.Add(1)\n\t\tgo func() {\n\t\t\tdefer workers.Done()\n\t\t\t<-start\n\t\t\t_, err := conn.Write([]byte("reply"))\n\t\t\tif
+        err != nil && !errors.Is(err, net.ErrClosed) { /* active stream reset is also expected */\n\t\t\t}\n\t\t}()\n\t\tworkers.Add(1)\n\t\tgo
+        func() { defer workers.Done(); <-start; conn.Close() }()\n\t}\n\tclose(start)\n\tdone := make(chan struct{})\n\tgo
+        func() { workers.Wait(); close(done) }()\n\tselect {\n\tcase <-done:\n\tcase <-time.After(3 * time.Second):\n\t\tt.Fatal("concurrent
+        Write/Close hung")\n\t}\n\tif _, err := conn.Write([]byte{1}); !errors.Is(err, net.ErrClosed) {\n\t\tt.Fatalf("Write
+        after Close err=%v", err)\n\t}\n}\n'',encoding="utf-8")
+
+        Path(''internal/utils/handlers/runtime_audit_quic_test.go'').write_text(''package handlers\n\nimport (\n\t"context"\n\t"github.com/backpack/backpack/internal/utils/network"\n\t"github.com/quic-go/quic-go"\n\t"github.com/sirupsen/logrus"\n\t"io"\n\t"net"\n\t"sync/atomic"\n\t"testing"\n\t"time"\n)\n\nfunc
+        TestRuntimeAuditQUICBackendEOFRetiresRelay(t *testing.T) {\n\tctx, cancel := context.WithTimeout(context.Background(),
+        15*time.Second)\n\tdefer cancel()\n\tsettings := network.QUICSettings{KeepAlivePeriod: time.Second, MaxIdleTimeout:
+        15 * time.Second}\n\tlistener, err := network.QUICListen("127.0.0.1:0", settings)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tdefer
+        listener.Close()\n\taccepted := make(chan *quic.Conn, 1)\n\tgo func() {\n\t\tc, err := listener.Accept(ctx)\n\t\tif
+        err == nil {\n\t\t\taccepted <- c\n\t\t}\n\t}()\n\tclient, err := network.QUICDial(ctx, listener.Addr().String(),
+        settings)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tdefer client.CloseWithError(0, "test end")\n\tvar server *quic.Conn\n\tselect
+        {\n\tcase server = <-accepted:\n\tcase <-ctx.Done():\n\t\tt.Fatal(ctx.Err())\n\t}\n\tdefer server.CloseWithError(0,
+        "test end")\n\tsender, err := client.OpenStreamSync(ctx)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tsender.Write([]byte{1})\n\treceiver,
+        err := server.AcceptStream(ctx)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tif _, err := io.ReadFull(receiver, make([]byte,
+        1)); err != nil {\n\t\tt.Fatal(err)\n\t}\n\tbackend, service := net.Pipe()\n\tdefer backend.Close()\n\tdefer service.Close()\n\tlogger
+        := logrus.New()\n\tlogger.SetOutput(io.Discard)\n\tdone := make(chan struct{})\n\tvar admissionSlots atomic.Int32\n\tadmissionSlots.Store(1)\n\tgo
+        func() {\n\t\tTCPConnectionHandler(ctx, false, network.NewQUICStreamConn(receiver, server), backend, logger, nil,
+        0, false)\n\t\tadmissionSlots.Add(-1)\n\t\tclose(done)\n\t}()\n\tservice.Close()\n\tselect {\n\tcase <-done:\n\tcase
+        <-time.After(time.Second):\n\t\tt.Fatalf("backend EOF left relay and admission slot alive: slots=%d", admissionSlots.Load())\n\t}\n\tif
+        admissionSlots.Load() != 0 {\n\t\tt.Fatal("relay slot not released")\n\t}\n\tif client.Context().Err() != nil {\n\t\tt.Fatal("relay
+        teardown closed QUIC carrier")\n\t}\n}\n'',encoding="utf-8")
+
+        Path(''internal/server/transport/runtime_audit_quic_test.go'').write_text(''package transport\n\nimport (\n\t"context"\n\t"errors"\n\t"github.com/backpack/backpack/internal/utils"\n\t"github.com/backpack/backpack/internal/utils/network"\n\t"github.com/quic-go/quic-go"\n\t"io"\n\t"testing"\n\t"time"\n)\n\nfunc
+        TestRuntimeAuditQUICRejectedStreamStopsPeerWrite(t *testing.T) {\n\tctx, cancel := context.WithTimeout(context.Background(),
+        10*time.Second)\n\tdefer cancel()\n\tsettings := network.QUICSettings{KeepAlivePeriod: time.Second, MaxIdleTimeout:
+        15 * time.Second}\n\tlistener, err := network.QUICListen("127.0.0.1:0", settings)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tdefer
+        listener.Close()\n\taccepted := make(chan *quic.Conn, 1)\n\tgo func() {\n\t\tc, err := listener.Accept(ctx)\n\t\tif
+        err == nil {\n\t\t\taccepted <- c\n\t\t}\n\t}()\n\tclient, err := network.QUICDial(ctx, listener.Addr().String(),
+        settings)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tdefer client.CloseWithError(0, "test end")\n\tvar server *quic.Conn\n\tselect
+        {\n\tcase server = <-accepted:\n\tcase <-ctx.Done():\n\t\tt.Fatal(ctx.Err())\n\t}\n\tdefer server.CloseWithError(0,
+        "test end")\n\tsender, err := client.OpenStreamSync(ctx)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tconst token
+        = "a-long-enough-token"\n\tif err := utils.SendBinaryTransportString(network.NewQUICStreamConn(sender, client), token,
+        utils.SG_Ping); err != nil {\n\t\tt.Fatal(err)\n\t}\n\treceiver, err := server.AcceptStream(ctx)\n\tif err != nil
+        {\n\t\tt.Fatal(err)\n\t}\n\tsrv := NewQuicServer(ctx, &QuicConfig{Token: token, ChannelSize: 1}, quietLogger())\n\tgen
+        := srv.newGen(ctx)\n\tsrv.acceptStream(gen, server, receiver, make(chan quicClaim), &quicGate{pending: make(chan struct{},
+        unauthenticatedStreams)}, false)\n\tsender.SetReadDeadline(time.Now().Add(time.Second))\n\tif _, err := sender.Read(make([]byte,
+        1)); err != io.EOF {\n\t\tt.Fatalf("rejected stream did not close send side: %v", err)\n\t}\n\tsender.SetWriteDeadline(time.Now().Add(time.Second))\n\tvar
+        writeErr error\n\tfor i := 0; i < 2048; i++ {\n\t\tif _, writeErr = sender.Write(make([]byte, 4096)); writeErr !=
+        nil {\n\t\t\tbreak\n\t\t}\n\t}\n\tvar streamErr *quic.StreamError\n\tif !errors.As(writeErr, &streamErr) || !streamErr.Remote
+        {\n\t\tt.Fatalf("server retained rejected receive side: peer Write error=%v (want remote stream cancellation)", writeErr)\n\t}\n\tif
+        client.Context().Err() != nil {\n\t\tt.Fatal("rejecting one stream closed carrier")\n\t}\n}\n'',encoding="utf-8")
+
+        Path(''internal/tunnel/direct/runtime_audit_dns_test.go'').write_text(''package direct\n\nimport (\n "context"\n "errors"\n
+        "net"\n "sync"\n "testing"\n "time"\n\n "golang.org/x/net/dns/dnsmessage"\n)\n\nfunc auditStalledResolver(t *testing.T)(<-chan
+        struct{},func()){\n t.Helper();old:=net.DefaultResolver;release:=make(chan struct{});started:=make(chan struct{},1);var
+        once sync.Once\n unblock:=func(){once.Do(func(){close(release)})}\n net.DefaultResolver=&net.Resolver{PreferGo:true,Dial:func(ctx
+        context.Context,network,address string)(net.Conn,error){\n  select{case started<-struct{}{}:default:}\n  select{case<-release:return
+        nil,errors.New("audit DNS released");case<-ctx.Done():return nil,ctx.Err()}\n }}\n t.Cleanup(func(){unblock();net.DefaultResolver=old})\n
+        return started,unblock\n}\n\nfunc TestRuntimeAuditBackendDNSCancel(t *testing.T){\n started,unblock:=auditStalledResolver(t)\n
+        ctx,cancel:=context.WithCancel(context.Background());defer cancel();done:=make(chan error,1)\n go func(){_,err:=dialBackend(ctx,"tcp","cancel.backend-audit.invalid:443",time.Second);done<-err}()\n
+        select{case<-started:case<-time.After(time.Second):t.Fatal("resolver did not start")}\n cancel()\n select{case err:=<-done:if
+        !errors.Is(err,context.Canceled){t.Fatalf("error=%v",err)};case<-time.After(250*time.Millisecond):\n  t.Error("canceled
+        backend dial still blocked in metadata DNS");unblock();select{case<-done:case<-time.After(time.Second):t.Error("dial
+        did not leave after release")}\n }\n}\n\nfunc TestRuntimeAuditBackendDNSTimeout(t *testing.T){\n _,unblock:=auditStalledResolver(t)\n
+        done:=make(chan error,1)\n go func(){_,err:=dialBackend(context.Background(),"tcp","timeout.backend-audit.invalid:443",40*time.Millisecond);done<-err}()\n
+        select{case err:=<-done:if !errors.Is(err,context.DeadlineExceeded){t.Fatalf("error=%v",err)};case<-time.After(250*time.Millisecond):\n  t.Error("backend
+        DialTimeout does not cover metadata DNS");unblock();select{case<-done:case<-time.After(time.Second):t.Error("dial
+        did not leave after release")}\n }\n}\n\nfunc TestRuntimeAuditBackendDNSSharedBudget(t *testing.T){\n dns,err:=net.ListenPacket("udp","127.0.0.1:0");if
+        err!=nil{t.Fatal(err)};defer dns.Close()\n var queries sync.WaitGroup;done:=make(chan struct{})\n go func(){defer
+        close(done);buf:=make([]byte,2048);for{n,addr,err:=dns.ReadFrom(buf);if err!=nil{return};msg:=append([]byte(nil),buf[:n]...);queries.Add(1);go
+        func(){defer queries.Done();time.Sleep(60*time.Millisecond)\n  var request dnsmessage.Message;if request.Unpack(msg)!=nil{return}\n  response:=dnsmessage.Message{Header:dnsmessage.Header{ID:request.ID,Response:true,RecursionAvailable:true},Questions:request.Questions}\n  for
+        _,question:=range request.Questions{if question.Type==dnsmessage.TypeA{response.Answers=append(response.Answers,dnsmessage.Resource{Header:dnsmessage.ResourceHeader{Name:question.Name,Type:dnsmessage.TypeA,Class:dnsmessage.ClassINET},Body:&dnsmessage.AResource{A:[4]byte{127,0,0,1}}})}}\n  wire,err:=response.Pack();if
+        err==nil{dns.WriteTo(wire,addr)}\n }()}}()\n defer func(){dns.Close();<-done;queries.Wait()}()\n old:=net.DefaultResolver;defer
+        func(){net.DefaultResolver=old}()\n net.DefaultResolver=&net.Resolver{PreferGo:true,Dial:func(ctx context.Context,_,_
+        string)(net.Conn,error){return (&net.Dialer{}).DialContext(ctx,"udp",dns.LocalAddr().String())}}\n backend,err:=net.Listen("tcp","127.0.0.1:0");if
+        err!=nil{t.Fatal(err)};defer backend.Close()\n _,port,_:=net.SplitHostPort(backend.Addr().String());start:=time.Now()\n
+        conn,err:=dialBackend(context.Background(),"tcp",net.JoinHostPort("budget.backend-audit.invalid",port),100*time.Millisecond)\n
+        if conn!=nil{conn.Close()}\n if err==nil{t.Fatal("DNS checks and socket DNS each received a fresh timeout")}\n if
+        elapsed:=time.Since(start);elapsed>250*time.Millisecond{t.Fatalf("shared budget exceeded: %v",elapsed)}\n}\n\nfunc
+        TestRuntimeAuditBackendLiteralConnect(t *testing.T){\n for _,network:=range []string{"tcp","udp"}{t.Run(network,func(t
+        *testing.T){\n  if network=="tcp"{listener,err:=net.Listen("tcp","127.0.0.1:0");if err!=nil{t.Fatal(err)};defer listener.Close();conn,err:=dialBackend(context.Background(),network,listener.Addr().String(),time.Second);if
+        err!=nil{t.Fatal(err)};conn.Close()\n  }else{listener,err:=net.ListenPacket("udp","127.0.0.1:0");if err!=nil{t.Fatal(err)};defer
+        listener.Close();conn,err:=dialBackend(context.Background(),network,listener.LocalAddr().String(),time.Second);if
+        err!=nil{t.Fatal(err)};conn.Close()}\n })}\n for _,address:=range []string{"169.254.169.254:80","100.100.100.200:80","[fd00:ec2::254]:80"}{if
+        conn,err:=dialBackend(context.Background(),"tcp",address,time.Second);err==nil{conn.Close();t.Fatalf("metadata target
+        accepted: %s",address)}}\n}\n'',encoding="utf-8")
+
+        Path(''internal/tunnel/l3/runtime_audit_fec_reopen_test.go'').write_text(''package l3\n\nimport (\n\t"bytes"\n\t"fmt"\n\t"testing"\n)\n\nfunc
+        TestRuntimeAuditFECReopenedSender(t *testing.T) {\n\tsend, recv := newLossyPair(nil)\n\tcfg := FECConfig{Data: 4,
+        Parity: 2}\n\ttx, err := newFECCarrier(send, cfg)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\trx, err := newFECCarrier(recv,
+        cfg)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tfor i := range 8 {\n\t\tif _, err := tx.WriteTo([]byte(fmt.Sprintf("old-%d",
+        i)), recv.addr); err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t}\n\tif got := len(drain(t, rx)); got != 8 {\n\t\tt.Fatalf("old
+        sender delivered=%d", got)\n\t}\n\t// A sender process/carrier reopens; the receiver and its FEC cache survive.\n\t//
+        Reusing the same address is deliberate: restart recovery must work both\n\t// with a new source port and a NAT which
+        assigns the same port again.\n\treopened, err := newFECCarrier(send, cfg)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tattempt,
+        err := beginHandshakeFresh("fec-reopen-token", 0, "gre", 123456789)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tvar
+        expected [][]byte\n\tfor i := range 4 {\n\t\tp := []byte(fmt.Sprintf("new-%d", i))\n\t\tif i == 0 {\n\t\t\tp = attempt.datagram()\n\t\t}\n\t\texpected
+        = append(expected, p)\n\t\tif _, err := reopened.WriteTo(p, recv.addr); err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t}\n\tgot
+        := drain(t, rx)\n\tif len(got) != 4 {\n\t\tt.Fatalf("reopened sender delivered=%d want4; old FEC group/index suppresses
+        fresh packets", len(got))\n\t}\n\tfor _, want := range expected {\n\t\tfound := false\n\t\tfor _, actual := range
+        got {\n\t\t\tif bytes.Equal(want, actual) {\n\t\t\t\tfound = true\n\t\t\t}\n\t\t}\n\t\tif !found {\n\t\t\tt.Fatalf("fresh
+        payload %q lost", want)\n\t\t}\n\t}\n}\n'',encoding="utf-8")
+
+        Path(''internal/tunnel/l3/runtime_audit_multipath_close_test.go'').write_text(''package l3\n\nimport (\n "context"\n
+        "errors"\n "net"\n "sync"\n "testing"\n "time"\n)\n\ntype closureAuditPath struct { *memCarrier; once sync.Once }\nfunc
+        (p *closureAuditPath) Close() error { p.once.Do(func(){close(p.in)}); return nil }\nfunc newClosureAuditPath() *closureAuditPath
+        { return &closureAuditPath{memCarrier:newMemCarrier("closure-audit")} }\n\nfunc TestRuntimeAuditMultipathAllDead(t
+        *testing.T) {\n a,b:=newClosureAuditPath(),newClosureAuditPath()\n c:=newMultipathCarrier([]DatagramCarrier{a,b},nil).(*multipathCarrier)\n
+        defer c.Close()\n a.in<-[]byte("queued-a"); b.in<-[]byte("queued-b")\n deadline:=time.Now().Add(time.Second)\n for
+        len(c.in)<2 { if time.Now().After(deadline){t.Fatal("pumps did not queue packets")}; time.Sleep(time.Millisecond)
+        }\n a.Close(); b.Close()\n // Pumps see permanent closure before the reader starts. The queued packets\n // still
+        have to arrive, followed by a terminal error without any deadline.\n time.Sleep(20*time.Millisecond)\n buf:=make([]byte,64)\n
+        seen:=map[string]bool{}\n for range 2 { n,_,err:=c.ReadFrom(buf); if err!=nil{t.Fatal(err)};seen[string(buf[:n])]=true
+        }\n if !seen["queued-a"]||!seen["queued-b"] {t.Fatalf("lost queued packets: %v",seen)}\n result:=make(chan error,1)\n
+        go func(){ _,_,err:=c.ReadFrom(buf);result<-err }()\n select { case err:=<-result:if !errors.Is(err,net.ErrClosed){t.Fatalf("got
+        %v",err)}\n case <-time.After(300*time.Millisecond):t.Fatal("ReadFrom stayed blocked after every path permanently
+        closed") }\n}\n\nfunc TestRuntimeAuditMultipathOneDeadStillCarries(t *testing.T) {\n a,b:=newClosureAuditPath(),newClosureAuditPath()\n
+        c:=newMultipathCarrier([]DatagramCarrier{a,b},nil)\n defer c.Close()\n a.Close();b.in<-[]byte("surviving-path")\n
+        c.SetReadDeadline(time.Now().Add(time.Second))\n buf:=make([]byte,64);n,_,err:=c.ReadFrom(buf)\n if err!=nil||string(buf[:n])!="surviving-path"{t.Fatalf("surviving
+        path failed: n=%d err=%v",n,err)}\n}\n\nfunc TestRuntimeAuditMultipathListenerGeneration(t *testing.T) {\n tun,err:=New(Config{Mode:ModeListen,Addr:"127.0.0.1:0",Token:"multipath-generation-audit",LocalIP:"10.10.0.1/30",PeerIP:"10.10.0.2",MTU:1400,AutoMTU:true},quietLogger())\n
+        if err!=nil{t.Fatal(err)}\n a,b:=newClosureAuditPath(),newClosureAuditPath()\n c:=newMultipathCarrier([]DatagramCarrier{a,b},nil)\n
+        tun.wrapCarrier=func(raw DatagramCarrier) DatagramCarrier { raw.Close(); return c }\n dev:=newFakeDevice(1400)\n tun.openDevice=func(deviceSpec)(packetDevice,error){return
+        dev,nil}\n ctx,cancel:=context.WithCancel(context.Background())\n done:=make(chan error,1)\n go func(){done<-tun.Run(ctx)}()\n
+        t.Cleanup(func(){cancel();c.Close();dev.Close(); select{case <-done:case <-time.After(time.Second):}})\n awaitBind(t,tun)\n
+        a.Close();b.Close()\n select {case err:=<-done:if err==nil||ctx.Err()!=nil{t.Fatalf("generation result=%v parent=%v",err,ctx.Err())}\n
+        case <-time.After(500*time.Millisecond):t.Fatal("listening Run never returned after all paths permanently closed;
+        restart cannot run") }\n}\n'',encoding="utf-8")
+
+        Path(''internal/tunnel/direct/runtime_audit_udp_cap_test.go'').write_text(''package direct\nimport("bytes";"context";"fmt";"net";"testing";"time")\nfunc
+        runtimeLimitedUDPTunnel(t *testing.T, backend string) *tunnel {\n\tt.Helper()\n\tconst token = "a-udp-token"\n\n\torigin,
+        err := NewOrigin(Config{\n\t\tRole: RoleOrigin, Addr: "127.0.0.1:0", Token: token,\n\t}, testLogger(t))\n\tif err
+        != nil {\n\t\tt.Fatalf("NewOrigin: %v", err)\n\t}\n\tctx, cancel := context.WithCancel(context.Background())\n\tt.Cleanup(cancel)\n\n\toriginDone
+        := make(chan struct{})\n\tgo func() { defer close(originDone); _ = origin.Run(ctx) }()\n\tt.Cleanup(func() { cancel();
+        <-originDone })\n\n\tvar bound net.Addr\n\tfor deadline := time.Now().Add(3 * time.Second); time.Now().Before(deadline);
+        {\n\t\tif bound = origin.LocalAddr(); bound != nil {\n\t\t\tbreak\n\t\t}\n\t\ttime.Sleep(5 * time.Millisecond)\n\t}\n\tif
+        bound == nil {\n\t\tt.Fatal("the origin never bound a port")\n\t}\n\n\tport := freePort(t)\n\tedge, err := NewEdge(Config{\n\t\tRole:
+        RoleEdge, Addr: bound.String(), Token: token,\n\t\tPorts:      []string{fmt.Sprintf("127.0.0.1:%d=%s", port, backend)},\n\t\tAcceptUDP:  true,\n        BandwidthMbps:
+        1,\n\t\tRetryDelay: 200 * time.Millisecond,\n\t}, testLogger(t))\n\tif err != nil {\n\t\tt.Fatalf("NewEdge: %v", err)\n\t}\n\tedgeDone
+        := make(chan struct{})\n\tgo func() { defer close(edgeDone); _ = edge.Run(ctx) }()\n\tt.Cleanup(func() { cancel();
+        <-edgeDone })\n\n\ttn := &tunnel{edge: edge, origin: origin, port: port}\n\ttn.awaitSession(t, 5*time.Second)\n\treturn
+        tn\n}\n\n\nfunc TestRuntimeDirectUDPBandwidth(t *testing.T){\n tn:=runtimeLimitedUDPTunnel(t,echoUDPBackend(t,""));
+        conn:=tn.dialUDP(t)\n if _,ok:=udpExchange(t,conn,"warmup",40);!ok{t.Fatal("UDP did not establish")}\n payload:=bytes.Repeat([]byte{0x51},32768);buf:=make([]byte,65535)\n
+        start:=time.Now()\n for i:=0;i<6;i++{if _,err:=conn.Write(payload);err!=nil{t.Fatal(err)};conn.SetReadDeadline(time.Now().Add(8*time.Second));n,err:=conn.Read(buf);if
+        err!=nil{t.Fatal(err)};if !bytes.Equal(buf[:n],payload){t.Fatal("datagram corrupted")}}\n elapsed:=time.Since(start);t.Logf("393216
+        payload bytes round-trip at 1Mbit/s: %v",elapsed)\n if elapsed<1500*time.Millisecond{t.Fatalf("UDP bypassed shared
+        bandwidth cap: %v",elapsed)}\n}\n'',encoding="utf-8")
+
+        Path(''internal/tunnel/l3/runtime_audit_udp_cap_test.go'').write_text(''package l3\n\nimport (\n\t"bytes"\n\t"context"\n\t"fmt"\n\t"github.com/backpack/backpack/internal/tunnel/limits"\n\t"net"\n\t"sync"\n\t"testing"\n\t"time"\n)\n\nfunc
+        TestRuntimeAuditL3UDPCap(t *testing.T) {\n\tbackend := echoUDP(t, "")\n\tport := freePort(t)\n\tlisten := fmt.Sprintf("127.0.0.1:%d",
+        port)\n\tf, err := NewForwarder(Config{Ports: []string{listen + "=" + backend}, AcceptUDP: true, PeerIP: "127.0.0.1",
+        BandwidthMbps: 1}, quietLogger())\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tctx, cancel := context.WithCancel(context.Background())\n\tdone
+        := make(chan error, 1)\n\tgo func() { done <- f.Run(ctx) }()\n\tt.Cleanup(func() {\n\t\tcancel()\n\t\tselect {\n\t\tcase
+        err := <-done:\n\t\t\tif err != nil {\n\t\t\t\tt.Error(err)\n\t\t\t}\n\t\tcase <-time.After(time.Second):\n\t\t\tt.Error("forwarder
+        shutdown stalled")\n\t\t}\n\t})\n\tselect {\n\tcase <-f.Ready():\n\tcase <-time.After(time.Second):\n\t\tt.Fatal("not
+        bound")\n\t}\n\tclient, err := net.Dial("udp", listen)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tdefer client.Close()\n\tclient.SetDeadline(time.Now().Add(10
+        * time.Second))\n\tpayload := bytes.Repeat([]byte{42}, 4096)\n\tbuf := make([]byte, 8192)\n\tbegan := time.Now()\n\tfor
+        i := range 50 {\n\t\tif _, err := client.Write(payload); err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t\tn, err := client.Read(buf)\n\t\tif
+        err != nil {\n\t\t\tt.Fatalf("echo%d: %v", i, err)\n\t\t}\n\t\tif !bytes.Equal(buf[:n], payload) {\n\t\t\tt.Fatal("datagram
+        corrupted")\n\t\t}\n\t}\n\telapsed := time.Since(began)\n\tt.Logf("409600 aggregate UDP bytes at1Mbit/s: %s", elapsed)\n\tif
+        elapsed < time.Second {\n\t\tt.Fatalf("UDP bypassed shared bandwidth cap: %s", elapsed)\n\t}\n}\n\nfunc TestRuntimeAuditL3UDPFlowCloseCancelsPacing(t
+        *testing.T) {\n\tbackend, err := net.ListenPacket("udp", "127.0.0.1:0")\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tdefer
+        backend.Close()\n\tgo func() {\n\t\tbuf := make([]byte, 65535)\n\t\tfor {\n\t\t\tif _, _, err := backend.ReadFrom(buf);
+        err != nil {\n\t\t\t\treturn\n\t\t\t}\n\t\t}\n\t}()\n\tlocal, err := net.ListenPacket("udp", "127.0.0.1:0")\n\tif
+        err != nil {\n\t\tt.Fatal(err)\n\t}\n\tdefer local.Close()\n\tf := &Forwarder{limiter: limits.New(limits.Config{BandwidthMbps:
+        1}), log: quietLogger()}\n\tctx, cancel := context.WithCancel(context.Background())\n\tdefer cancel()\n\tvar flows
+        sync.Map\n\tflow, err := f.udpFlowFor(ctx, &flows, local, local.LocalAddr(), newBackendPool([]string{backend.LocalAddr().String()}))\n\tif
+        err != nil {\n\t\tt.Fatal(err)\n\t}\n\tdefer flow.backend.Close()\n\tp := make([]byte, 60000)\n\tfor range 2 {\n\t\tif
+        _, err := flow.backend.Write(p); err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t}\n\tresult := make(chan error, 1)\n\tgo
+        func() { _, err := flow.backend.Write(p); result <- err }()\n\tselect {\n\tcase err := <-result:\n\t\tt.Fatalf("third
+        datagram was not paced: %v", err)\n\tcase <-time.After(20 * time.Millisecond):\n\t}\n\tflow.backend.Close()\n\tselect
+        {\n\tcase err := <-result:\n\t\tif err == nil {\n\t\t\tt.Fatal("closed flow write unexpectedly succeeded")\n\t\t}\n\tcase
+        <-time.After(200 * time.Millisecond):\n\t\tt.Fatal("closed flow kept waiting for bandwidth")\n\t}\n\tif ctx.Err()
+        != nil {\n\t\tt.Fatal("closing one UDP flow canceled the forwarder")\n\t}\n}\n'',encoding="utf-8")
+
+        Path(''internal/tunnel/l3/runtime_audit_original_test.go'').write_text(''package l3\nimport("bytes";"context";"errors";"io";"net";"sync";"testing";"time";"syscall")\ntype
+        runtimeBatchCarrier struct{*memCarrier;sent int;err error; singles int}\nfunc(c *runtimeBatchCarrier)WriteBatch(_
+        [][]byte,_ net.Addr)(int,error){return c.sent,c.err}\nfunc(c *runtimeBatchCarrier)WriteTo(p []byte,_ net.Addr)(int,error){c.singles++;return
+        len(p),nil}\nfunc TestRuntimeAuditBatchPrefix(t *testing.T){for _,tc:=range []struct{name string;err error;wantPackets,wantBytes,wantDrop
+        uint64;wantSingles int}{{"short",nil,1,60,1,0},{"error",io.ErrShortWrite,1,60,1,0},{"fallback",errNoBatch,2,1260,0,1}}{t.Run(tc.name,func(t
+        *testing.T){c:=&runtimeBatchCarrier{memCarrier:newMemCarrier("runtime"),sent:1,err:tc.err};tun:=&Tunnel{carrier:c,log:quietLogger()};ready:=[][]byte{make([]byte,60),make([]byte,1200)};if
+        !tun.send(context.Background(),c,ready,[]int{60,1200},&net.UDPAddr{},1260){t.Fatal("send stopped")};s:=tun.Stats();if
+        s.PacketsOut!=tc.wantPackets||s.BytesOut!=tc.wantBytes||s.Dropped!=tc.wantDrop||c.singles!=tc.wantSingles{t.Fatalf("partial
+        batch accounting/replay: %+v, singles=%d",s,c.singles)}})}}\ntype runtimeWriteDevice struct{*fakeDevice;n int;err
+        error;failed chan struct{};once sync.Once}\nfunc(d *runtimeWriteDevice)Write(_ [][]byte)(int,error){if d.failed!=nil{d.once.Do(func(){close(d.failed)})};return
+        d.n,d.err}\nfunc TestRuntimeAuditTUNProgress(t *testing.T){for _,tc:=range []struct{name string;n int;err error;drop
+        uint64}{{"zero",0,nil,3},{"partial-packet-error",1,syscall.EINVAL,2}}{t.Run(tc.name,func(t *testing.T){d:=&runtimeWriteDevice{fakeDevice:newFakeDevice(1400),n:tc.n,err:tc.err};tun:=&Tunnel{tun:d,log:quietLogger()};tun.writeToDevice([][]byte{{1},{2},{3}});if
+        tun.Stats().Dropped!=tc.drop{t.Fatalf("drops=%d want %d",tun.Stats().Dropped,tc.drop)}})}}\nfunc TestRuntimeAuditFatalWriteEndsGeneration(t
+        *testing.T){ctx,cancel:=context.WithCancel(context.Background());defer cancel();d:=&runtimeWriteDevice{fakeDevice:newFakeDevice(1400),err:syscall.EIO,failed:make(chan
+        struct{})};listener,err:=New(Config{Mode:ModeListen,Addr:"127.0.0.1:0",Token:"runtime-audit",Encap:"gre",LocalIP:"10.30.0.2/30",PeerIP:"10.30.0.1",MTU:1400},quietLogger());if
+        err!=nil{t.Fatal(err)};listener.openDevice=func(deviceSpec)(packetDevice,error){return d,nil};done:=make(chan error,1);go
+        func(){done<-listener.Run(ctx)}();ended:=false;t.Cleanup(func(){cancel();if !ended{<-done}});bind:=awaitBind(t,listener);txd:=newFakeDevice(1400);dialer,err:=New(Config{Mode:ModeDial,Addr:bind.String(),Token:"runtime-audit",Encap:"gre",LocalIP:"10.30.0.1/30",PeerIP:"10.30.0.2",MTU:1400},quietLogger());if
+        err!=nil{t.Fatal(err)};dialer.openDevice=func(deviceSpec)(packetDevice,error){return txd,nil};start(t,ctx,cancel,dialer,txd);awaitSession(t,dialer,3*time.Second);txd.inject<-ipv4Packet(1,2,3);select{case<-d.failed:case<-time.After(time.Second):t.Fatal("packet
+        did not reach TUN writer")};select{case err:=<-done:ended=true;if err==nil{t.Fatal("fatal TUN error reported success")};if
+        ctx.Err()!=nil{t.Fatal("needed external cancellation")};sock,e:=net.ListenPacket("udp",bind.String());if e!=nil{t.Fatal("failed
+        generation retained port",e)};sock.Close();case<-time.After(500*time.Millisecond):t.Error("fatal TUN write left generation
+        running")}}\ntype runtimeFECCarrier struct{*memCarrier;frame []byte;seq uint32}\nfunc(c *runtimeFECCarrier)WriteTo(p
+        []byte,_ net.Addr)(int,error){return len(p),nil}\nfunc(c *runtimeFECCarrier)ReadFrom(p []byte)(int,net.Addr,error){putFECHeader(c.frame,fecKindData,c.seq/10,byte(c.seq%10));c.seq++;return
+        copy(p,c.frame),c.peer,nil}\nfunc runtimeFECBelow()*runtimeFECCarrier{p:=&runtimeFECCarrier{memCarrier:newMemCarrier("runtime"),frame:make([]byte,fecHeaderLen+fecLenPrefix+1200)};p.frame[fecHeaderLen]=4;p.frame[fecHeaderLen+1]=176;return
+        p}\nfunc TestRuntimeAuditFECWarmSend(t *testing.T){c,_:=newFECCarrier(runtimeFECBelow(),FECConfig{Data:10,Parity:3});p:=make([]byte,1200);for
+        i:=0;i<30;i++{c.WriteTo(p,nil)};allocs:=testing.AllocsPerRun(1000,func(){_,err:=c.WriteTo(p,nil);if err!=nil{panic(err)}});if
+        allocs>0.1{t.Fatalf("warmed FEC sender allocates %.2f objects per datagram",allocs)}}\nfunc BenchmarkRuntimeAuditFECSend(b
+        *testing.B){c,_:=newFECCarrier(runtimeFECBelow(),FECConfig{Data:10,Parity:3});p:=make([]byte,1200);for i:=0;i<30;i++{c.WriteTo(p,nil)};b.ReportAllocs();b.ResetTimer();for
+        i:=0;i<b.N;i++{c.WriteTo(p,nil)}}\nfunc BenchmarkRuntimeAuditFECRead(b *testing.B){c,_:=newFECCarrier(runtimeFECBelow(),FECConfig{Data:10,Parity:3});p:=make([]byte,maxMTU+256);for
+        i:=0;i<30;i++{c.ReadFrom(p)};b.ReportAllocs();b.ResetTimer();for i:=0;i<b.N;i++{c.ReadFrom(p)}}\nfunc TestRuntimeAuditFECVaryingGroups(t
+        *testing.T){send,recv:=newLossyPair(nil);send.drop=func(n int)bool{return n%6==1||n%6==3};tx,_:=newFECCarrier(send,FECConfig{Data:4,Parity:2});rx,_:=newFECCarrier(recv,FECConfig{Data:4,Parity:2});for
+        group:=0;group<5;group++{want:=map[string]bool{};for j:=0;j<4;j++{p:=bytes.Repeat([]byte{byte(group*4+j)},1+(group+j)%3*599);want[string(p)]=true;if
+        _,err:=tx.WriteTo(p,nil);err!=nil{t.Fatal(err)}};got:=drain(t,rx);if len(got)!=4{t.Fatalf("group %d got %d packets",group,len(got))};for
+        _,p:=range got{if !want[string(p)]{t.Fatalf("group %d corrupted/replayed bytes",group)};delete(want,string(p))};if
+        len(want)!=0{t.Fatal("missing payloads")}}}\nfunc TestRuntimeAuditFECShortWrite(t *testing.T){c:=&runtimeBatchCarrier{memCarrier:newMemCarrier("runtime")};_
+        = c;below:=&runtimeShortCarrier{memCarrier:newMemCarrier("runtime")};fec,_:=newFECCarrier(below,FECConfig{Data:10,Parity:3});if
+        _,err:=fec.WriteTo([]byte("payload"),nil);!errors.Is(err,io.ErrShortWrite){t.Fatalf("short datagram was accepted:
+        %v",err)}}\ntype runtimeShortCarrier struct{*memCarrier}\nfunc(c *runtimeShortCarrier)WriteTo(p []byte,_ net.Addr)(int,error){return
+        len(p)-1,nil}\n'',encoding="utf-8")
+
+        Path(''internal/tunnel/l3/runtime_tun_audit_original_test.go'').write_text(''//go:build linux\npackage l3\nimport("testing";"net";"time")\ntype
+        runtimeByteDevice struct{*growingDevice}\nfunc(d *runtimeByteDevice)Write(bufs [][]byte,offset int)(int,error){total:=0;for
+        _,p:=range bufs{total+=len(p)};return total,nil}\nfunc TestRuntimeAuditTUNByteCount(t *testing.T){d:=&runtimeByteDevice{growingDevice:&growingDevice{}};td:=&tunDevice{dev:d,wbuf:make([]byte,tunStageSize),wbufs:make([][]byte,0,batchSize)};packets:=make([][]byte,batchSize+5);for
+        i:=range packets{packets[i]=make([]byte,1400)};n,err:=td.Write(packets);if err!=nil||n!=batchSize{t.Fatalf("TUN byte
+        count leaked as packet count: %d, %v",n,err)}}\n\nfunc TestRuntimeAuditGSOPrefixCount(t *testing.T){receiver,err:=net.ListenUDP("udp",&net.UDPAddr{IP:net.IPv4(127,0,0,1)});if
+        err!=nil{t.Fatal(err)};defer receiver.Close();raw,err:=listenUDP("127.0.0.1:0",defaultSockBuf);if err!=nil{t.Fatal(err)};defer
+        raw.Close();sender:=raw.(*udpCarrier);frames:=[][]byte{make([]byte,1200),make([]byte,1200),make([]byte,300),make([]byte,47)};n,err:=sender.WriteBatch(frames,receiver.LocalAddr());if
+        sender.gsoOff{t.Skip("UDP segmentation offload not supported on runner")};if err!=nil{t.Fatal(err)};receiver.SetReadDeadline(time.Now().Add(time.Second));buf:=make([]byte,2048);for
+        i:=0;i<4;i++{if _,_,err:=receiver.ReadFromUDP(buf);err!=nil{t.Fatal(err)}};if n!=len(frames){t.Fatalf("GSO prefix
+        disappeared from batch result: n=%d, actually delivered=%d",n,len(frames))}}\n'',encoding="utf-8")
+
+        PY
+
+        gofmt -w internal/tunnel/bridge/runtime_audit_test.go internal/utils/network/runtime_audit_quic_test.go internal/utils/handlers/runtime_audit_quic_test.go
+        internal/server/transport/runtime_audit_quic_test.go internal/tunnel/direct/runtime_audit_dns_test.go internal/tunnel/l3/runtime_audit_fec_reopen_test.go
+        internal/tunnel/l3/runtime_audit_multipath_close_test.go internal/tunnel/direct/runtime_audit_udp_cap_test.go internal/tunnel/l3/runtime_audit_udp_cap_test.go
+        internal/tunnel/l3/runtime_audit_original_test.go internal/tunnel/l3/runtime_tun_audit_original_test.go'
+    - name: Runtime regressions under race detector
+      run: go test ./internal/tunnel/bridge ./internal/tunnel/direct ./internal/tunnel/l3 ./internal/utils/network ./internal/utils/handlers
+        ./internal/server/transport -run "TestRuntime" -race -count=3 -v -timeout 6m
+    - name: Existing package checks
+      run: 'go vet ./internal/tunnel/bridge ./internal/tunnel/direct ./internal/tunnel/l3 ./internal/utils/network ./internal/utils/handlers
+        ./internal/server/transport
+
+        go test ./internal/tunnel/bridge ./internal/tunnel/direct ./internal/tunnel/l3 ./internal/utils/network ./internal/utils/handlers
+        ./internal/server/transport -race -timeout 15m'
+  direct:
+    name: PR60 exact source
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: cfe0ad94be8d367d9fdaea5c2523465cbb8277f2
+        fetch-depth: 0
+    - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
+
+        sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - name: Temporary runtime regressions
+      run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/tunnel/bridge/runtime_audit_test.go'').write_text(''package bridge\n\nimport (\n "bytes"\n "context"\n
+        "io"\n "net"\n "testing"\n "time"\n\n "github.com/backpack/backpack/internal/metrics"\n "github.com/backpack/backpack/internal/tunnel/limits"\n)\n\nfunc
+        TestRuntimeAuditBridgeEOFResponse(t *testing.T) {\n variants := []struct{name string; wrap func(net.Conn) net.Conn}{\n  {"plain",func(c
+        net.Conn) net.Conn{return c}},\n  {"counted",metrics.CountedConn},\n  {"limited",func(c net.Conn) net.Conn{return
+        limits.New(limits.Config{BandwidthMbps:1}).Wrap(context.Background(),c)}},\n  {"counted-limited",func(c net.Conn)
+        net.Conn{return metrics.CountedConn(limits.New(limits.Config{BandwidthMbps:1}).Wrap(context.Background(),c))}},\n  {"limited-counted",func(c
+        net.Conn) net.Conn{return limits.New(limits.Config{BandwidthMbps:1}).Wrap(context.Background(),metrics.CountedConn(c))}},\n
+        }\n for _,variant:=range variants {t.Run(variant.name,func(t *testing.T){\n  user,left:=tcpPair(t); right,backend:=tcpPair(t)\n  ctx,cancel:=context.WithCancel(context.Background());defer
+        cancel()\n  done:=make(chan struct{});go func(){Join(ctx,variant.wrap(left),right);close(done)}()\n  user.SetDeadline(time.Now().Add(3*time.Second));backend.SetDeadline(time.Now().Add(3*time.Second))\n  user.Write([]byte("request"));user.(*net.TCPConn).CloseWrite()\n  request,err:=io.ReadAll(backend);if
+        err!=nil||string(request)!="request"{t.Fatalf("upload %q %v",request,err)}\n  time.Sleep(30*time.Millisecond)\n  response:=bytes.Repeat([]byte("reply"),4096)\n  if
+        _,err=backend.Write(response);err!=nil{t.Fatalf("response write: %v",err)}\n  backend.(*net.TCPConn).CloseWrite()\n  got,err:=io.ReadAll(user);if
+        err!=nil||!bytes.Equal(got,response){t.Fatalf("response length=%d want=%d error=%v",len(got),len(response),err)}\n  select{case<-done:case<-time.After(time.Second):t.Fatal("bridge
+        did not drain")}\n })}\n}\n\nfunc TestRuntimeAuditBridgeHalfCloseCancel(t *testing.T){\n user,left:=tcpPair(t);right,backend:=tcpPair(t)\n
+        ctx,cancel:=context.WithCancel(context.Background());defer cancel()\n done:=make(chan struct{});go func(){Join(ctx,left,right);close(done)}()\n
+        user.(*net.TCPConn).CloseWrite();backend.SetReadDeadline(time.Now().Add(time.Second))\n if _,err:=io.ReadAll(backend);err!=nil{t.Fatal(err)}\n
+        select{case<-done:t.Fatal("closed reverse direction before cancellation");case<-time.After(30*time.Millisecond):}\n
+        cancel();select{case<-done:case<-time.After(time.Second):t.Fatal("half-closed bridge outlived cancellation")}\n}\n\nfunc
+        TestRuntimeAuditBridgeMixedEOF(t *testing.T){\n user,left:=net.Pipe();right,backend:=tcpPair(t);defer user.Close()\n
+        ctx,cancel:=context.WithCancel(context.Background());defer cancel()\n done:=make(chan struct{});go func(){Join(ctx,left,right);close(done)}()\n
+        user.Close()\n select{case<-done:case<-time.After(time.Second):t.Fatal("non-TCP EOF did not tear down")}\n backend.SetReadDeadline(time.Now().Add(time.Second));if
+        _,err:=io.ReadAll(backend);err!=nil{t.Fatal(err)}\n}\n\nfunc TestRuntimeAuditBridgeRateRemainsActive(t *testing.T){\n
+        user,left:=tcpPair(t);right,backend:=tcpPair(t)\n ctx,cancel:=context.WithCancel(context.Background());defer cancel()\n
+        done:=make(chan struct{});go func(){Join(ctx,limits.New(limits.Config{BandwidthMbps:1}).Wrap(ctx,metrics.CountedConn(left)),right);close(done)}()\n
+        user.SetDeadline(time.Now().Add(5*time.Second));backend.SetDeadline(time.Now().Add(5*time.Second))\n user.(*net.TCPConn).CloseWrite();if
+        _,err:=io.ReadAll(backend);err!=nil{t.Fatal(err)}\n response:=bytes.Repeat([]byte{7},250000)\n go func(){backend.Write(response);backend.(*net.TCPConn).CloseWrite()}()\n
+        start:=time.Now();got,err:=io.ReadAll(user)\n if err!=nil||!bytes.Equal(got,response){t.Fatalf("paced response length=%d
+        error=%v",len(got),err)}\n if elapsed:=time.Since(start);elapsed<700*time.Millisecond{t.Fatalf("pacing bypassed: %v",elapsed)}\n
+        select{case<-done:case<-time.After(time.Second):t.Fatal("paced bridge did not drain")}\n}\n'',encoding="utf-8")
+
+        PY
+
+        gofmt -w internal/tunnel/bridge/runtime_audit_test.go'
+    - name: Runtime regressions under race detector
+      run: go test ./internal/tunnel/bridge ./internal/tunnel/limits ./internal/tunnel/direct -run "TestRuntime" -race -count=3
+        -v -timeout 6m
+    - name: Existing package checks
+      run: 'go vet ./internal/tunnel/bridge ./internal/tunnel/limits ./internal/tunnel/direct
+
+        go test ./internal/tunnel/bridge ./internal/tunnel/limits ./internal/tunnel/direct -race -timeout 15m'
+  flow:
+    name: PR69 exact source
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: ec83368e385576779c6b3d909b33973974ab9c47
+        fetch-depth: 0
+    - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
+
+        sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - name: Temporary runtime regressions
+      run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/tunnel/l3/runtime_audit_multipath_close_test.go'').write_text(''package l3\n\nimport (\n "context"\n
+        "errors"\n "net"\n "sync"\n "testing"\n "time"\n)\n\ntype closureAuditPath struct { *memCarrier; once sync.Once }\nfunc
+        (p *closureAuditPath) Close() error { p.once.Do(func(){close(p.in)}); return nil }\nfunc newClosureAuditPath() *closureAuditPath
+        { return &closureAuditPath{memCarrier:newMemCarrier("closure-audit")} }\n\nfunc TestRuntimeAuditMultipathAllDead(t
+        *testing.T) {\n a,b:=newClosureAuditPath(),newClosureAuditPath()\n c:=newMultipathCarrier([]DatagramCarrier{a,b},nil).(*multipathCarrier)\n
+        defer c.Close()\n a.in<-[]byte("queued-a"); b.in<-[]byte("queued-b")\n deadline:=time.Now().Add(time.Second)\n for
+        len(c.in)<2 { if time.Now().After(deadline){t.Fatal("pumps did not queue packets")}; time.Sleep(time.Millisecond)
+        }\n a.Close(); b.Close()\n // Pumps see permanent closure before the reader starts. The queued packets\n // still
+        have to arrive, followed by a terminal error without any deadline.\n time.Sleep(20*time.Millisecond)\n buf:=make([]byte,64)\n
+        seen:=map[string]bool{}\n for range 2 { n,_,err:=c.ReadFrom(buf); if err!=nil{t.Fatal(err)};seen[string(buf[:n])]=true
+        }\n if !seen["queued-a"]||!seen["queued-b"] {t.Fatalf("lost queued packets: %v",seen)}\n result:=make(chan error,1)\n
+        go func(){ _,_,err:=c.ReadFrom(buf);result<-err }()\n select { case err:=<-result:if !errors.Is(err,net.ErrClosed){t.Fatalf("got
+        %v",err)}\n case <-time.After(300*time.Millisecond):t.Fatal("ReadFrom stayed blocked after every path permanently
+        closed") }\n}\n\nfunc TestRuntimeAuditMultipathOneDeadStillCarries(t *testing.T) {\n a,b:=newClosureAuditPath(),newClosureAuditPath()\n
+        c:=newMultipathCarrier([]DatagramCarrier{a,b},nil)\n defer c.Close()\n a.Close();b.in<-[]byte("surviving-path")\n
+        c.SetReadDeadline(time.Now().Add(time.Second))\n buf:=make([]byte,64);n,_,err:=c.ReadFrom(buf)\n if err!=nil||string(buf[:n])!="surviving-path"{t.Fatalf("surviving
+        path failed: n=%d err=%v",n,err)}\n}\n\nfunc TestRuntimeAuditMultipathListenerGeneration(t *testing.T) {\n tun,err:=New(Config{Mode:ModeListen,Addr:"127.0.0.1:0",Token:"multipath-generation-audit",LocalIP:"10.10.0.1/30",PeerIP:"10.10.0.2",MTU:1400,AutoMTU:true},quietLogger())\n
+        if err!=nil{t.Fatal(err)}\n a,b:=newClosureAuditPath(),newClosureAuditPath()\n c:=newMultipathCarrier([]DatagramCarrier{a,b},nil)\n
+        tun.wrapCarrier=func(raw DatagramCarrier) DatagramCarrier { raw.Close(); return c }\n dev:=newFakeDevice(1400)\n tun.openDevice=func(deviceSpec)(packetDevice,error){return
+        dev,nil}\n ctx,cancel:=context.WithCancel(context.Background())\n done:=make(chan error,1)\n go func(){done<-tun.Run(ctx)}()\n
+        t.Cleanup(func(){cancel();c.Close();dev.Close(); select{case <-done:case <-time.After(time.Second):}})\n awaitBind(t,tun)\n
+        a.Close();b.Close()\n select {case err:=<-done:if err==nil||ctx.Err()!=nil{t.Fatalf("generation result=%v parent=%v",err,ctx.Err())}\n
+        case <-time.After(500*time.Millisecond):t.Fatal("listening Run never returned after all paths permanently closed;
+        restart cannot run") }\n}\n'',encoding="utf-8")
+
+        Path(''internal/tunnel/direct/runtime_audit_udp_cap_test.go'').write_text(''package direct\nimport("bytes";"context";"fmt";"net";"testing";"time")\nfunc
+        runtimeLimitedUDPTunnel(t *testing.T, backend string) *tunnel {\n\tt.Helper()\n\tconst token = "a-udp-token"\n\n\torigin,
+        err := NewOrigin(Config{\n\t\tRole: RoleOrigin, Addr: "127.0.0.1:0", Token: token,\n\t}, testLogger(t))\n\tif err
+        != nil {\n\t\tt.Fatalf("NewOrigin: %v", err)\n\t}\n\tctx, cancel := context.WithCancel(context.Background())\n\tt.Cleanup(cancel)\n\n\toriginDone
+        := make(chan struct{})\n\tgo func() { defer close(originDone); _ = origin.Run(ctx) }()\n\tt.Cleanup(func() { cancel();
+        <-originDone })\n\n\tvar bound net.Addr\n\tfor deadline := time.Now().Add(3 * time.Second); time.Now().Before(deadline);
+        {\n\t\tif bound = origin.LocalAddr(); bound != nil {\n\t\t\tbreak\n\t\t}\n\t\ttime.Sleep(5 * time.Millisecond)\n\t}\n\tif
+        bound == nil {\n\t\tt.Fatal("the origin never bound a port")\n\t}\n\n\tport := freePort(t)\n\tedge, err := NewEdge(Config{\n\t\tRole:
+        RoleEdge, Addr: bound.String(), Token: token,\n\t\tPorts:      []string{fmt.Sprintf("127.0.0.1:%d=%s", port, backend)},\n\t\tAcceptUDP:  true,\n        BandwidthMbps:
+        1,\n\t\tRetryDelay: 200 * time.Millisecond,\n\t}, testLogger(t))\n\tif err != nil {\n\t\tt.Fatalf("NewEdge: %v", err)\n\t}\n\tedgeDone
+        := make(chan struct{})\n\tgo func() { defer close(edgeDone); _ = edge.Run(ctx) }()\n\tt.Cleanup(func() { cancel();
+        <-edgeDone })\n\n\ttn := &tunnel{edge: edge, origin: origin, port: port}\n\ttn.awaitSession(t, 5*time.Second)\n\treturn
+        tn\n}\n\n\nfunc TestRuntimeDirectUDPBandwidth(t *testing.T){\n tn:=runtimeLimitedUDPTunnel(t,echoUDPBackend(t,""));
+        conn:=tn.dialUDP(t)\n if _,ok:=udpExchange(t,conn,"warmup",40);!ok{t.Fatal("UDP did not establish")}\n payload:=bytes.Repeat([]byte{0x51},32768);buf:=make([]byte,65535)\n
+        start:=time.Now()\n for i:=0;i<6;i++{if _,err:=conn.Write(payload);err!=nil{t.Fatal(err)};conn.SetReadDeadline(time.Now().Add(8*time.Second));n,err:=conn.Read(buf);if
+        err!=nil{t.Fatal(err)};if !bytes.Equal(buf[:n],payload){t.Fatal("datagram corrupted")}}\n elapsed:=time.Since(start);t.Logf("393216
+        payload bytes round-trip at 1Mbit/s: %v",elapsed)\n if elapsed<1500*time.Millisecond{t.Fatalf("UDP bypassed shared
+        bandwidth cap: %v",elapsed)}\n}\n'',encoding="utf-8")
+
+        Path(''internal/tunnel/l3/runtime_audit_udp_cap_test.go'').write_text(''package l3\n\nimport (\n\t"bytes"\n\t"context"\n\t"fmt"\n\t"github.com/backpack/backpack/internal/tunnel/limits"\n\t"net"\n\t"sync"\n\t"testing"\n\t"time"\n)\n\nfunc
+        TestRuntimeAuditL3UDPCap(t *testing.T) {\n\tbackend := echoUDP(t, "")\n\tport := freePort(t)\n\tlisten := fmt.Sprintf("127.0.0.1:%d",
+        port)\n\tf, err := NewForwarder(Config{Ports: []string{listen + "=" + backend}, AcceptUDP: true, PeerIP: "127.0.0.1",
+        BandwidthMbps: 1}, quietLogger())\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tctx, cancel := context.WithCancel(context.Background())\n\tdone
+        := make(chan error, 1)\n\tgo func() { done <- f.Run(ctx) }()\n\tt.Cleanup(func() {\n\t\tcancel()\n\t\tselect {\n\t\tcase
+        err := <-done:\n\t\t\tif err != nil {\n\t\t\t\tt.Error(err)\n\t\t\t}\n\t\tcase <-time.After(time.Second):\n\t\t\tt.Error("forwarder
+        shutdown stalled")\n\t\t}\n\t})\n\tselect {\n\tcase <-f.Ready():\n\tcase <-time.After(time.Second):\n\t\tt.Fatal("not
+        bound")\n\t}\n\tclient, err := net.Dial("udp", listen)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tdefer client.Close()\n\tclient.SetDeadline(time.Now().Add(10
+        * time.Second))\n\tpayload := bytes.Repeat([]byte{42}, 4096)\n\tbuf := make([]byte, 8192)\n\tbegan := time.Now()\n\tfor
+        i := range 50 {\n\t\tif _, err := client.Write(payload); err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t\tn, err := client.Read(buf)\n\t\tif
+        err != nil {\n\t\t\tt.Fatalf("echo%d: %v", i, err)\n\t\t}\n\t\tif !bytes.Equal(buf[:n], payload) {\n\t\t\tt.Fatal("datagram
+        corrupted")\n\t\t}\n\t}\n\telapsed := time.Since(began)\n\tt.Logf("409600 aggregate UDP bytes at1Mbit/s: %s", elapsed)\n\tif
+        elapsed < time.Second {\n\t\tt.Fatalf("UDP bypassed shared bandwidth cap: %s", elapsed)\n\t}\n}\n\nfunc TestRuntimeAuditL3UDPFlowCloseCancelsPacing(t
+        *testing.T) {\n\tbackend, err := net.ListenPacket("udp", "127.0.0.1:0")\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tdefer
+        backend.Close()\n\tgo func() {\n\t\tbuf := make([]byte, 65535)\n\t\tfor {\n\t\t\tif _, _, err := backend.ReadFrom(buf);
+        err != nil {\n\t\t\t\treturn\n\t\t\t}\n\t\t}\n\t}()\n\tlocal, err := net.ListenPacket("udp", "127.0.0.1:0")\n\tif
+        err != nil {\n\t\tt.Fatal(err)\n\t}\n\tdefer local.Close()\n\tf := &Forwarder{limiter: limits.New(limits.Config{BandwidthMbps:
+        1}), log: quietLogger()}\n\tctx, cancel := context.WithCancel(context.Background())\n\tdefer cancel()\n\tvar flows
+        sync.Map\n\tflow, err := f.udpFlowFor(ctx, &flows, local, local.LocalAddr(), newBackendPool([]string{backend.LocalAddr().String()}))\n\tif
+        err != nil {\n\t\tt.Fatal(err)\n\t}\n\tdefer flow.backend.Close()\n\tp := make([]byte, 60000)\n\tfor range 2 {\n\t\tif
+        _, err := flow.backend.Write(p); err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t}\n\tresult := make(chan error, 1)\n\tgo
+        func() { _, err := flow.backend.Write(p); result <- err }()\n\tselect {\n\tcase err := <-result:\n\t\tt.Fatalf("third
+        datagram was not paced: %v", err)\n\tcase <-time.After(20 * time.Millisecond):\n\t}\n\tflow.backend.Close()\n\tselect
+        {\n\tcase err := <-result:\n\t\tif err == nil {\n\t\t\tt.Fatal("closed flow write unexpectedly succeeded")\n\t\t}\n\tcase
+        <-time.After(200 * time.Millisecond):\n\t\tt.Fatal("closed flow kept waiting for bandwidth")\n\t}\n\tif ctx.Err()
+        != nil {\n\t\tt.Fatal("closing one UDP flow canceled the forwarder")\n\t}\n}\n'',encoding="utf-8")
+
+        PY
+
+        gofmt -w internal/tunnel/l3/runtime_audit_multipath_close_test.go internal/tunnel/direct/runtime_audit_udp_cap_test.go
+        internal/tunnel/l3/runtime_audit_udp_cap_test.go'
+    - name: Runtime regressions under race detector
+      run: go test ./internal/tunnel/l3 ./internal/tunnel/direct ./internal/tunnel/limits ./internal/utils/handlers -run "TestRuntime"
+        -race -count=3 -v -timeout 6m
+    - name: Existing package checks
+      run: 'go vet ./internal/tunnel/l3 ./internal/tunnel/direct ./internal/tunnel/limits ./internal/utils/handlers
+
+        go test ./internal/tunnel/l3 ./internal/tunnel/direct ./internal/tunnel/limits ./internal/utils/handlers -race -timeout
+        15m'
+  quic_source:
+    name: QUIC exact source
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 0eaabbba2352578769ac34ebecc939228d571f46
+        fetch-depth: 0
+    - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
+
+        sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - name: Temporary runtime regressions
+      run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/utils/network/runtime_audit_quic_test.go'').write_text(''package network\n\nimport (\n\t"bytes"\n\t"context"\n\t"errors"\n\t"github.com/quic-go/quic-go"\n\t"io"\n\t"net"\n\t"sync"\n\t"testing"\n\t"time"\n)\n\nfunc
+        runtimeAuditQUICPair(t *testing.T) (*QUICStreamConn, *quic.Stream, *quic.Conn) {\n\tt.Helper()\n\tctx, cancel := context.WithTimeout(context.Background(),
+        20*time.Second)\n\tt.Cleanup(cancel)\n\tlistener, err := QUICListen("127.0.0.1:0", QUICSettings{KeepAlivePeriod: time.Second,
+        MaxIdleTimeout: 15 * time.Second})\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tt.Cleanup(func() { listener.Close()
+        })\n\taccepted := make(chan *quic.Conn, 1)\n\tgo func() {\n\t\tc, err := listener.Accept(ctx)\n\t\tif err == nil {\n\t\t\taccepted
+        <- c\n\t\t}\n\t}()\n\tcfg := (QUICSettings{KeepAlivePeriod: time.Second, MaxIdleTimeout: 15 * time.Second}).quicConfig()\n\tcfg.InitialStreamReceiveWindow
+        = 32 * 1024\n\tcfg.MaxStreamReceiveWindow = 32 * 1024\n\tpeer, err := quic.DialAddr(ctx, listener.Addr().String(),
+        quicClientTLS(), cfg)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tt.Cleanup(func() { peer.CloseWithError(0, "test
+        end") })\n\tvar server *quic.Conn\n\tselect {\n\tcase server = <-accepted:\n\tcase <-ctx.Done():\n\t\tt.Fatal(ctx.Err())\n\t}\n\tt.Cleanup(func()
+        { server.CloseWithError(0, "test end") })\n\tsender, err := peer.OpenStreamSync(ctx)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tif
+        _, err := sender.Write([]byte{1}); err != nil {\n\t\tt.Fatal(err)\n\t}\n\treceiver, err := server.AcceptStream(ctx)\n\tif
+        err != nil {\n\t\tt.Fatal(err)\n\t}\n\tif _, err := io.ReadFull(receiver, make([]byte, 1)); err != nil {\n\t\tt.Fatal(err)\n\t}\n\treturn
+        NewQUICStreamConn(receiver, server).(*QUICStreamConn), sender, peer\n}\n\nfunc TestRuntimeAuditQUICCloseUnblocksRead(t
+        *testing.T) {\n\tconn, _, peer := runtimeAuditQUICPair(t)\n\tdone := make(chan error, 1)\n\tgo func() { _, err :=
+        conn.Read(make([]byte, 1)); done <- err }()\n\tif err := conn.Close(); err != nil {\n\t\tt.Fatal(err)\n\t}\n\tselect
+        {\n\tcase err := <-done:\n\t\tif err == nil {\n\t\t\tt.Fatal("closed read succeeded")\n\t\t}\n\tcase <-time.After(time.Second):\n\t\tt.Fatal("net.Conn.Close
+        left QUIC Read blocked")\n\t}\n\tif peer.Context().Err() != nil {\n\t\tt.Fatal("closing stream closed carrier")\n\t}\n\tif
+        err := conn.Close(); err != nil {\n\t\tt.Fatal("second Close:", err)\n\t}\n}\n\nfunc TestRuntimeAuditQUICCloseUnblocksWrite(t
+        *testing.T) {\n\tconn, _, peer := runtimeAuditQUICPair(t)\n\tdone := make(chan error, 1)\n\tgo func() { _, err :=
+        conn.Write(make([]byte, 16*1024*1024)); done <- err }()\n\tselect {\n\tcase err := <-done:\n\t\tt.Fatalf("write did
+        not reach flow-control block: %v", err)\n\tcase <-time.After(100 * time.Millisecond):\n\t}\n\tclosed := make(chan
+        error, 1)\n\tgo func() { closed <- conn.Close() }()\n\tselect {\n\tcase err := <-closed:\n\t\tif err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\tcase
+        <-time.After(time.Second):\n\t\tt.Fatal("Close blocked behind Write")\n\t}\n\tselect {\n\tcase err := <-done:\n\t\tif
+        err == nil {\n\t\t\tt.Fatal("blocked Write survived Close")\n\t\t}\n\tcase <-time.After(time.Second):\n\t\tt.Fatal("net.Conn.Close
+        left QUIC Write blocked")\n\t}\n\tif peer.Context().Err() != nil {\n\t\tt.Fatal("closing stream closed carrier")\n\t}\n}\n\nfunc
+        TestRuntimeAuditQUICClosePreservesCompletedReply(t *testing.T) {\n\tconn, peer, _ := runtimeAuditQUICPair(t)\n\tpayload
+        := bytes.Repeat([]byte("reply"), 1600)\n\tif n, err := conn.Write(payload); err != nil || n != len(payload) {\n\t\tt.Fatalf("write
+        n=%d err=%v", n, err)\n\t}\n\tif err := conn.Close(); err != nil {\n\t\tt.Fatal(err)\n\t}\n\tpeer.SetReadDeadline(time.Now().Add(3
+        * time.Second))\n\tgot, err := io.ReadAll(peer)\n\tif err != nil || !bytes.Equal(got, payload) {\n\t\tt.Fatalf("completed
+        reply lost: got=%d err=%v", len(got), err)\n\t}\n}\n\nfunc TestRuntimeAuditQUICCloseConcurrentWriteAndClose(t *testing.T)
+        {\n\tconn, _, _ := runtimeAuditQUICPair(t)\n\tvar workers sync.WaitGroup\n\tstart := make(chan struct{})\n\tfor range
+        8 {\n\t\tworkers.Add(1)\n\t\tgo func() {\n\t\t\tdefer workers.Done()\n\t\t\t<-start\n\t\t\t_, err := conn.Write([]byte("reply"))\n\t\t\tif
+        err != nil && !errors.Is(err, net.ErrClosed) { /* active stream reset is also expected */\n\t\t\t}\n\t\t}()\n\t\tworkers.Add(1)\n\t\tgo
+        func() { defer workers.Done(); <-start; conn.Close() }()\n\t}\n\tclose(start)\n\tdone := make(chan struct{})\n\tgo
+        func() { workers.Wait(); close(done) }()\n\tselect {\n\tcase <-done:\n\tcase <-time.After(3 * time.Second):\n\t\tt.Fatal("concurrent
+        Write/Close hung")\n\t}\n\tif _, err := conn.Write([]byte{1}); !errors.Is(err, net.ErrClosed) {\n\t\tt.Fatalf("Write
+        after Close err=%v", err)\n\t}\n}\n'',encoding="utf-8")
+
+        Path(''internal/utils/handlers/runtime_audit_quic_test.go'').write_text(''package handlers\n\nimport (\n\t"context"\n\t"github.com/backpack/backpack/internal/utils/network"\n\t"github.com/quic-go/quic-go"\n\t"github.com/sirupsen/logrus"\n\t"io"\n\t"net"\n\t"sync/atomic"\n\t"testing"\n\t"time"\n)\n\nfunc
+        TestRuntimeAuditQUICBackendEOFRetiresRelay(t *testing.T) {\n\tctx, cancel := context.WithTimeout(context.Background(),
+        15*time.Second)\n\tdefer cancel()\n\tsettings := network.QUICSettings{KeepAlivePeriod: time.Second, MaxIdleTimeout:
+        15 * time.Second}\n\tlistener, err := network.QUICListen("127.0.0.1:0", settings)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tdefer
+        listener.Close()\n\taccepted := make(chan *quic.Conn, 1)\n\tgo func() {\n\t\tc, err := listener.Accept(ctx)\n\t\tif
+        err == nil {\n\t\t\taccepted <- c\n\t\t}\n\t}()\n\tclient, err := network.QUICDial(ctx, listener.Addr().String(),
+        settings)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tdefer client.CloseWithError(0, "test end")\n\tvar server *quic.Conn\n\tselect
+        {\n\tcase server = <-accepted:\n\tcase <-ctx.Done():\n\t\tt.Fatal(ctx.Err())\n\t}\n\tdefer server.CloseWithError(0,
+        "test end")\n\tsender, err := client.OpenStreamSync(ctx)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tsender.Write([]byte{1})\n\treceiver,
+        err := server.AcceptStream(ctx)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tif _, err := io.ReadFull(receiver, make([]byte,
+        1)); err != nil {\n\t\tt.Fatal(err)\n\t}\n\tbackend, service := net.Pipe()\n\tdefer backend.Close()\n\tdefer service.Close()\n\tlogger
+        := logrus.New()\n\tlogger.SetOutput(io.Discard)\n\tdone := make(chan struct{})\n\tvar admissionSlots atomic.Int32\n\tadmissionSlots.Store(1)\n\tgo
+        func() {\n\t\tTCPConnectionHandler(ctx, false, network.NewQUICStreamConn(receiver, server), backend, logger, nil,
+        0, false)\n\t\tadmissionSlots.Add(-1)\n\t\tclose(done)\n\t}()\n\tservice.Close()\n\tselect {\n\tcase <-done:\n\tcase
+        <-time.After(time.Second):\n\t\tt.Fatalf("backend EOF left relay and admission slot alive: slots=%d", admissionSlots.Load())\n\t}\n\tif
+        admissionSlots.Load() != 0 {\n\t\tt.Fatal("relay slot not released")\n\t}\n\tif client.Context().Err() != nil {\n\t\tt.Fatal("relay
+        teardown closed QUIC carrier")\n\t}\n}\n'',encoding="utf-8")
+
+        Path(''internal/server/transport/runtime_audit_quic_test.go'').write_text(''package transport\n\nimport (\n\t"context"\n\t"errors"\n\t"github.com/backpack/backpack/internal/utils"\n\t"github.com/backpack/backpack/internal/utils/network"\n\t"github.com/quic-go/quic-go"\n\t"io"\n\t"testing"\n\t"time"\n)\n\nfunc
+        TestRuntimeAuditQUICRejectedStreamStopsPeerWrite(t *testing.T) {\n\tctx, cancel := context.WithTimeout(context.Background(),
+        10*time.Second)\n\tdefer cancel()\n\tsettings := network.QUICSettings{KeepAlivePeriod: time.Second, MaxIdleTimeout:
+        15 * time.Second}\n\tlistener, err := network.QUICListen("127.0.0.1:0", settings)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tdefer
+        listener.Close()\n\taccepted := make(chan *quic.Conn, 1)\n\tgo func() {\n\t\tc, err := listener.Accept(ctx)\n\t\tif
+        err == nil {\n\t\t\taccepted <- c\n\t\t}\n\t}()\n\tclient, err := network.QUICDial(ctx, listener.Addr().String(),
+        settings)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tdefer client.CloseWithError(0, "test end")\n\tvar server *quic.Conn\n\tselect
+        {\n\tcase server = <-accepted:\n\tcase <-ctx.Done():\n\t\tt.Fatal(ctx.Err())\n\t}\n\tdefer server.CloseWithError(0,
+        "test end")\n\tsender, err := client.OpenStreamSync(ctx)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tconst token
+        = "a-long-enough-token"\n\tif err := utils.SendBinaryTransportString(network.NewQUICStreamConn(sender, client), token,
+        utils.SG_Ping); err != nil {\n\t\tt.Fatal(err)\n\t}\n\treceiver, err := server.AcceptStream(ctx)\n\tif err != nil
+        {\n\t\tt.Fatal(err)\n\t}\n\tsrv := NewQuicServer(ctx, &QuicConfig{Token: token, ChannelSize: 1}, quietLogger())\n\tgen
+        := srv.newGen(ctx)\n\tsrv.acceptStream(gen, server, receiver, make(chan quicClaim), &quicGate{pending: make(chan struct{},
+        unauthenticatedStreams)}, false)\n\tsender.SetReadDeadline(time.Now().Add(time.Second))\n\tif _, err := sender.Read(make([]byte,
+        1)); err != io.EOF {\n\t\tt.Fatalf("rejected stream did not close send side: %v", err)\n\t}\n\tsender.SetWriteDeadline(time.Now().Add(time.Second))\n\tvar
+        writeErr error\n\tfor i := 0; i < 2048; i++ {\n\t\tif _, writeErr = sender.Write(make([]byte, 4096)); writeErr !=
+        nil {\n\t\t\tbreak\n\t\t}\n\t}\n\tvar streamErr *quic.StreamError\n\tif !errors.As(writeErr, &streamErr) || !streamErr.Remote
+        {\n\t\tt.Fatalf("server retained rejected receive side: peer Write error=%v (want remote stream cancellation)", writeErr)\n\t}\n\tif
+        client.Context().Err() != nil {\n\t\tt.Fatal("rejecting one stream closed carrier")\n\t}\n}\n'',encoding="utf-8")
+
+        PY
+
+        gofmt -w internal/utils/network/runtime_audit_quic_test.go internal/utils/handlers/runtime_audit_quic_test.go internal/server/transport/runtime_audit_quic_test.go'
+    - name: Runtime regressions under race detector
+      run: go test ./internal/utils/network ./internal/utils/handlers ./internal/client/transport ./internal/server/transport
+        -run "TestRuntime" -race -count=3 -v -timeout 6m
+    - name: Existing package checks
+      run: 'go vet ./internal/utils/network ./internal/utils/handlers ./internal/client/transport ./internal/server/transport
+
+        go test ./internal/utils/network ./internal/utils/handlers ./internal/client/transport ./internal/server/transport
+        -race -timeout 15m'
+  dns_source:
+    name: DNS exact source
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 3048b43c7f7c3e5c9c4c6fb652346a263a41474d
+        fetch-depth: 0
+    - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
+
+        sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - name: Temporary runtime regressions
+      run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/tunnel/direct/runtime_audit_dns_test.go'').write_text(''package direct\n\nimport (\n "context"\n "errors"\n
+        "net"\n "sync"\n "testing"\n "time"\n\n "golang.org/x/net/dns/dnsmessage"\n)\n\nfunc auditStalledResolver(t *testing.T)(<-chan
+        struct{},func()){\n t.Helper();old:=net.DefaultResolver;release:=make(chan struct{});started:=make(chan struct{},1);var
+        once sync.Once\n unblock:=func(){once.Do(func(){close(release)})}\n net.DefaultResolver=&net.Resolver{PreferGo:true,Dial:func(ctx
+        context.Context,network,address string)(net.Conn,error){\n  select{case started<-struct{}{}:default:}\n  select{case<-release:return
+        nil,errors.New("audit DNS released");case<-ctx.Done():return nil,ctx.Err()}\n }}\n t.Cleanup(func(){unblock();net.DefaultResolver=old})\n
+        return started,unblock\n}\n\nfunc TestRuntimeAuditBackendDNSCancel(t *testing.T){\n started,unblock:=auditStalledResolver(t)\n
+        ctx,cancel:=context.WithCancel(context.Background());defer cancel();done:=make(chan error,1)\n go func(){_,err:=dialBackend(ctx,"tcp","cancel.backend-audit.invalid:443",time.Second);done<-err}()\n
+        select{case<-started:case<-time.After(time.Second):t.Fatal("resolver did not start")}\n cancel()\n select{case err:=<-done:if
+        !errors.Is(err,context.Canceled){t.Fatalf("error=%v",err)};case<-time.After(250*time.Millisecond):\n  t.Error("canceled
+        backend dial still blocked in metadata DNS");unblock();select{case<-done:case<-time.After(time.Second):t.Error("dial
+        did not leave after release")}\n }\n}\n\nfunc TestRuntimeAuditBackendDNSTimeout(t *testing.T){\n _,unblock:=auditStalledResolver(t)\n
+        done:=make(chan error,1)\n go func(){_,err:=dialBackend(context.Background(),"tcp","timeout.backend-audit.invalid:443",40*time.Millisecond);done<-err}()\n
+        select{case err:=<-done:if !errors.Is(err,context.DeadlineExceeded){t.Fatalf("error=%v",err)};case<-time.After(250*time.Millisecond):\n  t.Error("backend
+        DialTimeout does not cover metadata DNS");unblock();select{case<-done:case<-time.After(time.Second):t.Error("dial
+        did not leave after release")}\n }\n}\n\nfunc TestRuntimeAuditBackendDNSSharedBudget(t *testing.T){\n dns,err:=net.ListenPacket("udp","127.0.0.1:0");if
+        err!=nil{t.Fatal(err)};defer dns.Close()\n var queries sync.WaitGroup;done:=make(chan struct{})\n go func(){defer
+        close(done);buf:=make([]byte,2048);for{n,addr,err:=dns.ReadFrom(buf);if err!=nil{return};msg:=append([]byte(nil),buf[:n]...);queries.Add(1);go
+        func(){defer queries.Done();time.Sleep(60*time.Millisecond)\n  var request dnsmessage.Message;if request.Unpack(msg)!=nil{return}\n  response:=dnsmessage.Message{Header:dnsmessage.Header{ID:request.ID,Response:true,RecursionAvailable:true},Questions:request.Questions}\n  for
+        _,question:=range request.Questions{if question.Type==dnsmessage.TypeA{response.Answers=append(response.Answers,dnsmessage.Resource{Header:dnsmessage.ResourceHeader{Name:question.Name,Type:dnsmessage.TypeA,Class:dnsmessage.ClassINET},Body:&dnsmessage.AResource{A:[4]byte{127,0,0,1}}})}}\n  wire,err:=response.Pack();if
+        err==nil{dns.WriteTo(wire,addr)}\n }()}}()\n defer func(){dns.Close();<-done;queries.Wait()}()\n old:=net.DefaultResolver;defer
+        func(){net.DefaultResolver=old}()\n net.DefaultResolver=&net.Resolver{PreferGo:true,Dial:func(ctx context.Context,_,_
+        string)(net.Conn,error){return (&net.Dialer{}).DialContext(ctx,"udp",dns.LocalAddr().String())}}\n backend,err:=net.Listen("tcp","127.0.0.1:0");if
+        err!=nil{t.Fatal(err)};defer backend.Close()\n _,port,_:=net.SplitHostPort(backend.Addr().String());start:=time.Now()\n
+        conn,err:=dialBackend(context.Background(),"tcp",net.JoinHostPort("budget.backend-audit.invalid",port),100*time.Millisecond)\n
+        if conn!=nil{conn.Close()}\n if err==nil{t.Fatal("DNS checks and socket DNS each received a fresh timeout")}\n if
+        elapsed:=time.Since(start);elapsed>250*time.Millisecond{t.Fatalf("shared budget exceeded: %v",elapsed)}\n}\n\nfunc
+        TestRuntimeAuditBackendLiteralConnect(t *testing.T){\n for _,network:=range []string{"tcp","udp"}{t.Run(network,func(t
+        *testing.T){\n  if network=="tcp"{listener,err:=net.Listen("tcp","127.0.0.1:0");if err!=nil{t.Fatal(err)};defer listener.Close();conn,err:=dialBackend(context.Background(),network,listener.Addr().String(),time.Second);if
+        err!=nil{t.Fatal(err)};conn.Close()\n  }else{listener,err:=net.ListenPacket("udp","127.0.0.1:0");if err!=nil{t.Fatal(err)};defer
+        listener.Close();conn,err:=dialBackend(context.Background(),network,listener.LocalAddr().String(),time.Second);if
+        err!=nil{t.Fatal(err)};conn.Close()}\n })}\n for _,address:=range []string{"169.254.169.254:80","100.100.100.200:80","[fd00:ec2::254]:80"}{if
+        conn,err:=dialBackend(context.Background(),"tcp",address,time.Second);err==nil{conn.Close();t.Fatalf("metadata target
+        accepted: %s",address)}}\n}\n'',encoding="utf-8")
+
+        PY
+
+        gofmt -w internal/tunnel/direct/runtime_audit_dns_test.go'
+    - name: Runtime regressions under race detector
+      run: go test ./internal/tunnel/direct -run "TestRuntime" -race -count=3 -v -timeout 6m
+    - name: Existing package checks
+      run: 'go vet ./internal/tunnel/direct
+
+        go test ./internal/tunnel/direct -race -timeout 15m'
+  fec_source:
+    name: FEC reconnect exact source
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 0bd514d71703c262625a107ab033b282e158f9a1
+        fetch-depth: 0
+    - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
+
+        sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - name: Temporary runtime regressions
+      run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/tunnel/l3/runtime_audit_fec_reopen_test.go'').write_text(''package l3\n\nimport (\n\t"bytes"\n\t"fmt"\n\t"testing"\n)\n\nfunc
+        TestRuntimeAuditFECReopenedSender(t *testing.T) {\n\tsend, recv := newLossyPair(nil)\n\tcfg := FECConfig{Data: 4,
+        Parity: 2}\n\ttx, err := newFECCarrier(send, cfg)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\trx, err := newFECCarrier(recv,
+        cfg)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tfor i := range 8 {\n\t\tif _, err := tx.WriteTo([]byte(fmt.Sprintf("old-%d",
+        i)), recv.addr); err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t}\n\tif got := len(drain(t, rx)); got != 8 {\n\t\tt.Fatalf("old
+        sender delivered=%d", got)\n\t}\n\t// A sender process/carrier reopens; the receiver and its FEC cache survive.\n\t//
+        Reusing the same address is deliberate: restart recovery must work both\n\t// with a new source port and a NAT which
+        assigns the same port again.\n\treopened, err := newFECCarrier(send, cfg)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tattempt,
+        err := beginHandshakeFresh("fec-reopen-token", 0, "gre", 123456789)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tvar
+        expected [][]byte\n\tfor i := range 4 {\n\t\tp := []byte(fmt.Sprintf("new-%d", i))\n\t\tif i == 0 {\n\t\t\tp = attempt.datagram()\n\t\t}\n\t\texpected
+        = append(expected, p)\n\t\tif _, err := reopened.WriteTo(p, recv.addr); err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t}\n\tgot
+        := drain(t, rx)\n\tif len(got) != 4 {\n\t\tt.Fatalf("reopened sender delivered=%d want4; old FEC group/index suppresses
+        fresh packets", len(got))\n\t}\n\tfor _, want := range expected {\n\t\tfound := false\n\t\tfor _, actual := range
+        got {\n\t\t\tif bytes.Equal(want, actual) {\n\t\t\t\tfound = true\n\t\t\t}\n\t\t}\n\t\tif !found {\n\t\t\tt.Fatalf("fresh
+        payload %q lost", want)\n\t\t}\n\t}\n}\n'',encoding="utf-8")
+
+        PY
+
+        gofmt -w internal/tunnel/l3/runtime_audit_fec_reopen_test.go'
+    - name: Runtime regressions under race detector
+      run: go test ./internal/tunnel/l3 -run "TestRuntime" -race -count=3 -v -timeout 6m
+    - name: Existing package checks
+      run: 'go vet ./internal/tunnel/l3
+
+        go test ./internal/tunnel/l3 -race -timeout 15m'
+  naive_source:
+    name: PR65 exact source
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 76ff3ee7ee3dd7c130464617af26199716cbe4d8
+        fetch-depth: 0
+    - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
+
+        sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - name: Runtime regressions under race detector
+      run: go test ./config ./internal/tunnel/naive ./internal/manage/tunnelspec ./internal/manage/health -run "TestRuntime"
+        -race -count=3 -v -timeout 6m
+    - name: Existing package checks
+      run: 'go vet ./config ./internal/tunnel/naive ./internal/manage/tunnelspec ./internal/manage/health
+
+        go test ./config ./internal/tunnel/naive ./internal/manage/tunnelspec ./internal/manage/health -race -timeout 15m'
+'on':
+  push:
+    branches:
+    - codex/validate-runtime-final
