@@ -29,7 +29,7 @@ jobs:
         len(p),nil}\nfunc TestRuntimeAuditBatchPrefix(t *testing.T){for _,tc:=range
         []struct{name string;err error;wantPackets,wantBytes,wantDrop uint64;wantSingles
         int}{{"short",nil,1,60,1,0},{"error",io.ErrShortWrite,1,60,1,0},{"fallback",errNoBatch,2,1260,0,1}}{t.Run(tc.name,func(t
-        *testing.T){c:=&runtimeBatchCarrier{memCarrier:newMemCarrier(1),sent:1,err:tc.err};tun:=&Tunnel{carrier:c,log:quietLogger()};ready:=[][]byte{make([]byte,60),make([]byte,1200)};if
+        *testing.T){c:=&runtimeBatchCarrier{memCarrier:newMemCarrier("runtime"),sent:1,err:tc.err};tun:=&Tunnel{carrier:c,log:quietLogger()};ready:=[][]byte{make([]byte,60),make([]byte,1200)};if
         !tun.send(context.Background(),c,ready,[]int{60,1200},&net.UDPAddr{},1260){t.Fatal("send
         stopped")};s:=tun.Stats();if s.PacketsOut!=tc.wantPackets||s.BytesOut!=tc.wantBytes||s.Dropped!=tc.wantDrop||c.singles!=tc.wantSingles{t.Fatalf("partial
         batch accounting/replay: %+v, singles=%d",s,c.singles)}})}}\ntype runtimeWriteDevice
@@ -53,7 +53,7 @@ jobs:
         TUN write left generation running")}}\ntype runtimeFECCarrier struct{*memCarrier;frame
         []byte;seq uint32}\nfunc(c *runtimeFECCarrier)WriteTo(p []byte,_ net.Addr)(int,error){return
         len(p),nil}\nfunc(c *runtimeFECCarrier)ReadFrom(p []byte)(int,net.Addr,error){putFECHeader(c.frame,fecKindData,c.seq/10,byte(c.seq%10));c.seq++;return
-        copy(p,c.frame),&net.UDPAddr{},nil}\nfunc runtimeFECBelow()*runtimeFECCarrier{p:=&runtimeFECCarrier{memCarrier:newMemCarrier(1),frame:make([]byte,fecHeaderLen+fecLenPrefix+1200)};p.frame[fecHeaderLen]=4;p.frame[fecHeaderLen+1]=176;return
+        copy(p,c.frame),c.peer,nil}\nfunc runtimeFECBelow()*runtimeFECCarrier{p:=&runtimeFECCarrier{memCarrier:newMemCarrier("runtime"),frame:make([]byte,fecHeaderLen+fecLenPrefix+1200)};p.frame[fecHeaderLen]=4;p.frame[fecHeaderLen+1]=176;return
         p}\nfunc TestRuntimeAuditFECWarmSend(t *testing.T){c,_:=newFECCarrier(runtimeFECBelow(),FECConfig{Data:10,Parity:3});p:=make([]byte,1200);for
         i:=0;i<30;i++{c.WriteTo(p,nil)};allocs:=testing.AllocsPerRun(1000,func(){_,err:=c.WriteTo(p,nil);if
         err!=nil{panic(err)}});if allocs>0.1{t.Fatalf("warmed FEC sender allocates
@@ -68,20 +68,27 @@ jobs:
         _,err:=tx.WriteTo(p,nil);err!=nil{t.Fatal(err)}};got:=drain(t,rx);if len(got)!=4{t.Fatalf("group
         %d got %d packets",group,len(got))};for _,p:=range got{if !want[string(p)]{t.Fatalf("group
         %d corrupted/replayed bytes",group)};delete(want,string(p))};if len(want)!=0{t.Fatal("missing
-        payloads")}}}\nfunc TestRuntimeAuditFECShortWrite(t *testing.T){c:=&runtimeBatchCarrier{memCarrier:newMemCarrier(1)};_
-        = c;below:=&runtimeShortCarrier{memCarrier:newMemCarrier(1)};fec,_:=newFECCarrier(below,FECConfig{Data:10,Parity:3});if
+        payloads")}}}\nfunc TestRuntimeAuditFECShortWrite(t *testing.T){c:=&runtimeBatchCarrier{memCarrier:newMemCarrier("runtime")};_
+        = c;below:=&runtimeShortCarrier{memCarrier:newMemCarrier("runtime")};fec,_:=newFECCarrier(below,FECConfig{Data:10,Parity:3});if
         _,err:=fec.WriteTo([]byte("payload"),nil);!errors.Is(err,io.ErrShortWrite){t.Fatalf("short
         datagram was accepted: %v",err)}}\ntype runtimeShortCarrier struct{*memCarrier}\nfunc(c
         *runtimeShortCarrier)WriteTo(p []byte,_ net.Addr)(int,error){return len(p)-1,nil}\n'')
 
         Path("internal/tunnel/l3/runtime_tun_audit_test.go").write_text(''//go:build
-        linux\npackage l3\nimport("testing")\ntype runtimeByteDevice struct{*growingDevice}\nfunc(d
-        *runtimeByteDevice)Write(bufs [][]byte,offset int)(int,error){total:=0;for
-        _,p:=range bufs{total+=len(p)};return total,nil}\nfunc TestRuntimeAuditTUNByteCount(t
-        *testing.T){d:=&runtimeByteDevice{growingDevice:&growingDevice{}};td:=&tunDevice{dev:d,wbuf:make([]byte,tunStageSize),wbufs:make([][]byte,0,batchSize)};packets:=make([][]byte,batchSize+5);for
+        linux\npackage l3\nimport("testing";"net";"time")\ntype runtimeByteDevice
+        struct{*growingDevice}\nfunc(d *runtimeByteDevice)Write(bufs [][]byte,offset
+        int)(int,error){total:=0;for _,p:=range bufs{total+=len(p)};return total,nil}\nfunc
+        TestRuntimeAuditTUNByteCount(t *testing.T){d:=&runtimeByteDevice{growingDevice:&growingDevice{}};td:=&tunDevice{dev:d,wbuf:make([]byte,tunStageSize),wbufs:make([][]byte,0,batchSize)};packets:=make([][]byte,batchSize+5);for
         i:=range packets{packets[i]=make([]byte,1400)};n,err:=td.Write(packets);if
         err!=nil||n!=batchSize{t.Fatalf("TUN byte count leaked as packet count: %d,
-        %v",n,err)}}\n'')
+        %v",n,err)}}\n\nfunc TestRuntimeAuditGSOPrefixCount(t *testing.T){receiver,err:=net.ListenUDP("udp",&net.UDPAddr{IP:net.IPv4(127,0,0,1)});if
+        err!=nil{t.Fatal(err)};defer receiver.Close();raw,err:=listenUDP("127.0.0.1:0",defaultSockBuf);if
+        err!=nil{t.Fatal(err)};defer raw.Close();sender:=raw.(*udpCarrier);frames:=[][]byte{make([]byte,1200),make([]byte,1200),make([]byte,300),make([]byte,47)};n,err:=sender.WriteBatch(frames,receiver.LocalAddr());if
+        sender.gsoOff{t.Skip("UDP segmentation offload not supported on runner")};if
+        err!=nil{t.Fatal(err)};receiver.SetReadDeadline(time.Now().Add(time.Second));buf:=make([]byte,2048);for
+        i:=0;i<4;i++{if _,_,err:=receiver.ReadFromUDP(buf);err!=nil{t.Fatal(err)}};if
+        n!=len(frames){t.Fatalf("GSO prefix disappeared from batch result: n=%d, actually
+        delivered=%d",n,len(frames))}}\n'')
 
         PY'
     - name: Reproduce baseline failures
