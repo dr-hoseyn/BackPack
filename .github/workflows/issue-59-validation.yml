@@ -1,0 +1,299 @@
+name: Issue 59 Linux validation
+permissions:
+  contents: read
+jobs:
+  test:
+    name: Build and test
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 1ae51a8
+    - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
+
+        sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - uses: actions/setup-node@v7
+      with:
+        node-version: '22'
+    - name: Verify formatting
+      run: "unformatted=\"$(gofmt -l . || true)\"\nif [ -n \"$unformatted\" ]; then\n\
+        \  echo \"These files are not gofmt'd:\"\n  echo \"$unformatted\"\n  exit\
+        \ 1\nfi\n"
+    - name: Vet
+      run: go vet ./...
+    - name: Test
+      run: go test ./... -timeout 20m
+    - name: Test with the race detector
+      run: go test ./... -race -timeout 20m
+    - name: Coverage
+      run: "go test ./... -coverpkg=./... -coverprofile=coverage.out -timeout 20m\n\
+        total=\"$(go tool cover -func=coverage.out | tail -1 | grep -oE '[0-9.]+')\"\
+        \necho \"total coverage: ${total}%\"\nfloor=50\nawk -v t=\"$total\" -v f=\"\
+        $floor\" 'BEGIN {\n  if (t+0 < f+0) {\n    printf \"coverage %.1f%% is below\
+        \ the floor of %d%%\\n\", t, f\n    exit 1\n  }\n}'\n"
+    - name: Per-package coverage floors
+      run: "set -eu\ncheck() {\n  pkg=\"$1\"; floor=\"$2\"; why=\"$3\"\n  got=\"$(go\
+        \ tool cover -func=coverage.out \\\n          | grep \"^github.com/backpack/backpack/$pkg/\"\
+        \ \\\n          | awk '{gsub(/%/,\"\",$3); s+=$3; n++} END {if (n) printf\
+        \ \"%.1f\", s/n; else print \"0\"}')\"\n  echo \"  $pkg: ${got}% (floor ${floor}%)\
+        \ \xE2\u20AC\u201D $why\"\n  awk -v g=\"$got\" -v f=\"$floor\" -v p=\"$pkg\"\
+        \ 'BEGIN {\n    if (g+0 < f+0) { printf \"%s fell below its floor\\n\", p;\
+        \ exit 1 }\n  }'\n}\ncheck internal/tunnel/l3      60 \"the layer-3 data path\"\
+        \ncheck internal/tunnel/chain   80 \"transport fallback: a wrong decision\
+        \ here takes a tunnel down\"\ncheck internal/control        50 \"the fleet\
+        \ and the job runner\"\ncheck internal/cli            60 \"the scriptable\
+        \ surface; scripts depend on its exit codes\"\ncheck internal/node       \
+        \    40 \"the fleet RPC and the staged rollout\"\ncheck internal/metrics \
+        \       60 \"what every other component reads to decide anything\"\ncheck\
+        \ internal/menu           25 \"the screens an operator actually meets this\
+        \ product through\"\ncheck internal/server/transport 85 \"the Iran side of\
+        \ every reverse transport: lifecycle, forwarder, control loop\"\ncheck internal/client/transport\
+        \ 83 \"the kharej side of every reverse transport\"\ncheck internal/controlwire\
+        \    95 \"the control channel's wire, shared by both ends\"\ncheck internal/utils/acceptloop\
+        \ 90 \"accept backoff and the pre-authentication gate (ADR 0004)\"\ncheck\
+        \ internal/manage/tunnelspec 70 \"a tunnel's configuration: render, load,\
+        \ apply with revert\"\ncheck internal/manage/host    60 \"this machine's addresses,\
+        \ ports and certificates\"\ncheck internal/manage/health  40 \"tunnel health,\
+        \ the watchdog and the Health Check\"\n"
+    timeout-minutes: 55
+  audit:
+    name: Vulnerabilities and static analysis
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 1ae51a8
+    - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
+
+        sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - name: Known vulnerabilities
+      run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+    - name: Static analysis
+      run: 'go run honnef.co/go/tools/cmd/staticcheck@latest ./...
+
+        '
+    timeout-minutes: 55
+  fuzz:
+    name: Fuzz the parsers
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 1ae51a8
+    - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
+
+        sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - name: Fuzz
+      run: 'set -eux
+
+        go test ./internal/tunnel/l3/        -run=X -fuzz=FuzzParseHeader        -fuzztime=30s
+
+        go test ./internal/tunnel/l3/        -run=X -fuzz=FuzzParseReplyPayload  -fuzztime=30s
+
+        go test ./internal/utils/network/    -run=X -fuzz=FuzzParsePckFrame      -fuzztime=30s
+
+        go test ./internal/utils/network/    -run=X -fuzz=FuzzDecodeXdiPayload   -fuzztime=30s
+
+        go test ./internal/utils/network/    -run=X -fuzz=FuzzParseTCPFlags      -fuzztime=20s
+
+        go test ./internal/utils/network/    -run=X -fuzz=FuzzParseSpoofProfile  -fuzztime=20s
+
+        go test ./internal/manage/           -run=X -fuzz=FuzzDecodeShareLink    -fuzztime=30s
+
+        go test ./internal/manage/           -run=X -fuzz=FuzzShareLinkRoundTrip -fuzztime=30s
+
+        '
+    - name: Report a crasher
+      if: failure()
+      run: 'echo "A fuzz target failed. The input that did it:"
+
+        find . -path ''*/testdata/fuzz/*'' -type f -print -exec cat {} \;
+
+        '
+    timeout-minutes: 55
+  soak:
+    name: Sustained run
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 1ae51a8
+    - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
+
+        sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - name: Two minutes of steady traffic, watching for a leak
+      env:
+        BACKPACK_SOAK_SECONDS: '120'
+      run: go test ./internal/e2e/ -run TestASustainedRunDoesNotLeak -count=1 -v -timeout
+        10m
+    timeout-minutes: 55
+  compat:
+    name: Wire compatibility with the previous release
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        fetch-depth: 0
+        ref: 1ae51a8
+    - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
+
+        sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - name: Build the previous release
+      id: prev
+      run: "tag=\"$(git describe --tags --abbrev=0 2>/dev/null || true)\"\nif [ -z\
+        \ \"$tag\" ]; then\n  echo \"no previous tag to compare against; skipping\"\
+        \n  echo \"binary=\" >> \"$GITHUB_OUTPUT\"\n  exit 0\nfi\necho \"previous\
+        \ release: $tag\"\ngit worktree add --detach /tmp/prev \"$tag\"\n(cd /tmp/prev\
+        \ && go build -o /tmp/backpack-prev .)\necho \"binary=/tmp/backpack-prev\"\
+        \ >> \"$GITHUB_OUTPUT\"\n"
+    - name: Old and new ends of one tunnel, both directions
+      if: steps.prev.outputs.binary != ''
+      env:
+        BACKPACK_PREV_BINARY: ${{ steps.prev.outputs.binary }}
+      run: go test ./internal/e2e/ -run TestThePreviousReleaseStillTalksToThisOne
+        -count=1 -v
+    timeout-minutes: 55
+  build:
+    name: Cross-build
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 1ae51a8
+    - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
+
+        sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - name: Check the version is in step
+      run: "embedded=\"$(grep -oE 'Version = \"v[0-9.]+\"' internal/app/app.go | grep\
+        \ -oE 'v[0-9.]+')\"\ndeclared=\"$(tr -d ' \\n' < VERSION)\"\necho \"embedded=$embedded\
+        \ declared=$declared\"\nif [ \"$embedded\" != \"$declared\" ]; then\n  echo\
+        \ \"VERSION ($declared) does not match internal/app/app.go ($embedded).\"\n\
+        \  echo \"Run: make version\"\n  exit 1\nfi\n"
+    - name: Build both architectures
+      run: make release
+    - uses: actions/upload-artifact@v7
+      with:
+        name: release-assets
+        path: 'release/backpack_linux_amd64.tar.gz
+
+          release/backpack_linux_arm64.tar.gz
+
+          release/SHA256SUMS
+
+          '
+        retention-days: 14
+    timeout-minutes: 55
+  regressions:
+    name: Issue 59 runtime regressions
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 1ae51a8
+        fetch-depth: 0
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+    - uses: actions/setup-node@v7
+      with:
+        node-version: '22'
+    - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
+
+        sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
+    - name: Generate temporary behavior regressions
+      run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/manage/issue59_audit_test.go'').write_text(''package manage\nimport("testing";"os";"path/filepath";"bytes";"github.com/BurntSushi/toml";"github.com/backpack/backpack/config";"github.com/backpack/backpack/internal/app";"github.com/backpack/backpack/internal/manage/tunnelspec")\nfunc
+        audit59Config(t *testing.T,name,body string){t.Helper();path:=app.ConfigPath(name);if
+        err:=os.WriteFile(path,[]byte(body),0600);err!=nil{t.Fatal(err)};t.Cleanup(func(){os.Remove(path)})}\nfunc
+        TestIssue59PreserveFEC(t *testing.T){on:=true;mtu:=1300;l,err:=applyDirectEdit(config.L3Config{FECData:20,FECParity:5,MTU:1400},DirectEdit{FEC:&on,MTU:&mtu});if
+        err!=nil{t.Fatal(err)};if l.FECData!=20||l.FECParity!=5{t.Fatal("unrelated
+        edit reset FEC",l.FECData,l.FECParity)}}\nfunc TestIssue59PreserveClientKnobs(t
+        *testing.T){audit59Config(t,"audit59-client",`[client]\nremote_addr="127.0.0.1:9000"\ntransport="wssmux"\ntoken="pw"\ndial_timeout=60\nretry_interval=15\nso_pin_tcp=true\nproxy="socks5://127.0.0.1:1080"\nedge_ip="203.0.113.8"\nlocal_addr="192.0.2.8"\ninterface="eth1"\nso_mark=42\n`);s,err:=LoadSpec("audit59-client");if
+        err!=nil{t.Fatal(err)};s.LogLevel="debug";var result config.Config;if _,err:=toml.Decode(s.Render(),&result);err!=nil{t.Fatal(err)};if
+        result.Client.DialTimeout!=60||result.Client.RetryInterval!=15||!result.Client.SOPinTCP{t.Fatal("client
+        timing/pinning lost",result.Client)};oldApply:=applySpec;defer func(){applySpec=oldApply}();var
+        got TunnelSpec;applySpec=func(s TunnelSpec)error{got=s;return nil};_,err=updateReverseFromLink(ShareLink{Host:"127.0.0.1",Port:"9001",Tr:"wssmux",Tok:"pw"},LinkApplyOptions{},"audit59-client");if
+        err!=nil{t.Fatal(err)};if got.Proxy!=s.Proxy||got.EdgeIP!=s.EdgeIP||got.LocalAddr!=s.LocalAddr||got.Interface!=s.Interface||got.SOMark!=s.SOMark{t.Fatal("setup
+        link erased local routing",got)}}\nfunc TestIssue59DirectEditTransaction(t
+        *testing.T){body:=`[l3]\nmode="dial"\naddr="127.0.0.1:9000"\ntoken="pw"\ncarrier="udp"\nlocal_ip="10.20.0.1/30"\npeer_ip="10.20.0.2"\nmtu=1400\nmss_clamp=1360\n`;name:="audit59-direct";audit59Config(t,name,body);mtu:=1200;err:=EditDirectSettings(name,DirectEdit{MTU:&mtu});if
+        err==nil{t.Error("invalid engine config accepted")};after,_:=os.ReadFile(app.ConfigPath(name));if
+        !bytes.Equal(after,[]byte(body)){t.Fatal("rejected edit replaced working config")};dir:=t.TempDir();script:=[]byte("#!/bin/sh\\nif
+        [ \\"$1\\" = is-active ]; then echo active; exit 0; fi\\nif [ \\"$1\\" = restart
+        ] && [ \\"$AUDIT_RESTART_FAIL\\" = 1 ]; then exit 1; fi\\nexit 0\\n");if err:=os.WriteFile(filepath.Join(dir,"systemctl"),script,0700);err!=nil{t.Fatal(err)};t.Setenv("PATH",dir+":"+os.Getenv("PATH"));t.Setenv("AUDIT_RESTART_FAIL","1");mtu=1500;if
+        err:=EditDirectSettings(name,DirectEdit{MTU:&mtu});err==nil{t.Error("restart
+        error ignored")};after,_=os.ReadFile(app.ConfigPath(name));if !bytes.Equal(after,[]byte(body)){t.Fatal("failed
+        restart did not roll back")};t.Setenv("AUDIT_RESTART_FAIL","0");oldRoot:=tunnelspec.HistoryRoot;tunnelspec.HistoryRoot=t.TempDir();defer
+        func(){tunnelspec.HistoryRoot=oldRoot}();if err:=EditDirectSettings(name,DirectEdit{MTU:&mtu});err!=nil{t.Fatal(err)};if
+        len(ConfigHistory(name))!=1{t.Fatal("successful direct edit did not record
+        previous config")}}\nfunc TestIssue59Layer4Settings(t *testing.T){audit59Config(t,"audit59-layer4",`[direct]\nrole="iran"\naddr="127.0.0.1:9000"\ntransport="tcp"\ntoken="pw"\nports=["8080=80"]\n`);if
+        _,err:=DirectSettingsOf("audit59-layer4");err!=nil{t.Fatal("existing direct
+        layer4 cannot be edited",err)}}\n'')
+
+        Path(''internal/tunnel/l3/issue59_audit_test.go'').write_text(''package l3\nimport("testing";"net")\nfunc
+        TestIssue59FECMismatchRejected(t *testing.T){c:=&fecCarrier{cfg:FECConfig{Data:10,Parity:3},groups:make(map[uint32]*fecGroup)};addr:=&net.UDPAddr{};if
+        _,ok:=c.absorb(fecKindData,1,10,[]byte{0,1,42},addr);ok{t.Fatal("mismatched
+        data shard accepted")};c.absorb(fecKindParity,1,1,[]byte{0,1,42},addr);if
+        len(c.groups)!=0{t.Fatal("invalid parity class created receive state")}}\n'')
+
+        Path(''internal/webui/issue59_audit_test.go'').write_text(''package webui\nimport("testing";"net/http/httptest";"encoding/json";"strconv";"github.com/backpack/backpack/internal/manage/tunnelspec")\nfunc
+        TestIssue59HistoryExactBrowserID(t *testing.T){old:=tunnelspec.HistoryRoot;tunnelspec.HistoryRoot=t.TempDir();defer
+        func(){tunnelspec.HistoryRoot=old}();tunnelspec.RecordChange("audit59",[]byte("[client]"),"audit");hist:=tunnelspec.ConfigHistory("audit59");if
+        len(hist)!=1{t.Fatal(hist)};w:=httptest.NewRecorder();loginServer().handleConfHistory(w,httptest.NewRequest("GET","/api/confhist?name=audit59",nil));var
+        out struct{Changes []struct{At string `json:"at"`}};if err:=json.Unmarshal(w.Body.Bytes(),&out);err!=nil{t.Fatal("browser
+        identifier is not an exact string",err)};if out.Changes[0].At!=strconv.FormatInt(hist[0].At.UnixNano(),10){t.Fatal("history
+        identifier lost precision")}}\n'')
+
+        PY'
+    - name: Baseline reproductions
+      run: 'git worktree add --detach /tmp/issue59-baseline ff86354bcafbd054e7888e48343145323c9b2207
+
+        for file in internal/manage/issue59_audit_test.go internal/tunnel/l3/issue59_audit_test.go
+        internal/webui/issue59_audit_test.go; do cp "$file" "/tmp/issue59-baseline/$file";
+        done
+
+        cd /tmp/issue59-baseline
+
+        if go test ./internal/manage ./internal/tunnel/l3 ./internal/webui -run TestIssue59
+        -count=1 -timeout 3m > /tmp/issue59-baseline.log 2>&1; then cat /tmp/issue59-baseline.log;
+        exit 1; fi
+
+        cat /tmp/issue59-baseline.log
+
+        if grep -q ''build failed'' /tmp/issue59-baseline.log; then exit 1; fi
+
+        '
+    - name: Fixed behavior with race detector
+      run: go test ./internal/manage ./internal/tunnel/l3 ./internal/webui -run TestIssue59
+        -race -count=3 -v -timeout 5m
+'on':
+  push:
+    branches:
+    - codex/validate-issue-59
