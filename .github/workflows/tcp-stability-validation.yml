@@ -105,6 +105,39 @@ jobs:
           test "$result" -ne 0
           grep -q -- '--- FAIL: TestAuditBlockedAnnouncementCancels' /tmp/baseline.log
           grep -q -- '--- FAIL: TestAuditClosedMuxSessionReturnsCapacity' /tmp/baseline.log
+          cat >> internal/server/transport/audit_temporary_test.go <<'AUDIT_EXTRA'
+          func TestAuditControlReplacementKeepsTheNewChannel(t *testing.T) {
+           parent,cancel:=context.WithCancel(context.Background());defer cancel()
+           s:=NewTCPServer(parent,&TcpConfig{Token:"t",ChannelSize:2,KeepAlive:time.Second,Heartbeat:time.Second},quietLog())
+           g:=s.newGen(s.run.context())
+           a,b:=net.Pipe();defer a.Close();defer b.Close()
+           c,d:=net.Pipe();defer c.Close();defer d.Close()
+           s.seatClient(g,controlCandidate{conn:a})
+           s.seatClient(g,controlCandidate{conn:c})
+           d.SetReadDeadline(time.Now().Add(time.Second))
+           if _,err:=utils.ReceiveBinaryByte(d);err!=nil{t.Fatal(err)}
+           time.Sleep(300*time.Millisecond)
+           d.SetWriteDeadline(time.Now().Add(500*time.Millisecond))
+           if err:=utils.SendBinaryByte(d,utils.SG_HB);err!=nil{t.Fatal("old control worker closed the replacement:",err)}
+          }
+          func TestAuditRetiredWorkersCannotChangeNewCounters(t *testing.T) {
+           var life lifecycle
+           ctx,cancel:=context.WithCancel(context.Background());cancel()
+           var sessions int32=7
+           if life.countGeneration(ctx,&sessions,-1){t.Fatal("retired worker was accepted")}
+           if atomic.LoadInt32(&sessions)!=7{t.Fatal("old worker changed replacement capacity")}
+          }
+          AUDIT_EXTRA
+          cat >> internal/client/transport/audit_temporary_test.go <<'AUDIT_EXTRA'
+          func TestAuditRetiredControlLoopCannotRequestRecovery(t *testing.T) {
+           var life lifecycle;life.firstGeneration(context.Background(),silentLogger(),usageSpec{})
+           var recoveries atomic.Int32
+           loop:=life.control(nil,time.Second,func(){},func(){recoveries.Add(1)})
+           life.state.Stop();ctx,cancel:=context.WithCancel(context.Background());defer cancel();life.publish(ctx,cancel)
+           loop.restart()
+           if recoveries.Load()!=0{t.Fatal("old loop requested a restart of the new generation")}
+          }
+          AUDIT_EXTRA
           go test ./internal/client/transport ./internal/server/transport -run '^TestAudit' -race -count=5 -v -timeout 5m
   suite:
     runs-on: ubuntu-latest
