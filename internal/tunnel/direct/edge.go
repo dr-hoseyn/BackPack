@@ -370,7 +370,7 @@ func (e *Edge) serveUDP(ctx context.Context, m portmap.Mapping) error {
 			return err
 		}
 
-		flow, err := e.udpFlowFor(&flows, conn, client, m)
+		flow, err := e.udpFlowFor(ctx, &flows, conn, client, m)
 		if err != nil {
 			e.stats.refused.Add(1)
 			e.log.Debugf("direct: no udp backend for %s: %v", m.Listen, err)
@@ -385,7 +385,7 @@ func (e *Edge) serveUDP(ctx context.Context, m portmap.Mapping) error {
 }
 
 // udpFlowFor returns the flow for a client, opening a stream on first sight.
-func (e *Edge) udpFlowFor(flows *sync.Map, local net.PacketConn, client net.Addr, m portmap.Mapping) (*udpFlow, error) {
+func (e *Edge) udpFlowFor(ctx context.Context, flows *sync.Map, local net.PacketConn, client net.Addr, m portmap.Mapping) (*udpFlow, error) {
 	key := client.String()
 	if existing, ok := flows.Load(key); ok {
 		return existing.(*udpFlow), nil
@@ -407,6 +407,8 @@ func (e *Edge) udpFlowFor(flows *sync.Map, local net.PacketConn, client net.Addr
 		e.limiter.Release()
 		return nil, err
 	}
+	// UDP streams share the same tunnel-wide bucket as forwarded TCP.
+	stream = e.limiter.Wrap(ctx, stream)
 	flow := &udpFlow{stream: stream}
 	flow.touch()
 
