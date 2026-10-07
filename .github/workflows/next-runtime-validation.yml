@@ -1168,14 +1168,6 @@ jobs:
       with:
         go-version-file: go.mod
         cache: true
-    - name: Temporary runtime regressions
-      run: 'python3 - <<''PY''
-
-        from pathlib import Path
-
-        PY
-
-        gofmt -w '
     - name: Runtime regressions under race detector
       run: go test ./config ./internal/tunnel/naive ./internal/manage/tunnelspec ./internal/manage/health -run "TestRuntime"
         -race -count=3 -v -timeout 6m
