@@ -1,0 +1,55 @@
+name: Final race and KCP probe diagnosis
+'on':
+  push:
+    branches:
+    - codex/validate-kcp-probe
+permissions:
+  contents: read
+jobs:
+  race:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - &id001
+      uses: actions/checkout@v7
+      with:
+        ref: 87816876ece221d5d830a698ec8bb86775e3203e
+        fetch-depth: 0
+    - &id002
+      uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - &id003
+      uses: actions/setup-node@v7
+      with:
+        node-version: '22'
+    - &id004
+      name: Prepare existing fixtures
+      run: 'sudo mkdir -p /etc/backpack
+
+        sudo chmod 777 /etc/backpack'
+    - name: Full race suite on final head with engine logs on failure
+      run: "set -uo pipefail\nmkdir -p /tmp/kcp-capture\n(\n  while [ ! -f /tmp/kcp-testdone\
+        \ ]; do\n    find /tmp/backpack-conntest-* -type f -name '*kcp*.log' -exec\
+        \ cp --parents {} /tmp/kcp-capture/ \\; 2>/dev/null || true\n    sleep 0.2\n\
+        \  done\n) &\nmonitor=$!\nresult=0\ngo test ./... -race -count=1 -timeout\
+        \ 20m || result=$?\ntouch /tmp/kcp-testdone\nwait \"$monitor\"\nif [ \"$result\"\
+        \ -ne 0 ]; then\n  find /tmp/kcp-capture -type f -exec tail -n 150 {} \\;\n\
+        fi\nexit \"$result\"\n"
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+    - *id001
+    - *id002
+    - *id003
+    - *id004
+    - name: Repeated existing loopback connection probe
+      run: "set -uo pipefail\nmkdir -p /tmp/kcp-capture\n(\n  while [ ! -f /tmp/kcp-testdone\
+        \ ]; do\n    find /tmp/backpack-conntest-* -type f -name '*kcp*.log' -exec\
+        \ cp --parents {} /tmp/kcp-capture/ \\; 2>/dev/null || true\n    sleep 0.2\n\
+        \  done\n) &\nmonitor=$!\nresult=0\ngo test ./internal/manage -run '^TestAConnectionTestOverLoopbackPassesEveryReverseTransport$'\
+        \ -race -count=5 -v -timeout 15m || result=$?\ntouch /tmp/kcp-testdone\nwait\
+        \ \"$monitor\"\nif [ \"$result\" -ne 0 ]; then\n  find /tmp/kcp-capture -type\
+        \ f -exec tail -n 150 {} \\;\nfi\nexit \"$result\"\n"
