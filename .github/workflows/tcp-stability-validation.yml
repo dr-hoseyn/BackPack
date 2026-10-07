@@ -1,0 +1,156 @@
+name: TCP stability validation
+on:
+  push:
+    branches: [codex/validate-tcp-stability-throughput]
+permissions:
+  contents: read
+jobs:
+  regressions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: codex/tcp-stability-throughput
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Run temporary reproductions without adding tests to the PR
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git rev-parse HEAD
+          cat > internal/server/transport/audit_temporary_test.go <<'AUDIT_GO'
+          package transport
+          import (
+           "context"
+           "net"
+           "sync/atomic"
+           "testing"
+           "time"
+           "github.com/backpack/backpack/internal/utils"
+           "github.com/xtaci/smux"
+          )
+          func TestAuditBlockedAnnouncementCancels(t *testing.T) {
+           ctx,cancel := context.WithCancel(context.Background()); defer cancel()
+           a,b:=net.Pipe(); defer a.Close(); defer b.Close()
+           local:=&pairedConn{}; lim:=takenLimiter(t)
+           q:=make(chan net.Conn,1); q<-a
+           entered:=make(chan struct{}); done:=make(chan struct{})
+           p:=pairing[net.Conn]{ctx:ctx,local:LocalTCPConn{conn:local,remoteAddr:"80",timeCreated:nowMillis()},tunnel:q,limits:lim,log:quietLog(),announce:func(c net.Conn,s string)error {close(entered); return utils.SendBinaryString(c,s)},discard:func(c net.Conn){c.Close()},relay:func(net.Conn,LocalTCPConn){t.Error("relayed after cancellation")}}
+           go func(){p.run();close(done)}()
+           <-entered; cancel()
+           select {case <-done: case <-time.After(500*time.Millisecond): t.Fatal("announcement prevented cancellation")}
+           if lim.active.Load()!=0 || !local.wasClosed(){t.Fatal("unpaired connection leaked its slot")}
+          }
+          func TestAuditClosedMuxSessionReturnsCapacity(t *testing.T) {
+           a,b:=net.Pipe(); defer a.Close(); defer b.Close()
+           session,err:=smux.Client(a,smux.DefaultConfig());if err!=nil{t.Fatal(err)}
+           session.Close()
+           var streams int32; var sessions int32=1
+           m:=muxSession{ctx:context.Background(),local:make(chan LocalTCPConn,1),muxCon:1,log:quietLog(),streams:&streams,sessions:&sessions}
+           done:=make(chan struct{});go func(){m.run(session);close(done)}()
+           select {case <-done:case <-time.After(time.Second):t.Fatal("closed session remained parked")}
+           if atomic.LoadInt32(&sessions)!=0 {t.Fatal("closed session retained advertised capacity")}
+          }
+          AUDIT_GO
+          cat > internal/client/transport/audit_temporary_test.go <<'AUDIT_GO'
+          package transport
+          import (
+           "context"
+           "net"
+           "sync"
+           "sync/atomic"
+           "testing"
+           "time"
+           "github.com/backpack/backpack/internal/utils/network"
+          )
+          func TestAuditIdleTCPPoolEndsWithGeneration(t *testing.T){
+           ln,err:=net.Listen("tcp","127.0.0.1:0");if err!=nil{t.Fatal(err)};defer ln.Close()
+           accepted:=make(chan net.Conn,1);go func(){c,_:=ln.Accept();accepted<-c}()
+           ctx,cancel:=context.WithCancel(context.Background());defer cancel()
+           c:=NewTCPClient(ctx,&TcpConfig{RemoteAddr:ln.Addr().String(),Endpoints:network.NewEndpoints(ln.Addr().String()),ConnPoolSize:1,DialTimeOut:time.Second,KeepAlive:time.Second},silentLogger())
+           c.state.Go(c.tunnelDialer)
+           peer:=<-accepted;defer peer.Close()
+           until:=time.Now().Add(time.Second);for atomic.LoadInt32(&c.poolConnections)!=1&&time.Now().Before(until){time.Sleep(time.Millisecond)}
+           c.state.Stop();done:=make(chan struct{});go func(){c.state.Wait();close(done)}()
+           select{case <-done:case <-time.After(500*time.Millisecond):t.Fatal("idle pool connection outlived generation")}
+           if atomic.LoadInt32(&c.poolConnections)!=0||atomic.LoadInt32(&c.dialingConnections)!=0{t.Fatal("generation counters did not settle")}
+          }
+          func TestAuditFailedPoolIsReplenished(t *testing.T){
+           ctx,cancel:=context.WithCancel(context.Background());defer cancel()
+           var open,taken,pending,calls int32
+           p:=poolSizer{ctx:ctx,log:silentLogger(),size:1,open:&open,taken:&taken,pending:&pending,shrink:make(chan struct{},1),dial:func(){atomic.AddInt32(&calls,1)}}
+           done:=make(chan struct{});go func(){p.maintain();close(done)}()
+           time.Sleep(1200*time.Millisecond);cancel();<-done
+           if atomic.LoadInt32(&calls)<2{t.Fatal("failed initial dial left the configured pool empty")}
+          }
+          func TestAuditConcurrentDialReservationsStayBounded(t *testing.T){
+           var l lifecycle;l.firstGeneration(context.Background(),silentLogger(),usageSpec{});defer l.state.Stop()
+           var held atomic.Int32;var wg sync.WaitGroup;var releases []func();var mu sync.Mutex
+           for i:=0;i<100;i++{wg.Add(1);go func(){defer wg.Done();release,ok:=l.beginPoolDial(3);if ok{held.Add(1);mu.Lock();releases=append(releases,release);mu.Unlock()}}()};wg.Wait()
+           if held.Load()!=3{t.Fatalf("reserved %d places, want 3",held.Load())};for _,release:=range releases{release();release()}
+           if atomic.LoadInt32(&l.dialingConnections)!=0{t.Fatal("reservation release was not balanced")}
+          }
+          AUDIT_GO
+          git worktree add /tmp/backpack-tcp-baseline ff86354
+          cp internal/server/transport/audit_temporary_test.go /tmp/backpack-tcp-baseline/internal/server/transport/
+          set +e
+          (cd /tmp/backpack-tcp-baseline && go test ./internal/server/transport -run '^TestAudit' -count=1 -v -timeout 2m) > /tmp/baseline.log 2>&1
+          result=$?
+          set -e
+          cat /tmp/baseline.log
+          test "$result" -ne 0
+          grep -q -- '--- FAIL: TestAuditBlockedAnnouncementCancels' /tmp/baseline.log
+          grep -q -- '--- FAIL: TestAuditClosedMuxSessionReturnsCapacity' /tmp/baseline.log
+          go test ./internal/client/transport ./internal/server/transport -run '^TestAudit' -race -count=5 -v -timeout 5m
+  suite:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: codex/tcp-stability-throughput
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      - name: Prepare existing fixtures and verify source
+        run: |
+          git rev-parse HEAD
+          sudo mkdir -p /etc/backpack
+          sudo chmod 777 /etc/backpack
+          test -z "$(gofmt -l internal/client/transport internal/server/transport internal/utils/binary.go internal/utils/handlers/tcp_handler.go internal/utils/network/tcp_dialer.go internal/utils/network/ws_dialer.go)"
+          go vet ./...
+      - name: Full existing suite
+        run: go test ./... -count=1 -timeout 20m
+      - name: Full race suite
+        run: go test ./... -race -count=1 -timeout 20m
+      - name: Linux builds
+        run: |
+          GOOS=linux GOARCH=amd64 go build -o /tmp/backpack-amd64 .
+          GOOS=linux GOARCH=arm64 go build -o /tmp/backpack-arm64 .
+  traffic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: codex/tcp-stability-throughput
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Sustained concurrent traffic and resource trend
+        env:
+          BACKPACK_SOAK_SECONDS: '120'
+        run: go test ./internal/e2e -run '^TestASustainedRunDoesNotLeak$' -race -count=1 -v -timeout 10m
+      - name: Throughput and repeated recovery
+        env:
+          BP_THROUGHPUT: '1'
+        run: go test ./internal/e2e -run '^(TestTransportThroughput|TestTransportConcurrentConnections|TestNetworkPartitionRecovery|TestServerRestartRecovery|TestEveryTransportComesBackAfterTheTunnelRestarts)$' -count=2 -v -timeout 10m
