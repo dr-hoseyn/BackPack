@@ -1,0 +1,328 @@
+name: Issue 58 Linux validation
+permissions:
+  contents: read
+jobs:
+  test:
+    name: Build and test
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 95e402ade6d210d1322cf24e3bf86df6106eb944
+    - run: 'sudo mkdir -p /etc/backpack
+
+        sudo chmod 777 /etc/backpack'
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - uses: actions/setup-node@v7
+      with:
+        node-version: '22'
+    - name: Verify formatting
+      run: "unformatted=\"$(gofmt -l . || true)\"\nif [ -n \"$unformatted\" ]; then\n\
+        \  echo \"These files are not gofmt'd:\"\n  echo \"$unformatted\"\n  exit\
+        \ 1\nfi\n"
+    - name: Vet
+      run: go vet ./...
+    - name: Test
+      run: go test ./... -timeout 20m
+    - name: Test with the race detector
+      run: go test ./... -race -timeout 20m
+    - name: Coverage
+      run: "go test ./... -coverpkg=./... -coverprofile=coverage.out -timeout 20m\n\
+        total=\"$(go tool cover -func=coverage.out | tail -1 | grep -oE '[0-9.]+')\"\
+        \necho \"total coverage: ${total}%\"\nfloor=50\nawk -v t=\"$total\" -v f=\"\
+        $floor\" 'BEGIN {\n  if (t+0 < f+0) {\n    printf \"coverage %.1f%% is below\
+        \ the floor of %d%%\\n\", t, f\n    exit 1\n  }\n}'\n"
+    - name: Per-package coverage floors
+      run: "set -eu\ncheck() {\n  pkg=\"$1\"; floor=\"$2\"; why=\"$3\"\n  got=\"$(go\
+        \ tool cover -func=coverage.out \\\n          | grep \"^github.com/backpack/backpack/$pkg/\"\
+        \ \\\n          | awk '{gsub(/%/,\"\",$3); s+=$3; n++} END {if (n) printf\
+        \ \"%.1f\", s/n; else print \"0\"}')\"\n  echo \"  $pkg: ${got}% (floor ${floor}%)\
+        \ \xE2\u20AC\u201D $why\"\n  awk -v g=\"$got\" -v f=\"$floor\" -v p=\"$pkg\"\
+        \ 'BEGIN {\n    if (g+0 < f+0) { printf \"%s fell below its floor\\n\", p;\
+        \ exit 1 }\n  }'\n}\ncheck internal/tunnel/l3      60 \"the layer-3 data path\"\
+        \ncheck internal/tunnel/chain   80 \"transport fallback: a wrong decision\
+        \ here takes a tunnel down\"\ncheck internal/control        50 \"the fleet\
+        \ and the job runner\"\ncheck internal/cli            60 \"the scriptable\
+        \ surface; scripts depend on its exit codes\"\ncheck internal/node       \
+        \    40 \"the fleet RPC and the staged rollout\"\ncheck internal/metrics \
+        \       60 \"what every other component reads to decide anything\"\ncheck\
+        \ internal/menu           25 \"the screens an operator actually meets this\
+        \ product through\"\ncheck internal/server/transport 85 \"the Iran side of\
+        \ every reverse transport: lifecycle, forwarder, control loop\"\ncheck internal/client/transport\
+        \ 83 \"the kharej side of every reverse transport\"\ncheck internal/controlwire\
+        \    95 \"the control channel's wire, shared by both ends\"\ncheck internal/utils/acceptloop\
+        \ 90 \"accept backoff and the pre-authentication gate (ADR 0004)\"\ncheck\
+        \ internal/manage/tunnelspec 70 \"a tunnel's configuration: render, load,\
+        \ apply with revert\"\ncheck internal/manage/host    60 \"this machine's addresses,\
+        \ ports and certificates\"\ncheck internal/manage/health  40 \"tunnel health,\
+        \ the watchdog and the Health Check\"\n"
+    timeout-minutes: 55
+  audit:
+    name: Vulnerabilities and static analysis
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 95e402ade6d210d1322cf24e3bf86df6106eb944
+    - run: 'sudo mkdir -p /etc/backpack
+
+        sudo chmod 777 /etc/backpack'
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - name: Known vulnerabilities
+      run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+    - name: Static analysis
+      run: 'go run honnef.co/go/tools/cmd/staticcheck@latest ./...
+
+        '
+    timeout-minutes: 55
+  fuzz:
+    name: Fuzz the parsers
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 95e402ade6d210d1322cf24e3bf86df6106eb944
+    - run: 'sudo mkdir -p /etc/backpack
+
+        sudo chmod 777 /etc/backpack'
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - name: Fuzz
+      run: 'set -eux
+
+        go test ./internal/tunnel/l3/        -run=X -fuzz=FuzzParseHeader        -fuzztime=30s
+
+        go test ./internal/tunnel/l3/        -run=X -fuzz=FuzzParseReplyPayload  -fuzztime=30s
+
+        go test ./internal/utils/network/    -run=X -fuzz=FuzzParsePckFrame      -fuzztime=30s
+
+        go test ./internal/utils/network/    -run=X -fuzz=FuzzDecodeXdiPayload   -fuzztime=30s
+
+        go test ./internal/utils/network/    -run=X -fuzz=FuzzParseTCPFlags      -fuzztime=20s
+
+        go test ./internal/utils/network/    -run=X -fuzz=FuzzParseSpoofProfile  -fuzztime=20s
+
+        go test ./internal/manage/           -run=X -fuzz=FuzzDecodeShareLink    -fuzztime=30s
+
+        go test ./internal/manage/           -run=X -fuzz=FuzzShareLinkRoundTrip -fuzztime=30s
+
+        '
+    - name: Report a crasher
+      if: failure()
+      run: 'echo "A fuzz target failed. The input that did it:"
+
+        find . -path ''*/testdata/fuzz/*'' -type f -print -exec cat {} \;
+
+        '
+    timeout-minutes: 55
+  soak:
+    name: Sustained run
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 95e402ade6d210d1322cf24e3bf86df6106eb944
+    - run: 'sudo mkdir -p /etc/backpack
+
+        sudo chmod 777 /etc/backpack'
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - name: Two minutes of steady traffic, watching for a leak
+      env:
+        BACKPACK_SOAK_SECONDS: '120'
+      run: go test ./internal/e2e/ -run TestASustainedRunDoesNotLeak -count=1 -v -timeout
+        10m
+    timeout-minutes: 55
+  compat:
+    name: Wire compatibility with the previous release
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        fetch-depth: 0
+        ref: 95e402ade6d210d1322cf24e3bf86df6106eb944
+    - run: 'sudo mkdir -p /etc/backpack
+
+        sudo chmod 777 /etc/backpack'
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - name: Build the previous release
+      id: prev
+      run: "tag=\"$(git describe --tags --abbrev=0 2>/dev/null || true)\"\nif [ -z\
+        \ \"$tag\" ]; then\n  echo \"no previous tag to compare against; skipping\"\
+        \n  echo \"binary=\" >> \"$GITHUB_OUTPUT\"\n  exit 0\nfi\necho \"previous\
+        \ release: $tag\"\ngit worktree add --detach /tmp/prev \"$tag\"\n(cd /tmp/prev\
+        \ && go build -o /tmp/backpack-prev .)\necho \"binary=/tmp/backpack-prev\"\
+        \ >> \"$GITHUB_OUTPUT\"\n"
+    - name: Old and new ends of one tunnel, both directions
+      if: steps.prev.outputs.binary != ''
+      env:
+        BACKPACK_PREV_BINARY: ${{ steps.prev.outputs.binary }}
+      run: go test ./internal/e2e/ -run TestThePreviousReleaseStillTalksToThisOne
+        -count=1 -v
+    timeout-minutes: 55
+  build:
+    name: Cross-build
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 95e402ade6d210d1322cf24e3bf86df6106eb944
+    - run: 'sudo mkdir -p /etc/backpack
+
+        sudo chmod 777 /etc/backpack'
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - name: Check the version is in step
+      run: "embedded=\"$(grep -oE 'Version = \"v[0-9.]+\"' internal/app/app.go | grep\
+        \ -oE 'v[0-9.]+')\"\ndeclared=\"$(tr -d ' \\n' < VERSION)\"\necho \"embedded=$embedded\
+        \ declared=$declared\"\nif [ \"$embedded\" != \"$declared\" ]; then\n  echo\
+        \ \"VERSION ($declared) does not match internal/app/app.go ($embedded).\"\n\
+        \  echo \"Run: make version\"\n  exit 1\nfi\n"
+    - name: Build both architectures
+      run: make release
+    - uses: actions/upload-artifact@v7
+      with:
+        name: release-assets
+        path: 'release/backpack_linux_amd64.tar.gz
+
+          release/backpack_linux_arm64.tar.gz
+
+          release/SHA256SUMS
+
+          '
+        retention-days: 14
+    timeout-minutes: 55
+  regressions:
+    name: Issue 58 runtime and allocation regressions
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 95e402ade6d210d1322cf24e3bf86df6106eb944
+        fetch-depth: 0
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+    - run: 'sudo mkdir -p /etc/backpack
+
+        sudo chmod 777 /etc/backpack'
+    - name: Generate temporary behavior and allocation fixtures
+      run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/utils/handlers/issue58_audit_test.go'').write_text(''package
+        handlers\nimport("testing";"context";"net";"io";"time";"github.com/backpack/backpack/internal/web";"github.com/backpack/backpack/internal/metrics")\nfunc
+        TestIssue58TCPHalfClose(t *testing.T){for _,splice:=range []bool{false,true}{t.Run(map[bool]string{false:"buffered",true:"splice"}[splice],func(t
+        *testing.T){old:=ZeroCopy();SetZeroCopy(splice);defer SetZeroCopy(old);client,from:=tcpPair(t);to,backend:=tcpPair(t);defer
+        client.Close();defer backend.Close();ctx,cancel:=context.WithTimeout(context.Background(),2*time.Second);defer
+        cancel();done:=make(chan struct{});go func(){defer close(done);TCPConnectionHandler(ctx,false,metrics.CountedConn(from),to,quietLogger(),&web.Usage{},80,false)}();answer:=make(chan
+        error,1);go func(){request,err:=io.ReadAll(backend);if err==nil&&string(request)!="request"{err=io.ErrUnexpectedEOF};if
+        err==nil{_,err=backend.Write([]byte("response"))};backend.(*net.TCPConn).CloseWrite();answer<-err}();client.Write([]byte("request"));client.(*net.TCPConn).CloseWrite();client.SetReadDeadline(time.Now().Add(2*time.Second));response,err:=io.ReadAll(client);if
+        err!=nil||string(response)!="response"{t.Errorf("half-close response lost:
+        %q %v",response,err)};if err:=<-answer;err!=nil{t.Error(err)};<-done})}}\n'')
+
+        Path(''internal/client/transport/issue58_audit_test.go'').write_text(''package
+        transport\nimport("testing";"net";"time";"io";"sync/atomic";"github.com/backpack/backpack/internal/utils/network";"github.com/backpack/backpack/internal/web";"github.com/sirupsen/logrus")\nfunc
+        TestIssue58OneWayUDPSurvivesIdleBoundary(t *testing.T){backend,err:=net.ListenUDP("udp",&net.UDPAddr{IP:net.IPv4(127,0,0,1)});if
+        err!=nil{t.Fatal(err)};defer backend.Close();var received atomic.Int64;drained:=make(chan
+        struct{});go func(){defer close(drained);buf:=make([]byte,network.MaxDatagram);for{_,_,err:=backend.ReadFromUDP(buf);if
+        err!=nil{return};received.Add(1)}}();a,b:=net.Pipe();defer a.Close();defer
+        b.Close();log:=logrus.New();log.SetOutput(io.Discard);done:=make(chan struct{});go
+        func(){defer close(done);UDPForward(b,backend.LocalAddr().String(),log,&web.Usage{},80,false)}();defer
+        func(){a.Close();backend.Close();<-done;<-drained}();deadline:=time.Now().Add(65*time.Second);ticker:=time.NewTicker(20*time.Millisecond);defer
+        ticker.Stop();for time.Now().Before(deadline){<-ticker.C;a.SetWriteDeadline(time.Now().Add(time.Second));if
+        err:=network.WriteDatagram(a,[]byte("telemetry"));err!=nil{t.Fatalf("active
+        one-way flow closed after %d packets: %v",received.Load(),err)}};if received.Load()<3000{t.Fatal("one-way
+        traffic was not continuously forwarded",received.Load())};t.Logf("forwarded
+        %d one-way packets for 65 seconds without reply",received.Load())}\n'')
+
+        Path(''internal/server/transport/issue58_audit_test.go'').write_text(''package
+        transport\nimport("testing";"net";"bytes";"io")\nfunc BenchmarkIssue58UDPFrame(b
+        *testing.B){fw:=testForwarder(&testing.T{},"80");defer fw.close();f:=newUDPFlow(fw,&net.UDPAddr{IP:net.IPv4(127,0,0,1),Port:9999},"audit");defer
+        f.Close();payload:=make([]byte,1200);out:=make([]byte,1202);b.ReportAllocs();b.ResetTimer();for
+        range b.N{f.deliver(payload);if _,err:=io.ReadFull(f,out);err!=nil{b.Fatal(err)}}}\nfunc
+        BenchmarkIssue58UDPDroppedFrame(b *testing.B){fw,err:=newUDPForwarder(quietLogger(),"127.0.0.1:0","80");if
+        err!=nil{b.Fatal(err)};defer fw.close();f:=newUDPFlow(fw,&net.UDPAddr{IP:net.IPv4(127,0,0,1),Port:9999},"audit");defer
+        f.Close();payload:=make([]byte,1200);for range udpFlowQueue{f.deliver(payload)};b.ReportAllocs();b.ResetTimer();for
+        range b.N{f.deliver(payload)}}\nfunc TestIssue58UDPPartialOwnership(t *testing.T){fw:=testForwarder(t,"80");f:=newUDPFlow(fw,&net.UDPAddr{IP:net.IPv4(127,0,0,1),Port:9999},"audit");defer
+        f.Close();payload:=bytes.Repeat([]byte{42},1200);f.deliver(payload);frame:=make([]byte,1202);if
+        n,err:=f.Read(frame[:1]);n!=1||err!=nil{t.Fatal(n,err)};other:=newUDPFlow(fw,f.peer,"other");for
+        range 100{other.deliver([]byte("other"));other.Read(make([]byte,7))};other.Close();if
+        _,err:=io.ReadFull(f,frame[1:]);err!=nil{t.Fatal(err)};if !bytes.Equal(frame[2:],payload){t.Fatal("partial
+        frame was recycled while still referenced")}}\n'')
+
+        Path(''internal/tunnel/l3/issue58_audit_test.go'').write_text(''package l3\nimport("testing";"net";"time";"sync/atomic";"encoding/binary")\ntype
+        audit58Path struct{DatagramCarrier;broken atomic.Bool;writes atomic.Int32;done
+        chan struct{}}\nfunc (p *audit58Path)ReadFrom(buf []byte)(int,net.Addr,error){if
+        p.broken.Load(){return 0,nil,net.ErrClosed};<-p.done;return 0,nil,net.ErrClosed}\nfunc
+        (p *audit58Path)WriteTo(buf []byte,_ net.Addr)(int,error){if p.broken.Load(){return
+        0,net.ErrClosed};p.writes.Add(1);return len(buf),nil}\nfunc (p *audit58Path)Close()error{select{case
+        <-p.done:default:close(p.done)};return nil}\nfunc TestIssue58FailedMultipath(t
+        *testing.T){a:=&audit58Path{DatagramCarrier:newMemCarrier("udp"),done:make(chan
+        struct{})};a.broken.Store(true);b:=&audit58Path{DatagramCarrier:newMemCarrier("udp"),done:make(chan
+        struct{})};mp:=newMultipathCarrier([]DatagramCarrier{a,b},nil);defer mp.Close();time.Sleep(20*time.Millisecond);for
+        range 100{if _,err:=mp.WriteTo([]byte("packet"),nil);err!=nil{t.Fatal("failed
+        route remained in rotation",err)}};if b.writes.Load()!=100{t.Fatal("surviving
+        path did not carry all datagrams")}}\nfunc TestIssue58RealMultipathBatch(t
+        *testing.T){var sendPaths,recvPaths []DatagramCarrier;for range 2{receiver,err:=listenUDP("127.0.0.1:0",4<<20);if
+        err!=nil{t.Fatal(err)};sender,peer,err:=dialUDP(receiver.LocalAddr().String(),4<<20);if
+        err!=nil{t.Fatal(err)};sendPaths=append(sendPaths,&pinnedCarrier{DatagramCarrier:sender,peer:peer});recvPaths=append(recvPaths,&pinnedCarrier{DatagramCarrier:receiver})};send:=newMultipathCarrier(sendPaths,nil);defer
+        send.Close();recv:=newMultipathCarrier(recvPaths,nil);defer recv.Close();writer:=asBatchWriter(send);reader:=asBatchReader(recv);if
+        writer==nil||reader==nil{t.Fatal("multipath lost UDP batching")};const rounds=125;seen:=make(map[uint32]bool);bufs:=make([][]byte,32);sizes:=make([]int,32);froms:=make([]net.Addr,32);for
+        i:=range bufs{bufs[i]=make([]byte,1200)};start:=time.Now();for round:=range
+        rounds{for i:=range bufs{binary.BigEndian.PutUint32(bufs[i],uint32(round*32+i))};n,err:=writer.WriteBatch(bufs,nil);if
+        err!=nil||n!=len(bufs){t.Fatal("batch send",n,err)};got:=0;for got<n{recv.SetReadDeadline(time.Now().Add(2*time.Second));count,err:=reader.ReadBatch(bufs[:n-got],sizes,froms);if
+        err!=nil{t.Fatal(err)};for i:=0;i<count;i++{id:=binary.BigEndian.Uint32(bufs[i]);if
+        seen[id]{t.Fatal("batch duplicate",id)};seen[id]=true};got+=count}};if len(seen)!=rounds*32{t.Fatal("batch
+        loss",len(seen))};t.Logf("real two-path batch: %d packets, zero loss, %.0f
+        packets/s on loopback",len(seen),float64(len(seen))/time.Since(start).Seconds())}\n'')
+
+        PY'
+    - name: Baseline behavioral failures and allocation measurement
+      run: 'git worktree add --detach /tmp/issue58-baseline ff86354bcafbd054e7888e48343145323c9b2207
+
+        for file in internal/utils/handlers/issue58_audit_test.go internal/client/transport/issue58_audit_test.go
+        internal/server/transport/issue58_audit_test.go internal/tunnel/l3/issue58_audit_test.go;
+        do cp "$file" "/tmp/issue58-baseline/$file"; done
+
+        cd /tmp/issue58-baseline
+
+        if go test ./internal/utils/handlers ./internal/client/transport ./internal/tunnel/l3
+        -run TestIssue58 -count=1 -timeout 3m >/tmp/issue58-baseline.log 2>&1; then
+        cat /tmp/issue58-baseline.log; exit 1; fi
+
+        cat /tmp/issue58-baseline.log
+
+        if grep -q ''build failed'' /tmp/issue58-baseline.log; then exit 1; fi
+
+        go test ./internal/server/transport -run ''^$'' -bench BenchmarkIssue58 -benchmem
+        -count=3
+
+        '
+    - name: Fixed behavior under race detector
+      run: go test ./internal/utils/handlers ./internal/client/transport ./internal/server/transport
+        ./internal/tunnel/l3 -run TestIssue58 -race -count=3 -v -timeout 7m
+    - name: Fixed allocation measurement
+      run: go test ./internal/server/transport -run ^$ -bench BenchmarkIssue58 -benchmem
+        -count=3
+'on':
+  push:
+    branches:
+    - codex/validate-issue-58
