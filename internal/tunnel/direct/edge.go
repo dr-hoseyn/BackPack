@@ -382,6 +382,12 @@ func (e *Edge) serveUDP(ctx context.Context, m portmap.Mapping) error {
 	}()
 
 	buf := make([]byte, maxDatagram)
+	// Close every paced stream on service cancellation, including writers waiting
+	// for bandwidth before their socket write begins.
+	stopFlows := context.AfterFunc(ctx, func() {
+		flows.Range(func(_, v any) bool { v.(*udpFlow).stream.Close(); return true })
+	})
+	defer stopFlows()
 	for {
 		n, client, err := conn.ReadFrom(buf)
 		if err != nil {
@@ -428,6 +434,8 @@ func (e *Edge) udpFlowFor(flows *sync.Map, pumps *sync.WaitGroup, local net.Pack
 		e.limiter.Release()
 		return nil, err
 	}
+	// UDP streams share the same tunnel-wide bucket as forwarded TCP.
+	stream = e.limiter.Wrap(context.Background(), stream)
 	flow := &udpFlow{stream: stream}
 	flow.touch()
 
