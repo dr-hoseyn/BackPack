@@ -98,12 +98,12 @@ func (c *QuicTransport) getQUICConn() *quic.Conn {
 
 func (c *QuicTransport) Start() {
 	if c.config.WebPort > 0 {
-		go c.state.Usage().Monitor()
+		c.state.Go(c.state.Usage().Monitor)
 	}
 
 	c.status.set("Disconnected (QUIC)")
 
-	go c.channelDialer()
+	c.state.Go(c.channelDialer)
 }
 
 func (c *QuicTransport) Restart() {
@@ -161,7 +161,7 @@ func (c *QuicTransport) channelDialer() {
 				bo.Wait(c.state.Ctx())
 				continue
 			}
-			if err := utils.SendBinaryTransportString(control, proof, utils.SG_Chan); err != nil {
+			if err := utils.SendBinaryTransportStringWithin(control, proof, utils.SG_Chan, 10*time.Second); err != nil {
 				c.logger.Errorf("failed to send the control channel claim: %v", err)
 				_ = conn.CloseWithError(0, "claim send failed")
 				bo.Wait(c.state.Ctx())
@@ -228,7 +228,7 @@ func (c *QuicTransport) channelDialer() {
 
 			c.status.set("Connected (QUIC)")
 
-			go c.poolMaintainer()
+			c.state.Go(c.poolMaintainer)
 			// The connection is this generation's, streams and socket with it,
 			// and ends with its control loop — after the goodbye, which a close
 			// racing it would drop — whether or not a restart follows.
@@ -254,6 +254,9 @@ func (c *QuicTransport) poolMaintainer() {
 		taken:      &c.loadConnections,
 		shrink:     c.controlFlow,
 		dial:       c.tunnelDialer,
+		spawn:      c.state.Go,
+		pending:    &c.dialingConnections,
+		maxSize:    c.config.ConnPoolSize * poolGrowthLimit,
 	}.maintain()
 }
 
@@ -265,6 +268,12 @@ func (c *QuicTransport) control() controlLoop {
 // tunnelDialer opens one data stream, announces it, and then waits for the
 // server to name the backend it should carry.
 func (c *QuicTransport) tunnelDialer() {
+	ready, ok := c.beginPoolDial(c.config.ConnPoolSize * poolGrowthLimit)
+	if !ok {
+		return
+	}
+	defer ready()
+
 	qc := c.getQUICConn()
 	if qc == nil {
 		return
@@ -276,6 +285,7 @@ func (c *QuicTransport) tunnelDialer() {
 		return
 	}
 	data := network.NewQUICStreamConn(stream, qc)
+	defer c.state.Own(data)()
 
 	// Announce the stream with the connection's proof so the server can
 	// authenticate it and file it as a data stream. The proof, not the token,
@@ -286,13 +296,14 @@ func (c *QuicTransport) tunnelDialer() {
 		stream.Close()
 		return
 	}
-	if err := utils.SendBinaryTransportString(data, proof, utils.SG_TCP); err != nil {
+	if err := utils.SendBinaryTransportStringWithin(data, proof, utils.SG_TCP, 10*time.Second); err != nil {
 		c.logger.Errorf("failed to announce tunnel stream: %v", err)
 		stream.Close()
 		return
 	}
 
 	atomic.AddInt32(&c.poolConnections, 1)
+	ready()
 
 	// Wait until the server assigns this stream a backend to reach.
 	remoteAddr, err := utils.ReceiveBinaryString(data)

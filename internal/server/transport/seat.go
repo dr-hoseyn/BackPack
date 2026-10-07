@@ -130,6 +130,20 @@ func drainTunnelConns[C io.Closer](queue chan C) {
 	}
 }
 
+// sweepTunnelConns also catches accepts already in flight when a generation
+// ends. A single drain at client replacement cannot cover those late arrivals.
+func sweepTunnelConns[C io.Closer](ctx context.Context, queue chan C) {
+	sweepAfterEnd(ctx, func() bool {
+		select {
+		case conn := <-queue:
+			conn.Close()
+			return true
+		default:
+			return false
+		}
+	})
+}
+
 // rivalry watches who takes the seat, to tell one client re-dialing — which is
 // what adoption is for — from two clients holding one token, which it cannot
 // fix: each one's claim ends the other's, and with adoption in place the

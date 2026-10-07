@@ -195,7 +195,7 @@ func (s *UdpTransport) validControlClaim(g *udpGen, conn net.Conn) bool {
 		return false
 	}
 
-	if err := utils.SendBinaryTransportString(conn, s.config.Token, utils.SG_Chan); err != nil {
+	if err := utils.SendBinaryTransportStringWithin(conn, s.config.Token, utils.SG_Chan, 10*time.Second); err != nil {
 		s.logger.Errorf("failed to send security token: %v", err)
 		return false
 	}

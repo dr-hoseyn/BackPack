@@ -2,7 +2,9 @@ package transport
 
 import (
 	"context"
+	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/sirupsen/logrus"
 	"github.com/xtaci/smux"
@@ -79,12 +81,27 @@ func (m muxSession) run(session *smux.Session) {
 	// unbuffered channel the loop blocks on forever, and the session would take
 	// no streams at all — so it is not left to the caller.
 	counter := make(chan struct{}, max(m.muxCon, 1))
-	defer session.Close()
-	defer close(counter)
+	var workers sync.WaitGroup
+	retired := false
+	stop := context.AfterFunc(m.ctx, func() { session.Close() })
+	defer func() {
+		stop()
+		session.Close()
+		workers.Wait()
+		if !retired {
+			atomic.AddInt32(m.sessions, -1)
+		}
+	}()
 
 	for {
 		// +1 for mux connection counter
-		counter <- struct{}{}
+		select {
+		case counter <- struct{}{}:
+		case <-m.ctx.Done():
+			return
+		case <-session.CloseChan():
+			return
+		}
 
 		select {
 		case <-m.ctx.Done():
@@ -116,11 +133,13 @@ func (m muxSession) run(session *smux.Session) {
 
 			stream, err := session.OpenStream()
 			if err != nil {
+				retired = true // failed returns the session's slot itself.
 				m.failed(&incomingConn, err)
 				return
 			}
 
 			// Send the target port over the tunnel connection
+			_ = stream.SetWriteDeadline(time.Now().Add(pairingWait(incomingConn.timeCreated)))
 			if err := utils.SendBinaryString(stream, incomingConn.remoteAddr); err != nil {
 				m.log.Tracef("failed to send address over stream: %v", err)
 				// The stream is unusable and nothing else will close it.
@@ -142,9 +161,12 @@ func (m muxSession) run(session *smux.Session) {
 				}
 				continue
 			}
+			_ = stream.SetWriteDeadline(time.Time{})
 
 			// Handle data exchange between connections
+			workers.Add(1)
 			go func() {
+				defer workers.Done()
 				// Free the connection slot once the transfer ends, or the
 				// limit would fill up permanently.
 				defer m.limits.release()

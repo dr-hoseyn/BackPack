@@ -113,6 +113,7 @@ func (s *TcpTransport) Start() {
 // nothing in here reaches back for a field that the next Restart is entitled to
 // replace while this run is still using it.
 func (s *TcpTransport) start(g *tcpGen) {
+	go sweepTunnelConns(g.ctx, g.tunnelChannel)
 	s.status.set("Disconnected (TCP)")
 
 	if s.config.WebPort > 0 {
@@ -325,7 +326,7 @@ func (s *TcpTransport) admitControlChannel(g *tcpGen, conn net.Conn, ann announc
 		conn.Close()
 		return
 	}
-	if err := utils.SendBinaryTransportString(conn, ack, ann.signal); err != nil {
+	if err := utils.SendBinaryTransportStringWithin(conn, ack, ann.signal, 10*time.Second); err != nil {
 		s.logger.Errorf("failed to send security token: %v", err)
 		conn.Close()
 		return
@@ -397,8 +398,9 @@ func (s *TcpTransport) handleLoop(g *tcpGen) {
 				ctx: g.ctx, local: localConn, tunnel: g.tunnelChannel,
 				limits: s.limits, log: s.logger,
 				announce: func(c net.Conn, addr string) error {
-					return utils.SendBinaryTransportString(c, addr, utils.SG_TCP)
+					return utils.SendBinaryTransportStringWithin(c, addr, utils.SG_TCP, pairingWait(localConn.timeCreated))
 				},
+				request: requestAlways(g.reqNewConnChan, s.logger),
 				discard: func(c net.Conn) { c.Close() },
 				relay: func(c net.Conn, local LocalTCPConn) {
 					go func() {

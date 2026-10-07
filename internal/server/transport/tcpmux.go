@@ -142,6 +142,7 @@ func (s *TcpMuxTransport) Start() {
 // nothing in here reaches back for a field that the next Restart is entitled to
 // replace while this run is still using it.
 func (s *TcpMuxTransport) start(g *tcpMuxGen) {
+	go sweepTunnelConns(g.ctx, g.tunnelChannel)
 	if s.config.WebPort > 0 {
 		go g.usageMonitor.Monitor()
 	}
@@ -341,7 +342,7 @@ func (s *TcpMuxTransport) admitControlChannel(g *tcpMuxGen, conn net.Conn, ann a
 		conn.Close()
 		return
 	}
-	if err := utils.SendBinaryTransportString(conn, ack, ann.signal); err != nil {
+	if err := utils.SendBinaryTransportStringWithin(conn, ack, ann.signal, 10*time.Second); err != nil {
 		s.logger.Errorf("failed to send security token: %v", err)
 		conn.Close()
 		return

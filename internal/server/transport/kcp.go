@@ -192,6 +192,7 @@ func (s *KcpTransport) Start() {
 // nothing in here reaches back for a field that the next Restart is entitled to
 // replace while this run is still using it.
 func (s *KcpTransport) start(g *kcpGen) {
+	go sweepTunnelConns(g.ctx, g.tunnelChannel)
 	if s.config.WebPort > 0 {
 		go g.usageMonitor.Monitor()
 	}
@@ -410,7 +411,7 @@ func (s *KcpTransport) acceptSession(g *kcpGen, session *kcp.UDPSession) {
 		}
 		// A peer claiming the control channel. Answering with the token is what
 		// proves to the client that this server knows the secret too.
-		if err := utils.SendBinaryTransportString(session, s.config.Token, utils.SG_Chan); err != nil {
+		if err := utils.SendBinaryTransportStringWithin(session, s.config.Token, utils.SG_Chan, 10*time.Second); err != nil {
 			s.logger.Errorf("failed to send security token: %v", err)
 			session.Close()
 			return

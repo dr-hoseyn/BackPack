@@ -57,6 +57,9 @@ func (l *lifecycle) control(link controlwire.Link, keepAlive time.Duration, dial
 // run serves the channel until the generation ends or the channel fails; a
 // failure asks for a restart.
 func (c controlLoop) run() {
+	stop := context.AfterFunc(c.ctx, c.link.Close)
+	defer stop()
+	defer c.link.Close()
 	done := make(chan struct{})
 	defer close(done)
 
@@ -182,6 +185,6 @@ func (l *lifecycle) serverAsked(dial func()) {
 		// unanswered is how it shrinks. See poolMaintainer.
 	default:
 		l.logger.Debug("channel signal received, initiating tunnel dialer")
-		go dial()
+		l.state.Go(dial)
 	}
 }

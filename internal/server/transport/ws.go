@@ -371,6 +371,10 @@ func (s *WsTransport) handleLoop(g *wsGen) {
 					close(c.ping)
 					c.mu.Lock()
 					defer c.mu.Unlock()
+					if err := c.conn.SetWriteDeadline(time.Now().Add(pairingWait(localConn.timeCreated))); err != nil {
+						return err
+					}
+					defer c.conn.SetWriteDeadline(time.Time{})
 					return c.conn.WriteMessage(websocket.TextMessage, []byte(addr))
 				},
 				discard: func(c TunnelChannel) { c.conn.Close() },

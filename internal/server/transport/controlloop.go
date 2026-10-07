@@ -48,6 +48,9 @@ type controlLoop struct {
 // run serves the channel until the generation ends or the channel fails; a
 // failure asks for a restart.
 func (c controlLoop) run() {
+	stop := context.AfterFunc(c.ctx, c.link.Close)
+	defer stop()
+	defer c.link.Close()
 	if c.bye != nil {
 		defer c.bye.said()
 	}

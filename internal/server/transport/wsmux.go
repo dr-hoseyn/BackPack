@@ -126,6 +126,7 @@ func (s *WsMuxTransport) Start() {
 // nothing in here reaches back for a field that the next Restart is entitled to
 // replace while this run is still using it.
 func (s *WsMuxTransport) start(g *wsMuxGen) {
+	go sweepTunnelConns(g.ctx, g.tunnelChannel)
 	// for  webui
 	if s.config.WebPort > 0 {
 		go g.usageMonitor.Monitor()
