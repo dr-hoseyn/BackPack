@@ -8,7 +8,7 @@ jobs:
     steps:
     - uses: actions/checkout@v7
       with:
-        ref: cb3d7775a59c5a7e856d80988c7bceb483eae379
+        ref: 2b02f6aef3eddc69135b04d1ed27ae27145817a0
     - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
 
         sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
@@ -38,7 +38,7 @@ jobs:
     steps:
     - uses: actions/checkout@v7
       with:
-        ref: cb3d7775a59c5a7e856d80988c7bceb483eae379
+        ref: 2b02f6aef3eddc69135b04d1ed27ae27145817a0
     - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
 
         sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
@@ -59,7 +59,7 @@ jobs:
     steps:
     - uses: actions/checkout@v7
       with:
-        ref: cb3d7775a59c5a7e856d80988c7bceb483eae379
+        ref: 2b02f6aef3eddc69135b04d1ed27ae27145817a0
     - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
 
         sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
@@ -101,7 +101,7 @@ jobs:
     steps:
     - uses: actions/checkout@v7
       with:
-        ref: cb3d7775a59c5a7e856d80988c7bceb483eae379
+        ref: 2b02f6aef3eddc69135b04d1ed27ae27145817a0
     - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
 
         sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
@@ -122,7 +122,7 @@ jobs:
     - uses: actions/checkout@v7
       with:
         fetch-depth: 0
-        ref: cb3d7775a59c5a7e856d80988c7bceb483eae379
+        ref: 2b02f6aef3eddc69135b04d1ed27ae27145817a0
     - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
 
         sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
@@ -151,7 +151,7 @@ jobs:
     steps:
     - uses: actions/checkout@v7
       with:
-        ref: cb3d7775a59c5a7e856d80988c7bceb483eae379
+        ref: 2b02f6aef3eddc69135b04d1ed27ae27145817a0
     - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
 
         sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
@@ -186,7 +186,7 @@ jobs:
     steps:
     - uses: actions/checkout@v7
       with:
-        ref: cb3d7775a59c5a7e856d80988c7bceb483eae379
+        ref: 2b02f6aef3eddc69135b04d1ed27ae27145817a0
     - uses: actions/setup-go@v7
       with:
         go-version-file: go.mod
@@ -415,6 +415,32 @@ jobs:
         packets/s on loopback",len(seen),float64(len(seen))/time.Since(start).Seconds())}\n'')
 
         PY'
+    - run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path("internal/client/transport/issue58_pool_policy_test.go").write_text(''package
+        transport\nimport("testing";"context";"time";"sync/atomic";"io";"github.com/backpack/backpack/internal/metrics";"github.com/sirupsen/logrus")\nfunc
+        TestIssue58PoolTrafficHysteresis(t *testing.T){ctx,cancel:=context.WithCancel(context.Background());defer
+        cancel();log:=logrus.New();log.SetOutput(io.Discard);var muxOpen,spareOpen,muxCalls,spareCalls,taken
+        int32;muxShrink:=make(chan struct{},16);spareShrink:=make(chan struct{},16);muxDone,spareDone:=make(chan
+        struct{}),make(chan struct{});go func(){defer close(muxDone);poolSizer{ctx:ctx,log:log,size:1,mux:true,open:&muxOpen,taken:&taken,shrink:muxShrink,dial:func(){atomic.AddInt32(&muxOpen,1);atomic.AddInt32(&muxCalls,1)}}.maintain()}();var
+        spareTaken int32;go func(){defer close(spareDone);poolSizer{ctx:ctx,log:log,size:1,open:&spareOpen,taken:&spareTaken,shrink:spareShrink,dial:func(){atomic.AddInt32(&spareOpen,1);atomic.AddInt32(&spareCalls,1)}}.maintain()}();defer
+        func(){cancel();<-muxDone;<-spareDone}();trafficCtx,stopTraffic:=context.WithCancel(ctx);trafficDone:=make(chan
+        struct{});go func(){defer close(trafficDone);tick:=time.NewTicker(100*time.Millisecond);defer
+        tick.Stop();for{select{case <-trafficCtx.Done():return;case <-tick.C:metrics.AddBytes(450000,0)}}}();defer
+        func(){stopTraffic();<-trafficDone}();high:=time.NewTimer(55*time.Second);select{case
+        <-muxShrink:t.Fatal("physical sessions shrank under sustained traffic");case
+        <-spareShrink:t.Fatal("spare unexpectedly retired");case <-high.C:};if calls:=atomic.LoadInt32(&muxCalls);calls<2||calls>4{t.Fatal("physical
+        session growth",calls)};if atomic.LoadInt32(&spareCalls)!=1{t.Fatal("idle
+        TCP spares scaled with bytes carried by existing connections",spareCalls)};stopTraffic();quiet:=time.NewTimer(25*time.Second);select{case
+        <-muxShrink:t.Fatal("pool retired before sustained quiet period");case <-quiet.C:};select{case
+        <-muxShrink:t.Log("loaded mux retained sessions, idle spare stayed at floor,
+        mux retired after quiet period");case <-time.After(35*time.Second):t.Fatal("quiet
+        pool never returned surplus capacity")}}\n'')
+
+        PY'
+      name: Generate pool policy fixture
     - name: Integrated behavior with race detector
       run: go test ./cmd ./internal/manage/... ./internal/webui ./internal/node ./internal/utils/handlers
         ./internal/client/transport ./internal/server/transport ./internal/tunnel/l3
