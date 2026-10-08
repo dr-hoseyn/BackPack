@@ -1,4 +1,4 @@
-name: Managed HTTPS half-close and prolonged concurrency
+name: Managed HTTPS helpers Naive completion and protocol validation
 permissions:
   contents: read
 'on':
@@ -6,19 +6,172 @@ permissions:
     branches:
     - codex/validate-https-protocols
 jobs:
-  half-close:
-    name: All three carriers preserve EOF and validate every stress flow
+  baseline:
+    name: Reproduce inherited-output restart and check descendant failures
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
     - uses: actions/checkout@v7
       with:
-        ref: a1eb4d24dd72355bddf3e9e69f4644ace44bd3cc
+        ref: 4f49f103a0bde83bc5ab70e9f62c81301d84d696
     - uses: actions/setup-go@v7
       with:
         go-version-file: go.mod
         cache: true
-    - run: 'python3 - <<''PY''
+    - &id001
+      run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/tunnel/naive/runtime_audit_lifecycle_test.go'').write_text(''//go:build linux\n\npackage naive\n\nimport
+        (\n\t"context"\n\t"io"\n\t"net"\n\t"os"\n\t"path/filepath"\n\t"strconv"\n\t"strings"\n\t"syscall"\n\t"testing"\n\t"time"\n\n\t"github.com/sirupsen/logrus"\n)\n\nfunc
+        auditLivePID(pid int) bool {\n\tb, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")\n\tif err != nil {\n\t\treturn
+        false\n\t}\n\tfields := strings.Fields(string(b)[strings.LastIndexByte(string(b), \'')\'')+1:])\n\treturn len(fields)
+        > 0 && fields[0] != "Z"\n}\n\n// Sending a process-group signal does not wait for every member to be\n// scheduled
+        and exit. Bound that wait; a surviving baseline sleep300 child\n// still fails, while zombies do not count as running
+        helpers.\nfunc auditWaitPIDStopped(t *testing.T, pid int, message string) {\n\tt.Helper()\n\tuntil := time.Now().Add(500
+        * time.Millisecond)\n\tfor auditLivePID(pid) && time.Now().Before(until) {\n\t\ttime.Sleep(5 * time.Millisecond)\n\t}\n\tif
+        auditLivePID(pid) {\n\t\tt.Fatal(message)\n\t}\n}\n\nfunc auditReadPID(t *testing.T, file string) int {\n\tt.Helper()\n\tuntil
+        := time.Now().Add(time.Second)\n\tfor time.Now().Before(until) {\n\t\tb, _ := os.ReadFile(file)\n\t\tpid, err := strconv.Atoi(strings.TrimSpace(string(b)))\n\t\tif
+        err == nil && pid > 0 {\n\t\t\treturn pid\n\t\t}\n\t\ttime.Sleep(time.Millisecond)\n\t}\n\tt.Fatalf("no PID at %s",
+        file)\n\treturn 0\n}\n\nfunc TestAuditNaiveRuntimeDescendantsAreKilled(t *testing.T) {\n\tdir := t.TempDir()\n\tpidfile
+        := filepath.Join(dir, "runtime-child")\n\tbinary := filepath.Join(dir, "helper")\n\tscript := "#!/bin/sh\\nsleep 300
+        &\\necho $! > \''" + pidfile + "\''\\nexec sleep 300\\n"\n\tif err := os.WriteFile(binary, []byte(script), 0700);
+        err != nil {\n\t\tt.Fatal(err)\n\t}\n\tlistener, err := net.Listen("tcp", "127.0.0.1:0")\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tdefer
+        listener.Close()\n\tlog := logrus.New()\n\tlog.SetOutput(io.Discard)\n\tctx, cancel := context.WithCancel(context.Background())\n\tdefer
+        cancel()\n\th, err := startManaged(ctx, binary, "client-fixture", []byte("{}"), listener.Addr().String(), os.Environ(),
+        log, nil)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tdefer h.Close()\n\tchild := auditReadPID(t, pidfile)\n\tdefer
+        syscall.Kill(child, syscall.SIGKILL)\n\tcancel()\n\tdone := make(chan struct{})\n\tgo func() { h.Close(); close(done)
+        }()\n\tselect {\n\tcase <-done:\n\tcase <-time.After(3 * time.Second):\n\t\tt.Fatal("helper cancellation was unbounded")\n\t}\n\tauditWaitPIDStopped(t,
+        child, "runtime helper descendant survived cancellation")\n\tif _, err := os.Stat(h.dir); !os.IsNotExist(err) {\n\t\tt.Fatal("private
+        helper configuration survived cancellation")\n\t}\n}\n\nfunc TestAuditNaiveCheckDescendantsAreKilled(t *testing.T)
+        {\n\tfor _, outcome := range []string{"success", "failure"} {\n\t\tt.Run(outcome, func(t *testing.T) {\n\t\t\tdir
+        := t.TempDir()\n\t\t\tpidfile := filepath.Join(dir, "check-child")\n\t\t\tbinary := filepath.Join(dir, "helper")\n\t\t\texit
+        := "0"\n\t\t\tif outcome == "failure" {\n\t\t\t\texit = "17"\n\t\t\t}\n\t\t\tscript := "#!/bin/sh\\nif [ \\"$1\\"
+        = check ]; then\\n sleep 300 >/dev/null 2>&1 &\\n echo $! > \''" + pidfile + "\''\\n exit " + exit + "\\nfi\\nexec
+        sleep 300\\n"\n\t\t\tif err := os.WriteFile(binary, []byte(script), 0700); err != nil {\n\t\t\t\tt.Fatal(err)\n\t\t\t}\n\t\t\tlistener,
+        err := net.Listen("tcp", "127.0.0.1:0")\n\t\t\tif err != nil {\n\t\t\t\tt.Fatal(err)\n\t\t\t}\n\t\t\tdefer listener.Close()\n\t\t\tlog
+        := logrus.New()\n\t\t\tlog.SetOutput(io.Discard)\n\t\t\tctx, cancel := context.WithCancel(context.Background())\n\t\t\tdefer
+        cancel()\n\t\t\th, err := startManaged(ctx, binary, "server", []byte("{}"), listener.Addr().String(), os.Environ(),
+        log, nil)\n\t\t\tchild := auditReadPID(t, pidfile)\n\t\t\tdefer syscall.Kill(child, syscall.SIGKILL)\n\t\t\tif h !=
+        nil {\n\t\t\t\th.Close()\n\t\t\t}\n\t\t\tif outcome == "success" && err != nil {\n\t\t\t\tt.Fatalf("successful check
+        failed: %v", err)\n\t\t\t}\n\t\t\tif outcome == "failure" && err == nil {\n\t\t\t\tt.Fatal("failed check was accepted")\n\t\t\t}\n\t\t\tauditWaitPIDStopped(t,
+        child, "check-command descendant survived helper cleanup")\n\t\t})\n\t}\n}\n\nfunc TestAuditNaiveLeaderExitRestartsWithInheritedOutput(t
+        *testing.T) {\n\tdir := t.TempDir()\n\tpidfile := filepath.Join(dir, "inherited-output-child")\n\tbinary := filepath.Join(dir,
+        "helper")\n\tscript := "#!/bin/sh\\nsleep 300 &\\necho $! > \''" + pidfile + "\''\\nsleep 0.2\\nexit 0\\n"\n\tif err
+        := os.WriteFile(binary, []byte(script), 0700); err != nil {\n\t\tt.Fatal(err)\n\t}\n\tlistener, err := net.Listen("tcp",
+        "127.0.0.1:0")\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tdefer listener.Close()\n\tlog := logrus.New()\n\tlog.SetOutput(io.Discard)\n\tctx,
+        cancel := context.WithCancel(context.Background())\n\tdefer cancel()\n\th, err := startManaged(ctx, binary, "client-fixture",
+        []byte("{}"), listener.Addr().String(), os.Environ(), log, nil)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tdefer
+        h.Close()\n\tfirst := auditReadPID(t, pidfile)\n\tdefer syscall.Kill(first, syscall.SIGKILL)\n\tuntil := time.Now().Add(1500
+        * time.Millisecond)\n\tchanged := false\n\tfor time.Now().Before(until) {\n\t\tb, _ := os.ReadFile(pidfile)\n\t\tpid,
+        _ := strconv.Atoi(strings.TrimSpace(string(b)))\n\t\tif pid != 0 && pid != first {\n\t\t\tchanged = true\n\t\t\tbreak\n\t\t}\n\t\ttime.Sleep(10
+        * time.Millisecond)\n\t}\n\tcancel()\n\th.Close()\n\tif !changed {\n\t\tt.Fatal("helper leader exited, but inherited
+        output blocked Wait and prevented restart")\n\t}\n}\n'',encoding=''utf-8'')
+
+        PY'
+    - run: 'if go test ./internal/tunnel/naive -run "TestAuditNaiveLeaderExitRestartsWithInheritedOutput|TestAuditNaiveCheckDescendantsAreKilled"
+        -count=1 -v -timeout 2m > /tmp/lifecycle-baseline.log 2>&1; then cat /tmp/lifecycle-baseline.log; exit 1; fi
+
+        cat /tmp/lifecycle-baseline.log
+
+        grep -E "check-command descendant survived|helper did not restart|leader exit" /tmp/lifecycle-baseline.log'
+  lifecycle:
+    name: Exact Naive lifecycle and validated TLS renewal races
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: b2a0612af3c86d3712460c6117ba076fdd7186f1
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - &id004
+      run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/tunnel/naive/immutable_tls_external_test.go'').write_text(''package naive\n\nimport (\n\t"crypto/ed25519"\n\t"crypto/rand"\n\t"crypto/tls"\n\t"crypto/x509"\n\t"encoding/json"\n\t"encoding/pem"\n\t"github.com/backpack/backpack/config"\n\t"math/big"\n\t"os"\n\t"path/filepath"\n\t"strings"\n\t"testing"\n\t"time"\n)\n\n//
+        External-only regression: this uses only the original Naive API so the\n// identical fixture compiles against both
+        the old PR65 and its corrected head.\nfunc TestNaiveServerJSONFreezesValidatedCertificate(t *testing.T) {\n\tdir :=
+        t.TempDir()\n\tcertPath, keyPath := filepath.Join(dir, "cert.pem"), filepath.Join(dir, "key.pem")\n\tpair := func(serial
+        int64, expired bool) ([]byte, []byte) {\n\t\tt.Helper()\n\t\tpublic, private, err := ed25519.GenerateKey(rand.Reader)\n\t\tif
+        err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t\tbefore, after := time.Now().Add(-time.Hour), time.Now().Add(time.Hour)\n\t\tif
+        expired {\n\t\t\tbefore, after = time.Now().Add(-2*time.Hour), time.Now().Add(-time.Hour)\n\t\t}\n\t\ttemplate :=
+        &x509.Certificate{SerialNumber: big.NewInt(serial), DNSNames: []string{"localhost"}, NotBefore: before, NotAfter:
+        after, KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}\n\t\tder,
+        err := x509.CreateCertificate(rand.Reader, template, template, public, private)\n\t\tif err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t\tpk,
+        err := x509.MarshalPKCS8PrivateKey(private)\n\t\tif err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t\treturn pem.EncodeToMemory(&pem.Block{Type:
+        "CERTIFICATE", Bytes: der}), pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: pk})\n\t}\n\twrite := func(path
+        string, b []byte) {\n\t\tt.Helper()\n\t\tif err := os.WriteFile(path, b, 0600); err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t}\n\toldCert,
+        oldKey := pair(1, false)\n\texpiredCert, expiredKey := pair(2, true)\n\twrite(certPath, oldCert)\n\twrite(keyPath,
+        oldKey)\n\tbinary, err := os.Executable()\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tcfg := config.ServerConfig{Transport:
+        config.TCP, BindAddr: "127.0.0.1:26001", Naive: config.NaiveServerConfig{Binary: binary, Listen: "127.0.0.1:26003",
+        Username: "audit", Password: "fixture-secret", Certificate: certPath, Key: keyPath}}\n\tif err := ValidateServer(&cfg);
+        err != nil {\n\t\tt.Fatal(err)\n\t}\n\tfrozen, err := serverJSON(&cfg)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\ttype
+        material struct {\n\t\tCertificate     []string `json:"certificate"`\n\t\tKey             []string `json:"key"`\n\t\tCertificatePath
+        string   `json:"certificate_path"`\n\t\tKeyPath         string   `json:"key_path"`\n\t}\n\tdecode := func(body []byte)
+        material {\n\t\tt.Helper()\n\t\tvar doc struct {\n\t\t\tInbounds []struct {\n\t\t\t\tTLS material `json:"tls"`\n\t\t\t}
+        `json:"inbounds"`\n\t\t}\n\t\tif err := json.Unmarshal(body, &doc); err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t\tif
+        len(doc.Inbounds) != 1 {\n\t\t\tt.Fatalf("unexpected inbounds: %s", body)\n\t\t}\n\t\treturn doc.Inbounds[0].TLS\n\t}\n\ttlsMaterial
+        := decode(frozen)\n\tif tlsMaterial.CertificatePath != "" || tlsMaterial.KeyPath != "" {\n\t\tt.Error("generated JSON
+        gives sing-box live certificate/key paths; independent fswatch reload bypasses validation")\n\t}\n\tif strings.Join(tlsMaterial.Certificate,
+        "\\n") != string(oldCert) || strings.Join(tlsMaterial.Key, "\\n") != string(oldKey) {\n\t\tt.Error("generated JSON
+        does not contain the exact validated certificate/private key")\n\t}\n\t// IPv4-mapped IPv6 loopback must canonicalize
+        before applying the IPv4\n\t// prefix length; ::ffff:127.0.0.1/32 would allow a vast IPv6 range.\n\tmapped := cfg\n\tmapped.BindAddr
+        = "[::ffff:127.0.0.1]:26001"\n\tmappedJSON, err := serverJSON(&mapped)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tvar
+        mappedDoc struct {\n\t\tRoute struct {\n\t\t\tRules []struct {\n\t\t\t\tCIDR []string `json:"ip_cidr"`\n\t\t\t} `json:"rules"`\n\t\t}
+        `json:"route"`\n\t}\n\tif err := json.Unmarshal(mappedJSON, &mappedDoc); err != nil {\n\t\tt.Fatal(err)\n\t}\n\tif
+        len(mappedDoc.Route.Rules) == 0 || len(mappedDoc.Route.Rules[0].CIDR) != 1 || mappedDoc.Route.Rules[0].CIDR[0] !=
+        "127.0.0.1/32" {\n\t\tt.Errorf("mapped loopback permits a non-canonical or broad destination range: %+v", mappedDoc.Route.Rules)\n\t}\n\t//
+        Replace source files with a well-formed matched pair which the helper\''s\n\t// independent watcher would accept,
+        but which Backpack must reject.\n\twrite(certPath, expiredCert)\n\twrite(keyPath, expiredKey)\n\tif _, err := tls.X509KeyPair(expiredCert,
+        expiredKey); err != nil {\n\t\tt.Fatalf("expiry fixture is not a valid matched pair: %v", err)\n\t}\n\tif err := ValidateServer(&cfg);
+        err == nil {\n\t\tt.Error("expired input unexpectedly validates")\n\t}\n\tif _, err := serverJSON(&cfg); err == nil
+        {\n\t\tt.Error("fresh helper JSON accepts the matched expired replacement")\n\t}\n\t// Retained per-generation material
+        stays usable without touching those files.\n\tretained := decode(frozen)\n\tif retained.CertificatePath != "" || retained.KeyPath
+        != "" {\n\t\tt.Error("retained generation still references the mutated files")\n\t}\n\tif strings.Join(retained.Certificate,
+        "\\n") != string(oldCert) || strings.Join(retained.Key, "\\n") != string(oldKey) {\n\t\tt.Error("retained generation
+        lost the original certificate/key")\n\t}\n\tif len(retained.Certificate) > 0 && len(retained.Key) > 0 {\n\t\toldPair,
+        err := tls.X509KeyPair([]byte(strings.Join(retained.Certificate, "\\n")), []byte(strings.Join(retained.Key, "\\n")))\n\t\tif
+        err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t\tleaf, err := x509.ParseCertificate(oldPair.Certificate[0])\n\t\tif err
+        != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t\tif leaf.SerialNumber.Int64() != 1 || !time.Now().Before(leaf.NotAfter) {\n\t\t\tt.Error("retained
+        material is the expired replacement")\n\t\t}\n\t}\n\t// A mismatched save is also rejected before producing a child
+        configuration.\n\twrite(certPath, oldCert)\n\twrite(keyPath, expiredKey)\n\tif _, err := serverJSON(&cfg); err ==
+        nil {\n\t\tt.Error("fresh helper JSON accepts a mismatched certificate/key")\n\t}\n}\n'',encoding=''utf-8'')
+
+        PY'
+    - *id001
+    - run: 'go test ./internal/tunnel/naive -run "TestAuditNaive|TestNaiveServerJSON" -race -count=3 -v -timeout 3m
+
+        go test ./cmd -run "TestHelperCertificateRenewal|TestAwaitConfigChange|TestAnInvalidEdit" -race -count=2 -timeout
+        5m
+
+        sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
+
+        sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d
+
+        go test ./config ./internal/manage/tunnelspec ./internal/manage/health ./internal/app -race -timeout 10m
+
+        go vet ./cmd ./config ./internal/tunnel/naive ./internal/manage/tunnelspec
+
+        bash -n install.sh'
+  official:
+    name: Pinned installer and official Naive HTTP2 complete reverse traffic/recovery
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: b2a0612af3c86d3712460c6117ba076fdd7186f1
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - &id002
+      run: 'python3 - <<''PY''
 
         from pathlib import Path
 
@@ -29,11 +182,12 @@ jobs:
         time\nimport urllib.parse\n\nimport argparse\nparser = argparse.ArgumentParser(description=__doc__)\nparser.add_argument("--backpack",
         required=True, type=Path)\nparser.add_argument("--naive", required=True, type=Path)\nparser.add_argument("--sing-box",
         required=True, type=Path)\nparser.add_argument("--output", required=True, type=Path)\nparser.add_argument("--check-half-close",
-        action="store_true")\nARGS = parser.parse_args()\nROOT = ARGS.output.resolve()\nROOT.mkdir(mode=0o700, parents=True,
-        exist_ok=True)\nif any(ROOT.iterdir()):\n    raise SystemExit("fixture output must be empty")\nBIN = ROOT / "bin"\nBIN.mkdir(mode=0o700)\nfor
-        name, source in (("backpack", ARGS.backpack), ("naive", ARGS.naive), ("sing-box", ARGS.sing_box)):\n    (BIN / name).symlink_to(source.resolve())\nlisteners
-        = [socket.create_server(("127.0.0.1", 0)) for _ in range(4)]\nPUBLIC, REVERSE, ENTRY, BACKEND = [listener.getsockname()[1]
-        for listener in listeners]\nfor listener in listeners: listener.close()\nBIN = ROOT / "bin"\nDATA = hashlib.sha256(b"independent-download-fixture").digest()
+        action="store_true")\nparser.add_argument("--managed-framing", action="store_true")\nARGS = parser.parse_args()\nROOT
+        = ARGS.output.resolve()\nROOT.mkdir(mode=0o700, parents=True, exist_ok=True)\nif any(ROOT.iterdir()):\n    raise SystemExit("fixture
+        output must be empty")\nBIN = ROOT / "bin"\nBIN.mkdir(mode=0o700)\nfor name, source in (("backpack", ARGS.backpack),
+        ("naive", ARGS.naive), ("sing-box", ARGS.sing_box)):\n    (BIN / name).symlink_to(source.resolve())\nlisteners = [socket.create_server(("127.0.0.1",
+        0)) for _ in range(4)]\nPUBLIC, REVERSE, ENTRY, BACKEND = [listener.getsockname()[1] for listener in listeners]\nfor
+        listener in listeners: listener.close()\nBIN = ROOT / "bin"\nDATA = hashlib.sha256(b"independent-download-fixture").digest()
         * 32768\nPROCS = {}\nLOGS = []\nPRIVATE_DIRS = set()\nHELPER_PIDS = set()\nHELPER_GROUPS = set()\nRESULT = {"scope":
         "isolated loopback, official helpers, no Internet retest", "fresh": [], "recovery": [], "negative": {}}\n\n\ndef readn(conn,
         size):\n    out = bytearray()\n    while len(out) < size:\n        b = conn.recv(size - len(out))\n        if not
@@ -82,13 +236,19 @@ jobs:
         + struct.pack("!H", port))\n    reply = readn(conn, 4)\n    if reply[0] != 5:\n        raise ValueError("invalid SOCKS
         response")\n    if reply[3] == 1:\n        readn(conn, 6)\n    elif reply[3] == 4:\n        readn(conn, 18)\n    elif
         reply[3] == 3:\n        readn(conn, readn(conn, 1)[0] + 2)\n    else:\n        raise ValueError("invalid SOCKS address
-        type")\n    return reply[1]\n\n\ndef allowed_target_control(host, proxy_port):\n    # Verify the actual reverse engine\''s
-        framed authentication response. An\n    # invalid token avoids taking over the active engine\''s control seat.\n    with
+        type")\n    return reply[1]\n\n\ndef allowed_target_control(host, proxy_port):\n    # Verify the real reverse engine\''s
+        authentication reply without taking its\n    # active control seat. The managed record layer is optional for baselines.\n    with
         socket.create_connection((host, proxy_port), timeout=3) as conn:\n        if socks(conn, REVERSE) != 0:\n            raise
-        RuntimeError("positive allowed-target SOCKS connection refused")\n        body = b"allowed-route-probe-deliberately-invalid-token"\n        conn.sendall(struct.pack("!HB",
-        len(body), 7) + body)\n        conn.settimeout(3)\n        header = readn(conn, 3)\n        response = readn(conn,
-        struct.unpack("!H", header[:2])[0])\n        if header[2] != 9 or response != b"token":\n            raise RuntimeError("allowed
-        target did not return the reverse engine authentication response")\n    return True\n\n\ndef check_half_close():\n    outcomes
+        RuntimeError("positive allowed-target SOCKS connection refused")\n        body = b"allowed-route-probe-deliberately-invalid-token"\n        announcement
+        = struct.pack("!HB", len(body), 7) + body\n        if ARGS.managed_framing:\n            conn.sendall(struct.pack("!I",
+        len(announcement)) + announcement)\n            buffered = bytearray()\n            def receive(size):\n                while
+        len(buffered) < size:\n                    length = struct.unpack("!I", readn(conn, 4))[0]\n                    if
+        length == 0: raise EOFError("managed record EOF before authentication response")\n                    if length >
+        65536: raise ValueError("managed record exceeds64KiB")\n                    buffered.extend(readn(conn, length))\n                response
+        = bytes(buffered[:size])\n                del buffered[:size]\n                return response\n        else:\n            conn.sendall(announcement)\n            receive
+        = lambda size: readn(conn, size)\n        conn.settimeout(3)\n        header = receive(3)\n        response = receive(struct.unpack("!H",
+        header[:2])[0])\n        if header[2] != 9 or response != b"token":\n            raise RuntimeError("allowed target
+        did not return the reverse engine authentication response")\n    return True\n\n\ndef check_half_close():\n    outcomes
         = []\n    RESULT["half_close"] = {"ok": False, "cases": outcomes}\n    for size in (0, 262144, 1048576):\n        payload
         = hashlib.sha256(("half-close-" + str(size)).encode()).digest() * (size // 32)\n        case = {"payload_bytes": size,
         "expected_sha256": hashlib.sha256(payload).hexdigest()}\n        started = time.monotonic()\n        try:\n            app(b"H",
@@ -185,6 +345,211 @@ jobs:
 
         from pathlib import Path
 
+        s=Path(''install.sh'').read_text()
+
+        s=s.split(''# Optional protocol helpers:'',1)[1].split(''# End optional protocol helpers.'',1)[0]
+
+        s=s[s.index(''helpers_validate()''):]
+
+        s=s.replace(''root="/usr/local/lib/backpack/helpers/$helper_tool"'',''root="$BP_HELPER_TEST_ROOT/$helper_tool"'')
+
+        Path(''/tmp/helper-functions.sh'').write_text(s)
+
+        PY
+
+        source /tmp/helper-functions.sh
+
+        info(){ printf ''%s\n'' "$*"; }
+
+        err(){ printf ''%s\n'' "$*" >&2; }
+
+        fetch(){ curl -fSL --retry 2 --connect-timeout 15 --max-time 180 "$1" -o "$2"; }
+
+        export BP_HELPER_TEST_ROOT=$(mktemp -d /tmp/backpack-helper-install.XXXXXX)
+
+        ARCH=amd64; BP_HELPERS=naive,xray
+
+        helpers_validate
+
+        install_helpers
+
+        naive="$BP_HELPER_TEST_ROOT/naive/v154.0.8037.49-4-amd64/naive"
+
+        sing="$BP_HELPER_TEST_ROOT/sing-box/v1.14.2-amd64/sing-box"
+
+        xray="$BP_HELPER_TEST_ROOT/xray/v26.3.27-amd64/xray"
+
+        "$naive" --version
+
+        "$sing" version
+
+        "$xray" version
+
+        before=$(sha256sum "$naive")
+
+        fetch(){ return 1; }
+
+        install_helper naive
+
+        test "$(sha256sum "$naive")" = "$before"
+
+        BP_HELPERS=wrong; if helpers_validate; then exit 1; fi
+
+        ARCH=s390x; BP_HELPERS=naive; if helpers_validate; then exit 1; fi
+
+        ARCH=amd64; BP_HELPERS=; install_helpers
+
+        # Corrupt/download failures are checked in a separate fresh owned directory.
+
+        original="$BP_HELPER_TEST_ROOT"; export BP_HELPER_TEST_ROOT=$(mktemp -d /tmp/backpack-helper-failed.XXXXXX)
+
+        fetch(){ printf corrupt > "$2"; }
+
+        if install_helper naive; then exit 1; fi
+
+        test ! -e "$BP_HELPER_TEST_ROOT/naive/v154.0.8037.49-4-amd64"
+
+        test -z "$(find "$BP_HELPER_TEST_ROOT" -name ''.stage.*'' -print)"
+
+        fetch(){ return 1; }
+
+        if install_helper xray; then exit 1; fi
+
+        test ! -e "$BP_HELPER_TEST_ROOT/xray/v26.3.27-amd64"
+
+        test -z "$(find "$BP_HELPER_TEST_ROOT" -name ''.stage.*'' -print)"
+
+        export BP_HELPER_TEST_ROOT="$original"
+
+        go build -o /tmp/backpack-protocol .
+
+        python3 /tmp/real_naive_linux.py --backpack /tmp/backpack-protocol --naive "$naive" --sing-box "$sing" --output /tmp/backpack-real-naive
+
+        '
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: real-naive-protocol-results
+        path: /tmp/backpack-real-naive/result*.json
+        if-no-files-found: ignore
+  xray:
+    name: Exact Xray contracts and both complete managed reverse profiles
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: ed77c7858350d8507c8a9725fe566e0661a4bb80
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - &id003
+      run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/tunnel/naive/duplex_adapter_external_test.go'').write_text(''package naive\n\nimport (\n\t"bytes"\n\t"encoding/binary"\n\t"errors"\n\t"io"\n\t"net"\n\t"os"\n\t"sync"\n\t"testing"\n\t"time"\n)\n\ntype
+        duplexAuditAddr struct{}\n\nfunc (duplexAuditAddr) Network() string { return "audit" }\nfunc (duplexAuditAddr) String()
+        string  { return "audit" }\n\ntype duplexAuditConn struct {\n\treader          io.Reader\n\toutput          bytes.Buffer\n\twrites          int\n\tclosed          bool\n\tfailCall,
+        failN int\n\tfailErr         error\n}\n\nfunc (c *duplexAuditConn) Read(p []byte) (int, error) {\n\tif c.closed {\n\t\treturn
+        0, net.ErrClosed\n\t}\n\treturn c.reader.Read(p)\n}\nfunc (c *duplexAuditConn) Write(p []byte) (int, error) {\n\tif
+        c.closed {\n\t\treturn 0, net.ErrClosed\n\t}\n\tc.writes++\n\tif c.failCall == c.writes {\n\t\tn := min(c.failN, len(p))\n\t\tc.output.Write(p[:n])\n\t\treturn
+        n, c.failErr\n\t}\n\treturn c.output.Write(p)\n}\nfunc (c *duplexAuditConn) Close() error                   { c.closed
+        = true; return nil }\nfunc (*duplexAuditConn) LocalAddr() net.Addr              { return duplexAuditAddr{} }\nfunc
+        (*duplexAuditConn) RemoteAddr() net.Addr             { return duplexAuditAddr{} }\nfunc (*duplexAuditConn) SetDeadline(time.Time)
+        error      { return nil }\nfunc (*duplexAuditConn) SetReadDeadline(time.Time) error  { return nil }\nfunc (*duplexAuditConn)
+        SetWriteDeadline(time.Time) error { return nil }\nfunc duplexAuditRecord(p []byte) []byte {\n\tb := make([]byte, 4+len(p))\n\tbinary.BigEndian.PutUint32(b,
+        uint32(len(p)))\n\tcopy(b[4:], p)\n\treturn b\n}\n\nfunc TestDuplexAdapterDelayedReplyAfterEOFExternal(t *testing.T)
+        {\n\trawA, rawB := net.Pipe()\n\ta, b := WrapDuplex(rawA), WrapDuplex(rawB)\n\tdefer a.Close()\n\tdefer b.Close()\n\tdeadline
+        := time.Now().Add(3 * time.Second)\n\ta.SetDeadline(deadline)\n\tb.SetDeadline(deadline)\n\tdone := make(chan error,
+        1)\n\tgo func() {\n\t\trequest, err := io.ReadAll(b)\n\t\tif err != nil {\n\t\t\tdone <- err\n\t\t\treturn\n\t\t}\n\t\tif
+        string(request) != "upload" {\n\t\t\tdone <- errors.New("request loss")\n\t\t\treturn\n\t\t}\n\t\ttime.Sleep(20 *
+        time.Millisecond)\n\t\t_, err = b.Write([]byte("delayed-response"))\n\t\tif err == nil {\n\t\t\terr = b.CloseWrite()\n\t\t}\n\t\tdone
+        <- err\n\t}()\n\tif n, err := a.Write([]byte("upload")); err != nil || n != 6 {\n\t\tt.Fatalf("upload: %d %v", n,
+        err)\n\t}\n\tif err := a.CloseWrite(); err != nil {\n\t\tt.Fatal(err)\n\t}\n\tif err := a.CloseWrite(); err != nil
+        {\n\t\tt.Fatal(err)\n\t}\n\tif n, err := a.Write([]byte("late")); n != 0 || !errors.Is(err, io.ErrClosedPipe) {\n\t\tt.Fatalf("post-EOF
+        write: %d %v", n, err)\n\t}\n\tresponse, err := io.ReadAll(a)\n\tif err != nil || string(response) != "delayed-response"
+        {\n\t\tt.Fatalf("response %q %v", response, err)\n\t}\n\tif err := <-done; err != nil {\n\t\tt.Fatal(err)\n\t}\n}\n\nfunc
+        TestDuplexAdapterDeadlineResumeExternal(t *testing.T) {\n\tfor _, stage := range []string{"header", "body"} {\n\t\tt.Run(stage,
+        func(t *testing.T) {\n\t\t\trawA, rawB := net.Pipe()\n\t\t\tdefer rawA.Close()\n\t\t\tdefer rawB.Close()\n\t\t\ta
+        := WrapDuplex(rawA)\n\t\t\twire := duplexAuditRecord([]byte("abcdef"))\n\t\t\tsplit := 2\n\t\t\tif stage == "body"
+        {\n\t\t\t\tsplit = 7\n\t\t\t}\n\t\t\tresume := make(chan struct{})\n\t\t\tsent := make(chan struct{})\n\t\t\tdone
+        := make(chan error, 1)\n\t\t\tgo func() {\n\t\t\t\t_, err := rawB.Write(wire[:split])\n\t\t\t\tclose(sent)\n\t\t\t\tif
+        err != nil {\n\t\t\t\t\tdone <- err\n\t\t\t\t\treturn\n\t\t\t\t}\n\t\t\t\t<-resume\n\t\t\t\t_, err = rawB.Write(append(wire[split:],
+        make([]byte, 4)...))\n\t\t\t\tdone <- err\n\t\t\t}()\n\t\t\ta.SetReadDeadline(time.Now().Add(30 * time.Millisecond))\n\t\t\tbuf
+        := make([]byte, 16)\n\t\t\tfirst := []byte{}\n\t\t\tfor {\n\t\t\t\tn, err := a.Read(buf)\n\t\t\t\tfirst = append(first,
+        buf[:n]...)\n\t\t\t\tif err != nil {\n\t\t\t\t\tif !errors.Is(err, os.ErrDeadlineExceeded) {\n\t\t\t\t\t\tt.Fatalf("expected
+        deadline: %v", err)\n\t\t\t\t\t}\n\t\t\t\t\tbreak\n\t\t\t\t}\n\t\t\t}\n\t\t\t<-sent\n\t\t\ta.SetReadDeadline(time.Time{})\n\t\t\tclose(resume)\n\t\t\trest,
+        err := io.ReadAll(a)\n\t\t\tif err != nil {\n\t\t\t\tt.Fatal(err)\n\t\t\t}\n\t\t\tif string(append(first, rest...))
+        != "abcdef" {\n\t\t\t\tt.Fatalf("lost/misaligned payload: %q %q", first, rest)\n\t\t\t}\n\t\t\tif err := <-done; err
+        != nil {\n\t\t\t\tt.Fatal(err)\n\t\t\t}\n\t\t})\n\t}\n}\n\nfunc TestDuplexAdapterRecordsAndFailuresExternal(t *testing.T)
+        {\n\tpayload := bytes.Repeat([]byte("a"), 65537)\n\traw := &duplexAuditConn{}\n\tc := WrapDuplex(raw)\n\tif n, err
+        := c.Write(nil); n != 0 || err != nil || raw.writes != 0 {\n\t\tt.Fatal("empty write emitted a frame")\n\t}\n\tif
+        n, err := c.Write(payload); n != len(payload) || err != nil {\n\t\tt.Fatalf("split write: %d %v", n, err)\n\t}\n\tif
+        err := c.CloseWrite(); err != nil {\n\t\tt.Fatal(err)\n\t}\n\twire := raw.output.Bytes()\n\tif binary.BigEndian.Uint32(wire[:4])
+        != 65536 || binary.BigEndian.Uint32(wire[65540:65544]) != 1 || binary.BigEndian.Uint32(wire[65545:]) != 0 {\n\t\tt.Fatalf("invalid
+        split record layout len=%d", len(wire))\n\t}\n\trd := WrapDuplex(&duplexAuditConn{reader: bytes.NewReader(wire)})\n\tgot,
+        err := io.ReadAll(rd)\n\tif err != nil || !bytes.Equal(got, payload) {\n\t\tt.Fatalf("split read len=%d err=%v", len(got),
+        err)\n\t}\n\tfor name, wire := range map[string][]byte{"empty": {}, "partial-header": {0, 0}, "missing-body": {0,
+        0, 0, 3}, "partial-body": {0, 0, 0, 3, \''a\''}, "no-eof-marker": duplexAuditRecord([]byte("abc")), "oversize": {0,
+        1, 0, 1}} {\n\t\tt.Run(name, func(t *testing.T) {\n\t\t\traw := &duplexAuditConn{reader: bytes.NewReader(wire)}\n\t\t\tc
+        := WrapDuplex(raw)\n\t\t\t_, err := io.ReadAll(c)\n\t\t\tif name == "oversize" {\n\t\t\t\tif err == nil {\n\t\t\t\t\tt.Fatal("oversize
+        accepted")\n\t\t\t\t}\n\t\t\t} else if !errors.Is(err, io.ErrUnexpectedEOF) {\n\t\t\t\tt.Fatalf("missing EOF marker
+        accepted: %v", err)\n\t\t\t}\n\t\t\tif !raw.closed {\n\t\t\t\tt.Fatal("terminal malformed/physical EOF did not close
+        carrier")\n\t\t\t}\n\t\t})\n\t}\n\tfor _, tc := range []struct {\n\t\tname          string\n\t\tcall, n, want int\n\t\terr           error\n\t}{{"header-partial",
+        1, 2, 0, io.ErrClosedPipe}, {"body-partial", 2, 2, 2, io.ErrClosedPipe}, {"header-no-progress", 1, 0, 0, nil}, {"body-no-progress",
+        2, 0, 0, nil}} {\n\t\tt.Run(tc.name, func(t *testing.T) {\n\t\t\traw := &duplexAuditConn{failCall: tc.call, failN:
+        tc.n, failErr: tc.err}\n\t\t\tc := WrapDuplex(raw)\n\t\t\tn, err := c.Write([]byte("abcdef"))\n\t\t\tif n != tc.want
+        || err == nil || !raw.closed {\n\t\t\t\tt.Fatalf("partial failure n=%d err=%v closed=%v", n, err, raw.closed)\n\t\t\t}\n\t\t\tprevious
+        := raw.writes\n\t\t\tif _, second := c.Write([]byte("retry")); second != err || raw.writes != previous {\n\t\t\t\tt.Fatal("poisoned
+        frame was retried")\n\t\t\t}\n\t\t\tif c.CloseWrite() != err {\n\t\t\t\tt.Fatal("poisoned EOF marker was emitted")\n\t\t\t}\n\t\t})\n\t}\n\tzero
+        := WrapDuplex(&duplexAuditConn{reader: bytes.NewReader(make([]byte, 4))})\n\tif n, err := zero.Read(nil); n != 0 ||
+        err != nil {\n\t\tt.Fatal("empty read consumed EOF")\n\t}\n\tif _, err := zero.Read(make([]byte, 1)); err != io.EOF
+        {\n\t\tt.Fatal("EOF marker missing")\n\t}\n}\n\nfunc TestDuplexAdapterCloseUnblocksBothDirectionsExternal(t *testing.T)
+        {\n\ta, b := net.Pipe()\n\tdefer b.Close()\n\tc := WrapDuplex(a)\n\tdone := make(chan struct{}, 2)\n\tstart := make(chan
+        struct{})\n\tgo func() { close(start); c.Read(make([]byte, 1)); done <- struct{}{} }()\n\t<-start\n\tgo func() { c.Write([]byte("blocked"));
+        done <- struct{}{} }()\n\ttime.Sleep(10 * time.Millisecond)\n\tc.Close()\n\tfor i := 0; i < 2; i++ {\n\t\tselect {\n\t\tcase
+        <-done:\n\t\tcase <-time.After(time.Second):\n\t\t\tt.Fatal("Close waited on an I/O mutex")\n\t\t}\n\t}\n}\n\nfunc
+        TestDuplexAdapterConcurrentWritesPreserveFramesExternal(t *testing.T) {\n\ta, b := net.Pipe()\n\tdefer a.Close()\n\tdefer
+        b.Close()\n\tc := WrapDuplex(a)\n\td := WrapDuplex(b)\n\tc.SetDeadline(time.Now().Add(3 * time.Second))\n\td.SetDeadline(time.Now().Add(3
+        * time.Second))\n\tresult := make(chan []byte, 1)\n\tfailure := make(chan error, 1)\n\tgo func() { body, err := io.ReadAll(d);
+        failure <- err; result <- body }()\n\tvar wg sync.WaitGroup\n\tfor _, ch := range []byte{\''a\'', \''b\'', \''c\'',
+        \''d\''} {\n\t\twg.Add(1)\n\t\tgo func(ch byte) {\n\t\t\tdefer wg.Done()\n\t\t\tif _, err := c.Write(bytes.Repeat([]byte{ch},
+        65537)); err != nil {\n\t\t\t\tt.Error(err)\n\t\t\t}\n\t\t}(ch)\n\t}\n\twg.Wait()\n\tif err := c.CloseWrite(); err
+        != nil {\n\t\tt.Fatal(err)\n\t}\n\tbody := <-result\n\tif err := <-failure; err != nil {\n\t\tt.Fatal(err)\n\t}\n\tif
+        len(body) != 4*65537 {\n\t\tt.Fatal("concurrent bytes lost")\n\t}\n\tfor start := 0; start < len(body); start += 65537
+        {\n\t\tsegment := body[start : start+65537]\n\t\tif !bytes.Equal(segment, bytes.Repeat(segment[:1], 65537)) {\n\t\t\tt.Fatal("record
+        writes interleaved")\n\t\t}\n\t}\n}\n\ntype duplexAuditStep struct {\n\tpayload []byte\n\terr     error\n}\ntype duplexAuditStepReader
+        struct{ steps []duplexAuditStep }\n\nfunc (r *duplexAuditStepReader) Read(p []byte) (int, error) {\n\tif len(r.steps)
+        == 0 {\n\t\treturn 0, io.EOF\n\t}\n\tstep := r.steps[0]\n\tr.steps = r.steps[1:]\n\tif len(step.payload) > len(p)
+        {\n\t\tpanic("fixture step exceeds read buffer")\n\t}\n\treturn copy(p, step.payload), step.err\n}\n\nfunc TestDuplexAdapterReadBytesAndErrorExternal(t
+        *testing.T) {\n\tfor _, tc := range []struct {\n\t\tname     string\n\t\tsteps    []duplexAuditStep\n\t\tfirstN   int\n\t\tfirstErr
+        error\n\t\tretry    string\n\t\tclosed   bool\n\t}{\n\t\t{"marker-with-EOF", []duplexAuditStep{{make([]byte, 4), io.EOF}},
+        0, io.EOF, "", false},\n\t\t{"payload-with-EOF", []duplexAuditStep{{[]byte{0, 0, 0, 3}, nil}, {[]byte("abc"), io.EOF}},
+        3, io.ErrUnexpectedEOF, "", true},\n\t\t{"payload-with-failure", []duplexAuditStep{{[]byte{0, 0, 0, 3}, nil}, {[]byte("abc"),
+        io.ErrClosedPipe}}, 3, io.ErrClosedPipe, "", true},\n\t\t{"complete-header-with-timeout", []duplexAuditStep{{[]byte{0,
+        0, 0, 3}, os.ErrDeadlineExceeded}, {[]byte("abc"), nil}, {make([]byte, 4), nil}}, 0, os.ErrDeadlineExceeded, "abc",
+        false},\n\t\t{"payload-with-timeout", []duplexAuditStep{{[]byte{0, 0, 0, 3}, nil}, {[]byte("a"), os.ErrDeadlineExceeded},
+        {[]byte("bc"), nil}, {make([]byte, 4), nil}}, 1, os.ErrDeadlineExceeded, "bc", false},\n\t} {\n\t\tt.Run(tc.name,
+        func(t *testing.T) {\n\t\t\traw := &duplexAuditConn{reader: &duplexAuditStepReader{steps: tc.steps}}\n\t\t\tc := WrapDuplex(raw)\n\t\t\tbuf
+        := make([]byte, 8)\n\t\t\tn, err := c.Read(buf)\n\t\t\tif n != tc.firstN || !errors.Is(err, tc.firstErr) || raw.closed
+        != tc.closed {\n\t\t\t\tt.Fatalf("read=%d %v closed=%v", n, err, raw.closed)\n\t\t\t}\n\t\t\tif tc.firstN > 0 && string(buf[:n])
+        != "abc"[:tc.firstN] {\n\t\t\t\tt.Fatalf("read lost returned bytes: %q", buf[:n])\n\t\t\t}\n\t\t\tif tc.retry != ""
+        {\n\t\t\t\trest, err := io.ReadAll(c)\n\t\t\t\tif err != nil || string(rest) != tc.retry {\n\t\t\t\t\tt.Fatalf("retry
+        misaligned: %q %v", rest, err)\n\t\t\t\t}\n\t\t\t}\n\t\t})\n\t}\n}\n\ntype duplexAuditDiscard struct{ duplexAuditConn
+        }\n\nfunc (c *duplexAuditDiscard) Write(p []byte) (int, error) { return len(p), nil }\nfunc TestDuplexAdapterWarmWriteAllocationsExternal(t
+        *testing.T) {\n\tc := WrapDuplex(&duplexAuditDiscard{})\n\tpayload := make([]byte, 65537)\n\tallocations := testing.AllocsPerRun(1000,
+        func() {\n\t\tn, err := c.Write(payload)\n\t\tif n != len(payload) || err != nil {\n\t\t\tpanic("fixture write failed")\n\t\t}\n\t})\n\tif
+        allocations != 0 {\n\t\tt.Fatalf("warm65537bytewrite allocations=%g", allocations)\n\t}\n}\n'',encoding=''utf-8'')
+
+        PY'
+    - *id002
+    - &id005
+      run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
         Path(''internal/tunnel/naive/xray_contract_external_test.go'').write_text(''package naive\n\nimport (\n\t"crypto/ed25519"\n\t"crypto/rand"\n\t"crypto/x509"\n\t"crypto/x509/pkix"\n\t"encoding/json"\n\t"encoding/pem"\n\t"github.com/backpack/backpack/config"\n\t"math/big"\n\t"os"\n\t"os/exec"\n\t"path/filepath"\n\t"strings"\n\t"testing"\n\t"time"\n)\n\nfunc
         TestXrayConfigContractExternal(t *testing.T) {\n\tbinary := os.Getenv("BACKPACK_XRAY_BINARY")\n\tif binary == "" {\n\t\tt.Fatal("BACKPACK_XRAY_BINARY
         required")\n\t}\n\tdir := t.TempDir()\n\tcertPath, keyPath := filepath.Join(dir, "cert.pem"), filepath.Join(dir, "key.pem")\n\tpub,
@@ -259,7 +624,8 @@ jobs:
         c, Server: s}\n\t\t\tif ValidateXray(&both) == nil {\n\t\t\t\tt.Fatal("multiple roles accepted")\n\t\t\t}\n\t\t})\n\t}\n}\n'',encoding=''utf-8'')
 
         PY'
-    - run: 'python3 - <<''PY''
+    - &id006
+      run: 'python3 - <<''PY''
 
         from pathlib import Path
 
@@ -272,15 +638,16 @@ jobs:
         be a positive integer")\n    return value\nparser = argparse.ArgumentParser(description=__doc__)\nparser.add_argument("--backpack",
         required=True, type=Path)\nparser.add_argument("--xray", required=True, type=Path)\nparser.add_argument("--profile",
         choices=("both", "xhttp", "reality"), default="both")\nparser.add_argument("--concurrency-rounds", type=positive_integer,
-        default=1)\nparser.add_argument("--output", required=True, type=Path)\nparser.add_argument("--check-half-close", action="store_true")\nARGS
-        = parser.parse_args()\nif ARGS.profile == "both":\n    ARGS.output.mkdir(mode=0o700, parents=True, exist_ok=True)\n    if
-        any(ARGS.output.iterdir()): raise SystemExit("fixture output must be empty")\n    summary = {}\n    for profile in
-        ("xhttp", "reality"):\n        result = subprocess.run([sys.executable, __file__, "--backpack", str(ARGS.backpack),
-        "--xray", str(ARGS.xray), "--output", str(ARGS.output / profile), "--profile", profile, "--concurrency-rounds", str(ARGS.concurrency_rounds)]
-        + (["--check-half-close"] if ARGS.check_half_close else []), timeout=300)\n        path = ARGS.output / profile /
-        "local-check.json"\n        summary[profile] = json.loads(path.read_text()) if path.exists() else {"ok": False, "exit":
-        result.returncode}\n    (ARGS.output / "managed-check.json").write_text(json.dumps(summary, indent=2) + "\\n")\n    print(json.dumps(summary),
-        flush=True)\n    raise SystemExit(0 if all(result.get("ok") for result in summary.values()) else 1)\nROOT = ARGS.output.resolve()\nROOT.mkdir(mode=0o700,
+        default=1)\nparser.add_argument("--output", required=True, type=Path)\nparser.add_argument("--check-half-close", action="store_true")\nparser.add_argument("--managed-framing",
+        action="store_true")\nARGS = parser.parse_args()\nif ARGS.profile == "both":\n    ARGS.output.mkdir(mode=0o700, parents=True,
+        exist_ok=True)\n    if any(ARGS.output.iterdir()): raise SystemExit("fixture output must be empty")\n    summary =
+        {}\n    for profile in ("xhttp", "reality"):\n        result = subprocess.run([sys.executable, __file__, "--backpack",
+        str(ARGS.backpack), "--xray", str(ARGS.xray), "--output", str(ARGS.output / profile), "--profile", profile, "--concurrency-rounds",
+        str(ARGS.concurrency_rounds)] + (["--check-half-close"] if ARGS.check_half_close else []) + (["--managed-framing"]
+        if ARGS.managed_framing else []), timeout=300)\n        path = ARGS.output / profile / "local-check.json"\n        summary[profile]
+        = json.loads(path.read_text()) if path.exists() else {"ok": False, "exit": result.returncode}\n    (ARGS.output /
+        "managed-check.json").write_text(json.dumps(summary, indent=2) + "\\n")\n    print(json.dumps(summary), flush=True)\n    raise
+        SystemExit(0 if all(result.get("ok") for result in summary.values()) else 1)\nROOT = ARGS.output.resolve()\nROOT.mkdir(mode=0o700,
         parents=True, exist_ok=True)\nif any(ROOT.iterdir()):\n    raise SystemExit("fixture output must be empty")\nBIN =
         ROOT / "bin"\nBIN.mkdir(mode=0o700)\nfor name, source in (("backpack", ARGS.backpack), ("xray", ARGS.xray)):\n    (BIN
         / name).symlink_to(source.resolve())\nlisteners = [socket.create_server(("127.0.0.1", 0)) for _ in range(4)]\nPUBLIC,
@@ -379,13 +746,19 @@ jobs:
         + struct.pack("!H", port))\n    reply = readn(conn, 4)\n    if reply[0] != 5:\n        raise ValueError("invalid SOCKS
         response")\n    if reply[3] == 1:\n        readn(conn, 6)\n    elif reply[3] == 4:\n        readn(conn, 18)\n    elif
         reply[3] == 3:\n        readn(conn, readn(conn, 1)[0] + 2)\n    else:\n        raise ValueError("invalid SOCKS address
-        type")\n    return reply[1]\n\n\ndef allowed_target_control(host, proxy_port):\n    # Verify the actual reverse engine\''s
-        framed authentication response. An\n    # invalid token avoids taking over the active engine\''s control seat.\n    with
+        type")\n    return reply[1]\n\n\ndef allowed_target_control(host, proxy_port):\n    # Verify the real reverse engine\''s
+        authentication reply without taking its\n    # active control seat. The managed record layer is optional for baselines.\n    with
         socket.create_connection((host, proxy_port), timeout=3) as conn:\n        if socks(conn, REVERSE) != 0:\n            raise
-        RuntimeError("positive allowed-target SOCKS connection refused")\n        body = b"allowed-route-probe-deliberately-invalid-token"\n        conn.sendall(struct.pack("!HB",
-        len(body), 7) + body)\n        conn.settimeout(3)\n        header = readn(conn, 3)\n        response = readn(conn,
-        struct.unpack("!H", header[:2])[0])\n        if header[2] != 9 or response != b"token":\n            raise RuntimeError("allowed
-        target did not return the reverse engine authentication response")\n    return True\n\n\ndef check_half_close():\n    outcomes
+        RuntimeError("positive allowed-target SOCKS connection refused")\n        body = b"allowed-route-probe-deliberately-invalid-token"\n        announcement
+        = struct.pack("!HB", len(body), 7) + body\n        if ARGS.managed_framing:\n            conn.sendall(struct.pack("!I",
+        len(announcement)) + announcement)\n            buffered = bytearray()\n            def receive(size):\n                while
+        len(buffered) < size:\n                    length = struct.unpack("!I", readn(conn, 4))[0]\n                    if
+        length == 0: raise EOFError("managed record EOF before authentication response")\n                    if length >
+        65536: raise ValueError("managed record exceeds64KiB")\n                    buffered.extend(readn(conn, length))\n                response
+        = bytes(buffered[:size])\n                del buffered[:size]\n                return response\n        else:\n            conn.sendall(announcement)\n            receive
+        = lambda size: readn(conn, size)\n        conn.settimeout(3)\n        header = receive(3)\n        response = receive(struct.unpack("!H",
+        header[:2])[0])\n        if header[2] != 9 or response != b"token":\n            raise RuntimeError("allowed target
+        did not return the reverse engine authentication response")\n    return True\n\n\ndef check_half_close():\n    outcomes
         = []\n    RESULT["half_close"] = {"ok": False, "cases": outcomes}\n    for size in (0, 262144, 1048576):\n        payload
         = hashlib.sha256(("half-close-" + str(size)).encode()).digest() * (size // 32)\n        case = {"payload_bytes": size,
         "expected_sha256": hashlib.sha256(payload).hexdigest()}\n        started = time.monotonic()\n        try:\n            app(b"H",
@@ -534,7 +907,9 @@ jobs:
         indent=2) + "\\n")\n    print(json.dumps(RESULT), flush=True)\nsys.exit(0 if RESULT.get("ok") else 1)\n'',encoding=''utf-8'')
 
         PY'
-    - run: 'python3 - <<''PY''
+    - run: 'go test ./internal/tunnel/naive -run TestDuplexAdapter -race -count=5 -v -timeout 5m
+
+        python3 - <<''PY''
 
         from pathlib import Path
 
@@ -617,7 +992,7 @@ jobs:
         go build -o /tmp/backpack-protocol .
 
         python3 /tmp/real_naive_linux.py --backpack /tmp/backpack-protocol --naive "$naive" --sing-box "$sing" --output /tmp/backpack-real-naive
-        --check-half-close
+        --check-half-close --managed-framing
 
 
         export BACKPACK_XRAY_BINARY="$xray"
@@ -625,16 +1000,204 @@ jobs:
         go test ./internal/tunnel/naive -run TestXrayConfigContractExternal -race -count=2 -v -timeout 5m
 
         python3 /tmp/real_xray_managed_linux.py --backpack /tmp/backpack-protocol --xray "$xray" --output /tmp/backpack-real-xray
-        --concurrency-rounds 250 --check-half-close
+        --concurrency-rounds 250 --check-half-close --managed-framing
 
         '
     - uses: actions/upload-artifact@v4
       if: always()
       with:
-        name: carrier-half-close-stress
+        name: managed-xray-results
+        path: '/tmp/backpack-real-xray/**/*.json
+
+          /tmp/backpack-real-xray/**/*.log'
+        if-no-files-found: ignore
+  xray-suite:
+    name: Managed Xray and Naive complete suite and races
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: ed77c7858350d8507c8a9725fe566e0661a4bb80
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - *id003
+    - *id004
+    - *id001
+    - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
+
+        sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d
+
+        go test ./... -timeout 15m
+
+        go test ./cmd ./config ./internal/tunnel/naive ./internal/manage/tunnelspec ./internal/manage/health ./internal/client
+        ./internal/server -race -timeout 12m
+
+        go vet ./...
+
+        bash -n install.sh'
+  cohort:
+    name: All prior tunnel repairs with the new HTTPS carriers
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: e96e6dfed9690731dd094cf7b45d442597411efd
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - *id003
+    - *id002
+    - *id005
+    - *id006
+    - run: 'go test ./internal/tunnel/naive -run TestDuplexAdapter -race -count=5 -v -timeout 5m
+
+        python3 - <<''PY''
+
+        from pathlib import Path
+
+        s=Path(''install.sh'').read_text()
+
+        s=s.split(''# Optional protocol helpers:'',1)[1].split(''# End optional protocol helpers.'',1)[0]
+
+        s=s[s.index(''helpers_validate()''):]
+
+        s=s.replace(''root="/usr/local/lib/backpack/helpers/$helper_tool"'',''root="$BP_HELPER_TEST_ROOT/$helper_tool"'')
+
+        Path(''/tmp/helper-functions.sh'').write_text(s)
+
+        PY
+
+        source /tmp/helper-functions.sh
+
+        info(){ printf ''%s\n'' "$*"; }
+
+        err(){ printf ''%s\n'' "$*" >&2; }
+
+        fetch(){ curl -fSL --retry 2 --connect-timeout 15 --max-time 180 "$1" -o "$2"; }
+
+        export BP_HELPER_TEST_ROOT=$(mktemp -d /tmp/backpack-helper-install.XXXXXX)
+
+        ARCH=amd64; BP_HELPERS=naive,xray
+
+        helpers_validate
+
+        install_helpers
+
+        naive="$BP_HELPER_TEST_ROOT/naive/v154.0.8037.49-4-amd64/naive"
+
+        sing="$BP_HELPER_TEST_ROOT/sing-box/v1.14.2-amd64/sing-box"
+
+        xray="$BP_HELPER_TEST_ROOT/xray/v26.3.27-amd64/xray"
+
+        "$naive" --version
+
+        "$sing" version
+
+        "$xray" version
+
+        before=$(sha256sum "$naive")
+
+        fetch(){ return 1; }
+
+        install_helper naive
+
+        test "$(sha256sum "$naive")" = "$before"
+
+        BP_HELPERS=wrong; if helpers_validate; then exit 1; fi
+
+        ARCH=s390x; BP_HELPERS=naive; if helpers_validate; then exit 1; fi
+
+        ARCH=amd64; BP_HELPERS=; install_helpers
+
+        # Corrupt/download failures are checked in a separate fresh owned directory.
+
+        original="$BP_HELPER_TEST_ROOT"; export BP_HELPER_TEST_ROOT=$(mktemp -d /tmp/backpack-helper-failed.XXXXXX)
+
+        fetch(){ printf corrupt > "$2"; }
+
+        if install_helper naive; then exit 1; fi
+
+        test ! -e "$BP_HELPER_TEST_ROOT/naive/v154.0.8037.49-4-amd64"
+
+        test -z "$(find "$BP_HELPER_TEST_ROOT" -name ''.stage.*'' -print)"
+
+        fetch(){ return 1; }
+
+        if install_helper xray; then exit 1; fi
+
+        test ! -e "$BP_HELPER_TEST_ROOT/xray/v26.3.27-amd64"
+
+        test -z "$(find "$BP_HELPER_TEST_ROOT" -name ''.stage.*'' -print)"
+
+        export BP_HELPER_TEST_ROOT="$original"
+
+        go build -o /tmp/backpack-protocol .
+
+        python3 /tmp/real_naive_linux.py --backpack /tmp/backpack-protocol --naive "$naive" --sing-box "$sing" --output /tmp/backpack-real-naive
+        --check-half-close --managed-framing
+
+
+        export BACKPACK_XRAY_BINARY="$xray"
+
+        go test ./internal/tunnel/naive -run TestXrayConfigContractExternal -race -count=2 -v -timeout 5m
+
+        python3 /tmp/real_xray_managed_linux.py --backpack /tmp/backpack-protocol --xray "$xray" --output /tmp/backpack-real-xray
+        --concurrency-rounds 250 --check-half-close --managed-framing
+
+        '
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: integrated-https-results
         path: '/tmp/backpack-real-*/**/*.json
 
-          /tmp/backpack-real-*/*.log
-
-          /tmp/backpack-real-*/**/*.log'
+          /tmp/backpack-real-xray/**/*.log'
         if-no-files-found: ignore
+  cohort-suite:
+    name: Integrated tunnel full suite races and vet
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: e96e6dfed9690731dd094cf7b45d442597411efd
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - *id003
+    - *id004
+    - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
+
+        sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d
+
+        go test ./... -timeout 15m
+
+        go test ./cmd ./config ./internal/tunnel/naive ./internal/client/transport ./internal/server/transport ./internal/utils/handlers
+        ./internal/utils/network ./internal/manage/tunnelspec -race -timeout 15m
+
+        go vet ./...'
+  cert-baseline:
+    name: Reproduce Naive independent certificate reload contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 55b3104b8e5909d169ae4053879daaca72c825dc
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - *id004
+    - run: 'if go test ./internal/tunnel/naive -run TestNaiveServerJSONFreezesValidatedCertificate -v -timeout 1m > /tmp/cert-baseline.log
+        2>&1; then cat /tmp/cert-baseline.log; exit 1; fi
+
+        cat /tmp/cert-baseline.log
+
+        grep -E "FAIL: TestNaiveServerJSONFreezesValidatedCertificate" /tmp/cert-baseline.log'
