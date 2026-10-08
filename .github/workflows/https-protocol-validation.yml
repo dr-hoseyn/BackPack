@@ -6,62 +6,58 @@ permissions:
     branches:
     - codex/validate-https-protocols
 jobs:
-  kcp-baseline:
-    name: Reproduce KCP UDP and PCK resolver cancellation and timeout failures
+  l3-baseline:
+    name: Reproduce stalled UDP startup multipath and rekey DNS
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
     - uses: actions/checkout@v7
       with:
-        ref: da304fba4bbed2e5d7c3e3091076455d884ecd1d
+        ref: cbb931a687c95231c5824a8a9ad8f6bc96e7de0d
     - uses: actions/setup-go@v7
       with:
         go-version-file: go.mod
         cache: true
     - run: '
 
-        if go test ./internal/client/transport -run ''^TestKCPClientDNSStopsWithItsDialAttempt$'' -v -timeout 1m > /tmp/kcp-baseline.log
-        2>&1; then cat /tmp/kcp-baseline.log; exit 1; fi
+        if go test ./internal/tunnel/l3 -run ''^TestL3UDPDNSStopsWithItsGeneration$'' -v -timeout 1m > /tmp/l3-dns-baseline.log
+        2>&1; then cat /tmp/l3-dns-baseline.log; exit 1; fi
 
-        cat /tmp/kcp-baseline.log
+        cat /tmp/l3-dns-baseline.log
 
-        test "$(grep -c ''KCP DNS ignored client cancellation or configured dial timeout'' /tmp/kcp-baseline.log)" = 4
+        test "$(grep -c ''L3 UDP DNS ignored generation cancellation or deadline'' /tmp/l3-dns-baseline.log)" = 6
 
         '
-  kcp-fixed:
-    name: KCP UDP PCK ICMP cancellation, address compatibility and FEC lifetime
+  l3-fixed:
+    name: L3 DNS cancellation, cached peers, QUIC recovery and UDP setup lifetime
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
     - uses: actions/checkout@v7
       with:
-        ref: 36e6bcac95a09512b6b5c817f248e8b589122d57
+        ref: 002c56ff9c3137c004bfdea4008f0be9063b7b22
     - uses: actions/setup-go@v7
       with:
         go-version-file: go.mod
         cache: true
     - run: '
 
-        go test ./internal/client/transport -run ''^TestKCPClientDNSStopsWithItsDialAttempt$'' -race -count=5 -v -timeout
-        2m
+        go test ./internal/tunnel/l3 -run ''TestL3UDPDNSStopsWithItsGeneration|TestL3UDPCarrierOutlivesItsSetupContext'' -race
+        -count=5 -v -timeout 3m
 
-        go test ./internal/utils/network -run ''TestKCPAddressResolution|TestKCPSessionOutlivesItsSetupBudget'' -race -count=10
-        -v -timeout 2m
+        go test ./internal/tunnel/l3 ./internal/utils/network ./cmd -race -timeout 8m
 
-        go test ./internal/utils/network ./internal/client/transport ./internal/server/transport ./internal/e2e -race -timeout
-        10m
-
-        go vet ./internal/utils/network ./internal/client/transport ./internal/server/transport ./internal/e2e
+        go vet ./internal/tunnel/l3 ./internal/utils/network ./cmd
 
         '
   cohort-full:
-    name: Complete integrated regression and race suite with all new runtime repairs
+    name: Full integrated runtime suite with UDP startup and rekey recovery
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
     - uses: actions/checkout@v7
       with:
-        ref: f180c7f6b2fc2e7fd0a4a1d07ec37b888466209f
+        ref: f53031711dace0d40a23bf7fb5d7dc69da15b93d
     - uses: actions/setup-go@v7
       with:
         go-version-file: go.mod
@@ -76,5 +72,7 @@ jobs:
         -race -timeout 10m
 
         go vet ./...
+
+        GOOS=linux GOARCH=arm64 go build ./...
 
         '
