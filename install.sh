@@ -92,9 +92,9 @@ if ! [[ -f "$SCRIPT_DIR/go.mod" && -f "$SCRIPT_DIR/main.go" ]]; then
   fi
   test_source_dir="$(mktemp -d /root/backpack-test.XXXXXX)"
   trap 'rm -rf -- "$test_source_dir"' ERR
-  info 'Downloading the combined test snapshot 636dcbf (automatic REALITY cover and HTTPS Setup Links included)'
+  info 'Downloading the combined test snapshot 06710b1 (verified Setup Links, cancellable probes and prompt WebSocket shutdown included)'
   curl -fSL --retry 3 --connect-timeout 20 \
-    https://github.com/dr-hoseyn/BackPack/archive/636dcbfb75f0595820f6995cb24ac3ccc7c780a3.tar.gz \
+    https://github.com/dr-hoseyn/BackPack/archive/06710b1f77fef05b4a23f48001dcb48340b1661d.tar.gz \
     -o "$test_source_dir/source.tar.gz"
   tar -xzf "$test_source_dir/source.tar.gz" -C "$test_source_dir" --strip-components=1
   if ! [[ -f "$test_source_dir/go.mod" && -f "$test_source_dir/main.go" && -f "$test_source_dir/install.sh" ]]; then
