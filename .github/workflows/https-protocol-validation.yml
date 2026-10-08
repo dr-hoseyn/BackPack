@@ -28,3 +28,47 @@ jobs:
         test "$(grep -c ''HTTP upgrade ignored attempt cancellation or dial timeout'' /tmp/ws-baseline.log)" = 8
 
         '
+  ws-fixed:
+    name: WebSocket setup cancellation and live proof regressions ws-fixed
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 79b621ae6eab0d2b4dbb8ad4fa1ed2713d935af1
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - run: '
+
+        go test ./internal/utils/network -run ''TestWebSocketUpgradeStopsWithItsAttempt|TestSuccessfulWebSocketOutlivesItsSetupContext''
+        -race -count=10 -v -timeout 3m
+
+        go test ./internal/utils/network ./internal/client/transport ./internal/server/transport -race -timeout 8m
+
+        go vet ./internal/utils/network ./internal/client/transport ./internal/server/transport
+
+        '
+  ws-cohort:
+    name: WebSocket setup cancellation and live proof regressions ws-cohort
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 90d7efd65623c957c65b57c4d2b02103e2bacc15
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - run: '
+
+        go test ./internal/utils/network -run ''TestWebSocketUpgradeStopsWithItsAttempt|TestSuccessfulWebSocketOutlivesItsSetupContext''
+        -race -count=10 -v -timeout 3m
+
+        go test ./internal/utils/network ./internal/client/transport ./internal/server/transport -race -timeout 8m
+
+        go vet ./internal/utils/network ./internal/client/transport ./internal/server/transport
+
+        '
