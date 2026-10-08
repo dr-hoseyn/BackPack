@@ -55,6 +55,26 @@ jobs:
       with:
         go-version-file: go.mod
         cache: true
+    - *id001
+    - run: 'go test ./internal/tunnel/l3 -run "TestAuditForwarderUDPDeadBackendIsCooled|TestUDPClientsSkipAnExplicitlyRefusedBackend|Test.*Backend|Test.*Cooldown"
+        -race -count=3 -v -timeout 5m
+
+        go test ./internal/tunnel/l3 -race -timeout 15m
+
+        go vet ./internal/tunnel/l3'
+  source:
+    name: Exact PR69 combined UDP health and mutable deadline checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 1ad9e1f6245ea19eb8365493a5c14ad35091bda4
+        fetch-depth: 0
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
     - &id002
       run: 'python3 - <<''PY''
 
@@ -79,30 +99,6 @@ jobs:
         PY
 
         gofmt -w internal/tunnel/l3/runtime_audit_udp_failure_classification_test.go'
-    - *id001
-    - run: 'go test ./internal/tunnel/l3 -run "TestAuditLocalReplyWriteFailureDoesNotCoolBackend|TestAuditSilentUDPReadTimeoutDoesNotCoolBackend"
-        -race -count=3 -v -timeout 2m
-
-        go test ./internal/tunnel/l3 -run "TestAuditForwarderUDPDeadBackendIsCooled|TestUDPClientsSkipAnExplicitlyRefusedBackend|Test.*Backend|Test.*Cooldown"
-        -race -count=3 -v -timeout 5m
-
-        go test ./internal/tunnel/l3 -race -timeout 15m
-
-        go vet ./internal/tunnel/l3'
-  source:
-    name: Exact PR69 combined UDP health and mutable deadline checks
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    steps:
-    - uses: actions/checkout@v7
-      with:
-        ref: 1ad9e1f6245ea19eb8365493a5c14ad35091bda4
-        fetch-depth: 0
-    - uses: actions/setup-go@v7
-      with:
-        go-version-file: go.mod
-        cache: true
-    - *id002
     - *id001
     - run: 'go test ./internal/tunnel/l3 -run "TestAuditLocalReplyWriteFailureDoesNotCoolBackend|TestAuditSilentUDPReadTimeoutDoesNotCoolBackend"
         -race -count=3 -v -timeout 2m
