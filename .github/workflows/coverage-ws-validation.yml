@@ -1,0 +1,165 @@
+name: Coverage gates and updated Naive/WS source checks
+permissions:
+  contents: read
+'on':
+  push:
+    branches:
+    - codex/validate-coverage-ws
+jobs:
+  test:
+    name: Build and test
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: fed73db9bd328a12a7e30d0a72ea32088715a13d
+        fetch-depth: 0
+    - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
+
+        sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - uses: actions/setup-node@v7
+      with:
+        node-version: '22'
+    - name: Verify formatting
+      run: "unformatted=\"$(gofmt -l . || true)\"\nif [ -n \"$unformatted\" ]; then\n\
+        \  echo \"These files are not gofmt'd:\"\n  echo \"$unformatted\"\n  exit\
+        \ 1\nfi\n"
+    - name: Vet
+      run: go vet ./...
+    - name: Test
+      run: go test ./... -timeout 20m
+    - name: Test with the race detector
+      run: go test ./... -race -timeout 20m
+    - name: Coverage
+      run: "go test ./... -coverpkg=./... -coverprofile=coverage.out -timeout 20m\n\
+        total=\"$(go tool cover -func=coverage.out | tail -1 | grep -oE '[0-9.]+')\"\
+        \necho \"total coverage: ${total}%\"\nfloor=50\nawk -v t=\"$total\" -v f=\"\
+        $floor\" 'BEGIN {\n  if (t+0 < f+0) {\n    printf \"coverage %.1f%% is below\
+        \ the floor of %d%%\\n\", t, f\n    exit 1\n  }\n}'\n"
+    - name: Per-package coverage floors
+      run: "set -eu\ncheck() {\n  pkg=\"$1\"; floor=\"$2\"; why=\"$3\"\n  got=\"$(go\
+        \ tool cover -func=coverage.out \\\n          | grep \"^github.com/backpack/backpack/$pkg/\"\
+        \ \\\n          | awk '{gsub(/%/,\"\",$3); s+=$3; n++} END {if (n) printf\
+        \ \"%.1f\", s/n; else print \"0\"}')\"\n  echo \"  $pkg: ${got}% (floor ${floor}%)\
+        \ â€” $why\"\n  awk -v g=\"$got\" -v f=\"$floor\" -v p=\"$pkg\" 'BEGIN {\n\
+        \    if (g+0 < f+0) { printf \"%s fell below its floor\\n\", p; exit 1 }\n\
+        \  }'\n}\ncheck internal/tunnel/l3      60 \"the layer-3 data path\"\ncheck\
+        \ internal/tunnel/chain   80 \"transport fallback: a wrong decision here takes\
+        \ a tunnel down\"\ncheck internal/control        50 \"the fleet and the job\
+        \ runner\"\ncheck internal/cli            60 \"the scriptable surface; scripts\
+        \ depend on its exit codes\"\ncheck internal/node           40 \"the fleet\
+        \ RPC and the staged rollout\"\ncheck internal/metrics        60 \"what every\
+        \ other component reads to decide anything\"\ncheck internal/menu        \
+        \   25 \"the screens an operator actually meets this product through\"\ncheck\
+        \ internal/server/transport 85 \"the Iran side of every reverse transport:\
+        \ lifecycle, forwarder, control loop\"\ncheck internal/client/transport 83\
+        \ \"the kharej side of every reverse transport\"\ncheck internal/controlwire\
+        \    95 \"the control channel's wire, shared by both ends\"\ncheck internal/utils/acceptloop\
+        \ 90 \"accept backoff and the pre-authentication gate (ADR 0004)\"\ncheck\
+        \ internal/manage/tunnelspec 70 \"a tunnel's configuration: render, load,\
+        \ apply with revert\"\ncheck internal/manage/host    60 \"this machine's addresses,\
+        \ ports and certificates\"\ncheck internal/manage/health  40 \"tunnel health,\
+        \ the watchdog and the Health Check\"\n"
+  naive:
+    name: PR65 exact source
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 1294b80a558b65e14e515c0bd35924cd91b62ca5
+        fetch-depth: 0
+    - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
+
+        sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - name: Runtime regressions under race detector
+      run: go test ./config ./internal/tunnel/naive ./internal/manage/tunnelspec ./internal/manage/health
+        -run "TestNaive" -race -count=3 -v -timeout 6m
+    - name: Existing package checks
+      run: 'go vet ./config ./internal/tunnel/naive ./internal/manage/tunnelspec ./internal/manage/health
+
+        go test ./config ./internal/tunnel/naive ./internal/manage/tunnelspec ./internal/manage/health
+        -race -timeout 15m'
+  ws:
+    name: Actual WS pool ping under race detector
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: b1b8513d0651a2537270478251ee3dbf28daba03
+        fetch-depth: 0
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - name: External regression fixture
+      run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/server/transport/runtime_audit_ws_ping_test.go'').write_text(''package
+        transport\n\nimport (\n\t"context"\n\t"github.com/backpack/backpack/config"\n\t"github.com/backpack/backpack/internal/controlwire"\n\t"github.com/gorilla/websocket"\n\t"net"\n\t"net/http"\n\t"net/url"\n\t"sync"\n\t"sync/atomic"\n\t"testing"\n\t"time"\n)\n\ntype
+        runtimeAuditWSPipeListener struct {\n\tconn   net.Conn\n\tserved atomic.Bool\n\tdone   chan
+        struct{}\n\tonce   sync.Once\n}\n\nfunc (l *runtimeAuditWSPipeListener) Accept()
+        (net.Conn, error) {\n\tif !l.served.Swap(true) {\n\t\treturn l.conn, nil\n\t}\n\t<-l.done\n\treturn
+        nil, net.ErrClosed\n}\nfunc (l *runtimeAuditWSPipeListener) Close() error   {
+        l.once.Do(func() { close(l.done) }); return nil }\nfunc (l *runtimeAuditWSPipeListener)
+        Addr() net.Addr { return l.conn.LocalAddr() }\n\ntype runtimeAuditWSPingConn
+        struct {\n\tnet.Conn\n\tenabled atomic.Bool\n\tstarted chan struct{}\n\tonce    sync.Once\n}\n\nfunc
+        (c *runtimeAuditWSPingConn) Write(p []byte) (int, error) {\n\tif c.enabled.Load()
+        {\n\t\tc.once.Do(func() { close(c.started) })\n\t}\n\treturn c.Conn.Write(p)\n}\n\nfunc
+        runtimeAuditWSBlockedPair(t *testing.T) (*websocket.Conn, *websocket.Conn,
+        *runtimeAuditWSPingConn) {\n\tt.Helper()\n\tserverPipe, clientPipe := net.Pipe()\n\tt.Cleanup(func()
+        { serverPipe.Close(); clientPipe.Close() })\n\ttracked := &runtimeAuditWSPingConn{Conn:
+        serverPipe, started: make(chan struct{})}\n\tlistener := &runtimeAuditWSPipeListener{conn:
+        tracked, done: make(chan struct{})}\n\tt.Cleanup(func() { listener.Close()
+        })\n\taccepted := make(chan *websocket.Conn, 1)\n\ths := &http.Server{Handler:
+        http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {\n\t\tup :=
+        websocket.Upgrader{}\n\t\tc, e := up.Upgrade(w, r, nil)\n\t\tif e == nil {\n\t\t\taccepted
+        <- c\n\t\t}\n\t})}\n\tgo hs.Serve(listener)\n\tt.Cleanup(func() { hs.Close()
+        })\n\tu, _ := url.Parse("ws://example.test/tunnel")\n\tpeer, _, err := websocket.NewClient(clientPipe,
+        u, nil, 1024, 1024)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tt.Cleanup(func()
+        { peer.Close() })\n\tvar conn *websocket.Conn\n\tselect {\n\tcase conn = <-accepted:\n\tcase
+        <-time.After(time.Second):\n\t\tt.Fatal("WS handshake stuck")\n\t}\n\tt.Cleanup(func()
+        { conn.Close() })\n\treturn conn, peer, tracked\n}\n\nfunc TestRuntimeAuditWSPingRetiresBlockedPool(t
+        *testing.T) {\n\tconn, _, tracked := runtimeAuditWSBlockedPair(t)\n\tctx,
+        cancel := context.WithCancel(context.Background())\n\tdefer cancel()\n\ts
+        := NewWSServer(ctx, &WsConfig{Mode: config.WS, Heartbeat: time.Millisecond,
+        ChannelSize: 1, MaxConnections: 1}, quietLogger())\n\tg := s.newGen(ctx)\n\tchannel
+        := TunnelChannel{conn: conn, ping: make(chan struct{}), mu: &sync.Mutex{}}\n\tpingDone
+        := make(chan struct{})\n\ttracked.enabled.Store(true)\n\tgo func() { s.keepAlive(g,
+        &channel); close(pingDone) }()\n\tselect {\n\tcase <-tracked.started:\n\tcase
+        <-time.After(time.Second):\n\t\tt.Fatal("ping never reached Write")\n\t}\n\tloopDone
+        := make(chan struct{})\n\tgo func() { s.handleLoop(g); close(loopDone) }()\n\tt.Cleanup(func()
+        {\n\t\tcancel()\n\t\tconn.Close()\n\t\tselect {\n\t\tcase <-pingDone:\n\t\tcase
+        <-time.After(time.Second):\n\t\t\tt.Error("ping worker leaked")\n\t\t}\n\t\tselect
+        {\n\t\tcase <-loopDone:\n\t\tcase <-time.After(time.Second):\n\t\t\tt.Error("pair
+        worker leaked")\n\t\t}\n\t})\n\tlocal, user := net.Pipe()\n\tdefer local.Close()\n\tdefer
+        user.Close()\n\tif !s.limits.acquire() {\n\t\tt.Fatal("no admission slot")\n\t}\n\tg.localChannel
+        <- LocalTCPConn{conn: local, timeCreated: nowMillis(), remoteAddr: "127.0.0.1:1234"}\n\tg.tunnelChannel
+        <- channel\n\ttimer := time.NewTimer(controlwire.WriteTimeout + 2*time.Second)\n\tdefer
+        timer.Stop()\n\tticker := time.NewTicker(10 * time.Millisecond)\n\tdefer ticker.Stop()\n\tfor
+        s.limits.active.Load() != 0 {\n\t\tselect {\n\t\tcase <-ticker.C:\n\t\tcase
+        <-timer.C:\n\t\t\tt.Fatalf("blocked pooled ping held pairing mutex and admission
+        slot beyond write bound: slots=%d", s.limits.active.Load())\n\t\t}\n\t}\n\tif
+        ctx.Err() != nil {\n\t\tt.Fatal("recovery required ending healthy generation")\n\t}\n\tselect
+        {\n\tcase <-pingDone:\n\tcase <-time.After(time.Second):\n\t\tt.Fatal("failed
+        ping was not retired")\n\t}\n}\n'',encoding=''utf-8'')
+
+        PY
+
+        gofmt -w internal/server/transport/runtime_audit_ws_ping_test.go'
+    - name: Regression and existing transport tests
+      run: 'go test ./internal/server/transport -run TestRuntimeAuditWSPing -race
+        -count=3 -v -timeout 3m
+
+        go test ./internal/server/transport -race -timeout 15m'
