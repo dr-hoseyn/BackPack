@@ -1,0 +1,425 @@
+name: WS lifecycle and L3 forwarding recovery; QUIC EOF reproduction
+permissions:
+  contents: read
+'on':
+  push:
+    branches:
+    - codex/validate-ws-l3-recovery
+jobs:
+  direct:
+    name: PR60 exact source
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: f95312d6a2230648045cc41b6468da60be211570
+        fetch-depth: 0
+    - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
+
+        sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - name: Temporary runtime regressions
+      run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/tunnel/bridge/runtime_audit_test.go'').write_text(''package
+        bridge\n\nimport (\n "bytes"\n "context"\n "io"\n "net"\n "testing"\n "time"\n\n
+        "github.com/backpack/backpack/internal/metrics"\n "github.com/backpack/backpack/internal/tunnel/limits"\n)\n\nfunc
+        TestRuntimeAuditBridgeEOFResponse(t *testing.T) {\n variants := []struct{name
+        string; wrap func(net.Conn) net.Conn}{\n  {"plain",func(c net.Conn) net.Conn{return
+        c}},\n  {"counted",metrics.CountedConn},\n  {"limited",func(c net.Conn) net.Conn{return
+        limits.New(limits.Config{BandwidthMbps:1}).Wrap(context.Background(),c)}},\n  {"counted-limited",func(c
+        net.Conn) net.Conn{return metrics.CountedConn(limits.New(limits.Config{BandwidthMbps:1}).Wrap(context.Background(),c))}},\n  {"limited-counted",func(c
+        net.Conn) net.Conn{return limits.New(limits.Config{BandwidthMbps:1}).Wrap(context.Background(),metrics.CountedConn(c))}},\n
+        }\n for _,variant:=range variants {t.Run(variant.name,func(t *testing.T){\n  user,left:=tcpPair(t);
+        right,backend:=tcpPair(t)\n  ctx,cancel:=context.WithCancel(context.Background());defer
+        cancel()\n  done:=make(chan struct{});go func(){Join(ctx,variant.wrap(left),right);close(done)}()\n  user.SetDeadline(time.Now().Add(3*time.Second));backend.SetDeadline(time.Now().Add(3*time.Second))\n  user.Write([]byte("request"));user.(*net.TCPConn).CloseWrite()\n  request,err:=io.ReadAll(backend);if
+        err!=nil||string(request)!="request"{t.Fatalf("upload %q %v",request,err)}\n  time.Sleep(30*time.Millisecond)\n  response:=bytes.Repeat([]byte("reply"),4096)\n  if
+        _,err=backend.Write(response);err!=nil{t.Fatalf("response write: %v",err)}\n  backend.(*net.TCPConn).CloseWrite()\n  got,err:=io.ReadAll(user);if
+        err!=nil||!bytes.Equal(got,response){t.Fatalf("response length=%d want=%d
+        error=%v",len(got),len(response),err)}\n  select{case<-done:case<-time.After(time.Second):t.Fatal("bridge
+        did not drain")}\n })}\n}\n\nfunc TestRuntimeAuditBridgeHalfCloseCancel(t
+        *testing.T){\n user,left:=tcpPair(t);right,backend:=tcpPair(t)\n ctx,cancel:=context.WithCancel(context.Background());defer
+        cancel()\n done:=make(chan struct{});go func(){Join(ctx,left,right);close(done)}()\n
+        user.(*net.TCPConn).CloseWrite();backend.SetReadDeadline(time.Now().Add(time.Second))\n
+        if _,err:=io.ReadAll(backend);err!=nil{t.Fatal(err)}\n select{case<-done:t.Fatal("closed
+        reverse direction before cancellation");case<-time.After(30*time.Millisecond):}\n
+        cancel();select{case<-done:case<-time.After(time.Second):t.Fatal("half-closed
+        bridge outlived cancellation")}\n}\n\nfunc TestRuntimeAuditBridgeMixedEOF(t
+        *testing.T){\n user,left:=net.Pipe();right,backend:=tcpPair(t);defer user.Close()\n
+        ctx,cancel:=context.WithCancel(context.Background());defer cancel()\n done:=make(chan
+        struct{});go func(){Join(ctx,left,right);close(done)}()\n user.Close()\n select{case<-done:case<-time.After(time.Second):t.Fatal("non-TCP
+        EOF did not tear down")}\n backend.SetReadDeadline(time.Now().Add(time.Second));if
+        _,err:=io.ReadAll(backend);err!=nil{t.Fatal(err)}\n}\n\nfunc TestRuntimeAuditBridgeRateRemainsActive(t
+        *testing.T){\n user,left:=tcpPair(t);right,backend:=tcpPair(t)\n ctx,cancel:=context.WithCancel(context.Background());defer
+        cancel()\n done:=make(chan struct{});go func(){Join(ctx,limits.New(limits.Config{BandwidthMbps:1}).Wrap(ctx,metrics.CountedConn(left)),right);close(done)}()\n
+        user.SetDeadline(time.Now().Add(5*time.Second));backend.SetDeadline(time.Now().Add(5*time.Second))\n
+        user.(*net.TCPConn).CloseWrite();if _,err:=io.ReadAll(backend);err!=nil{t.Fatal(err)}\n
+        response:=bytes.Repeat([]byte{7},250000)\n go func(){backend.Write(response);backend.(*net.TCPConn).CloseWrite()}()\n
+        start:=time.Now();got,err:=io.ReadAll(user)\n if err!=nil||!bytes.Equal(got,response){t.Fatalf("paced
+        response length=%d error=%v",len(got),err)}\n if elapsed:=time.Since(start);elapsed<700*time.Millisecond{t.Fatalf("pacing
+        bypassed: %v",elapsed)}\n select{case<-done:case<-time.After(time.Second):t.Fatal("paced
+        bridge did not drain")}\n}\n'',encoding="utf-8")
+
+        PY
+
+        gofmt -w internal/tunnel/bridge/runtime_audit_test.go'
+    - name: Runtime regressions under race detector
+      run: go test ./internal/tunnel/bridge ./internal/tunnel/limits ./internal/tunnel/direct
+        -run "TestRuntime" -race -count=3 -v -timeout 6m
+    - name: Existing package checks
+      run: 'go vet ./internal/tunnel/bridge ./internal/tunnel/limits ./internal/tunnel/direct
+
+        go test ./internal/tunnel/bridge ./internal/tunnel/limits ./internal/tunnel/direct
+        -race -timeout 15m'
+  ws:
+    name: Latest PR66 handler and transport races
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 135e279d48a53b8fbddf213f7b2e264afa64c6e4
+        fetch-depth: 0
+    - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
+
+        sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - name: Actual runtime checks
+      run: 'go vet ./internal/utils/handlers ./internal/server/transport
+
+        go test ./internal/utils/handlers -run "TestTheLastBytes|Test.*Cancel" -race
+        -count=10 -v -timeout 3m
+
+        go test ./internal/utils/handlers ./internal/server/transport -race -timeout
+        15m'
+  combined:
+    name: Combined current tunnel package races
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 64b146725a28ca59d22276828a34977568d2387e
+        fetch-depth: 0
+    - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
+
+        sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - name: Actual runtime checks
+      run: 'go vet ./internal/utils/handlers ./internal/utils/network ./internal/tunnel/direct
+        ./internal/tunnel/l3 ./internal/tunnel/bridge ./internal/tunnel/limits ./internal/client/transport
+        ./internal/server/transport
+
+        go test ./internal/utils/handlers ./internal/utils/network ./internal/tunnel/direct
+        ./internal/tunnel/l3 ./internal/tunnel/bridge ./internal/tunnel/limits ./internal/client/transport
+        ./internal/server/transport -race -timeout 20m'
+  quic_baseline:
+    name: Reproduce QUIC upload EOF reply loss
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 64b146725a28ca59d22276828a34977568d2387e
+        fetch-depth: 0
+    - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
+
+        sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - name: Temporary regressions
+      run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/utils/handlers/runtime_audit_quic_halfclose_test.go'').write_text(''package
+        handlers\n\nimport (\n\t"bytes"\n\t"context"\n\t"errors"\n\t"github.com/backpack/backpack/internal/metrics"\n\t"github.com/backpack/backpack/internal/utils/network"\n\t"github.com/quic-go/quic-go"\n\t"io"\n\t"net"\n\t"testing"\n\t"time"\n)\n\nfunc
+        runtimeAuditHalfCloseQUICPair(t *testing.T) (net.Conn, *quic.Stream, *quic.Conn)
+        {\n\tt.Helper()\n\tctx, cancel := context.WithTimeout(context.Background(),
+        10*time.Second)\n\tt.Cleanup(cancel)\n\tsettings := network.QUICSettings{KeepAlivePeriod:
+        time.Second, MaxIdleTimeout: 15 * time.Second}\n\tlistener, err := network.QUICListen("127.0.0.1:0",
+        settings)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tt.Cleanup(func() {
+        listener.Close() })\n\taccepted := make(chan *quic.Conn, 1)\n\tgo func() {\n\t\tc,
+        e := listener.Accept(ctx)\n\t\tif e == nil {\n\t\t\taccepted <- c\n\t\t}\n\t}()\n\tclient,
+        err := network.QUICDial(ctx, listener.Addr().String(), settings)\n\tif err
+        != nil {\n\t\tt.Fatal(err)\n\t}\n\tt.Cleanup(func() { client.CloseWithError(0,
+        "test end") })\n\tvar server *quic.Conn\n\tselect {\n\tcase server = <-accepted:\n\tcase
+        <-ctx.Done():\n\t\tt.Fatal(ctx.Err())\n\t}\n\tt.Cleanup(func() { server.CloseWithError(0,
+        "test end") })\n\tpeer, err := client.OpenStreamSync(ctx)\n\tif err != nil
+        {\n\t\tt.Fatal(err)\n\t}\n\tif _, err := peer.Write([]byte{1}); err != nil
+        {\n\t\tt.Fatal(err)\n\t}\n\tstream, err := server.AcceptStream(ctx)\n\tif
+        err != nil {\n\t\tt.Fatal(err)\n\t}\n\tif _, err := io.ReadFull(stream, make([]byte,
+        1)); err != nil {\n\t\tt.Fatal(err)\n\t}\n\treturn network.NewQUICStreamConn(stream,
+        server), peer, client\n}\n\nfunc TestRuntimeAuditQUICRequestEOFPreservesDelayedReply(t
+        *testing.T) {\n\tfor _, counted := range []bool{false, true} {\n\t\tname :=
+        "plain"\n\t\tif counted {\n\t\t\tname = "counted"\n\t\t}\n\t\tt.Run(name,
+        func(t *testing.T) {\n\t\t\ttunnel, peer, carrier := runtimeAuditHalfCloseQUICPair(t)\n\t\t\trelay,
+        service := tcpPair(t)\n\t\t\tif counted {\n\t\t\t\ttunnel = metrics.CountedConn(tunnel)\n\t\t\t}\n\t\t\tctx,
+        cancel := context.WithCancel(context.Background())\n\t\t\tdefer cancel()\n\t\t\tdone
+        := make(chan struct{})\n\t\t\tgo func() {\n\t\t\t\tdefer close(done)\n\t\t\t\tTCPConnectionHandler(ctx,
+        false, tunnel, relay, quietLogger(), nil, 0, false)\n\t\t\t}()\n\t\t\trequest
+        := bytes.Repeat([]byte("request"), 1000)\n\t\t\treply := bytes.Repeat([]byte("delayed-reply"),
+        6000)\n\t\t\tserviceDone := make(chan error, 1)\n\t\t\tgo func() {\n\t\t\t\tservice.SetReadDeadline(time.Now().Add(3
+        * time.Second))\n\t\t\t\tgot, err := io.ReadAll(service)\n\t\t\t\tif err !=
+        nil {\n\t\t\t\t\tserviceDone <- err\n\t\t\t\t\treturn\n\t\t\t\t}\n\t\t\t\tif
+        !bytes.Equal(got, request) {\n\t\t\t\t\tserviceDone <- io.ErrUnexpectedEOF\n\t\t\t\t\treturn\n\t\t\t\t}\n\t\t\t\ttime.Sleep(100
+        * time.Millisecond)\n\t\t\t\tif _, err := service.Write(reply); err != nil
+        {\n\t\t\t\t\tserviceDone <- err\n\t\t\t\t\treturn\n\t\t\t\t}\n\t\t\t\tserviceDone
+        <- service.(*net.TCPConn).CloseWrite()\n\t\t\t}()\n\t\t\tif _, err := peer.Write(request);
+        err != nil {\n\t\t\t\tt.Fatal(err)\n\t\t\t}\n\t\t\tif err := peer.Close();
+        err != nil {\n\t\t\t\tt.Fatal(err)\n\t\t\t} // QUIC native send-FIN, keep
+        receive direction open.\n\t\t\tpeer.SetReadDeadline(time.Now().Add(3 * time.Second))\n\t\t\tgot,
+        err := io.ReadAll(peer)\n\t\t\tif err != nil && !errors.Is(err, io.EOF) {\n\t\t\t\tt.Fatalf("reply
+        read failed: %v", err)\n\t\t\t}\n\t\t\tif !bytes.Equal(got, reply) {\n\t\t\t\tt.Fatalf("request
+        EOF cut off delayed QUIC reply: got=%d want=%d", len(got), len(reply))\n\t\t\t}\n\t\t\tif
+        err := <-serviceDone; err != nil {\n\t\t\t\tt.Fatal("backend:", err)\n\t\t\t}\n\t\t\tselect
+        {\n\t\t\tcase <-done:\n\t\t\tcase <-time.After(time.Second):\n\t\t\t\tt.Fatal("both
+        directional EOFs did not retire relay")\n\t\t\t}\n\t\t\tif carrier.Context().Err()
+        != nil {\n\t\t\t\tt.Fatal("flow EOF closed QUIC carrier")\n\t\t\t}\n\t\t})\n\t}\n}\n'',encoding=''utf-8'')
+
+        PY
+
+        gofmt -w internal/utils/handlers/runtime_audit_quic_halfclose_test.go'
+    - name: Actual runtime checks
+      run: 'if go test ./internal/utils/handlers -run TestRuntimeAuditQUICRequestEOF
+        -v -count=1 -timeout 1m > /tmp/quic-eof.log 2>&1; then cat /tmp/quic-eof.log;
+        echo "baseline unexpectedly passed"; exit 1; fi
+
+        cat /tmp/quic-eof.log
+
+        grep -q "request EOF cut off delayed QUIC reply" /tmp/quic-eof.log'
+  l3:
+    name: Exact L3 forwarding generation and supervisor recovery
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 7103cd4d08f763a153e919cf484bbf888789bfc1
+        fetch-depth: 0
+    - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
+
+        sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - name: Temporary regressions
+      run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/tunnel/l3/runtime_audit_forwarder_test.go'').write_text(''package
+        l3\n\nimport (\n\t"context"\n\t"fmt"\n\t"net"\n\t"strings"\n\t"testing"\n\t"time"\n)\n\nfunc
+        TestRuntimeAuditForwarderFatalBindEndsGeneration(t *testing.T) {\n\tfor _,
+        network := range []string{"tcp", "udp"} {\n\t\tt.Run(network, func(t *testing.T)
+        {\n\t\t\toccupied := fmt.Sprintf("127.0.0.1:%d", freePort(t))\n\t\t\tvar release
+        func()\n\t\t\tif network == "tcp" {\n\t\t\t\tl, err := net.Listen("tcp", occupied)\n\t\t\t\tif
+        err != nil {\n\t\t\t\t\tt.Fatal(err)\n\t\t\t\t}\n\t\t\t\trelease = func()
+        { l.Close() }\n\t\t\t} else {\n\t\t\t\tp, err := net.ListenPacket("udp", occupied)\n\t\t\t\tif
+        err != nil {\n\t\t\t\t\tt.Fatal(err)\n\t\t\t\t}\n\t\t\t\trelease = func()
+        { p.Close() }\n\t\t\t}\n\t\t\tdefer release()\n\t\t\thealthy := fmt.Sprintf("127.0.0.1:%d",
+        freePort(t))\n\t\t\tbackend := echoTCP(t, "ok:")\n\t\t\tf, err := NewForwarder(Config{Ports:
+        []string{occupied + "=" + backend, healthy + "=" + backend}, AcceptUDP: network
+        == "udp", PeerIP: "127.0.0.1"}, quietLogger())\n\t\t\tif err != nil {\n\t\t\t\tt.Fatal(err)\n\t\t\t}\n\t\t\tctx,
+        cancel := context.WithCancel(context.Background())\n\t\t\tdefer cancel()\n\t\t\tresult
+        := make(chan error, 1)\n\t\t\tfinished := make(chan struct{})\n\t\t\tgo func()
+        { defer close(finished); result <- f.Run(ctx) }()\n\t\t\tt.Cleanup(func()
+        {\n\t\t\t\tcancel()\n\t\t\t\tselect {\n\t\t\t\tcase <-finished:\n\t\t\t\tcase
+        <-time.After(time.Second):\n\t\t\t\t\tt.Error("generation did not stop during
+        cleanup")\n\t\t\t\t}\n\t\t\t})\n\t\t\tselect {\n\t\t\tcase <-f.Ready():\n\t\t\tcase
+        <-time.After(time.Second):\n\t\t\t\tt.Fatal("readiness was never reported")\n\t\t\t}\n\t\t\tselect
+        {\n\t\t\tcase err := <-result:\n\t\t\t\tif err == nil || !strings.Contains(err.Error(),
+        occupied) {\n\t\t\t\t\tt.Fatalf("lost original binderror: %v", err)\n\t\t\t\t}\n\t\t\tcase
+        <-time.After(300 * time.Millisecond):\n\t\t\t\tt.Fatal("fatal bind left Run
+        blocked on healthy sibling listeners")\n\t\t\t}\n\t\t\tif ctx.Err() != nil
+        {\n\t\t\t\tt.Fatal("forwarder failure canceled parent tunnel context")\n\t\t\t}\n\t\t\tl,
+        err := net.Listen("tcp", healthy)\n\t\t\tif err != nil {\n\t\t\t\tt.Fatalf("healthy
+        TCP listener was not released: %v", err)\n\t\t\t}\n\t\t\tl.Close()\n\t\t\tif
+        network == "udp" {\n\t\t\t\tp, err := net.ListenPacket("udp", healthy)\n\t\t\t\tif
+        err != nil {\n\t\t\t\t\tt.Fatalf("healthy UDP listener was not released: %v",
+        err)\n\t\t\t\t}\n\t\t\t\tp.Close()\n\t\t\t}\n\t\t\t// Reusing the same forwarder
+        after the conflicting service leaves must\n\t\t\t// recover, while the tunnel\''s
+        parent context remains alive.\n\t\t\trelease()\n\t\t\tretryDone := make(chan
+        error, 1)\n\t\t\tgo func() { retryDone <- f.Run(ctx) }()\n\t\t\tt.Cleanup(func()
+        {\n\t\t\t\tcancel()\n\t\t\t\tselect {\n\t\t\t\tcase <-retryDone:\n\t\t\t\tcase
+        <-time.After(time.Second):\n\t\t\t\t\tt.Error("retry did not stop")\n\t\t\t\t}\n\t\t\t})\n\t\t\trecovered
+        := dialUntilReady(t, occupied)\n\t\t\tdefer recovered.Close()\n\t\t\trecovered.SetDeadline(time.Now().Add(time.Second))\n\t\t\tif
+        _, err := recovered.Write([]byte("recovered")); err != nil {\n\t\t\t\tt.Fatal(err)\n\t\t\t}\n\t\t\tbuf
+        := make([]byte, 64)\n\t\t\tn, err := recovered.Read(buf)\n\t\t\tif err !=
+        nil || string(buf[:n]) != "ok:recovered" {\n\t\t\t\tt.Fatalf("rebound listener
+        cannot forward: %q/%v", buf[:n], err)\n\t\t\t}\n\t\t})\n\t}\n}\n'',encoding=''utf-8'')
+
+        Path(''cmd/runtime_audit_l3_forwarder_test.go'').write_text(''package cmd\n\nimport
+        (\n\t"bufio"\n\t"context"\n\t"github.com/backpack/backpack/config"\n\t"io"\n\t"net"\n\t"os"\n\t"strings"\n\t"testing"\n\t"time"\n)\n\nfunc
+        TestRuntimeAuditL3ForwarderSupervisorRecoversBind(t *testing.T) {\n\theld,
+        err := net.Listen("tcp", "127.0.0.1:0")\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tdefer
+        held.Close()\n\tblockedAddr := held.Addr().String()\n\tbackend, err := net.Listen("tcp",
+        "127.0.0.1:0")\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tdefer backend.Close()\n\tgo
+        func() {\n\t\tfor {\n\t\t\tc, err := backend.Accept()\n\t\t\tif err != nil
+        {\n\t\t\t\treturn\n\t\t\t}\n\t\t\tgo func() { defer c.Close(); io.Copy(c,
+        c) }()\n\t\t}\n\t}()\n\t// Observe the actual first bind failure before releasing
+        the conflict;\n\t// guessing a sleep could let the old code bind successfully
+        on a slow host.\n\treader, writer, err := os.Pipe()\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tpreviousOutput
+        := os.Stdout\n\tos.Stdout = writer\n\tfailedBind := make(chan struct{}, 1)\n\tlogDone
+        := make(chan struct{})\n\tgo func() {\n\t\tdefer close(logDone)\n\t\tscanner
+        := bufio.NewScanner(reader)\n\t\tfor scanner.Scan() {\n\t\t\tline := scanner.Text()\n\t\t\tif
+        strings.Contains(line, "tcp forwarder for "+blockedAddr+" stopped") {\n\t\t\t\tselect
+        {\n\t\t\t\tcase failedBind <- struct{}{}:\n\t\t\t\tdefault:\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\t}()\n\tctx,
+        cancel := context.WithCancel(context.Background())\n\tdone := make(chan struct{})\n\tcfg
+        := &config.Config{L3: config.L3Config{Mode: "listen", Addr: "127.0.0.1:0",
+        Token: "forwarder-supervisor-audit", Iface: "bp-audit", LocalIP: "10.245.0.1/30",
+        PeerIP: "10.245.0.2", MTU: 1400, Ports: []string{blockedAddr + "=" + backend.Addr().String()}},
+        Server: config.ServerConfig{LogLevel: "error"}}\n\tgo func() { defer close(done);
+        runL3Tunnel(cfg, ctx, "") }()\n\tt.Cleanup(func() {\n\t\tcancel()\n\t\tselect
+        {\n\t\tcase <-done:\n\t\tcase <-time.After(2 * time.Second):\n\t\t\tt.Error("supervisor
+        did not stop")\n\t\t}\n\t\tos.Stdout = previousOutput\n\t\twriter.Close()\n\t\treader.Close()\n\t\t<-logDone\n\t})\n\tselect
+        {\n\tcase <-failedBind:\n\tcase <-time.After(3 * time.Second):\n\t\tt.Fatal("initial
+        conflicting bind was not attempted")\n\t}\n\theld.Close()\n\tvar client net.Conn\n\tdeadline
+        := time.Now().Add(8 * time.Second)\n\tfor time.Now().Before(deadline) {\n\t\tclient,
+        err = net.DialTimeout("tcp", blockedAddr, 100*time.Millisecond)\n\t\tif err
+        == nil {\n\t\t\tbreak\n\t\t}\n\t\ttime.Sleep(20 * time.Millisecond)\n\t}\n\tif
+        err != nil {\n\t\tt.Fatalf("forwarder never recovered after conflicting listener
+        left: %v", err)\n\t}\n\tdefer client.Close()\n\tclient.SetDeadline(time.Now().Add(time.Second))\n\tif
+        _, err := client.Write([]byte("recovered")); err != nil {\n\t\tt.Fatal(err)\n\t}\n\tresponse
+        := make([]byte, len("recovered"))\n\tif _, err := io.ReadFull(client, response);
+        err != nil {\n\t\tt.Fatal(err)\n\t}\n\tif string(response) != "recovered"
+        {\n\t\tt.Fatal("restarted forwarder lost data")\n\t}\n\tif ctx.Err() != nil
+        {\n\t\tt.Fatal("forwarder retry canceled the tunnel\''s parent context")\n\t}\n}\n'',encoding=''utf-8'')
+
+        PY
+
+        gofmt -w internal/tunnel/l3/runtime_audit_forwarder_test.go cmd/runtime_audit_l3_forwarder_test.go'
+    - name: Actual runtime checks
+      run: 'go test ./internal/tunnel/l3 ./cmd -run "TestRuntimeAuditForwarder|TestRuntimeAuditL3Forwarder"
+        -race -count=3 -v -timeout 3m
+
+        go vet ./internal/tunnel/l3 ./cmd
+
+        go test ./internal/tunnel/l3 ./cmd -race -timeout 15m'
+  l3baseline:
+    name: Reproduce L3 bind and recovery failures
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 25c8eb547c4f8ca994e509480f9262cf2601084d
+        fetch-depth: 0
+    - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
+
+        sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - name: Temporary regressions
+      run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/tunnel/l3/runtime_audit_forwarder_test.go'').write_text(''package
+        l3\n\nimport (\n\t"context"\n\t"fmt"\n\t"net"\n\t"strings"\n\t"testing"\n\t"time"\n)\n\nfunc
+        TestRuntimeAuditForwarderFatalBindEndsGeneration(t *testing.T) {\n\tfor _,
+        network := range []string{"tcp", "udp"} {\n\t\tt.Run(network, func(t *testing.T)
+        {\n\t\t\toccupied := fmt.Sprintf("127.0.0.1:%d", freePort(t))\n\t\t\tvar release
+        func()\n\t\t\tif network == "tcp" {\n\t\t\t\tl, err := net.Listen("tcp", occupied)\n\t\t\t\tif
+        err != nil {\n\t\t\t\t\tt.Fatal(err)\n\t\t\t\t}\n\t\t\t\trelease = func()
+        { l.Close() }\n\t\t\t} else {\n\t\t\t\tp, err := net.ListenPacket("udp", occupied)\n\t\t\t\tif
+        err != nil {\n\t\t\t\t\tt.Fatal(err)\n\t\t\t\t}\n\t\t\t\trelease = func()
+        { p.Close() }\n\t\t\t}\n\t\t\tdefer release()\n\t\t\thealthy := fmt.Sprintf("127.0.0.1:%d",
+        freePort(t))\n\t\t\tbackend := echoTCP(t, "ok:")\n\t\t\tf, err := NewForwarder(Config{Ports:
+        []string{occupied + "=" + backend, healthy + "=" + backend}, AcceptUDP: network
+        == "udp", PeerIP: "127.0.0.1"}, quietLogger())\n\t\t\tif err != nil {\n\t\t\t\tt.Fatal(err)\n\t\t\t}\n\t\t\tctx,
+        cancel := context.WithCancel(context.Background())\n\t\t\tdefer cancel()\n\t\t\tresult
+        := make(chan error, 1)\n\t\t\tfinished := make(chan struct{})\n\t\t\tgo func()
+        { defer close(finished); result <- f.Run(ctx) }()\n\t\t\tt.Cleanup(func()
+        {\n\t\t\t\tcancel()\n\t\t\t\tselect {\n\t\t\t\tcase <-finished:\n\t\t\t\tcase
+        <-time.After(time.Second):\n\t\t\t\t\tt.Error("generation did not stop during
+        cleanup")\n\t\t\t\t}\n\t\t\t})\n\t\t\tselect {\n\t\t\tcase <-f.Ready():\n\t\t\tcase
+        <-time.After(time.Second):\n\t\t\t\tt.Fatal("readiness was never reported")\n\t\t\t}\n\t\t\tselect
+        {\n\t\t\tcase err := <-result:\n\t\t\t\tif err == nil || !strings.Contains(err.Error(),
+        occupied) {\n\t\t\t\t\tt.Fatalf("lost original binderror: %v", err)\n\t\t\t\t}\n\t\t\tcase
+        <-time.After(300 * time.Millisecond):\n\t\t\t\tt.Fatal("fatal bind left Run
+        blocked on healthy sibling listeners")\n\t\t\t}\n\t\t\tif ctx.Err() != nil
+        {\n\t\t\t\tt.Fatal("forwarder failure canceled parent tunnel context")\n\t\t\t}\n\t\t\tl,
+        err := net.Listen("tcp", healthy)\n\t\t\tif err != nil {\n\t\t\t\tt.Fatalf("healthy
+        TCP listener was not released: %v", err)\n\t\t\t}\n\t\t\tl.Close()\n\t\t\tif
+        network == "udp" {\n\t\t\t\tp, err := net.ListenPacket("udp", healthy)\n\t\t\t\tif
+        err != nil {\n\t\t\t\t\tt.Fatalf("healthy UDP listener was not released: %v",
+        err)\n\t\t\t\t}\n\t\t\t\tp.Close()\n\t\t\t}\n\t\t\t// Reusing the same forwarder
+        after the conflicting service leaves must\n\t\t\t// recover, while the tunnel\''s
+        parent context remains alive.\n\t\t\trelease()\n\t\t\tretryDone := make(chan
+        error, 1)\n\t\t\tgo func() { retryDone <- f.Run(ctx) }()\n\t\t\tt.Cleanup(func()
+        {\n\t\t\t\tcancel()\n\t\t\t\tselect {\n\t\t\t\tcase <-retryDone:\n\t\t\t\tcase
+        <-time.After(time.Second):\n\t\t\t\t\tt.Error("retry did not stop")\n\t\t\t\t}\n\t\t\t})\n\t\t\trecovered
+        := dialUntilReady(t, occupied)\n\t\t\tdefer recovered.Close()\n\t\t\trecovered.SetDeadline(time.Now().Add(time.Second))\n\t\t\tif
+        _, err := recovered.Write([]byte("recovered")); err != nil {\n\t\t\t\tt.Fatal(err)\n\t\t\t}\n\t\t\tbuf
+        := make([]byte, 64)\n\t\t\tn, err := recovered.Read(buf)\n\t\t\tif err !=
+        nil || string(buf[:n]) != "ok:recovered" {\n\t\t\t\tt.Fatalf("rebound listener
+        cannot forward: %q/%v", buf[:n], err)\n\t\t\t}\n\t\t})\n\t}\n}\n'',encoding=''utf-8'')
+
+        Path(''cmd/runtime_audit_l3_forwarder_test.go'').write_text(''package cmd\n\nimport
+        (\n\t"bufio"\n\t"context"\n\t"github.com/backpack/backpack/config"\n\t"io"\n\t"net"\n\t"os"\n\t"strings"\n\t"testing"\n\t"time"\n)\n\nfunc
+        TestRuntimeAuditL3ForwarderSupervisorRecoversBind(t *testing.T) {\n\theld,
+        err := net.Listen("tcp", "127.0.0.1:0")\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tdefer
+        held.Close()\n\tblockedAddr := held.Addr().String()\n\tbackend, err := net.Listen("tcp",
+        "127.0.0.1:0")\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tdefer backend.Close()\n\tgo
+        func() {\n\t\tfor {\n\t\t\tc, err := backend.Accept()\n\t\t\tif err != nil
+        {\n\t\t\t\treturn\n\t\t\t}\n\t\t\tgo func() { defer c.Close(); io.Copy(c,
+        c) }()\n\t\t}\n\t}()\n\t// Observe the actual first bind failure before releasing
+        the conflict;\n\t// guessing a sleep could let the old code bind successfully
+        on a slow host.\n\treader, writer, err := os.Pipe()\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tpreviousOutput
+        := os.Stdout\n\tos.Stdout = writer\n\tfailedBind := make(chan struct{}, 1)\n\tlogDone
+        := make(chan struct{})\n\tgo func() {\n\t\tdefer close(logDone)\n\t\tscanner
+        := bufio.NewScanner(reader)\n\t\tfor scanner.Scan() {\n\t\t\tline := scanner.Text()\n\t\t\tif
+        strings.Contains(line, "tcp forwarder for "+blockedAddr+" stopped") {\n\t\t\t\tselect
+        {\n\t\t\t\tcase failedBind <- struct{}{}:\n\t\t\t\tdefault:\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\t}()\n\tctx,
+        cancel := context.WithCancel(context.Background())\n\tdone := make(chan struct{})\n\tcfg
+        := &config.Config{L3: config.L3Config{Mode: "listen", Addr: "127.0.0.1:0",
+        Token: "forwarder-supervisor-audit", Iface: "bp-audit", LocalIP: "10.245.0.1/30",
+        PeerIP: "10.245.0.2", MTU: 1400, Ports: []string{blockedAddr + "=" + backend.Addr().String()}},
+        Server: config.ServerConfig{LogLevel: "error"}}\n\tgo func() { defer close(done);
+        runL3Tunnel(cfg, ctx, "") }()\n\tt.Cleanup(func() {\n\t\tcancel()\n\t\tselect
+        {\n\t\tcase <-done:\n\t\tcase <-time.After(2 * time.Second):\n\t\t\tt.Error("supervisor
+        did not stop")\n\t\t}\n\t\tos.Stdout = previousOutput\n\t\twriter.Close()\n\t\treader.Close()\n\t\t<-logDone\n\t})\n\tselect
+        {\n\tcase <-failedBind:\n\tcase <-time.After(3 * time.Second):\n\t\tt.Fatal("initial
+        conflicting bind was not attempted")\n\t}\n\theld.Close()\n\tvar client net.Conn\n\tdeadline
+        := time.Now().Add(8 * time.Second)\n\tfor time.Now().Before(deadline) {\n\t\tclient,
+        err = net.DialTimeout("tcp", blockedAddr, 100*time.Millisecond)\n\t\tif err
+        == nil {\n\t\t\tbreak\n\t\t}\n\t\ttime.Sleep(20 * time.Millisecond)\n\t}\n\tif
+        err != nil {\n\t\tt.Fatalf("forwarder never recovered after conflicting listener
+        left: %v", err)\n\t}\n\tdefer client.Close()\n\tclient.SetDeadline(time.Now().Add(time.Second))\n\tif
+        _, err := client.Write([]byte("recovered")); err != nil {\n\t\tt.Fatal(err)\n\t}\n\tresponse
+        := make([]byte, len("recovered"))\n\tif _, err := io.ReadFull(client, response);
+        err != nil {\n\t\tt.Fatal(err)\n\t}\n\tif string(response) != "recovered"
+        {\n\t\tt.Fatal("restarted forwarder lost data")\n\t}\n\tif ctx.Err() != nil
+        {\n\t\tt.Fatal("forwarder retry canceled the tunnel\''s parent context")\n\t}\n}\n'',encoding=''utf-8'')
+
+        PY
+
+        gofmt -w internal/tunnel/l3/runtime_audit_forwarder_test.go cmd/runtime_audit_l3_forwarder_test.go'
+    - name: Actual runtime checks
+      run: 'if go test ./internal/tunnel/l3 ./cmd -run "TestRuntimeAuditForwarder|TestRuntimeAuditL3Forwarder"
+        -count=1 -v -timeout 1m > /tmp/l3-recovery.log 2>&1; then cat /tmp/l3-recovery.log;
+        exit 1; fi
+
+        cat /tmp/l3-recovery.log
+
+        grep -q "fatal bind left Run blocked" /tmp/l3-recovery.log
+
+        grep -q "forwarder never recovered" /tmp/l3-recovery.log'
