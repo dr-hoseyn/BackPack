@@ -111,7 +111,8 @@ jobs:
       with:
         go-version-file: go.mod
         cache: true
-    - run: 'python3 - <<''PY''
+    - &id002
+      run: 'python3 - <<''PY''
 
         from pathlib import Path
 
@@ -340,3 +341,387 @@ jobs:
         name: real-naive-protocol-results
         path: /tmp/backpack-real-naive/result*.json
         if-no-files-found: ignore
+  xray:
+    name: Exact Xray contracts and both complete managed reverse profiles
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: de48b2aadb42683ee5935226a520f58c2ce7b3c4
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - *id002
+    - run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/tunnel/naive/xray_contract_external_test.go'').write_text(''package naive\n\nimport (\n "crypto/ed25519"\n
+        "crypto/rand"\n "crypto/x509"\n "crypto/x509/pkix"\n "encoding/json"\n "encoding/pem"\n "math/big"\n "os"\n "os/exec"\n
+        "path/filepath"\n "strings"\n "testing"\n "time"\n "github.com/backpack/backpack/config"\n)\n\nfunc TestXrayConfigContractExternal(t
+        *testing.T) {\n binary:=os.Getenv("BACKPACK_XRAY_BINARY"); if binary=="" { t.Fatal("BACKPACK_XRAY_BINARY required")
+        }\n dir:=t.TempDir(); certPath,keyPath:=filepath.Join(dir,"cert.pem"),filepath.Join(dir,"key.pem")\n pub,priv,err:=ed25519.GenerateKey(rand.Reader);
+        if err!=nil {t.Fatal(err)}\n tmpl:=&x509.Certificate{SerialNumber:big.NewInt(1),Subject:pkix.Name{CommonName:"audit.localhost"},DNSNames:[]string{"audit.localhost"},NotBefore:time.Now().Add(-time.Hour),NotAfter:time.Now().Add(time.Hour),IsCA:true,BasicConstraintsValid:true,KeyUsage:x509.KeyUsageDigitalSignature|x509.KeyUsageCertSign,ExtKeyUsage:[]x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}\n
+        der,err:=x509.CreateCertificate(rand.Reader,tmpl,tmpl,pub,priv);if err!=nil{t.Fatal(err)}\n pk,err:=x509.MarshalPKCS8PrivateKey(priv);if
+        err!=nil{t.Fatal(err)}\n if err=os.WriteFile(certPath,pem.EncodeToMemory(&pem.Block{Type:"CERTIFICATE",Bytes:der}),0600);err!=nil{t.Fatal(err)}\n
+        if err=os.WriteFile(keyPath,pem.EncodeToMemory(&pem.Block{Type:"PRIVATE KEY",Bytes:pk}),0600);err!=nil{t.Fatal(err)}\n
+        output,err:=exec.Command(binary,"x25519").CombinedOutput();if err!=nil{t.Fatalf("x25519: %v %s",err,output)}\n var
+        private,password string\n for _,line:=range strings.Split(string(output),"\\n") { if strings.HasPrefix(line,"PrivateKey:"){private=strings.TrimSpace(strings.TrimPrefix(line,"PrivateKey:"))};if
+        strings.HasPrefix(line,"Password (PublicKey):"){password=strings.TrimSpace(strings.TrimPrefix(line,"Password (PublicKey):"))}
+        }\n if private==""||password==""{t.Fatal("missing X25519 output")}\n client:=config.ClientConfig{Transport:config.TCP,RemoteAddr:"127.0.0.1:26001",Xray:config.XrayClientConfig{Binary:binary,Server:"127.0.0.1:26003",Mode:"xhttp",UUID:"a17c3bc5-8b44-451f-8f43-df6c342e09bc",ServerName:"audit.localhost",Path:"/private-audit",CAFile:certPath}}\n
+        server:=config.ServerConfig{Transport:config.TCP,BindAddr:"127.0.0.1:26001",Xray:config.XrayServerConfig{Binary:binary,Listen:"127.0.0.1:26003",Mode:"xhttp",UUID:client.Xray.UUID,ServerName:"audit.localhost",Path:"/private-audit",Certificate:certPath,Key:keyPath}}\n
+        for _,mode:=range []string{"xhttp","reality"}{t.Run(mode,func(t *testing.T){\n  c,s:=client,server\n  if mode=="reality"
+        { c.Xray.Mode=mode;c.Xray.Path="";c.Xray.CAFile="";c.Xray.PublicKey=password;c.Xray.ShortID="a13e29b451d0c7ef";s.Xray.Mode=mode;s.Xray.Path="";s.Xray.Certificate="";s.Xray.Key="";s.Xray.PrivateKey=private;s.Xray.Target="127.0.0.1:26004";s.Xray.ShortID=c.Xray.ShortID
+        }\n  if err:=ValidateXray(&config.Config{Client:c});err!=nil{t.Fatal(err)};if err:=ValidateXray(&config.Config{Server:s});err!=nil{t.Fatal(err)}\n  body,err:=XrayClientJSON(&c,"127.0.0.1:26002");if
+        err!=nil{t.Fatal(err)}\n  sb,err:=XrayServerJSON(&s);if err!=nil{t.Fatal(err)}\n  for role,data:=range map[string][]byte{"client":body,"server":sb}
+        {\n   path:=filepath.Join(dir,mode+"-"+role+".json");if err:=os.WriteFile(path,data,0600);err!=nil{t.Fatal(err)}\n   out,err:=exec.Command(binary,"run","-test","-config",path).CombinedOutput();if
+        err!=nil{t.Fatalf("official parser %s: %v %s",role,err,out)}\n   var decoded map[string]any;if err:=json.Unmarshal(data,&decoded);err!=nil{t.Fatal(err)}\n   obs:=decoded["outbounds"].([]any);if
+        obs[0].(map[string]any)["protocol"]!="blackhole"{t.Fatal("unmatched routing permits traffic")}\n   rs:=decoded["routing"].(map[string]any);if
+        rs["domainStrategy"]!="AsIs"{t.Fatal("routing unexpectedly resolves names")}\n   rule:=rs["rules"].([]any)[0].(map[string]any);if
+        rule["network"]!="tcp"||rule["port"]!="26001"||rule["ip"].([]any)[0]!="127.0.0.1/32"{t.Fatalf("unrestricted target:
+        %v",rule)}\n   if role=="server"&&obs[1].(map[string]any)["settings"].(map[string]any)["redirect"]!=s.BindAddr{t.Fatal("missing
+        fixed destination")}\n  }\n  for name,mutate:=range map[string]func(*config.ClientConfig){\n   "mode":func(c *config.ClientConfig){c.Xray.Mode="other"},"uuid":func(c
+        *config.ClientConfig){c.Xray.UUID="a17c3bc5-8b44-451f8-f43-df6c342e09bc"},"uuidhex":func(c *config.ClientConfig){c.Xray.UUID="z17c3bc5-8b44-451f-8f43-df6c342e09bc"},"sni":func(c
+        *config.ClientConfig){c.Xray.ServerName="https://bad"},"server":func(c *config.ClientConfig){c.Xray.Server="user@audit.localhost:443"},"url":func(c
+        *config.ClientConfig){c.Xray.Server="https://audit.localhost:443"},"remote":func(c *config.ClientConfig){c.RemoteAddr="localhost:26001"},"nonloopback":func(c
+        *config.ClientConfig){c.RemoteAddr="192.0.2.1:26001"},"udp":func(c *config.ClientConfig){c.Transport=config.UDP},"fallback":func(c
+        *config.ClientConfig){c.FallbackAddrs=[]string{"127.0.0.1:26001"}},"proxy":func(c *config.ClientConfig){c.Proxy="socks5://127.0.0.1:1"},"naive":func(c
+        *config.ClientConfig){c.Naive.Binary=binary},"irrelevant":func(c *config.ClientConfig){if mode=="xhttp"{c.Xray.PublicKey=password}else{c.Xray.Path="/unexpected"}},\n  }{t.Run(name,func(t
+        *testing.T){bad:=c;mutate(&bad);if err:=ValidateXrayClient(&bad);err==nil{t.Fatal("invalid client accepted")}})}\n  if
+        _,err:=XrayClientJSON(&c,"0.0.0.0:26002");err==nil{t.Fatal("public SOCKS bind accepted")}\n  for name,mutate:=range
+        map[string]func(*config.ServerConfig){"public-target":func(s *config.ServerConfig){s.BindAddr="0.0.0.0:26001"},"shared-port":func(s
+        *config.ServerConfig){s.Xray.Listen="127.0.0.1:26001"},"irrelevant":func(s *config.ServerConfig){if mode=="xhttp"{s.Xray.Target="target.example:443"}else{s.Xray.Certificate=certPath}},"naive":func(s
+        *config.ServerConfig){s.Naive.Binary=binary}}{t.Run(name,func(t *testing.T){bad:=s;mutate(&bad);if err:=ValidateXrayServer(&bad);err==nil{t.Fatal("invalid
+        server accepted")}})}\n  if mode=="xhttp"{\n   for _,path:=range []string{"", "/", "relative", "/?query", "/#fragment",
+        "/%0d%0a", "/%3fquery", "/bad\\\\path"}{bad:=c;bad.Xray.Path=path;if ValidateXrayClient(&bad)==nil{t.Fatalf("invalid
+        path accepted: %q",path)}}\n   bad:=s;bad.Xray.ServerName="other.localhost";if ValidateXrayServer(&bad)==nil{t.Fatal("mismatched
+        TLS certificate accepted")}\n  }else{\n   for _,id:=range []string{"","abc","0123456789abcdef00","z123456789abcdef"}{bad:=c;bad.Xray.ShortID=id;if
+        ValidateXrayClient(&bad)==nil{t.Fatalf("invalid short ID accepted: %q",id)}}\n   for _,key:=range []string{"",password+"=",password[:len(password)-1],"not-a-key"}{bad:=c;bad.Xray.PublicKey=key;if
+        ValidateXrayClient(&bad)==nil{t.Fatal("invalid key accepted")}}\n   for _,target:=range []string{"localhost:26003","127.0.0.2:26003","127.0.0.2:26001"}{bad:=s;bad.Xray.Target=target;if
+        ValidateXrayServer(&bad)==nil{t.Fatalf("self-loop accepted: %s",target)}}\n  }\n  both:=config.Config{Client:c,Server:s};if
+        ValidateXray(&both)==nil{t.Fatal("multiple roles accepted")}\n })}\n}\n'',encoding=''utf-8'')
+
+        PY'
+    - run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''/tmp/real_xray_managed_linux.py'').write_text(''"""Exercise official helpers and the reverse engine on isolated
+        Linux loopback.\n\nRun as an unprivileged user inside a disposable network namespace. This is not\nan Internet path
+        test. All files belong to the supplied disposable bundle dir.\n"""\nimport hashlib\nimport json\nimport os\nimport
+        re\nfrom pathlib import Path\nimport signal\nimport socket\nimport struct\nimport subprocess\nimport sys\nimport threading\nimport
+        time\nimport urllib.parse\n\nimport argparse\nparser = argparse.ArgumentParser(description=__doc__)\nparser.add_argument("--backpack",
+        required=True, type=Path)\nparser.add_argument("--xray", required=True, type=Path)\nparser.add_argument("--profile",
+        choices=("both", "xhttp", "reality"), default="both")\nparser.add_argument("--output", required=True, type=Path)\nARGS
+        = parser.parse_args()\nif ARGS.profile == "both":\n    ARGS.output.mkdir(mode=0o700, parents=True, exist_ok=True)\n    if
+        any(ARGS.output.iterdir()): raise SystemExit("fixture output must be empty")\n    summary = {}\n    for profile in
+        ("xhttp", "reality"):\n        result = subprocess.run([sys.executable, __file__, "--backpack", str(ARGS.backpack),
+        "--xray", str(ARGS.xray), "--output", str(ARGS.output / profile), "--profile", profile], timeout=300)\n        path
+        = ARGS.output / profile / "local-check.json"\n        summary[profile] = json.loads(path.read_text()) if path.exists()
+        else {"ok": False, "exit": result.returncode}\n    (ARGS.output / "managed-check.json").write_text(json.dumps(summary,
+        indent=2) + "\\n")\n    print(json.dumps(summary), flush=True)\n    raise SystemExit(0 if all(result.get("ok") for
+        result in summary.values()) else 1)\nROOT = ARGS.output.resolve()\nROOT.mkdir(mode=0o700, parents=True, exist_ok=True)\nif
+        any(ROOT.iterdir()):\n    raise SystemExit("fixture output must be empty")\nBIN = ROOT / "bin"\nBIN.mkdir(mode=0o700)\nfor
+        name, source in (("backpack", ARGS.backpack), ("xray", ARGS.xray)):\n    (BIN / name).symlink_to(source.resolve())\nlisteners
+        = [socket.create_server(("127.0.0.1", 0)) for _ in range(4)]\nPUBLIC, REVERSE, ENTRY, BACKEND = [listener.getsockname()[1]
+        for listener in listeners]\nfor listener in listeners: listener.close()\nBIN = ROOT / "bin"\nDATA = hashlib.sha256(b"independent-download-fixture").digest()
+        * 32768\nPROCS = {}\nLOGS = []\nPRIVATE_DIRS = set()\nHELPER_PIDS = set()\nHELPER_GROUPS = set()\nBACKEND_CONNECTIONS
+        = 0\nRESULT = {"scope": "isolated loopback, managed official Xray, no Internet retest", "profile": ARGS.profile, "fresh":
+        [], "recovery": [], "negative": {}}\n\n\nCOVERS = []\nEXTRA = []\nclass LocalCover:\n    def __init__(self, certificate,
+        key):\n        import ssl\n        self.tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)\n        self.tls.minimum_version
+        = ssl.TLSVersion.TLSv1_3\n        self.tls.set_alpn_protocols(["h2"])\n        self.tls.load_cert_chain(certificate,
+        key)\n        self.sock = socket.create_server(("127.0.0.1", 0))\n        self.port = self.sock.getsockname()[1]\n        self.sock.settimeout(.2)\n        self.stop
+        = threading.Event()\n        self.connections = 0\n        self.thread = threading.Thread(target=self.accept, daemon=True);
+        self.thread.start()\n    def accept(self):\n        while not self.stop.is_set():\n            try: conn, _ = self.sock.accept()\n            except
+        socket.timeout: continue\n            except OSError: return\n            self.connections += 1\n            threading.Thread(target=self.serve,
+        args=(conn,), daemon=True).start()\n    def serve(self, conn):\n        try:\n            conn.settimeout(5)\n            conn
+        = self.tls.wrap_socket(conn, server_side=True)\n            if readn(conn, 24) != b"PRI * HTTP/2.0\\r\\n\\r\\nSM\\r\\n\\r\\n":
+        return\n            conn.sendall(b"\\x00\\x00\\x00\\x04\\x00\\x00\\x00\\x00\\x00")\n            while True:\n                header
+        = readn(conn, 9); size = int.from_bytes(header[:3], "big"); kind, flags = header[3:5]; stream = int.from_bytes(header[5:],
+        "big") & 0x7fffffff\n                payload = readn(conn, size)\n                if kind == 4 and not flags & 1:
+        conn.sendall(b"\\x00\\x00\\x00\\x04\\x01\\x00\\x00\\x00\\x00")\n                if kind == 1:\n                    sid
+        = struct.pack("!I", stream)\n                    # HPACK static indexed :status 200, HEADERS END_HEADERS.\n                    conn.sendall(b"\\x00\\x00\\x01\\x01\\x04"
+        + sid + b"\\x88")\n                    body = b"controlled-local-reality-cover"\n                    conn.sendall(len(body).to_bytes(3,
+        "big") + b"\\x00\\x01" + sid + body)\n                    return\n        except (OSError, EOFError): pass\n        finally:
+        conn.close()\n    def close(self): self.stop.set(); self.sock.close(); self.thread.join(1)\n\ndef readn(conn, size):\n    out
+        = bytearray()\n    while len(out) < size:\n        b = conn.recv(size - len(out))\n        if not b:\n            raise
+        EOFError("short application response")\n        out.extend(b)\n    return bytes(out)\n\n\ndef backend(conn):\n    try:\n        with
+        conn:\n            conn.settimeout(15)\n            mode = readn(conn, 1)\n            size = struct.unpack("!I",
+        readn(conn, 4))[0]\n            if size > 2 * 1024 * 1024:\n                raise ValueError("oversized fixture")\n            if
+        mode == b"D":\n                conn.sendall(DATA[:size])\n            else:\n                payload = readn(conn,
+        size)\n                conn.sendall(payload if mode == b"E" else hashlib.sha256(payload).hexdigest().encode())\n    except
+        (OSError, EOFError):\n        pass\n\n\ndef serve(listener):\n    global BACKEND_CONNECTIONS\n    while True:\n        try:\n            conn,
+        _ = listener.accept()\n        except OSError:\n            return\n        BACKEND_CONNECTIONS += 1\n        threading.Thread(target=backend,
+        args=(conn,), daemon=True).start()\n\n\ndef app(mode=b"E", payload=None, timeout=3):\n    if payload is None:\n        payload
+        = os.urandom(32)\n    with socket.create_connection(("127.0.0.1", ENTRY), timeout=timeout) as conn:\n        conn.settimeout(timeout)\n        conn.sendall(mode
+        + struct.pack("!I", len(payload)))\n        if mode != b"D":\n            conn.sendall(payload)\n        expected
+        = DATA[:len(payload)] if mode == b"D" else (payload if mode == b"E" else hashlib.sha256(payload).hexdigest().encode())\n        if
+        readn(conn, len(expected)) != expected:\n            raise ValueError("application checksum/payload mismatch")\n    return
+        True\n\n\ndef start(role):\n    log = (ROOT / (role + ".log")).open("ab")\n    LOGS.append(log)\n    PROCS[role] =
+        subprocess.Popen([str(BIN / "backpack"), "-c", str(ROOT / (role + ".toml"))], stdout=log, stderr=log, start_new_session=True)\n\n\ndef
+        stop(role):\n    p = PROCS.pop(role)\n    p.terminate()\n    try:\n        p.wait(timeout=8)\n    except subprocess.TimeoutExpired:\n        os.killpg(p.pid,
+        signal.SIGKILL)\n        p.wait(timeout=5)\n        raise RuntimeError("engine did not stop gracefully")\n\n\ndef
+        helper(role):\n    p = PROCS[role]\n    if p.poll() is not None:\n        raise RuntimeError(role + " engine exited
+        unexpectedly")\n    # Go may fork from any OS thread; the leader\''s children file alone misses\n    # children of
+        its other threads even though they belong to this engine.\n    tasks = Path("/proc") / str(p.pid) / "task"\n    children
+        = set()\n    for task in tasks.iterdir():\n        try:\n            children.update((task / "children").read_text().split())\n        except
+        OSError:\n            pass\n    for child in children:\n        try:\n            args = (Path("/proc") / child /
+        "cmdline").read_bytes().decode().split("\\0")\n            if args[0] == str(BIN / "xray") and "-test" not in args:\n                cfg
+        = Path(args[-2] if not args[-1] else args[-1])\n                PRIVATE_DIRS.add(cfg.parent)\n                HELPER_PIDS.add(int(child))\n                HELPER_GROUPS.add(os.getpgid(int(child)))\n                if
+        cfg.stat().st_mode & 0o777 != 0o600 or cfg.parent.stat().st_mode & 0o777 != 0o700:\n                    raise RuntimeError("helper
+        credential file permissions are not private")\n                return int(child), cfg\n        except (OSError, UnicodeError):\n            pass\n    return
+        0, None\n\n\ndef ready(role, before=0, timeout=30):\n    end = time.monotonic() + timeout\n    while time.monotonic()
+        < end:\n        pid, _ = helper(role)\n        if pid and pid != before:\n            return pid\n        time.sleep(0.05)\n    raise
+        TimeoutError(role + " helper generation did not change")\n\n\ndef recovered(timeout=30):\n    end = time.monotonic()
+        + timeout\n    while time.monotonic() < end:\n        try:\n            app(timeout=min(2, max(0.1, end - time.monotonic())))\n            return\n        except
+        (OSError, EOFError):\n            time.sleep(0.1)\n    raise TimeoutError("application did not recover within 30 seconds")\n\n\ndef
+        certificate():\n    quiet = dict(stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, cwd=ROOT, check=True, timeout=20)\n    subprocess.run(["openssl",
+        "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", "ca.key", "-out", "ca.pem", "-days", "2", "-subj", "/CN=BackPack-local-pilot-CA",
+        "-addext", "basicConstraints=critical,CA:TRUE"], **quiet)\n    subprocess.run(["openssl", "req", "-newkey", "rsa:2048",
+        "-nodes", "-keyout", "server.key", "-out", "server.csr", "-subj", "/CN=audit.localhost"], **quiet)\n    (ROOT / "cert.ext").write_text("subjectAltName=DNS:audit.localhost,IP:127.0.0.1\\nbasicConstraints=CA:FALSE\\nextendedKeyUsage=serverAuth\\n")\n    subprocess.run(["openssl",
+        "x509", "-req", "-in", "server.csr", "-CA", "ca.pem", "-CAkey", "ca.key", "-CAcreateserial", "-days", "2", "-out",
+        "server.pem", "-extfile", "cert.ext"], **quiet)\n\n\ndef socks(conn, port):\n    conn.settimeout(5)\n    conn.sendall(b"\\x05\\x01\\x00")\n    if
+        readn(conn, 2) != b"\\x05\\x00":\n        raise ValueError("helper SOCKS negotiation failed")\n    conn.sendall(b"\\x05\\x01\\x00\\x01\\x7f\\x00\\x00\\x01"
+        + struct.pack("!H", port))\n    reply = readn(conn, 4)\n    if reply[0] != 5:\n        raise ValueError("invalid SOCKS
+        response")\n    return reply[1]\n\n\ndef main():\n    import argparse\n    RESULT["binary_sha256"] = {name: hashlib.sha256((BIN
+        / name).read_bytes()).hexdigest() for name in ("backpack", "xray")}\n    certificate()\n    version = subprocess.check_output([str(BIN
+        / "xray"), "version"], text=True).splitlines()[0]\n    if "26.3.27" not in version: raise RuntimeError("expected official
+        Xray26.3.27")\n    RESULT["helper_version"] = version\n    keys = subprocess.check_output([str(BIN / "xray"), "x25519"],
+        text=True)\n    private = re.search(r"PrivateKey:\\s*(\\S+)", keys)[1]\n    public = re.search(r"Password \\(PublicKey\\):\\s*(\\S+)",
+        keys)[1]\n    UUID, SID, NAME, XPATH = "a17c3bc5-8b44-451f-8f43-df6c342e09bc", "a13e29b451d0c7ef", "audit.localhost",
+        "/backpack-managed-audit"\n    token = os.urandom(24).hex()\n    quote = lambda value: json.dumps(str(value))\n    def
+        fields(values): return "".join(key + " = " + quote(value) + "\\n" for key, value in values.items())\n    common =
+        {"binary": BIN / "xray", "mode": ARGS.profile, "uuid": UUID, "server_name": NAME}\n    server = {**common, "listen":
+        "127.0.0.1:" + str(PUBLIC)}\n    client = {**common, "server": "127.0.0.1:" + str(PUBLIC)}\n    if ARGS.profile ==
+        "xhttp":\n        server.update(path=XPATH, certificate=ROOT / "server.pem", key=ROOT / "server.key")\n        client.update(path=XPATH,
+        ca_file=ROOT / "ca.pem")\n    else:\n        cover = LocalCover(ROOT / "server.pem", ROOT / "server.key")\n        COVERS.append(cover)\n        server.update(private_key=private,
+        target="127.0.0.1:" + str(cover.port), short_id=SID)\n        client.update(public_key=public, short_id=SID)\n    configs
+        = {\n      "iran": "[server]\\ntransport = \\"tcp\\"\\nbind_addr = " + quote("127.0.0.1:" + str(REVERSE)) + "\\ntoken
+        = " + quote(token) + "\\nports = [" + quote("127.0.0.1:" + str(ENTRY) + "=127.0.0.1:" + str(BACKEND)) + "]\\nskip_optz
+        = true\\n[server.xray]\\n" + fields(server),\n      "outside": "[client]\\ntransport = \\"tcp\\"\\nremote_addr = "
+        + quote("127.0.0.1:" + str(REVERSE)) + "\\ntoken = " + quote(token) + "\\nconnection_pool = 4\\nskip_optz = true\\n[client.xray]\\n"
+        + fields(client)\n    }\n    for role, text in configs.items():\n        (ROOT / (role + ".toml")).write_text(text,
+        encoding="utf-8")\n        (ROOT / (role + ".toml")).chmod(0o600)\n        subprocess.run([str(BIN / "backpack"),
+        "check", "-c", str(ROOT / (role + ".toml"))], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=20)\n    listener
+        = socket.create_server(("127.0.0.1", BACKEND))\n    threading.Thread(target=serve, args=(listener,), daemon=True).start()\n    start("iran")\n    ready("iran")\n    start("outside")\n    ready("outside")\n    recovered()\n    import
+        ssl\n    tls = ssl.create_default_context(cafile=str(ROOT / "ca.pem"))\n    tls.set_alpn_protocols(["h2"])\n    with
+        socket.create_connection(("127.0.0.1", PUBLIC), timeout=3) as raw:\n        with tls.wrap_socket(raw, server_hostname="audit.localhost")
+        as secure:\n            RESULT["negotiated_alpn"] = secure.selected_alpn_protocol()\n            if RESULT["negotiated_alpn"]
+        != "h2": raise RuntimeError("TLS did not negotiate HTTP/2")\n    response = subprocess.run(["curl", "--silent", "--show-error",
+        "--http2", "--cacert", str(ROOT / "ca.pem"), "--resolve", "audit.localhost:" + str(PUBLIC) + ":127.0.0.1", "--noproxy",
+        "*", "--max-time", "5", "--output", str(ROOT / "probe-response"), "--write-out", "%{http_version} %{http_code}", "https://audit.localhost:"
+        + str(PUBLIC) + "/"], capture_output=True, text=True, timeout=7)\n    RESULT["unauthenticated_probe"] = {"curl_exit":
+        response.returncode, "http_version_status": response.stdout.strip(), "response_bytes": (ROOT / "probe-response").stat().st_size
+        if (ROOT / "probe-response").exists() else 0}\n    if response.returncode or not response.stdout.startswith("2 "):
+        raise RuntimeError("unauthenticated HTTP/2 probe did not complete")\n    for _ in range(3):\n        begin = time.monotonic()\n        app()\n        RESULT["fresh"].append({"ok":
+        True, "elapsed_ms": round((time.monotonic() - begin) * 1000, 2)})\n    upload = os.urandom(1024 * 1024)\n    app(b"U",
+        upload, timeout=15)\n    app(b"D", DATA, timeout=15)\n    RESULT["files"] = {"bytes_each_direction": len(DATA), "upload_sha256":
+        hashlib.sha256(upload).hexdigest(), "download_sha256": hashlib.sha256(DATA).hexdigest(), "correct": True}\n    import
+        concurrent.futures\n    def concurrent_files(index):\n        payload = hashlib.sha256(str(index).encode()).digest()
+        * 8192\n        app(b"U", payload, timeout=15)\n        app(b"D", payload, timeout=15)\n        return True\n    begin
+        = time.monotonic()\n    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as workers:\n        if not all(workers.map(concurrent_files,
+        range(8))): raise RuntimeError("concurrent checksum transfer failed")\n    RESULT["concurrent_files"] = {"flows":
+        8, "bytes_each_direction_per_flow": 262144, "seconds": round(time.monotonic() - begin, 3), "ok": True}\n    for role
+        in ("outside", "iran"):\n        for kind in ("helper-crash", "config-generation", "engine-restart"):\n            before,
+        _ = helper(role)\n            parent_before = PROCS[role].pid\n            begin = time.monotonic()\n            if
+        kind == "helper-crash":\n                os.kill(before, signal.SIGKILL)\n            elif kind == "config-generation":\n                cfg
+        = ROOT / (role + ".toml")\n                text = cfg.read_text().replace("skip_optz = true", "skip_optz = true\\nkeepalive_period
+        = 76")\n                cfg.write_text(text)\n            else:\n                stop(role)\n                start(role)\n            after
+        = ready(role, before)\n            recovered(timeout=max(0.1, 30 - (time.monotonic() - begin)))\n            recovery_seconds
+        = time.monotonic() - begin\n            for _ in range(3): app()\n            app(b"U", upload, timeout=15)\n            app(b"D",
+        DATA, timeout=15)\n            RESULT["recovery"].append({"role": role, "kind": kind, "helper_pid_changed": after
+        != before, "engine_pid_changed": PROCS[role].pid != parent_before, "seconds": round(recovery_seconds, 3), "verified_at_seconds":
+        round(time.monotonic() - begin, 3), "ok": True})\n    _, config_file = helper("outside")\n    proxy = json.loads(config_file.read_text())\n    _,
+        server_file = helper("iran")\n    server_proxy = json.loads(server_file.read_text())\n    for role, config in (("client",
+        proxy), ("server", server_proxy)):\n        if config["outbounds"][0]["protocol"] != "blackhole": raise RuntimeError("default
+        route is not blocked")\n        routing = config["routing"]\n        rule = routing["rules"][0]\n        if len(routing["rules"])
+        != 1 or routing["domainStrategy"] != "AsIs" or rule["ip"] != ["127.0.0.1/32"] or rule["port"] != str(REVERSE) or rule["network"]
+        != "tcp": raise RuntimeError("generated helper route permits another target")\n        if role == "server" and config["outbounds"][1]["settings"]["redirect"]
+        != "127.0.0.1:" + str(REVERSE): raise RuntimeError("server outbound destination is not fixed")\n        if ARGS.profile
+        == "reality":\n            user = config["outbounds"][1]["settings"]["vnext"][0]["users"][0] if role == "client" else
+        config["inbounds"][0]["settings"]["clients"][0]\n            if user.get("flow") != "xtls-rprx-vision": raise RuntimeError("REALITY
+        does not use Vision")\n    RESULT["generated_routing_contract"] = True\n    socks_addr = urllib.parse.urlsplit("socks://"
+        + proxy["inbounds"][0]["listen"] + ":" + str(proxy["inbounds"][0]["port"])).netloc\n    host, port = socks_addr.rsplit(":",
+        1)\n    fixture = os.urandom(32)\n    frame = b"E" + struct.pack("!I", len(fixture)) + fixture\n    with socket.create_connection(("127.0.0.1",
+        BACKEND), timeout=3) as direct:\n        direct.sendall(frame)\n        if readn(direct, len(fixture)) != fixture:\n            raise
+        RuntimeError("negative-target backend was not available")\n    # The official client can acknowledge SOCKS before
+        its upstream CONNECT.\n    # Require denied application payload, not a nonzero preliminary reply.\n    with socket.create_connection((host,
+        int(port)), timeout=3) as conn:\n        if socks(conn, BACKEND) != 0:\n            rejected = True\n        else:\n            conn.sendall(frame)\n            conn.settimeout(2)\n            try:\n                rejected
+        = readn(conn, len(fixture)) != fixture\n            except (OSError, EOFError):\n                rejected = True\n        RESULT["negative"]["other_connect_target_rejected"]
+        = rejected\n    # Bypass the generated client allow-list to exercise the managed server.\n    alternate = socket.create_server(("127.0.0.1",
+        0)); alternate_port = alternate.getsockname()[1]; alternate.close()\n    altered = json.loads(json.dumps(proxy))\n    altered["inbounds"][0]["port"]
+        = alternate_port\n    altered["routing"]["rules"][0]["port"] = str(BACKEND)\n    altered_file = ROOT / "server-restriction-client.json"\n    altered_file.write_text(json.dumps(altered));
+        altered_file.chmod(0o600)\n    subprocess.run([str(BIN / "xray"), "run", "-test", "-c", str(altered_file)], check=True,
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15)\n    altered_log = (ROOT / "server-restriction-client.log").open("wb");
+        LOGS.append(altered_log)\n    altered_proc = subprocess.Popen([str(BIN / "xray"), "run", "-c", str(altered_file)],
+        stdout=altered_log, stderr=altered_log, start_new_session=True)\n    EXTRA.append(altered_proc)\n    deadline = time.monotonic()
+        + 5\n    while True:\n        try:\n            conn = socket.create_connection(("127.0.0.1", alternate_port), timeout=.2);
+        conn.close(); break\n        except OSError:\n            if time.monotonic() > deadline: raise TimeoutError("independent
+        Xray client did not start")\n            time.sleep(.05)\n    count_before = BACKEND_CONNECTIONS\n    with socket.create_connection(("127.0.0.1",
+        alternate_port), timeout=3) as conn:\n        if socks(conn, BACKEND) != 0:\n            rejected = True\n        else:\n            conn.sendall(frame);
+        conn.settimeout(2)\n            try: rejected = readn(conn, len(fixture)) != fixture\n            except (OSError,
+        EOFError): rejected = True\n    time.sleep(.15)\n    RESULT["negative"]["server_denied_alternate_destination"] = rejected
+        and BACKEND_CONNECTIONS == count_before\n    altered_proc.terminate(); altered_proc.wait(timeout=5)\n    cfg = ROOT
+        / "outside.toml"\n    original = cfg.read_text()\n    before, _ = helper("outside")\n    cfg.write_text(re.sub(r\''^uuid
+        = .+$\'', \''uuid = "99e4b8df-642d-4a2f-b35b-7a7c73546b62"\'', original, flags=re.M))\n    ready("outside", before)\n    time.sleep(1)\n    try:\n        app(timeout=2)\n        RESULT["negative"]["wrong_vless_uuid_rejected"]
+        = False\n    except (OSError, EOFError):\n        RESULT["negative"]["wrong_vless_uuid_rejected"] = True\n    before,
+        _ = helper("outside")\n    cfg.write_text(original)\n    ready("outside", before)\n    recovered()\n    before, _
+        = helper("outside")\n    cfg.write_text(original.replace(\''token = "\'', \''token = "incorrect-\''))\n    ready("outside",
+        before)\n    time.sleep(1)\n    try:\n        app(timeout=2)\n        RESULT["negative"]["wrong_reverse_token_rejected"]
+        = False\n    except (OSError, EOFError):\n        RESULT["negative"]["wrong_reverse_token_rejected"] = True\n    before,
+        _ = helper("outside")\n    cfg.write_text(original)\n    ready("outside", before)\n    recovered()\n    if ARGS.profile
+        == "xhttp":\n        subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", str(ROOT
+        / "wrong-ca.key"), "-out", str(ROOT / "wrong-ca.pem"), "-days", "2", "-subj", "/CN=unrelated-audit-CA"], check=True,
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=20)\n        negative_configs = {"wrong_ca": original.replace(str(ROOT
+        / "ca.pem"), str(ROOT / "wrong-ca.pem")), "wrong_path": original.replace(XPATH, "/wrong-private-path")}\n    else:\n        other_keys
+        = subprocess.check_output([str(BIN / "xray"), "x25519"], text=True)\n        other_public = re.search(r"Password \\(PublicKey\\):\\s*(\\S+)",
+        other_keys)[1]\n        negative_configs = {"wrong_short_id": original.replace(SID, "ee19a017ced072bc"), "wrong_reality_key":
+        original.replace(public, other_public)}\n    for label, text in negative_configs.items():\n        before, _ = helper("outside")\n        cfg.write_text(text)\n        ready("outside",
+        before)\n        time.sleep(1)\n        try:\n            app(timeout=2)\n            RESULT["negative"][label + "_rejected"]
+        = False\n        except (OSError, EOFError):\n            RESULT["negative"][label + "_rejected"] = True\n        before,
+        _ = helper("outside")\n        cfg.write_text(original)\n        ready("outside", before)\n        recovered()\n    if
+        not all(RESULT["negative"].values()):\n        raise RuntimeError("negative access restriction failed")\n    listener.close()\n\n\ntry:\n    main()\n    RESULT["ok"]
+        = True\nexcept Exception as exc:\n    RESULT["ok"] = False\n    RESULT["error"] = type(exc).__name__ + ": " + str(exc)\nfinally:\n    for
+        process in EXTRA:\n        if process.poll() is None:\n            process.terminate()\n            try: process.wait(timeout=5)\n            except
+        subprocess.TimeoutExpired: os.killpg(process.pid, signal.SIGKILL); process.wait(timeout=5)\n    for cover in COVERS:
+        cover.close()\n    for role in list(PROCS):\n        try:\n            stop(role)\n        except Exception as exc:\n            RESULT["cleanup_error"]
+        = str(exc)\n            RESULT["ok"] = False\n    for log in LOGS:\n        log.close()\n    RESULT["helper_private_dirs_removed"]
+        = all(not p.exists() for p in PRIVATE_DIRS)\n    if not RESULT["helper_private_dirs_removed"]:\n        RESULT["ok"]
+        = False\n    deadline = time.monotonic() + 3\n    while time.monotonic() < deadline and any((Path("/proc") / str(pid)).exists()
+        for pid in HELPER_PIDS): time.sleep(0.05)\n    RESULT["helper_pids_removed"] = all(not (Path("/proc") / str(pid)).exists()
+        for pid in HELPER_PIDS)\n    living = []\n    for proc in Path("/proc").iterdir():\n        if proc.name.isdigit():\n            try:\n                stat
+        = (proc / "stat").read_text().rsplit(")", 1)[1].split()\n                if int(stat[2]) in HELPER_GROUPS and stat[0]
+        != "Z": living.append(int(proc.name))\n            except (OSError, ValueError, IndexError): pass\n    RESULT["living_helper_group_members"]
+        = living\n    if not RESULT["helper_pids_removed"] or living:\n        RESULT["ok"] = False\n        for group in
+        HELPER_GROUPS:\n            try: os.killpg(group, signal.SIGKILL)\n            except ProcessLookupError: pass\n    RESULT["ports_released"]
+        = True\n    for port in (PUBLIC, REVERSE, ENTRY):\n        try:\n            test = socket.create_server(("127.0.0.1",
+        port)); test.close()\n        except OSError: RESULT["ports_released"] = False; RESULT["ok"] = False\n    (ROOT /
+        "local-check.json").write_text(json.dumps(RESULT, indent=2) + "\\n")\n    print(json.dumps(RESULT), flush=True)\nsys.exit(0
+        if RESULT.get("ok") else 1)\n'',encoding=''utf-8'')
+
+        PY'
+    - run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        s=Path(''install.sh'').read_text()
+
+        s=s.split(''# Optional protocol helpers:'',1)[1].split(''# End optional protocol helpers.'',1)[0]
+
+        s=s[s.index(''helpers_validate()''):]
+
+        s=s.replace(''root="/usr/local/lib/backpack/helpers/$helper_tool"'',''root="$BP_HELPER_TEST_ROOT/$helper_tool"'')
+
+        Path(''/tmp/helper-functions.sh'').write_text(s)
+
+        PY
+
+        source /tmp/helper-functions.sh
+
+        info(){ printf ''%s\n'' "$*"; }
+
+        err(){ printf ''%s\n'' "$*" >&2; }
+
+        fetch(){ curl -fSL --retry 2 --connect-timeout 15 --max-time 180 "$1" -o "$2"; }
+
+        export BP_HELPER_TEST_ROOT=$(mktemp -d /tmp/backpack-helper-install.XXXXXX)
+
+        ARCH=amd64; BP_HELPERS=naive,xray
+
+        helpers_validate
+
+        install_helpers
+
+        naive="$BP_HELPER_TEST_ROOT/naive/v154.0.8037.49-4-amd64/naive"
+
+        sing="$BP_HELPER_TEST_ROOT/sing-box/v1.14.2-amd64/sing-box"
+
+        xray="$BP_HELPER_TEST_ROOT/xray/v26.3.27-amd64/xray"
+
+        "$naive" --version
+
+        "$sing" version
+
+        "$xray" version
+
+        before=$(sha256sum "$naive")
+
+        fetch(){ return 1; }
+
+        install_helper naive
+
+        test "$(sha256sum "$naive")" = "$before"
+
+        BP_HELPERS=wrong; if helpers_validate; then exit 1; fi
+
+        ARCH=s390x; BP_HELPERS=naive; if helpers_validate; then exit 1; fi
+
+        ARCH=amd64; BP_HELPERS=; install_helpers
+
+        # Corrupt/download failures are checked in a separate fresh owned directory.
+
+        original="$BP_HELPER_TEST_ROOT"; export BP_HELPER_TEST_ROOT=$(mktemp -d /tmp/backpack-helper-failed.XXXXXX)
+
+        fetch(){ printf corrupt > "$2"; }
+
+        if install_helper naive; then exit 1; fi
+
+        test ! -e "$BP_HELPER_TEST_ROOT/naive/v154.0.8037.49-4-amd64"
+
+        test -z "$(find "$BP_HELPER_TEST_ROOT" -name ''.stage.*'' -print)"
+
+        fetch(){ return 1; }
+
+        if install_helper xray; then exit 1; fi
+
+        test ! -e "$BP_HELPER_TEST_ROOT/xray/v26.3.27-amd64"
+
+        test -z "$(find "$BP_HELPER_TEST_ROOT" -name ''.stage.*'' -print)"
+
+        export BP_HELPER_TEST_ROOT="$original"
+
+        go build -o /tmp/backpack-protocol .
+
+        python3 /tmp/real_naive_linux.py --backpack /tmp/backpack-protocol --naive "$naive" --sing-box "$sing" --output /tmp/backpack-real-naive
+
+
+        export BACKPACK_XRAY_BINARY="$xray"
+
+        go test ./internal/tunnel/naive -run TestExternal -race -count=2 -v -timeout 5m
+
+        python3 /tmp/real_xray_managed_linux.py --backpack /tmp/backpack-protocol --xray "$xray" --output /tmp/backpack-real-xray
+
+        '
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: managed-xray-results
+        path: /tmp/backpack-real-xray/**/*.json
+        if-no-files-found: ignore
+  xray-suite:
+    name: Managed Xray and Naive complete suite and races
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: de48b2aadb42683ee5935226a520f58c2ce7b3c4
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - *id001
+    - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
+
+        sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d
+
+        go test ./... -timeout 15m
+
+        go test ./cmd ./config ./internal/tunnel/naive ./internal/manage/tunnelspec ./internal/manage/health ./internal/client
+        ./internal/server -race -timeout 12m
+
+        go vet ./...
+
+        bash -n install.sh'
