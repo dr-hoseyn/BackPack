@@ -1,0 +1,302 @@
+name: Proxy TCP budget receive crypto scratch and UDP opening ownership
+permissions:
+  contents: read
+'on':
+  push:
+    branches:
+    - codex/validate-proxy-crypto-publication
+jobs:
+  baseline:
+    name: Reproduce proxy handshake and configured source DNS stalls
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 50d05f0ec686cc28d87d8d7a631939bfce4e53e1
+        fetch-depth: 0
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - &id001
+      run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/utils/network/runtime_audit_socks_budget_test.go'').write_text(''package network\nimport("context";"io";"net";"testing";"time")\nfunc
+        TestRuntimeAuditConfiguredSOCKSDialBudget(t *testing.T){\n ln,err:=net.Listen("tcp","127.0.0.1:0");if err!=nil{t.Fatal(err)};defer
+        ln.Close()\n accepted:=make(chan net.Conn,1);greeting:=make(chan struct{});serverDone:=make(chan struct{})\n go func(){defer
+        close(serverDone);c,e:=ln.Accept();if e!=nil{return};accepted<-c;defer c.Close();buf:=make([]byte,3);if _,e=io.ReadFull(c,buf);e==nil{close(greeting);io.Copy(io.Discard,c)}}()\n
+        ctx,cancel:=context.WithCancel(context.Background());defer cancel();done:=make(chan error,1)\n started:=time.Now();go
+        func(){c,e:=TcpDialerVia(ctx,&Outbound{Proxy:&ProxyConfig{Scheme:"socks5",Address:ln.Addr().String()}},"tunnel.invalid:9000",40*time.Millisecond,time.Second,true,1,0,0,0);if
+        c!=nil{c.Close()};done<-e}()\n select{case<-greeting:case<-time.After(time.Second):t.Fatal("actual SOCKS greeting
+        missing")}\n select{case e:=<-done:if e==nil{t.Error("silent SOCKS proxy accepted")};t.Logf("dial ended after %s",time.Since(started));case<-time.After(250*time.Millisecond):t.Error("SOCKS
+        negotiation exceeded configured 40ms TCP dial budget");cancel();select{case<-done:case<-time.After(time.Second):t.Error("context
+        did not terminate stalled proxy")}}\n select{case c:=<-accepted:c.Close();default:};select{case<-serverDone:case<-time.After(time.Second):t.Error("server
+        not joined")}\n}\n'',encoding=''utf-8'')
+
+        PY
+
+        gofmt -w internal/utils/network/runtime_audit_socks_budget_test.go'
+    - &id002
+      run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/utils/network/runtime_audit_source_dns_test.go'').write_text(''package network\nimport("context";"errors";"net";"sync";"testing";"time")\nfunc
+        TestRuntimeAuditSourceDNSBudget(t *testing.T){\n for _,cancelDial:=range []bool{true,false}{\n t.Run(map[bool]string{true:"cancel",false:"timeout"}[cancelDial],func(t
+        *testing.T){\n old:=net.DefaultResolver;release:=make(chan struct{});started:=make(chan struct{},1);var once sync.Once;unblock:=func(){once.Do(func(){close(release)})};net.DefaultResolver=&net.Resolver{PreferGo:true,Dial:func(ctx
+        context.Context,_,_ string)(net.Conn,error){select{case started<-struct{}{}:default:};select{case<-ctx.Done():return
+        nil,ctx.Err();case<-release:return nil,errors.New("audit release")}}};defer func(){unblock();net.DefaultResolver=old}()\n
+        ctx,cancel:=context.WithCancel(context.Background());defer cancel();timeout:=40*time.Millisecond;if cancelDial{timeout=5*time.Second};done:=make(chan
+        error,1)\n go func(){c,e:=TcpDialerVia(ctx,&Outbound{LocalAddr:"stalled-source.invalid"},"127.0.0.1:9",timeout,time.Second,true,1,0,0,0);if
+        c!=nil{c.Close()};done<-e}()\n select{case<-started:case<-time.After(time.Second):t.Fatal("actual source DNS did not
+        start")};if cancelDial{cancel()}\n select{case<-done:case<-time.After(250*time.Millisecond):t.Error("source DNS ignores
+        TCP context/configured dial timeout");unblock();select{case<-done:case<-time.After(time.Second):t.Error("source DNS
+        worker not joined")}}\n })}\n}\n'',encoding=''utf-8'')
+
+        PY
+
+        gofmt -w internal/utils/network/runtime_audit_source_dns_test.go'
+    - run: 'if go test ./internal/utils/network -run "TestRuntimeAuditConfiguredSOCKSDialBudget|TestRuntimeAuditSourceDNSBudget"
+        -count=1 -v -timeout 1m > /tmp/proxy.log 2>&1; then cat /tmp/proxy.log; exit 1; fi
+
+        cat /tmp/proxy.log
+
+        grep -q "SOCKS negotiation exceeded configured" /tmp/proxy.log
+
+        grep -q "source DNS ignores TCP context" /tmp/proxy.log'
+  proxy:
+    name: Exact shared TCP source DNS socket and proxy attempt budget
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: eab0fb4372d22cb492ae8bf2bd48aaeda7edc132
+        fetch-depth: 0
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - run: 'go test ./internal/utils/network -run "TestProxyHandshakeRespectsDialBudget|TestProxyDialDeadlineIsClearedAfterSuccess|TestTCPDialBudgetIncludesSourceDNS|TestTcpDialerVia|TestLocalAddr"
+        -race -count=5 -v -timeout 5m
+
+        go test ./internal/utils/network ./internal/socks -race -timeout 15m
+
+        go vet ./internal/utils/network ./internal/socks'
+  admission:
+    name: Exact opening UDP packet remains safe during concurrent shutdown
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 2c164850fbbd4fb995415eb42fb8d2d18428a30c
+        fetch-depth: 0
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - &id004
+      run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/server/transport/runtime_audit_udp_first_packet_test.go'').write_text(''package transport\n\nimport
+        (\n\t"context"\n\t"github.com/sirupsen/logrus"\n\t"net"\n\t"strings"\n\t"sync/atomic"\n\t"testing"\n\t"time"\n)\n\ntype
+        runtimeAuditUDPAdmissionHook struct {\n\tcancel   context.CancelFunc\n\tlimits   *limiter\n\tobserved chan struct{}\n\tonce     atomic.Bool\n}\n\nfunc
+        (*runtimeAuditUDPAdmissionHook) Levels() []logrus.Level { return logrus.AllLevels }\nfunc (h *runtimeAuditUDPAdmissionHook)
+        Fire(entry *logrus.Entry) error {\n\tif strings.HasPrefix(entry.Message, "accepted UDP connection from ") && h.once.CompareAndSwap(false,
+        true) {\n\t\t// Pause only at the existing production publication/first-send boundary.\n\t\th.cancel()\n\t\tuntil
+        := time.Now().Add(time.Second)\n\t\tfor h.limits.active.Load() != 0 && time.Now().Before(until) {\n\t\t\ttime.Sleep(time.Millisecond)\n\t\t}\n\t\tclose(h.observed)\n\t}\n\treturn
+        nil\n}\n\nfunc TestRuntimeAuditUDPFirstPacketSurvivesConcurrentGenerationEnd(t *testing.T) {\n\tctx, cancel := context.WithCancel(context.Background())\n\tdefer
+        cancel()\n\tlim := newLimiter(Limits{MaxConnections: 1})\n\tlog := quietLogger()\n\tlog.SetLevel(logrus.DebugLevel)\n\thook
+        := &runtimeAuditUDPAdmissionHook{cancel: cancel, limits: lim, observed: make(chan struct{})}\n\tlog.AddHook(hook)\n\ts
+        := &UdpTransport{config: &UdpConfig{ChannelSize: 1}, limits: lim, lifecycle: lifecycle{logger: log}}\n\tg := &udpGen{ctx:
+        ctx, tunnelChannel: make(chan *TunnelUDPConn), reqNewConnChan: make(chan struct{}, 1)}\n\taddr := freeAddr(t)\n\tdone
+        := make(chan struct{})\n\tgo func() { defer close(done); s.localListener(g, addr, "127.0.0.1:9") }()\n\tt.Cleanup(func()
+        {\n\t\tcancel()\n\t\tselect {\n\t\tcase <-done:\n\t\tcase <-time.After(time.Second):\n\t\t\tt.Error("listener leaked")\n\t\t}\n\t})\n\tpeer,
+        err := net.Dial("udp", addr)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tdefer peer.Close()\n\tuntil := time.Now().Add(3
+        * time.Second)\n\tfor time.Now().Before(until) {\n\t\tpeer.Write([]byte("first"))\n\t\tselect {\n\t\tcase <-hook.observed:\n\t\t\tif
+        lim.active.Load() != 0 {\n\t\t\t\tt.Fatal("generation shutdown did not release flow")\n\t\t\t}\n\t\t\ttime.Sleep(50
+        * time.Millisecond)\n\t\t\treturn\n\t\tcase <-time.After(10 * time.Millisecond):\n\t\t}\n\t}\n\tt.Fatal("listener
+        did not admit a flow")\n}\n'',encoding=''utf-8'')
+
+        PY
+
+        gofmt -w internal/server/transport/runtime_audit_udp_first_packet_test.go'
+    - run: 'go test ./internal/server/transport -run "TestUDPOpeningPacketCanRaceGenerationShutdown|TestRuntimeAuditUDPFirstPacket"
+        -race -count=10 -v -timeout 3m
+
+        go test ./internal/server/transport -race -timeout 15m
+
+        go vet ./internal/server/transport'
+  crypto:
+    name: Exact receive scratch authentication replay and allocation gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: b8005e9048ba11dbd05f5d7614cb9bf536cedfdf
+        fetch-depth: 0
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - &id003
+      run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/tunnel/l3/runtime_audit_open_header_test.go'').write_text(''package l3\nimport (\n "bytes"\n "errors"\n
+        "fmt"\n "sync"\n "sync/atomic"\n "testing"\n "unsafe"\n "github.com/flynn/noise"\n)\ntype auditOpenCipher struct {noise.Cipher;t
+        *testing.T}\nfunc(c auditOpenCipher)Decrypt(out []byte,n uint64,ad,ciphertext []byte)([]byte,error){\n if len(ciphertext)>=tagLen
+        && cap(out)>0 {\n  d:=uintptr(unsafe.Pointer(unsafe.SliceData(out)));a:=uintptr(unsafe.Pointer(unsafe.SliceData(ad)));end:=d+uintptr(len(ciphertext)-tagLen)\n  if
+        d<a+uintptr(len(ad))&&a<end {c.t.Fatal("AD overlaps plaintext destination")}\n }\n return c.Cipher.Decrypt(out,n,ad,ciphertext)\n}\nfunc
+        TestAuditOpenHeaderScratchCompatibility(t *testing.T){\n for _,size:=range []int{0,1,13,64,1400,9000,65535}{for _,kind:=range
+        []byte{typeData,typeProbe,typeProbeAck}{\n  t.Run(fmt.Sprintf("size%d-kind%d",size,kind),func(t *testing.T){\n   init,resp:=handshakePair(t,"open-compatibility-audit");resp.recv=auditOpenCipher{resp.recv,t}\n   payload:=bytes.Repeat([]byte{byte(size)},size)\n   packet,err:=init.sealKind(nil,payload,kind);if
+        err!=nil{t.Fatal(err)};h,body,err:=parseHeader(packet);if err!=nil {t.Fatal(err)}\n   for _,mutate:=range []int{0,1,2}{bad:=h;switch
+        mutate{case 0:bad.kind^=1;case 1:bad.session^=1;case 2:bad.counter=1<<50}\n    expectedAD:=bad.bytes();_,refErr:=resp.recv.Decrypt(nil,bad.counter,expectedAD[:],body)\n    if
+        _,err:=resp.open(make([]byte,0,size),bad,body);err==nil||refErr==nil {t.Fatal("mutated header authenticated")}\n   }\n   expectedAD:=h.bytes();expected,err:=resp.recv.Decrypt(nil,h.counter,expectedAD[:],body);if
+        err!=nil {t.Fatal(err)}\n   got,err:=resp.open(make([]byte,0,size),h,body);if err!=nil||!bytes.Equal(got,expected)||!bytes.Equal(got,payload){t.Fatalf("plaintext
+        mismatch err=%v",err)}\n   if _,err:=resp.open(nil,h,body);!errors.Is(err,errReplayed){t.Fatal("duplicate was not
+        refused")}\n  })\n }}\n}\nfunc TestAuditOpenScratchConcurrentReplayAndForgery(t *testing.T){\n init,resp:=handshakePair(t,"open-concurrent-audit")\n
+        const count=512\n packets:=make([][]byte,count);for i:=range count {var err error;packets[i],err=init.seal(nil,[]byte(fmt.Sprint(i)));if
+        err!=nil {t.Fatal(err)}}\n var wg sync.WaitGroup\n var accepted atomic.Int64\n for _,packet:=range packets {h,body,err:=parseHeader(packet);if
+        err!=nil {t.Fatal(err)}\n  for range 2 {wg.Add(1);go func(h header,b []byte){defer wg.Done();out,err:=resp.open(nil,h,b);if
+        err==nil {if len(out)==0 {t.Error("empty plaintext")};accepted.Add(1)}else if !errors.Is(err,errReplayed){t.Error(err)}}(h,body)}\n
+        }\n wg.Wait();if accepted.Load()!=count {t.Fatalf("accepted=%d want512 (each nonce once)",accepted.Load())}\n next,err:=init.seal(nil,[]byte("after
+        concurrency"));if err!=nil {t.Fatal(err)};h,body,_:=parseHeader(next)\n bad:=h;bad.counter=1<<50;if _,err:=resp.open(nil,bad,body);err==nil
+        {t.Fatal("forged high counter accepted")}\n out,err:=resp.open(nil,h,body);if err!=nil||string(out)!="after concurrency"
+        {t.Fatalf("forgery changed replay state: %v",err)}\n}\nfunc TestAuditOpeningOneAllocation(t *testing.T){\n init,resp:=handshakePair(t,"open-allocation-audit");const
+        n=201\n packets:=make([][]byte,n);for i:=range packets {var err error;packets[i],err=init.seal(nil,make([]byte,1400));if
+        err!=nil {t.Fatal(err)}}\n dst:=make([]byte,0,2048);i:=0\n got:=testing.AllocsPerRun(n-1,func(){h,body,_:=parseHeader(packets[i]);i++;out,err:=resp.open(dst,h,body);if
+        err!=nil {t.Fatal(err)};dst=out[:0]})\n if got!=1 {t.Fatalf("open allocs=%.0f expected1",got)}\n}\n'',encoding=''utf-8'')
+
+        PY
+
+        gofmt -w internal/tunnel/l3/runtime_audit_open_header_test.go'
+    - run: 'go test ./internal/tunnel/l3 -run "TestAuditOpen|TestThePacketPathStaysWithinBudget|TestEveryPacketPathBenchmarkIsGated"
+        -race -count=3 -v -timeout 5m
+
+        go test ./internal/tunnel/l3 -race -timeout 15m
+
+        go vet ./internal/tunnel/l3'
+  paired:
+    name: Same runner send and receive allocation baseline versus final
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: ff86354bcafbd054e7888e48343145323c9b2207
+        fetch-depth: 0
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - name: Original crypto benchmark
+      run: go test ./internal/tunnel/l3 -run "^$" -bench "Benchmark(SealFullMTU|SealInteractive|PacketRoundTrip)" -benchmem
+        -count=3 -benchtime=300ms
+    - name: Final crypto benchmark
+      run: 'git checkout b8005e9048ba11dbd05f5d7614cb9bf536cedfdf
+
+        go test ./internal/tunnel/l3 -run "^$" -bench "Benchmark(SealFullMTU|SealInteractive|PacketRoundTrip)" -benchmem -count=3
+        -benchtime=300ms'
+    - name: Repeated original benchmark
+      run: 'git checkout ff86354bcafbd054e7888e48343145323c9b2207
+
+        go test ./internal/tunnel/l3 -run "^$" -bench "Benchmark(SealFullMTU|SealInteractive|PacketRoundTrip)" -benchmem -count=3
+        -benchtime=300ms'
+    - name: Repeated final benchmark
+      run: 'git checkout b8005e9048ba11dbd05f5d7614cb9bf536cedfdf
+
+        go test ./internal/tunnel/l3 -run "^$" -bench "Benchmark(SealFullMTU|SealInteractive|PacketRoundTrip)" -benchmem -count=3
+        -benchtime=300ms'
+  combined:
+    name: Combined proxy cancellation crypto replay and UDP shutdown
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 1624292596c91556fc54838a9e06d405e9092519
+        fetch-depth: 0
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - *id001
+    - *id002
+    - *id003
+    - *id004
+    - run: 'go test ./internal/utils/network -run "TestRuntimeAuditConfiguredSOCKSDialBudget|TestRuntimeAuditSourceDNSBudget"
+        -race -count=5 -v -timeout 3m
+
+        go test ./internal/tunnel/l3 -run TestAuditOpen -race -count=3 -v -timeout 3m
+
+        go test ./internal/server/transport -run "TestUDPOpeningPacketCanRaceGenerationShutdown|TestRuntimeAuditUDPFirstPacket"
+        -race -count=10 -v -timeout 3m
+
+        rm internal/utils/network/runtime_audit_source_dns_test.go
+
+        go vet ./...
+
+        go run honnef.co/go/tools/cmd/staticcheck@latest ./...
+
+        go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+        go test ./internal/client/transport ./internal/server/transport ./internal/utils/handlers ./internal/utils/network
+        ./internal/socks ./internal/tunnel/direct ./internal/tunnel/l3 ./internal/web ./internal/metrics ./internal/tunnel/limits
+        -race -timeout 15m
+
+        GOOS=linux GOARCH=amd64 go build -o /tmp/backpack-amd64 .
+
+        GOOS=linux GOARCH=arm64 go build -o /tmp/backpack-arm64 .'
+  full:
+    name: Full combined tests races and unchanged coverage floors
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 1624292596c91556fc54838a9e06d405e9092519
+        fetch-depth: 0
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+    - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
+
+        sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d
+
+        go test ./... -timeout 20m
+
+        go test ./... -race -timeout 20m'
+    - name: Coverage
+      run: "go test ./... -coverpkg=./... -coverprofile=coverage.out -timeout 20m\ntotal=\"$(go tool cover -func=coverage.out\
+        \ | tail -1 | grep -oE '[0-9.]+')\"\necho \"total coverage: ${total}%\"\nfloor=50\nawk -v t=\"$total\" -v f=\"$floor\"\
+        \ 'BEGIN {\n  if (t+0 < f+0) {\n    printf \"coverage %.1f%% is below the floor of %d%%\\n\", t, f\n    exit 1\n \
+        \ }\n}'\n"
+    - name: Per-package coverage floors
+      run: "set -eu\ncheck() {\n  pkg=\"$1\"; floor=\"$2\"; why=\"$3\"\n  got=\"$(go tool cover -func=coverage.out \\\n  \
+        \        | grep \"^github.com/backpack/backpack/$pkg/\" \\\n          | awk '{gsub(/%/,\"\",$3); s+=$3; n++} END {if\
+        \ (n) printf \"%.1f\", s/n; else print \"0\"}')\"\n  echo \"  $pkg: ${got}% (floor ${floor}%) \u2014 $why\"\n  awk\
+        \ -v g=\"$got\" -v f=\"$floor\" -v p=\"$pkg\" 'BEGIN {\n    if (g+0 < f+0) { printf \"%s fell below its floor\\n\"\
+        , p; exit 1 }\n  }'\n}\ncheck internal/tunnel/l3      60 \"the layer-3 data path\"\ncheck internal/tunnel/chain  \
+        \ 80 \"transport fallback: a wrong decision here takes a tunnel down\"\ncheck internal/control        50 \"the fleet\
+        \ and the job runner\"\ncheck internal/cli            60 \"the scriptable surface; scripts depend on its exit codes\"\
+        \ncheck internal/node           40 \"the fleet RPC and the staged rollout\"\ncheck internal/metrics        60 \"what\
+        \ every other component reads to decide anything\"\ncheck internal/menu           25 \"the screens an operator actually\
+        \ meets this product through\"\ncheck internal/server/transport 85 \"the Iran side of every reverse transport: lifecycle,\
+        \ forwarder, control loop\"\ncheck internal/client/transport 83 \"the kharej side of every reverse transport\"\ncheck\
+        \ internal/controlwire    95 \"the control channel's wire, shared by both ends\"\ncheck internal/utils/acceptloop\
+        \ 90 \"accept backoff and the pre-authentication gate (ADR 0004)\"\ncheck internal/manage/tunnelspec 70 \"a tunnel's\
+        \ configuration: render, load, apply with revert\"\ncheck internal/manage/host    60 \"this machine's addresses, ports\
+        \ and certificates\"\ncheck internal/manage/health  40 \"tunnel health, the watchdog and the Health Check\"\n"
