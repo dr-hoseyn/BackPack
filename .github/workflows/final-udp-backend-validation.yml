@@ -55,8 +55,34 @@ jobs:
       with:
         go-version-file: go.mod
         cache: true
+    - &id002
+      run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/tunnel/l3/runtime_audit_udp_failure_classification_test.go'').write_text(''package l3\nimport("context";"errors";"net";"sync";"testing";"time")\ntype
+        auditUDPClientWriteFailure struct{net.PacketConn}\nfunc(auditUDPClientWriteFailure)WriteTo([]byte,net.Addr)(int,error){return
+        0,errors.New("client reply socket failed")}\nfunc TestAuditLocalReplyWriteFailureDoesNotCoolBackend(t *testing.T){\n
+        addr:=echoUDP(t,"L:");conn,err:=net.Dial("udp",addr);if err!=nil {t.Fatal(err)};defer conn.Close()\n member:=&backendMember{};member.active.Add(1);flow:=&udpFlow{backend:conn.(*net.UDPConn),member:member};flow.touch()\n
+        var flows sync.Map;flows.Store("client",flow)\n forwarder:=&Forwarder{};forwarder.stats.active.Add(1)\n done:=make(chan
+        struct{});go func(){defer close(done);forwarder.pumpUDPReplies(context.Background(),&flows,"client",flow,auditUDPClientWriteFailure{},&net.UDPAddr{})}()\n
+        if _,err:=conn.Write([]byte("healthy"));err!=nil {t.Fatal(err)}\n select{case<-done:case<-time.After(time.Second):t.Fatal("reply
+        pump did not finish after local write failure")}\n if member.downUntil.Load()!=0 {t.Fatal("local client socket failure
+        cooled healthy backend")}\n}\nfunc TestAuditSilentUDPReadTimeoutDoesNotCoolBackend(t *testing.T){\n held,err:=net.ListenPacket("udp","127.0.0.1:0");if
+        err!=nil {t.Fatal(err)};defer held.Close()\n conn,err:=net.Dial("udp",held.LocalAddr().String());if err!=nil {t.Fatal(err)};defer
+        conn.Close()\n if _,err:=conn.Write([]byte("one way UDP"));err!=nil {t.Fatal(err)}\n conn.SetReadDeadline(time.Now().Add(20*time.Millisecond));_,err=conn.Read(make([]byte,128));if
+        err==nil {t.Fatal("silent backend replied")}\n member:=&backendMember{};flow:=&udpFlow{member:member};flow.noteBackendReadError(context.Background(),err)\n
+        if member.downUntil.Load()!=0 {t.Fatal("silent backend was cooled by read deadline")}\n ctx,cancel:=context.WithCancel(context.Background());cancel();flow.noteBackendReadError(ctx,errors.New("closed
+        during cancellation"))\n if member.downUntil.Load()!=0 {t.Fatal("cancellation cooled backend")}\n}\n'',encoding=''utf-8'')
+
+        PY
+
+        gofmt -w internal/tunnel/l3/runtime_audit_udp_failure_classification_test.go'
     - *id001
-    - run: 'go test ./internal/tunnel/l3 -run "TestAuditForwarderUDPDeadBackendIsCooled|TestUDPClientsSkipAnExplicitlyRefusedBackend|Test.*Backend|Test.*Cooldown"
+    - run: 'go test ./internal/tunnel/l3 -run "TestAuditLocalReplyWriteFailureDoesNotCoolBackend|TestAuditSilentUDPReadTimeoutDoesNotCoolBackend"
+        -race -count=3 -v -timeout 2m
+
+        go test ./internal/tunnel/l3 -run "TestAuditForwarderUDPDeadBackendIsCooled|TestUDPClientsSkipAnExplicitlyRefusedBackend|Test.*Backend|Test.*Cooldown"
         -race -count=3 -v -timeout 5m
 
         go test ./internal/tunnel/l3 -race -timeout 15m
@@ -75,8 +101,12 @@ jobs:
       with:
         go-version-file: go.mod
         cache: true
+    - *id002
     - *id001
-    - run: 'go test ./internal/tunnel/l3 -run "TestAuditForwarderUDPDeadBackendIsCooled|TestUDPClientsSkipAnExplicitlyRefusedBackend|Test.*Backend"
+    - run: 'go test ./internal/tunnel/l3 -run "TestAuditLocalReplyWriteFailureDoesNotCoolBackend|TestAuditSilentUDPReadTimeoutDoesNotCoolBackend"
+        -race -count=3 -v -timeout 2m
+
+        go test ./internal/tunnel/l3 -run "TestAuditForwarderUDPDeadBackendIsCooled|TestUDPClientsSkipAnExplicitlyRefusedBackend|Test.*Backend"
         -race -count=3 -v -timeout 5m
 
         go test ./internal/tunnel/l3 ./internal/tunnel/limits ./internal/client/transport ./internal/server/transport ./internal/utils/network
@@ -96,8 +126,12 @@ jobs:
       with:
         go-version-file: go.mod
         cache: true
+    - *id002
     - *id001
-    - run: 'go test ./internal/tunnel/l3 -run "TestAuditForwarderUDPDeadBackendIsCooled|TestUDPClientsSkipAnExplicitlyRefusedBackend|Test.*Backend"
+    - run: 'go test ./internal/tunnel/l3 -run "TestAuditLocalReplyWriteFailureDoesNotCoolBackend|TestAuditSilentUDPReadTimeoutDoesNotCoolBackend"
+        -race -count=3 -v -timeout 2m
+
+        go test ./internal/tunnel/l3 -run "TestAuditForwarderUDPDeadBackendIsCooled|TestUDPClientsSkipAnExplicitlyRefusedBackend|Test.*Backend"
         -race -count=3 -v -timeout 5m
 
         go vet ./...
