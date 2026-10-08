@@ -11,7 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: c31928a7733ed106d3fe5e712aca6b79cad1cfb5
+          ref: 06710b1f77fef05b4a23f48001dcb48340b1661d
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
@@ -33,7 +33,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: c31928a7733ed106d3fe5e712aca6b79cad1cfb5
+          ref: 06710b1f77fef05b4a23f48001dcb48340b1661d
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
@@ -65,3 +65,31 @@ jobs:
           GOOS=linux GOARCH=arm64 go build ./...
           sudo env "PATH=$PATH" BP_BUILD_FROM_SOURCE=1 BP_HELPERS=naive,xray bash ./install.sh
           BP_CONNTEST_HELPERS=1 go test ./internal/manage -run '^TestAConnectionTestOverLoopbackPassesEveryReverseTransport$' -race -count=1 -v -timeout 5m
+
+  websocket:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: 95011fb
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Reproduce incomplete-request shutdown on the previous server code
+        run: |
+          git restore --source=79b621ae6eab0d2b4dbb8ad4fa1ed2713d935af1 -- internal/server/transport/ws.go internal/server/transport/wsmux.go
+          if go test ./internal/server/transport -run '^TestWSTunnelShutdownClosesIncompleteRequests$' -count=1 -v -timeout 30s > /tmp/ws-regression.log 2>&1; then
+            cat /tmp/ws-regression.log
+            echo 'The shutdown regression did not reproduce' >&2
+            exit 1
+          fi
+          cat /tmp/ws-regression.log
+          grep -q "shutdown waited for the incomplete request's header timeout" /tmp/ws-regression.log
+          git restore --source=HEAD -- internal/server/transport/ws.go internal/server/transport/wsmux.go
+      - name: Verify WebSocket setup and shutdown under race
+        run: |
+          go test ./internal/server/transport -run '^TestWSTunnelShutdownClosesIncompleteRequests$' -race -count=10 -v -timeout 2m
+          go test ./internal/utils/network ./internal/server/transport ./internal/client/transport -race -timeout 8m
+          go vet ./internal/utils/network ./internal/server/transport ./internal/client/transport
