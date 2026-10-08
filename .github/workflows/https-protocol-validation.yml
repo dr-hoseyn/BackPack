@@ -42,3 +42,22 @@ jobs:
         with:
           name: backpack-conntest-linux-amd64
           path: /usr/local/bin/backpack
+  upstream:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: 2f138e04d10acbe51501c3628ed3985732868ec1
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: |
+          sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
+          go test ./internal/manage -run 'TestConnTest|TestTheTestSettingsFitOnePacket' -race -count=3 -v -timeout 5m
+          go test ./internal/spooftest ./internal/manage/... ./internal/tunnel/naive ./internal/tui ./cmd -short -race -timeout 8m
+          go vet ./internal/manage/... ./internal/spooftest ./internal/tunnel/naive ./cmd
+          GOOS=linux GOARCH=arm64 go build ./...
+          sudo env "PATH=$PATH" BP_BUILD_FROM_SOURCE=1 BP_HELPERS=naive,xray bash ./install.sh
+          BP_CONNTEST_HELPERS=1 go test ./internal/manage -run '^TestAConnectionTestOverLoopbackPassesEveryReverseTransport$' -race -count=1 -v -timeout 5m
