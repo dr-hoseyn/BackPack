@@ -233,6 +233,11 @@ jobs:
         go test ./... -timeout 20m
 
         go test ./... -race -timeout 20m'
+    - name: Coverage
+      run: "go test ./... -coverpkg=./... -coverprofile=coverage.out -timeout 20m\ntotal=\"$(go tool cover -func=coverage.out\
+        \ | tail -1 | grep -oE '[0-9.]+')\"\necho \"total coverage: ${total}%\"\nfloor=50\nawk -v t=\"$total\" -v f=\"$floor\"\
+        \ 'BEGIN {\n  if (t+0 < f+0) {\n    printf \"coverage %.1f%% is below the floor of %d%%\\n\", t, f\n    exit 1\n \
+        \ }\n}'\n"
     - name: Per-package coverage floors
       run: "set -eu\ncheck() {\n  pkg=\"$1\"; floor=\"$2\"; why=\"$3\"\n  got=\"$(go tool cover -func=coverage.out \\\n  \
         \        | grep \"^github.com/backpack/backpack/$pkg/\" \\\n          | awk '{gsub(/%/,\"\",$3); s+=$3; n++} END {if\
