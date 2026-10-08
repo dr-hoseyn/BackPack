@@ -3,7 +3,7 @@ permissions:
   contents: read
 on:
   push:
-    branches: [codex/validate-conntest-managed]
+    branches: [codex/validate-conntest-final]
 jobs:
   checks:
     runs-on: ubuntu-latest
@@ -11,7 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: 0c1a6d2504023352a98ec04b697b33c062cc2d82
+          ref: d9c61340b3f8122ddf9987e40de4060e233f044c
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
@@ -20,9 +20,10 @@ jobs:
           sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
           go test ./internal/manage -run 'TestConnTest|TestTheTestSettingsFitOnePacket' -race -count=3 -v -timeout 5m
           go test ./internal/spooftest -race -count=5 -timeout 2m
-          go test ./internal/manage/... ./internal/tunnel/naive ./internal/tui ./cmd -short -race -timeout 8m
-          go test ./... -timeout 12m
+          go test ./internal/tunnel/l3 ./internal/manage/... ./internal/tunnel/naive ./internal/tui ./cmd -short -race -timeout 8m
           go vet ./...
+          go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+          go run honnef.co/go/tools/cmd/staticcheck@latest ./...
           GOOS=linux GOARCH=arm64 go build ./...
   helpers:
     runs-on: ubuntu-latest
@@ -30,7 +31,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: 0c1a6d2504023352a98ec04b697b33c062cc2d82
+          ref: d9c61340b3f8122ddf9987e40de4060e233f044c
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
@@ -48,7 +49,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: 2d9e614d1c86f8707ae9206ecb72dc5e866f4301
+          ref: b0a6b24f306227bd17746a59cf47fd3cc72b00b0
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
@@ -58,6 +59,7 @@ jobs:
           go test ./internal/manage -run 'TestConnTest|TestTheTestSettingsFitOnePacket' -race -count=3 -v -timeout 5m
           go test ./internal/spooftest ./internal/manage/... ./internal/tunnel/naive ./internal/tui ./cmd -short -race -timeout 8m
           go vet ./internal/manage/... ./internal/spooftest ./internal/tunnel/naive ./cmd
+          go run honnef.co/go/tools/cmd/staticcheck@latest ./internal/manage/... ./internal/spooftest
           GOOS=linux GOARCH=arm64 go build ./...
           sudo env "PATH=$PATH" BP_BUILD_FROM_SOURCE=1 BP_HELPERS=naive,xray bash ./install.sh
           BP_CONNTEST_HELPERS=1 go test ./internal/manage -run '^TestAConnectionTestOverLoopbackPassesEveryReverseTransport$' -race -count=1 -v -timeout 5m
