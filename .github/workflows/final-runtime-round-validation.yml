@@ -1,0 +1,307 @@
+name: Final mutable pacing deadlines QUIC DNS and runtime integration
+permissions:
+  contents: read
+'on':
+  push:
+    branches:
+    - codex/validate-final-runtime-round
+jobs:
+  baseline_deadlines:
+    name: Reproduce socket deadlines failing to interrupt token waits
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 50d05f0ec686cc28d87d8d7a631939bfce4e53e1
+        fetch-depth: 0
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - &id001
+      run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/tunnel/limits/runtime_audit_deadline_test.go'').write_text(''package limits\nimport("context";"errors";"net";"os";"testing";"time";"sync/atomic";"golang.org/x/time/rate")\n\nfunc
+        TestRuntimeAuditPacingDeadline(t *testing.T) {\n for _, mode := range []string{"before", "during", "move", "clear"}
+        {\n  t.Run(mode, func(t *testing.T) {\n   left,right:=net.Pipe();defer right.Close()\n   bucket:=rate.NewLimiter(1,1);bucket.AllowN(time.Now(),1)\n   wrapped:=(&Limiter{bucket:bucket}).Wrap(context.Background(),left)\n   defer
+        wrapped.Close()\n   if mode=="before" {wrapped.SetWriteDeadline(time.Now().Add(30*time.Millisecond))}\n   if mode=="move"
+        {wrapped.SetWriteDeadline(time.Now().Add(2*time.Second))}\n   if mode=="clear" {wrapped.SetWriteDeadline(time.Now().Add(30*time.Millisecond))}\n   done:=make(chan
+        error,1);go func(){_,err:=wrapped.Write([]byte{1});done<-err}()\n   until:=time.Now().Add(time.Second);for bucket.Tokens()>-0.5&&time.Now().Before(until){time.Sleep(time.Millisecond)}\n   if
+        bucket.Tokens()>-0.5 {t.Fatal("pacing did not reserve token")}\n   if mode=="during"||mode=="move" {wrapped.SetWriteDeadline(time.Now().Add(30*time.Millisecond))}\n   if
+        mode=="clear" {\n    wrapped.SetWriteDeadline(time.Time{});read:=make(chan struct{});go func(){right.Read(make([]byte,1));close(read)}()\n    select{case
+        err:=<-done:if err!=nil{t.Errorf("cleared deadline returned %v",err)};case<-time.After(2*time.Second):t.Error("cleared
+        pacing never completed")};<-read;return\n   }\n   select {case err:=<-done:if !errors.Is(err,os.ErrDeadlineExceeded){t.Errorf("deadline
+        error=%v",err)};case<-time.After(250*time.Millisecond):t.Error("token wait ignored write deadline");wrapped.Close();<-done}\n  })\n
+        }\n}\n\ntype auditDeadlineWriteCounter struct{net.Conn;writes atomic.Int64}\nfunc(c *auditDeadlineWriteCounter)Write(p
+        []byte)(int,error){c.writes.Add(1);return c.Conn.Write(p)}\nfunc TestRuntimeAuditPacingReadAndRefund(t *testing.T){\n
+        t.Run("read",func(t *testing.T){\n left,right:=net.Pipe();defer right.Close();bucket:=rate.NewLimiter(1,1);bucket.AllowN(time.Now(),1);wrapped:=(&Limiter{bucket:bucket}).Wrap(context.Background(),left);defer
+        wrapped.Close();wrapped.SetReadDeadline(time.Now().Add(30*time.Millisecond))\n type result struct{n int;err error};done:=make(chan
+        result,1);go func(){n,e:=wrapped.Read(make([]byte,1));done<-result{n,e}}();writerDone:=make(chan struct{});go func(){right.Write([]byte{7});close(writerDone)}();<-writerDone\n
+        select{case r:=<-done:if r.n!=1||!errors.Is(r.err,os.ErrDeadlineExceeded){t.Errorf("consumed read n%d err%v",r.n,r.err)};case<-time.After(250*time.Millisecond):t.Error("read
+        pacing ignored its socket deadline");wrapped.Close();<-done}\n })\n t.Run("no-write-refund",func(t *testing.T){\n
+        left,right:=net.Pipe();defer right.Close();spy:=&auditDeadlineWriteCounter{Conn:left};bucket:=rate.NewLimiter(1,1);bucket.AllowN(time.Now(),1);wrapped:=(&Limiter{bucket:bucket}).Wrap(context.Background(),spy);defer
+        wrapped.Close();wrapped.SetWriteDeadline(time.Now().Add(30*time.Millisecond));done:=make(chan error,1);go func(){_,e:=wrapped.Write([]byte{7});done<-e}()\n
+        select{case e:=<-done:if !errors.Is(e,os.ErrDeadlineExceeded){t.Errorf("deadline err%v",e)};if spy.writes.Load()!=0{t.Errorf("expired
+        pacing invoked socket Write %d times",spy.writes.Load())};if tokens:=bucket.Tokens();tokens < -0.1{t.Errorf("expired
+        pending reservation was not refunded: tokens%g",tokens)};case<-time.After(250*time.Millisecond):t.Error("expired reservation
+        still blocked");wrapped.Close();<-done}\n })\n}\n'',encoding=''utf-8'')
+
+        PY
+
+        gofmt -w internal/tunnel/limits/runtime_audit_deadline_test.go'
+    - &id002
+      run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/server/transport/runtime_audit_deadline_test.go'').write_text(''package transport\nimport("context";"errors";"net";"os";"testing";"time";"sync/atomic";"golang.org/x/time/rate")\n\nfunc
+        TestRuntimeAuditPacingDeadline(t *testing.T) {\n for _, mode := range []string{"before", "during", "move", "clear"}
+        {\n  t.Run(mode, func(t *testing.T) {\n   left,right:=net.Pipe();defer right.Close()\n   bucket:=rate.NewLimiter(1,1);bucket.AllowN(time.Now(),1)\n   wrapped:=(&limiter{bucket:bucket}).wrap(context.Background(),left)\n   defer
+        wrapped.Close()\n   if mode=="before" {wrapped.SetWriteDeadline(time.Now().Add(30*time.Millisecond))}\n   if mode=="move"
+        {wrapped.SetWriteDeadline(time.Now().Add(2*time.Second))}\n   if mode=="clear" {wrapped.SetWriteDeadline(time.Now().Add(30*time.Millisecond))}\n   done:=make(chan
+        error,1);go func(){_,err:=wrapped.Write([]byte{1});done<-err}()\n   until:=time.Now().Add(time.Second);for bucket.Tokens()>-0.5&&time.Now().Before(until){time.Sleep(time.Millisecond)}\n   if
+        bucket.Tokens()>-0.5 {t.Fatal("pacing did not reserve token")}\n   if mode=="during"||mode=="move" {wrapped.SetWriteDeadline(time.Now().Add(30*time.Millisecond))}\n   if
+        mode=="clear" {\n    wrapped.SetWriteDeadline(time.Time{});read:=make(chan struct{});go func(){right.Read(make([]byte,1));close(read)}()\n    select{case
+        err:=<-done:if err!=nil{t.Errorf("cleared deadline returned %v",err)};case<-time.After(2*time.Second):t.Error("cleared
+        pacing never completed")};<-read;return\n   }\n   select {case err:=<-done:if !errors.Is(err,os.ErrDeadlineExceeded){t.Errorf("deadline
+        error=%v",err)};case<-time.After(250*time.Millisecond):t.Error("token wait ignored write deadline");wrapped.Close();<-done}\n  })\n
+        }\n}\n\ntype auditDeadlineWriteCounter struct{net.Conn;writes atomic.Int64}\nfunc(c *auditDeadlineWriteCounter)Write(p
+        []byte)(int,error){c.writes.Add(1);return c.Conn.Write(p)}\nfunc TestRuntimeAuditPacingReadAndRefund(t *testing.T){\n
+        t.Run("read",func(t *testing.T){\n left,right:=net.Pipe();defer right.Close();bucket:=rate.NewLimiter(1,1);bucket.AllowN(time.Now(),1);wrapped:=(&limiter{bucket:bucket}).wrap(context.Background(),left);defer
+        wrapped.Close();wrapped.SetReadDeadline(time.Now().Add(30*time.Millisecond))\n type result struct{n int;err error};done:=make(chan
+        result,1);go func(){n,e:=wrapped.Read(make([]byte,1));done<-result{n,e}}();writerDone:=make(chan struct{});go func(){right.Write([]byte{7});close(writerDone)}();<-writerDone\n
+        select{case r:=<-done:if r.n!=1||!errors.Is(r.err,os.ErrDeadlineExceeded){t.Errorf("consumed read n%d err%v",r.n,r.err)};case<-time.After(250*time.Millisecond):t.Error("read
+        pacing ignored its socket deadline");wrapped.Close();<-done}\n })\n t.Run("no-write-refund",func(t *testing.T){\n
+        left,right:=net.Pipe();defer right.Close();spy:=&auditDeadlineWriteCounter{Conn:left};bucket:=rate.NewLimiter(1,1);bucket.AllowN(time.Now(),1);wrapped:=(&limiter{bucket:bucket}).wrap(context.Background(),spy);defer
+        wrapped.Close();wrapped.SetWriteDeadline(time.Now().Add(30*time.Millisecond));done:=make(chan error,1);go func(){_,e:=wrapped.Write([]byte{7});done<-e}()\n
+        select{case e:=<-done:if !errors.Is(e,os.ErrDeadlineExceeded){t.Errorf("deadline err%v",e)};if spy.writes.Load()!=0{t.Errorf("expired
+        pacing invoked socket Write %d times",spy.writes.Load())};if tokens:=bucket.Tokens();tokens < -0.1{t.Errorf("expired
+        pending reservation was not refunded: tokens%g",tokens)};case<-time.After(250*time.Millisecond):t.Error("expired reservation
+        still blocked");wrapped.Close();<-done}\n })\n}\n'',encoding=''utf-8'')
+
+        PY
+
+        gofmt -w internal/server/transport/runtime_audit_deadline_test.go'
+    - run: for pkg in ./internal/tunnel/limits ./internal/server/transport; do if go test "$pkg" -run TestRuntimeAuditPacingDeadline
+        -count=1 -v -timeout 1m > /tmp/deadline.log 2>&1; then cat /tmp/deadline.log; exit 1; fi; cat /tmp/deadline.log; grep
+        -q "token wait ignored write deadline" /tmp/deadline.log; done
+  baseline_dns:
+    name: Reproduce context-aware QUIC handshake still blocking in DNS
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 6bebdba0b3db692b996dfe311cd2f4c7ff93c242
+        fetch-depth: 0
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - &id003
+      run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/tunnel/l3/runtime_audit_quic_dns_test.go'').write_text(''package l3\nimport("context";"errors";"net";"os";"os/exec";"testing";"crypto/tls";"strconv";"github.com/quic-go/quic-go";"time")\nfunc
+        TestAuditQUICDNSCancellation(t *testing.T){\n if kind:=os.Getenv("BACKPACK_QUIC_DNS_CHILD");kind!="" {\n  started:=make(chan
+        struct{},1)\n  net.DefaultResolver=&net.Resolver{PreferGo:true,Dial:func(ctx context.Context,_,_ string)(net.Conn,error){select{case
+        started<-struct{}{}:default:};<-ctx.Done();return nil,ctx.Err()}}\n  ctx,cancel:=context.WithCancel(context.Background());defer
+        cancel()\n  if kind=="timeout" {ctx,cancel=context.WithTimeout(context.Background(),80*time.Millisecond);defer cancel()}\n  done:=make(chan
+        error,1)\n  go func(){_,_,err:=dialQuicContext(ctx,Config{Mode:ModeDial,Addr:"quic-dns-audit.example:443",Carrier:CarrierQuic});done<-err}()\n  select{case<-started:case<-time.After(time.Second):t.Fatal("DNS
+        resolver was not reached")}\n  began:=time.Now();if kind=="cancel" {cancel()}\n  select{case err:=<-done:if err==nil
+        {t.Fatal("DNS unexpectedly succeeded")};want:=context.Canceled;if kind=="timeout"{want=context.DeadlineExceeded};if
+        !errors.Is(err,want){t.Fatalf("DNS error %v does not preserve %v",err,want)};t.Logf("blocked DNS %s released in %s",kind,time.Since(began));case<-time.After(300*time.Millisecond):t.Fatalf("QUIC
+        DNS lookup ignores %s context while DialAddr resolves synchronously",kind)}\n  return\n }\n for _,kind:=range []string{"cancel","timeout"}{t.Run(kind,func(t
+        *testing.T){ctx,cancel:=context.WithTimeout(context.Background(),3*time.Second);defer cancel();cmd:=exec.CommandContext(ctx,os.Args[0],"-test.run=^TestAuditQUICDNSCancellation$","-test.v");cmd.Env=append(os.Environ(),"BACKPACK_QUIC_DNS_CHILD="+kind);out,err:=cmd.CombinedOutput();if
+        err!=nil {t.Fatalf("isolated DNS %s: %v\\n%s",kind,err,out)};t.Logf("%s",out)})}\n}\n\nfunc TestAuditQUICResolutionSemantics(t
+        *testing.T){\n for _,address:=range []string{"127.0.0.1:443","[::1]:443","[::]:443","[::ffff:127.0.0.1]:443","[fe80::1%testzone]:domain","localhost:domain",":443"}
+        {\n  expected,err:=net.ResolveUDPAddr("udp",address);if err!=nil {t.Fatal(err)}\n  got,host,err:=resolveQuicEndpoint(context.Background(),address);if
+        err!=nil {t.Fatal(err)}\n  originalHost,_,_:=net.SplitHostPort(address)\n  if got.String()!=expected.String()||host!=originalHost
+        {t.Fatalf("%s got %s host%q, expected%s host%q",address,got,host,expected,originalHost)}\n }\n for _,address:=range
+        []string{"127.0.0.1:65536","127.0.0.1:-1","127.0.0.1:unknown-service-audit","invalid"} {\n  if _,_,err:=resolveQuicEndpoint(context.Background(),address);err==nil
+        {t.Fatalf("invalid endpoint %s accepted",address)}\n }\n}\n\nfunc TestAuditQUICDNSOriginalSNI(t *testing.T){\n tlsCfg,err:=quicSelfSigned();if
+        err!=nil {t.Fatal(err)}\n names:=make(chan string,1)\n tlsCfg.GetConfigForClient=func(info *tls.ClientHelloInfo)(*tls.Config,error){names<-info.ServerName;return
+        nil,nil}\n ln,err:=quic.ListenAddr("127.0.0.1:0",tlsCfg,quicConfig());if err!=nil {t.Fatal(err)};defer ln.Close()\n
+        addr:=net.JoinHostPort("localhost",strconv.Itoa(ln.Addr().(*net.UDPAddr).Port))\n ctx,cancel:=context.WithTimeout(context.Background(),3*time.Second);defer
+        cancel()\n c,_,err:=dialQuicContext(ctx,Config{Mode:ModeDial,Addr:addr,Carrier:CarrierQuic});if err!=nil {t.Fatal(err)};defer
+        c.Close()\n select{case name:=<-names:if name!="localhost" {t.Fatalf("DNS SNI changed to %q",name)};case<-time.After(time.Second):t.Fatal("no
+        TLS ClientHello captured")}\n}\n'',encoding=''utf-8'')
+
+        PY
+
+        gofmt -w internal/tunnel/l3/runtime_audit_quic_dns_test.go'
+    - run: "python3 - <<'PY'\nfrom pathlib import Path\np=Path('internal/tunnel/l3/runtime_audit_quic_dns_test.go')\ns=p.read_text().split('func\
+        \ TestAuditQUICResolutionSemantics')[0]\nfor name in ['crypto/tls','strconv','github.com/quic-go/quic-go']:\n    s=s.replace(chr(34)+name+chr(34),'')\n\
+        p.write_text(s)\nPY\ngofmt -w internal/tunnel/l3/runtime_audit_quic_dns_test.go\nif go test ./internal/tunnel/l3 -run\
+        \ TestAuditQUICDNSCancellation -count=1 -v -timeout 1m > /tmp/dns.log 2>&1; then cat /tmp/dns.log; exit 1; fi\ncat\
+        \ /tmp/dns.log\ngrep -q \"QUIC DNS lookup ignores\" /tmp/dns.log"
+  common:
+    name: Exact common pacing mutable deadlines and zero-allocation deadline updates
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 710998414c3f59c67b468614b8b28f56f469404e
+        fetch-depth: 0
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - *id001
+    - run: 'go test ./internal/tunnel/limits -race -count=3 -v -timeout 5m
+
+        go test ./internal/tunnel/limits -run "^$" -bench BenchmarkPacingDeadlineHotPath -benchmem -count=3 -benchtime=300ms
+
+        go vet ./internal/tunnel/limits
+
+        go test ./internal/tunnel/l3 ./internal/tunnel/direct -race -timeout 15m'
+  reverse:
+    name: Exact reverse pacing deadline cancellation and read preservation
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 63b1ce36da4ea90f812bbe585898e31f150fec53
+        fetch-depth: 0
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - *id002
+    - run: 'go test ./internal/server/transport -run "TestRuntimeAuditPacing|TestPacingHonorsMutableDeadlines|TestPacingDeadlineFailureAndEOF|TestPacingDeadlineHotPathDoesNotAllocate|TestClosingAPaced|TestPacingRead|TestPacingCancellation"
+        -race -count=3 -v -timeout 5m
+
+        go test ./internal/server/transport -run "^$" -bench BenchmarkPacingDeadlineHotPath -benchmem -count=3 -benchtime=300ms
+
+        go test ./internal/server/transport ./internal/utils/handlers -race -timeout 15m
+
+        go vet ./internal/server/transport'
+  quic:
+    name: Exact QUIC DNS budget address semantics original SNI and lifecycle
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: d958f99b9c16714e164ec0a7fcaea3d7ad80be0f
+        fetch-depth: 0
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - *id003
+    - run: 'go test ./internal/tunnel/l3 -run "TestAuditQUICDNS|TestAuditQUICResolution|TestQuicDNS|TestQuicInitialDial|TestAClosedQuicPeer|TestQuic|TestQUIC"
+        -race -count=3 -v -timeout 5m
+
+        go test ./internal/tunnel/l3 -race -timeout 15m
+
+        go vet ./internal/tunnel/l3'
+  combined:
+    name: Final combined deadline DNS UDP crypto runtime static and builds
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: b9e698adfa19893665584655704619502b8f4257
+        fetch-depth: 0
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - *id001
+    - *id002
+    - *id003
+    - run: 'go test ./internal/tunnel/limits ./internal/server/transport -run "TestRuntimeAuditPacing|TestPacingHonorsMutableDeadlines|TestPacingDeadlineFailureAndEOF|TestPacingDeadlineHotPathDoesNotAllocate"
+        -race -count=3 -v -timeout 5m
+
+        go test ./internal/tunnel/l3 -run "TestAuditQUICDNS|TestAuditQUICResolution" -race -count=3 -v -timeout 5m
+
+        go vet ./...
+
+        go run honnef.co/go/tools/cmd/staticcheck@latest ./...
+
+        go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+        go test ./internal/client/transport ./internal/server/transport ./internal/utils/handlers ./internal/utils/network
+        ./internal/socks ./internal/tunnel/direct ./internal/tunnel/l3 ./internal/web ./internal/metrics ./internal/tunnel/limits
+        -race -timeout 15m
+
+        GOOS=linux GOARCH=amd64 go build -o /tmp/backpack-amd64 .
+
+        GOOS=linux GOARCH=arm64 go build -o /tmp/backpack-arm64 .'
+  churn:
+    name: Repeat KCP client churn with goroutine diagnostics
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: b9e698adfa19893665584655704619502b8f4257
+        fetch-depth: 0
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        p=Path("internal/e2e/churn_test.go");s=p.read_text();needle="if after.goroutines > base.goroutines+12 {";s=s.replace(needle,needle+''\n
+        stacks := make([]byte, 2<<20); n := runtime.Stack(stacks, true); t.Logf("goroutine diagnostics: %s", stacks[:n])'');p.write_text(s)
+
+        PY
+
+        gofmt -w internal/e2e/churn_test.go
+
+        go test ./internal/e2e -run "TestAServerOutlivesItsClientsWithoutLeaking/kcp" -race -count=5 -v -timeout 10m'
+  full:
+    name: Final full test suite race suite and unchanged coverage floors
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: b9e698adfa19893665584655704619502b8f4257
+        fetch-depth: 0
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+    - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
+
+        sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d
+
+        go test ./... -timeout 20m
+
+        go test ./... -race -timeout 20m'
+    - name: Coverage
+      run: "go test ./... -coverpkg=./... -coverprofile=coverage.out -timeout 20m\ntotal=\"$(go tool cover -func=coverage.out\
+        \ | tail -1 | grep -oE '[0-9.]+')\"\necho \"total coverage: ${total}%\"\nfloor=50\nawk -v t=\"$total\" -v f=\"$floor\"\
+        \ 'BEGIN {\n  if (t+0 < f+0) {\n    printf \"coverage %.1f%% is below the floor of %d%%\\n\", t, f\n    exit 1\n \
+        \ }\n}'\n"
+    - name: Per-package coverage floors
+      run: "set -eu\ncheck() {\n  pkg=\"$1\"; floor=\"$2\"; why=\"$3\"\n  got=\"$(go tool cover -func=coverage.out \\\n  \
+        \        | grep \"^github.com/backpack/backpack/$pkg/\" \\\n          | awk '{gsub(/%/,\"\",$3); s+=$3; n++} END {if\
+        \ (n) printf \"%.1f\", s/n; else print \"0\"}')\"\n  echo \"  $pkg: ${got}% (floor ${floor}%) \u2014 $why\"\n  awk\
+        \ -v g=\"$got\" -v f=\"$floor\" -v p=\"$pkg\" 'BEGIN {\n    if (g+0 < f+0) { printf \"%s fell below its floor\\n\"\
+        , p; exit 1 }\n  }'\n}\ncheck internal/tunnel/l3      60 \"the layer-3 data path\"\ncheck internal/tunnel/chain  \
+        \ 80 \"transport fallback: a wrong decision here takes a tunnel down\"\ncheck internal/control        50 \"the fleet\
+        \ and the job runner\"\ncheck internal/cli            60 \"the scriptable surface; scripts depend on its exit codes\"\
+        \ncheck internal/node           40 \"the fleet RPC and the staged rollout\"\ncheck internal/metrics        60 \"what\
+        \ every other component reads to decide anything\"\ncheck internal/menu           25 \"the screens an operator actually\
+        \ meets this product through\"\ncheck internal/server/transport 85 \"the Iran side of every reverse transport: lifecycle,\
+        \ forwarder, control loop\"\ncheck internal/client/transport 83 \"the kharej side of every reverse transport\"\ncheck\
+        \ internal/controlwire    95 \"the control channel's wire, shared by both ends\"\ncheck internal/utils/acceptloop\
+        \ 90 \"accept backoff and the pre-authentication gate (ADR 0004)\"\ncheck internal/manage/tunnelspec 70 \"a tunnel's\
+        \ configuration: render, load, apply with revert\"\ncheck internal/manage/host    60 \"this machine's addresses, ports\
+        \ and certificates\"\ncheck internal/manage/health  40 \"tunnel health, the watchdog and the Health Check\"\n"
