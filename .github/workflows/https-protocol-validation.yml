@@ -6,58 +6,62 @@ permissions:
     branches:
     - codex/validate-https-protocols
 jobs:
-  direct-baseline:
-    name: Reproduce permanent TCP and UDP listener outages
+  kcp-baseline:
+    name: Reproduce KCP UDP and PCK resolver cancellation and timeout failures
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
     - uses: actions/checkout@v7
       with:
-        ref: 8e54b4de9aec2721f77f575fa4b38b22e84730aa
+        ref: da304fba4bbed2e5d7c3e3091076455d884ecd1d
     - uses: actions/setup-go@v7
       with:
         go-version-file: go.mod
         cache: true
     - run: '
 
-        if go test ./internal/tunnel/direct -run ''^TestForwardedPortRecoversAfterTemporaryBindFailure$'' -v -timeout 1m >
-        /tmp/direct-baseline.log 2>&1; then cat /tmp/direct-baseline.log; exit 1; fi
+        if go test ./internal/client/transport -run ''^TestKCPClientDNSStopsWithItsDialAttempt$'' -v -timeout 1m > /tmp/kcp-baseline.log
+        2>&1; then cat /tmp/kcp-baseline.log; exit 1; fi
 
-        cat /tmp/direct-baseline.log
+        cat /tmp/kcp-baseline.log
 
-        test "$(grep -c ''port stayed down after its temporary bind conflict ended'' /tmp/direct-baseline.log)" = 2
+        test "$(grep -c ''KCP DNS ignored client cancellation or configured dial timeout'' /tmp/kcp-baseline.log)" = 4
 
         '
-  direct-fixed:
-    name: Local forwarder retries preserve live traffic and cancel promptly
+  kcp-fixed:
+    name: KCP UDP PCK ICMP cancellation, address compatibility and FEC lifetime
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
     - uses: actions/checkout@v7
       with:
-        ref: 3c5da21a678170211487803bfb0a6171c2b6e770
+        ref: 36e6bcac95a09512b6b5c817f248e8b589122d57
     - uses: actions/setup-go@v7
       with:
         go-version-file: go.mod
         cache: true
     - run: '
 
-        go test ./internal/tunnel/direct -run ''TestForwardedPortRecoversAfterTemporaryBindFailure|TestForwarderRetryStopsOnCancellation''
-        -race -count=20 -v -timeout 3m
+        go test ./internal/client/transport -run ''^TestKCPClientDNSStopsWithItsDialAttempt$'' -race -count=5 -v -timeout
+        2m
 
-        go test ./internal/tunnel/direct ./cmd -race -timeout 8m
+        go test ./internal/utils/network -run ''TestKCPAddressResolution|TestKCPSessionOutlivesItsSetupBudget'' -race -count=10
+        -v -timeout 2m
 
-        go vet ./internal/tunnel/direct ./cmd
+        go test ./internal/utils/network ./internal/client/transport ./internal/server/transport ./internal/e2e -race -timeout
+        10m
+
+        go vet ./internal/utils/network ./internal/client/transport ./internal/server/transport ./internal/e2e
 
         '
   cohort-full:
-    name: Full integrated tunnel regression suite, race checks and vet
+    name: Complete integrated regression and race suite with all new runtime repairs
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
     - uses: actions/checkout@v7
       with:
-        ref: ba03aaf2ab8a0d4c7687d6f90d8d755d34a84b2e
+        ref: f180c7f6b2fc2e7fd0a4a1d07ec37b888466209f
     - uses: actions/setup-go@v7
       with:
         go-version-file: go.mod
