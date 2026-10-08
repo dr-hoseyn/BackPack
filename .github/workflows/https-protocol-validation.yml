@@ -5,74 +5,13 @@ on:
   push:
     branches: [codex/validate-conntest-final]
 jobs:
-  checks:
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: 06710b1f77fef05b4a23f48001dcb48340b1661d
-      - uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
-          cache: true
-      - run: |
-          sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
-          go test ./internal/manage -run 'TestConnTest|TestManagedHTTPS|TestShareLinkRefusals|TestEveryShareLinkFieldHasAnID|TestFormat2|TestTheTestSettingsFitOnePacket' -race -count=3 -v -timeout 5m
-          go test ./internal/spooftest -race -count=5 -timeout 2m
-          go test ./... -short -race -timeout 10m
-          go test ./internal/manage -run ^$ -fuzz ^FuzzShareLinkRoundTrip$ -fuzztime 20s -timeout 2m
-          go test ./internal/manage -run ^$ -fuzz ^FuzzDecodeShareLink$ -fuzztime 40s -timeout 2m
-          go vet ./...
-          go run golang.org/x/vuln/cmd/govulncheck@latest ./...
-          go run honnef.co/go/tools/cmd/staticcheck@latest ./...
-          GOOS=linux GOARCH=arm64 go build ./...
-  helpers:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: 06710b1f77fef05b4a23f48001dcb48340b1661d
-      - uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
-          cache: true
-      - run: |
-          sudo env "PATH=$PATH" BP_BUILD_FROM_SOURCE=1 BP_HELPERS=naive,xray bash ./install.sh
-          BP_CONNTEST_HELPERS=1 go test ./internal/manage -run '^TestAConnectionTestOverLoopbackPassesEveryReverseTransport$' -count=2 -v -timeout 7m
-      - uses: actions/upload-artifact@v7
-        with:
-          name: backpack-conntest-linux-amd64
-          path: /usr/local/bin/backpack
-  upstream:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: 8867241d9f4e281befd916d4ad667b3952ca5954
-      - uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
-          cache: true
-      - run: |
-          sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
-          go test ./internal/manage -run 'TestConnTest|TestManagedHTTPS|TestShareLinkRefusals|TestEveryShareLinkFieldHasAnID|TestFormat2|TestTheTestSettingsFitOnePacket' -race -count=3 -v -timeout 5m
-          go test ./internal/spooftest ./internal/manage/... ./internal/tunnel/naive ./internal/tui ./cmd -short -race -timeout 8m
-          go vet ./internal/manage/... ./internal/spooftest ./internal/tunnel/naive ./cmd
-          go run honnef.co/go/tools/cmd/staticcheck@latest ./internal/manage/... ./internal/spooftest
-          GOOS=linux GOARCH=arm64 go build ./...
-          sudo env "PATH=$PATH" BP_BUILD_FROM_SOURCE=1 BP_HELPERS=naive,xray bash ./install.sh
-          BP_CONNTEST_HELPERS=1 go test ./internal/manage -run '^TestAConnectionTestOverLoopbackPassesEveryReverseTransport$' -race -count=1 -v -timeout 5m
-
   websocket:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: 95011fb
+          ref: 95011fb5cf2c5635a8c4ce7ddad665d3b052fb2c
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
