@@ -137,8 +137,28 @@ func TestManagedHTTPSWizardProducesValidRoleConfigurations(t *testing.T) {
 				if err := validateManagedSpec(s); err != nil {
 					t.Fatal(err)
 				}
-				if pendingReverseLink(s, "localhost", linkExtras{}) != "" {
-					t.Fatal("helper credentials leaked into an ordinary setup link")
+				raw := pendingReverseLink(s, "localhost", linkExtras{})
+				if role == "server" {
+					link, err := DecodeShareLink(raw)
+					if err != nil || link.Tr != chosen || link.Port != outer || link.InnerPort != internal {
+						t.Fatalf("managed setup link: %v %+v", err, link)
+					}
+					peer, err := kharejFromLink(link, LinkApplyOptions{})
+					if err != nil || peer.RemoteAddr != "127.0.0.1:"+internal || managedEndpoint(peer) != "localhost:"+outer || selectedTransport(peer) != chosen {
+						t.Fatalf("managed peer: %v %s", err, peer.Render())
+					}
+					_, expectedPublic, _ := managedRealityKey(s.XrayServer.PrivateKey)
+					if peer.XrayClient.PublicKey != expectedPublic && chosen == "reality" {
+						t.Fatal("REALITY public key changed")
+					}
+					if link.HelperCA == "" && chosen != "reality" {
+						t.Fatal("private certificate trust was omitted")
+					}
+					if link.HelperPublicKey == s.XrayServer.PrivateKey && chosen == "reality" || peer.XrayServer.PrivateKey != "" || strings.Contains(link.HelperCA, "PRIVATE KEY") {
+						t.Fatal("private server key escaped")
+					}
+				} else if raw != "" {
+					t.Fatal("Kharej cannot generate Iran private settings")
 				}
 				summary := capture(t, func() { summariseReverse(s, "localhost", "") })
 				if !strings.Contains(summary, public) || !strings.Contains(summary, transportLabel(chosen)) || strings.Contains(summary, "private-password") || s.XrayServer.PrivateKey != "" && strings.Contains(summary, s.XrayServer.PrivateKey) {
@@ -172,11 +192,11 @@ func TestManagedHTTPSClientWizardCanBeCancelledBeforeSaving(t *testing.T) {
 	}
 	binary, cert, _ := managedWizardFixture(t)
 	name := "https-menu-cancel-" + randomToken(10)
-	input := []string{"4", "2", "127.0.0.1", "8443", name, "shared-token", "3080", "6bf7a33e-7833-4e72-9219-506585657345", "localhost", "/private-path", binary, "", cert, "1", "n", "n"}
+	input := []string{"4", "2", "2", "127.0.0.1", "8443", name, "shared-token", "3080", "6bf7a33e-7833-4e72-9219-506585657345", "localhost", "/private-path", binary, "", cert, "1", "n", "n"}
 	restore := tui.SetInput(strings.NewReader(strings.Join(input, "\n") + "\n"))
 	defer restore()
 	out := capture(t, SetupClient)
-	if !strings.Contains(out, "Reverse XHTTP / TLS (Kharej)") || !strings.Contains(out, "127.0.0.1:8443") || strings.Contains(out, "Optional Connection Settings") || strings.Contains(out, "How Do You Want To Set Up This Side?") {
+	if !strings.Contains(out, "Reverse XHTTP / TLS (Kharej)") || !strings.Contains(out, "127.0.0.1:8443") || strings.Contains(out, "Optional Connection Settings") || !strings.Contains(out, "How Do You Want To Set Up This Side?") {
 		t.Fatalf("incorrect managed wizard flow:\n%s", out)
 	}
 	if _, err := os.Stat("/etc/backpack/" + name + ".toml"); !os.IsNotExist(err) {
