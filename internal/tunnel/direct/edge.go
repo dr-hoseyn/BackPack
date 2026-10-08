@@ -3,7 +3,6 @@ package direct
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -102,20 +101,6 @@ func (e *Edge) Run(ctx context.Context) error {
 	defer cancel()
 	metrics.ClearPeer()
 	var wg sync.WaitGroup
-	errors := make(chan error, 1)
-	failed := func(m portmap.Mapping, protocol string, err error) {
-		if err == nil || ctx.Err() != nil {
-			return
-		}
-		err = fmt.Errorf("direct: forwarding %s %s stopped: %w", protocol, m, err)
-		e.log.Error(err)
-		select {
-		case errors <- err:
-		default:
-		}
-		cancel()
-	}
-
 	for i := 0; i < e.cfg.Sessions; i++ {
 		wg.Add(1)
 		go func(index int) {
@@ -128,25 +113,20 @@ func (e *Edge) Run(ctx context.Context) error {
 		wg.Add(1)
 		go func(m portmap.Mapping) {
 			defer wg.Done()
-			failed(m, "tcp", e.serve(ctx, m))
+			e.keepForwarder(ctx, m, false)
 		}(mapping)
 
 		if e.cfg.AcceptUDP {
 			wg.Add(1)
 			go func(m portmap.Mapping) {
 				defer wg.Done()
-				failed(m, "udp", e.serveUDP(ctx, m))
+				e.keepForwarder(ctx, m, true)
 			}(mapping)
 		}
 	}
 
 	wg.Wait()
-	select {
-	case err := <-errors:
-		return err
-	default:
-		return nil
-	}
+	return nil
 }
 
 // ---------------------------------------------------------------- sessions
@@ -233,6 +213,27 @@ func (e *Edge) pickSession() *tunnelSession {
 }
 
 // ---------------------------------------------------------------- ports
+
+// Retry only the listener that failed. A temporary bind conflict or fatal
+// socket error must not leave a mapping down until the whole tunnel restarts,
+// nor should recovery interrupt the other ports and established sessions.
+func (e *Edge) keepForwarder(ctx context.Context, m portmap.Mapping, udp bool) {
+	serve, protocol := e.serve, "tcp"
+	if udp {
+		serve, protocol = e.serveUDP, "udp"
+	}
+	for ctx.Err() == nil {
+		err := serve(ctx, m)
+		if ctx.Err() != nil {
+			return
+		}
+		e.log.Errorf("direct: forwarding %s %s stopped: %v — retrying in %s",
+			protocol, m, err, e.cfg.RetryDelay)
+		if !sleepUntil(ctx, e.cfg.RetryDelay) {
+			return
+		}
+	}
+}
 
 func (e *Edge) serve(ctx context.Context, m portmap.Mapping) error {
 	ctx, cancel := context.WithCancel(ctx)
