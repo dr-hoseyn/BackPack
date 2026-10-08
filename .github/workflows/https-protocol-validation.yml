@@ -488,6 +488,7 @@ jobs:
         initial directory creation; no download, build or extraction occurs.\\n\''\n'',encoding=''utf-8'')
 
         PY'
+    - *id001
     - &id004
       run: 'python3 - <<''PY''
 
@@ -525,6 +526,9 @@ jobs:
         not cancel within the shutdown bound")\n\t}\n\tinitialHelperCleanup(t, pids, generated)\n}\n'',encoding=''utf-8'')
 
         PY'
+    - run: 'bash /tmp/source-selection.sh install.sh
+
+        bash -n install.sh'
     - &id005
       run: 'python3 - <<''PY''
 
@@ -625,9 +629,6 @@ jobs:
         allocations != 0 {\n\t\tt.Fatalf("warm65537bytewrite allocations=%g", allocations)\n\t}\n}\n'',encoding=''utf-8'')
 
         PY'
-    - run: 'bash /tmp/source-selection.sh install.sh
-
-        bash -n install.sh'
     - *id002
     - &id007
       run: 'python3 - <<''PY''
@@ -1196,11 +1197,12 @@ jobs:
         go-version-file: go.mod
         cache: true
     - *id003
+    - *id001
     - *id004
-    - *id005
     - run: 'bash /tmp/source-selection.sh install.sh
 
         bash -n install.sh'
+    - *id005
     - *id002
     - *id007
     - *id008
@@ -1670,6 +1672,57 @@ jobs:
 
         from pathlib import Path
 
+        Path(''internal/tunnel/naive/runtime_audit_lifecycle_test.go'').write_text(''//go:build linux\n\npackage naive\n\nimport
+        (\n\t"context"\n\t"io"\n\t"net"\n\t"os"\n\t"path/filepath"\n\t"strconv"\n\t"strings"\n\t"syscall"\n\t"testing"\n\t"time"\n\n\t"github.com/sirupsen/logrus"\n)\n\nfunc
+        auditLivePID(pid int) bool {\n\tb, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")\n\tif err != nil {\n\t\treturn
+        false\n\t}\n\tfields := strings.Fields(string(b)[strings.LastIndexByte(string(b), \'')\'')+1:])\n\treturn len(fields)
+        > 0 && fields[0] != "Z"\n}\n\n// Sending a process-group signal does not wait for every member to be\n// scheduled
+        and exit. Bound that wait; a surviving baseline sleep300 child\n// still fails, while zombies do not count as running
+        helpers.\nfunc auditWaitPIDStopped(t *testing.T, pid int, message string) {\n\tt.Helper()\n\tuntil := time.Now().Add(500
+        * time.Millisecond)\n\tfor auditLivePID(pid) && time.Now().Before(until) {\n\t\ttime.Sleep(5 * time.Millisecond)\n\t}\n\tif
+        auditLivePID(pid) {\n\t\tt.Fatal(message)\n\t}\n}\n\nfunc auditReadPID(t *testing.T, file string) int {\n\tt.Helper()\n\tuntil
+        := time.Now().Add(time.Second)\n\tfor time.Now().Before(until) {\n\t\tb, _ := os.ReadFile(file)\n\t\tpid, err := strconv.Atoi(strings.TrimSpace(string(b)))\n\t\tif
+        err == nil && pid > 0 {\n\t\t\treturn pid\n\t\t}\n\t\ttime.Sleep(time.Millisecond)\n\t}\n\tt.Fatalf("no PID at %s",
+        file)\n\treturn 0\n}\n\nfunc TestAuditNaiveRuntimeDescendantsAreKilled(t *testing.T) {\n\tdir := t.TempDir()\n\tpidfile
+        := filepath.Join(dir, "runtime-child")\n\tbinary := filepath.Join(dir, "helper")\n\tscript := "#!/bin/sh\\nsleep 300
+        &\\necho $! > \''" + pidfile + "\''\\nexec sleep 300\\n"\n\tif err := os.WriteFile(binary, []byte(script), 0700);
+        err != nil {\n\t\tt.Fatal(err)\n\t}\n\tlistener, err := net.Listen("tcp", "127.0.0.1:0")\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tdefer
+        listener.Close()\n\tlog := logrus.New()\n\tlog.SetOutput(io.Discard)\n\tctx, cancel := context.WithCancel(context.Background())\n\tdefer
+        cancel()\n\th, err := startManaged(ctx, binary, "client-fixture", []byte("{}"), listener.Addr().String(), os.Environ(),
+        log, nil)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tdefer h.Close()\n\tchild := auditReadPID(t, pidfile)\n\tdefer
+        syscall.Kill(child, syscall.SIGKILL)\n\tcancel()\n\tdone := make(chan struct{})\n\tgo func() { h.Close(); close(done)
+        }()\n\tselect {\n\tcase <-done:\n\tcase <-time.After(3 * time.Second):\n\t\tt.Fatal("helper cancellation was unbounded")\n\t}\n\tauditWaitPIDStopped(t,
+        child, "runtime helper descendant survived cancellation")\n\tif _, err := os.Stat(h.dir); !os.IsNotExist(err) {\n\t\tt.Fatal("private
+        helper configuration survived cancellation")\n\t}\n}\n\nfunc TestAuditNaiveCheckDescendantsAreKilled(t *testing.T)
+        {\n\tfor _, outcome := range []string{"success", "failure"} {\n\t\tt.Run(outcome, func(t *testing.T) {\n\t\t\tdir
+        := t.TempDir()\n\t\t\tpidfile := filepath.Join(dir, "check-child")\n\t\t\tbinary := filepath.Join(dir, "helper")\n\t\t\texit
+        := "0"\n\t\t\tif outcome == "failure" {\n\t\t\t\texit = "17"\n\t\t\t}\n\t\t\tscript := "#!/bin/sh\\nif [ \\"$1\\"
+        = check ]; then\\n sleep 300 >/dev/null 2>&1 &\\n echo $! > \''" + pidfile + "\''\\n exit " + exit + "\\nfi\\nexec
+        sleep 300\\n"\n\t\t\tif err := os.WriteFile(binary, []byte(script), 0700); err != nil {\n\t\t\t\tt.Fatal(err)\n\t\t\t}\n\t\t\tlistener,
+        err := net.Listen("tcp", "127.0.0.1:0")\n\t\t\tif err != nil {\n\t\t\t\tt.Fatal(err)\n\t\t\t}\n\t\t\tdefer listener.Close()\n\t\t\tlog
+        := logrus.New()\n\t\t\tlog.SetOutput(io.Discard)\n\t\t\tctx, cancel := context.WithCancel(context.Background())\n\t\t\tdefer
+        cancel()\n\t\t\th, err := startManaged(ctx, binary, "server", []byte("{}"), listener.Addr().String(), os.Environ(),
+        log, nil)\n\t\t\tchild := auditReadPID(t, pidfile)\n\t\t\tdefer syscall.Kill(child, syscall.SIGKILL)\n\t\t\tif h !=
+        nil {\n\t\t\t\th.Close()\n\t\t\t}\n\t\t\tif outcome == "success" && err != nil {\n\t\t\t\tt.Fatalf("successful check
+        failed: %v", err)\n\t\t\t}\n\t\t\tif outcome == "failure" && err == nil {\n\t\t\t\tt.Fatal("failed check was accepted")\n\t\t\t}\n\t\t\tauditWaitPIDStopped(t,
+        child, "check-command descendant survived helper cleanup")\n\t\t})\n\t}\n}\n\nfunc TestAuditNaiveLeaderExitRestartsWithInheritedOutput(t
+        *testing.T) {\n\tdir := t.TempDir()\n\tpidfile := filepath.Join(dir, "inherited-output-child")\n\tbinary := filepath.Join(dir,
+        "helper")\n\tscript := "#!/bin/sh\\nsleep 300 &\\necho $! > \''" + pidfile + "\''\\nsleep 0.2\\nexit 0\\n"\n\tif err
+        := os.WriteFile(binary, []byte(script), 0700); err != nil {\n\t\tt.Fatal(err)\n\t}\n\tlistener, err := net.Listen("tcp",
+        "127.0.0.1:0")\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tdefer listener.Close()\n\tlog := logrus.New()\n\tlog.SetOutput(io.Discard)\n\tctx,
+        cancel := context.WithCancel(context.Background())\n\tdefer cancel()\n\th, err := startManaged(ctx, binary, "client-fixture",
+        []byte("{}"), listener.Addr().String(), os.Environ(), log, nil)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tdefer
+        h.Close()\n\tfirst := auditReadPID(t, pidfile)\n\tdefer syscall.Kill(first, syscall.SIGKILL)\n\tuntil := time.Now().Add(1500
+        * time.Millisecond)\n\tchanged := false\n\tfor time.Now().Before(until) {\n\t\tb, _ := os.ReadFile(pidfile)\n\t\tpid,
+        _ := strconv.Atoi(strings.TrimSpace(string(b)))\n\t\tif pid != 0 && pid != first {\n\t\t\tchanged = true\n\t\t\tbreak\n\t\t}\n\t\ttime.Sleep(10
+        * time.Millisecond)\n\t}\n\tcancel()\n\th.Close()\n\tif !changed {\n\t\tt.Fatal("helper leader exited, but inherited
+        output blocked Wait and prevented restart")\n\t}\n}\n'',encoding=''utf-8'')
+
+        PY'
+    - run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
         Path(''internal/tunnel/naive/initial_startup_external_test.go'').write_text(''//go:build linux\n\npackage naive\n\nimport
         (\n\t"context"\n\t"errors"\n\t"io"\n\t"net"\n\t"os"\n\t"path/filepath"\n\t"strconv"\n\t"strings"\n\t"testing"\n\t"time"\n\n\t"github.com/sirupsen/logrus"\n)\n\nfunc
         initialHelperFixture(t *testing.T, permanent bool) (string, string, string, string) {\n\tt.Helper()\n\tdir := t.TempDir()\n\tlistener,
@@ -1702,6 +1755,9 @@ jobs:
         not cancel within the shutdown bound")\n\t}\n\tinitialHelperCleanup(t, pids, generated)\n}\n'',encoding=''utf-8'')
 
         PY'
+    - run: 'bash /tmp/source-selection.sh install.sh
+
+        bash -n install.sh'
     - run: 'python3 - <<''PY''
 
         from pathlib import Path
@@ -1801,9 +1857,6 @@ jobs:
         allocations != 0 {\n\t\tt.Fatalf("warm65537bytewrite allocations=%g", allocations)\n\t}\n}\n'',encoding=''utf-8'')
 
         PY'
-    - run: 'bash /tmp/source-selection.sh install.sh
-
-        bash -n install.sh'
     - run: 'python3 - <<''PY''
 
         from pathlib import Path
