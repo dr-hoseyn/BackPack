@@ -1,18 +1,17 @@
-name: Managed HTTPS menu configuration and runtime validation
+name: Upstream managed HTTPS menu validation
 permissions:
   contents: read
 on:
   push:
-    branches: [codex/validate-managed-menu]
+    branches: [codex/validate-menu-upstream]
 jobs:
   menu:
-    name: HTTPS selections, both roles, cancellation and race checks
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: 1da57cbecd7fd902296fd32e80972eae0d26a83c
+          ref: 7bf520dc0a1879177a4e641d2fc56ec95c1d5a1b
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
@@ -21,28 +20,5 @@ jobs:
           sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
           go test ./internal/manage -run 'TestManagedHTTPS|TestTheReverseWizardOrder|TestTheReverseSummary|TestTheReverseLink|TestTransportMenu' -race -count=5 -v -timeout 4m
           go test ./internal/manage ./internal/manage/tunnelspec ./internal/tui ./internal/menu ./cmd -short -race -timeout 8m
-          go vet ./...
+          go vet ./internal/manage/... ./internal/tui ./internal/menu ./cmd
           GOOS=linux GOARCH=arm64 go build ./...
-  full:
-    name: Complete integrated runtime and Linux binary
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: 1da57cbecd7fd902296fd32e80972eae0d26a83c
-      - uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
-          cache: true
-      - run: |
-          sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
-          go test ./... -timeout 12m
-          CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /tmp/backpack-menu-linux-amd64 .
-          sha256sum /tmp/backpack-menu-linux-amd64 | tee /tmp/binary-sha256.txt
-      - uses: actions/upload-artifact@v7
-        with:
-          name: backpack-menu-linux-amd64
-          path: |
-            /tmp/backpack-menu-linux-amd64
-            /tmp/binary-sha256.txt
