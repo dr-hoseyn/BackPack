@@ -27,8 +27,12 @@ jobs:
         (\n\t"context"\n\t"io"\n\t"net"\n\t"os"\n\t"path/filepath"\n\t"strconv"\n\t"strings"\n\t"syscall"\n\t"testing"\n\t"time"\n\n\t"github.com/sirupsen/logrus"\n)\n\nfunc
         auditLivePID(pid int) bool {\n\tb, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")\n\tif err != nil {\n\t\treturn
         false\n\t}\n\tfields := strings.Fields(string(b)[strings.LastIndexByte(string(b), \'')\'')+1:])\n\treturn len(fields)
-        > 0 && fields[0] != "Z"\n}\n\nfunc auditReadPID(t *testing.T, file string) int {\n\tt.Helper()\n\tuntil := time.Now().Add(time.Second)\n\tfor
-        time.Now().Before(until) {\n\t\tb, _ := os.ReadFile(file)\n\t\tpid, err := strconv.Atoi(strings.TrimSpace(string(b)))\n\t\tif
+        > 0 && fields[0] != "Z"\n}\n\n// Sending a process-group signal does not wait for every member to be\n// scheduled
+        and exit. Bound that wait; a surviving baseline sleep300 child\n// still fails, while zombies do not count as running
+        helpers.\nfunc auditWaitPIDStopped(t *testing.T, pid int, message string) {\n\tt.Helper()\n\tuntil := time.Now().Add(500
+        * time.Millisecond)\n\tfor auditLivePID(pid) && time.Now().Before(until) {\n\t\ttime.Sleep(5 * time.Millisecond)\n\t}\n\tif
+        auditLivePID(pid) {\n\t\tt.Fatal(message)\n\t}\n}\n\nfunc auditReadPID(t *testing.T, file string) int {\n\tt.Helper()\n\tuntil
+        := time.Now().Add(time.Second)\n\tfor time.Now().Before(until) {\n\t\tb, _ := os.ReadFile(file)\n\t\tpid, err := strconv.Atoi(strings.TrimSpace(string(b)))\n\t\tif
         err == nil && pid > 0 {\n\t\t\treturn pid\n\t\t}\n\t\ttime.Sleep(time.Millisecond)\n\t}\n\tt.Fatalf("no PID at %s",
         file)\n\treturn 0\n}\n\nfunc TestAuditNaiveRuntimeDescendantsAreKilled(t *testing.T) {\n\tdir := t.TempDir()\n\tpidfile
         := filepath.Join(dir, "runtime-child")\n\tbinary := filepath.Join(dir, "helper")\n\tscript := "#!/bin/sh\\nsleep 300
@@ -38,10 +42,10 @@ jobs:
         cancel()\n\th, err := startManaged(ctx, binary, "client-fixture", []byte("{}"), listener.Addr().String(), os.Environ(),
         log, nil)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tdefer h.Close()\n\tchild := auditReadPID(t, pidfile)\n\tdefer
         syscall.Kill(child, syscall.SIGKILL)\n\tcancel()\n\tdone := make(chan struct{})\n\tgo func() { h.Close(); close(done)
-        }()\n\tselect {\n\tcase <-done:\n\tcase <-time.After(3 * time.Second):\n\t\tt.Fatal("helper cancellation was unbounded")\n\t}\n\tif
-        auditLivePID(child) {\n\t\tt.Fatal("runtime helper descendant survived cancellation")\n\t}\n\tif _, err := os.Stat(h.dir);
-        !os.IsNotExist(err) {\n\t\tt.Fatal("private helper configuration survived cancellation")\n\t}\n}\n\nfunc TestAuditNaiveCheckDescendantsAreKilled(t
-        *testing.T) {\n\tfor _, outcome := range []string{"success", "failure"} {\n\t\tt.Run(outcome, func(t *testing.T) {\n\t\t\tdir
+        }()\n\tselect {\n\tcase <-done:\n\tcase <-time.After(3 * time.Second):\n\t\tt.Fatal("helper cancellation was unbounded")\n\t}\n\tauditWaitPIDStopped(t,
+        child, "runtime helper descendant survived cancellation")\n\tif _, err := os.Stat(h.dir); !os.IsNotExist(err) {\n\t\tt.Fatal("private
+        helper configuration survived cancellation")\n\t}\n}\n\nfunc TestAuditNaiveCheckDescendantsAreKilled(t *testing.T)
+        {\n\tfor _, outcome := range []string{"success", "failure"} {\n\t\tt.Run(outcome, func(t *testing.T) {\n\t\t\tdir
         := t.TempDir()\n\t\t\tpidfile := filepath.Join(dir, "check-child")\n\t\t\tbinary := filepath.Join(dir, "helper")\n\t\t\texit
         := "0"\n\t\t\tif outcome == "failure" {\n\t\t\t\texit = "17"\n\t\t\t}\n\t\t\tscript := "#!/bin/sh\\nif [ \\"$1\\"
         = check ]; then\\n sleep 300 >/dev/null 2>&1 &\\n echo $! > \''" + pidfile + "\''\\n exit " + exit + "\\nfi\\nexec
@@ -51,19 +55,19 @@ jobs:
         cancel()\n\t\t\th, err := startManaged(ctx, binary, "server", []byte("{}"), listener.Addr().String(), os.Environ(),
         log, nil)\n\t\t\tchild := auditReadPID(t, pidfile)\n\t\t\tdefer syscall.Kill(child, syscall.SIGKILL)\n\t\t\tif h !=
         nil {\n\t\t\t\th.Close()\n\t\t\t}\n\t\t\tif outcome == "success" && err != nil {\n\t\t\t\tt.Fatalf("successful check
-        failed: %v", err)\n\t\t\t}\n\t\t\tif outcome == "failure" && err == nil {\n\t\t\t\tt.Fatal("failed check was accepted")\n\t\t\t}\n\t\t\tif
-        auditLivePID(child) {\n\t\t\t\tt.Fatal("check-command descendant survived helper cleanup")\n\t\t\t}\n\t\t})\n\t}\n}\n\nfunc
-        TestAuditNaiveLeaderExitRestartsWithInheritedOutput(t *testing.T) {\n\tdir := t.TempDir()\n\tpidfile := filepath.Join(dir,
-        "inherited-output-child")\n\tbinary := filepath.Join(dir, "helper")\n\tscript := "#!/bin/sh\\nsleep 300 &\\necho $!
-        > \''" + pidfile + "\''\\nsleep 0.2\\nexit 0\\n"\n\tif err := os.WriteFile(binary, []byte(script), 0700); err != nil
-        {\n\t\tt.Fatal(err)\n\t}\n\tlistener, err := net.Listen("tcp", "127.0.0.1:0")\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tdefer
-        listener.Close()\n\tlog := logrus.New()\n\tlog.SetOutput(io.Discard)\n\tctx, cancel := context.WithCancel(context.Background())\n\tdefer
-        cancel()\n\th, err := startManaged(ctx, binary, "client-fixture", []byte("{}"), listener.Addr().String(), os.Environ(),
-        log, nil)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tdefer h.Close()\n\tfirst := auditReadPID(t, pidfile)\n\tdefer
-        syscall.Kill(first, syscall.SIGKILL)\n\tuntil := time.Now().Add(1500 * time.Millisecond)\n\tchanged := false\n\tfor
-        time.Now().Before(until) {\n\t\tb, _ := os.ReadFile(pidfile)\n\t\tpid, _ := strconv.Atoi(strings.TrimSpace(string(b)))\n\t\tif
-        pid != 0 && pid != first {\n\t\t\tchanged = true\n\t\t\tbreak\n\t\t}\n\t\ttime.Sleep(10 * time.Millisecond)\n\t}\n\tcancel()\n\th.Close()\n\tif
-        !changed {\n\t\tt.Fatal("helper leader exited, but inherited output blocked Wait and prevented restart")\n\t}\n}\n'',encoding=''utf-8'')
+        failed: %v", err)\n\t\t\t}\n\t\t\tif outcome == "failure" && err == nil {\n\t\t\t\tt.Fatal("failed check was accepted")\n\t\t\t}\n\t\t\tauditWaitPIDStopped(t,
+        child, "check-command descendant survived helper cleanup")\n\t\t})\n\t}\n}\n\nfunc TestAuditNaiveLeaderExitRestartsWithInheritedOutput(t
+        *testing.T) {\n\tdir := t.TempDir()\n\tpidfile := filepath.Join(dir, "inherited-output-child")\n\tbinary := filepath.Join(dir,
+        "helper")\n\tscript := "#!/bin/sh\\nsleep 300 &\\necho $! > \''" + pidfile + "\''\\nsleep 0.2\\nexit 0\\n"\n\tif err
+        := os.WriteFile(binary, []byte(script), 0700); err != nil {\n\t\tt.Fatal(err)\n\t}\n\tlistener, err := net.Listen("tcp",
+        "127.0.0.1:0")\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tdefer listener.Close()\n\tlog := logrus.New()\n\tlog.SetOutput(io.Discard)\n\tctx,
+        cancel := context.WithCancel(context.Background())\n\tdefer cancel()\n\th, err := startManaged(ctx, binary, "client-fixture",
+        []byte("{}"), listener.Addr().String(), os.Environ(), log, nil)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tdefer
+        h.Close()\n\tfirst := auditReadPID(t, pidfile)\n\tdefer syscall.Kill(first, syscall.SIGKILL)\n\tuntil := time.Now().Add(1500
+        * time.Millisecond)\n\tchanged := false\n\tfor time.Now().Before(until) {\n\t\tb, _ := os.ReadFile(pidfile)\n\t\tpid,
+        _ := strconv.Atoi(strings.TrimSpace(string(b)))\n\t\tif pid != 0 && pid != first {\n\t\t\tchanged = true\n\t\t\tbreak\n\t\t}\n\t\ttime.Sleep(10
+        * time.Millisecond)\n\t}\n\tcancel()\n\th.Close()\n\tif !changed {\n\t\tt.Fatal("helper leader exited, but inherited
+        output blocked Wait and prevented restart")\n\t}\n}\n'',encoding=''utf-8'')
 
         PY'
     - run: 'if go test ./internal/tunnel/naive -run "TestAuditNaiveLeaderExitRestartsWithInheritedOutput|TestAuditNaiveCheckDescendantsAreKilled"
@@ -79,13 +83,61 @@ jobs:
     steps:
     - uses: actions/checkout@v7
       with:
-        ref: 55b3104b8e5909d169ae4053879daaca72c825dc
+        ref: 7c07d07b99281b13c2e70a8a046fc05cf8128281
     - uses: actions/setup-go@v7
       with:
         go-version-file: go.mod
         cache: true
+    - &id003
+      run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/tunnel/naive/immutable_tls_external_test.go'').write_text(''package naive\n\nimport (\n\t"crypto/ed25519"\n\t"crypto/rand"\n\t"crypto/tls"\n\t"crypto/x509"\n\t"encoding/json"\n\t"encoding/pem"\n\t"github.com/backpack/backpack/config"\n\t"math/big"\n\t"os"\n\t"path/filepath"\n\t"strings"\n\t"testing"\n\t"time"\n)\n\n//
+        External-only regression: this uses only the original Naive API so the\n// identical fixture compiles against both
+        the old PR65 and its corrected head.\nfunc TestNaiveServerJSONFreezesValidatedCertificate(t *testing.T) {\n\tdir :=
+        t.TempDir()\n\tcertPath, keyPath := filepath.Join(dir, "cert.pem"), filepath.Join(dir, "key.pem")\n\tpair := func(serial
+        int64, expired bool) ([]byte, []byte) {\n\t\tt.Helper()\n\t\tpublic, private, err := ed25519.GenerateKey(rand.Reader)\n\t\tif
+        err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t\tbefore, after := time.Now().Add(-time.Hour), time.Now().Add(time.Hour)\n\t\tif
+        expired {\n\t\t\tbefore, after = time.Now().Add(-2*time.Hour), time.Now().Add(-time.Hour)\n\t\t}\n\t\ttemplate :=
+        &x509.Certificate{SerialNumber: big.NewInt(serial), DNSNames: []string{"localhost"}, NotBefore: before, NotAfter:
+        after, KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}\n\t\tder,
+        err := x509.CreateCertificate(rand.Reader, template, template, public, private)\n\t\tif err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t\tpk,
+        err := x509.MarshalPKCS8PrivateKey(private)\n\t\tif err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t\treturn pem.EncodeToMemory(&pem.Block{Type:
+        "CERTIFICATE", Bytes: der}), pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: pk})\n\t}\n\twrite := func(path
+        string, b []byte) {\n\t\tt.Helper()\n\t\tif err := os.WriteFile(path, b, 0600); err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t}\n\toldCert,
+        oldKey := pair(1, false)\n\texpiredCert, expiredKey := pair(2, true)\n\twrite(certPath, oldCert)\n\twrite(keyPath,
+        oldKey)\n\tbinary, err := os.Executable()\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tcfg := config.ServerConfig{Transport:
+        config.TCP, BindAddr: "127.0.0.1:26001", Naive: config.NaiveServerConfig{Binary: binary, Listen: "127.0.0.1:26003",
+        Username: "audit", Password: "fixture-secret", Certificate: certPath, Key: keyPath}}\n\tif err := ValidateServer(&cfg);
+        err != nil {\n\t\tt.Fatal(err)\n\t}\n\tfrozen, err := serverJSON(&cfg)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\ttype
+        material struct {\n\t\tCertificate     []string `json:"certificate"`\n\t\tKey             []string `json:"key"`\n\t\tCertificatePath
+        string   `json:"certificate_path"`\n\t\tKeyPath         string   `json:"key_path"`\n\t}\n\tdecode := func(body []byte)
+        material {\n\t\tt.Helper()\n\t\tvar doc struct {\n\t\t\tInbounds []struct {\n\t\t\t\tTLS material `json:"tls"`\n\t\t\t}
+        `json:"inbounds"`\n\t\t}\n\t\tif err := json.Unmarshal(body, &doc); err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t\tif
+        len(doc.Inbounds) != 1 {\n\t\t\tt.Fatalf("unexpected inbounds: %s", body)\n\t\t}\n\t\treturn doc.Inbounds[0].TLS\n\t}\n\ttlsMaterial
+        := decode(frozen)\n\tif tlsMaterial.CertificatePath != "" || tlsMaterial.KeyPath != "" {\n\t\tt.Error("generated JSON
+        gives sing-box live certificate/key paths; independent fswatch reload bypasses validation")\n\t}\n\tif strings.Join(tlsMaterial.Certificate,
+        "\\n") != string(oldCert) || strings.Join(tlsMaterial.Key, "\\n") != string(oldKey) {\n\t\tt.Error("generated JSON
+        does not contain the exact validated certificate/private key")\n\t}\n\t// Replace source files with a well-formed
+        matched pair which the helper\''s\n\t// independent watcher would accept, but which Backpack must reject.\n\twrite(certPath,
+        expiredCert)\n\twrite(keyPath, expiredKey)\n\tif _, err := tls.X509KeyPair(expiredCert, expiredKey); err != nil {\n\t\tt.Fatalf("expiry
+        fixture is not a valid matched pair: %v", err)\n\t}\n\tif err := ValidateServer(&cfg); err == nil {\n\t\tt.Error("expired
+        input unexpectedly validates")\n\t}\n\tif _, err := serverJSON(&cfg); err == nil {\n\t\tt.Error("fresh helper JSON
+        accepts the matched expired replacement")\n\t}\n\t// Retained per-generation material stays usable without touching
+        those files.\n\tretained := decode(frozen)\n\tif retained.CertificatePath != "" || retained.KeyPath != "" {\n\t\tt.Error("retained
+        generation still references the mutated files")\n\t}\n\tif strings.Join(retained.Certificate, "\\n") != string(oldCert)
+        || strings.Join(retained.Key, "\\n") != string(oldKey) {\n\t\tt.Error("retained generation lost the original certificate/key")\n\t}\n\tif
+        len(retained.Certificate) > 0 && len(retained.Key) > 0 {\n\t\toldPair, err := tls.X509KeyPair([]byte(strings.Join(retained.Certificate,
+        "\\n")), []byte(strings.Join(retained.Key, "\\n")))\n\t\tif err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t\tleaf, err
+        := x509.ParseCertificate(oldPair.Certificate[0])\n\t\tif err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t\tif leaf.SerialNumber.Int64()
+        != 1 || !time.Now().Before(leaf.NotAfter) {\n\t\t\tt.Error("retained material is the expired replacement")\n\t\t}\n\t}\n\t//
+        A mismatched save is also rejected before producing a child configuration.\n\twrite(certPath, oldCert)\n\twrite(keyPath,
+        expiredKey)\n\tif _, err := serverJSON(&cfg); err == nil {\n\t\tt.Error("fresh helper JSON accepts a mismatched certificate/key")\n\t}\n}\n'',encoding=''utf-8'')
+
+        PY'
     - *id001
-    - run: 'go test ./internal/tunnel/naive -run TestAuditNaive -race -count=3 -v -timeout 3m
+    - run: 'go test ./internal/tunnel/naive -run "TestAuditNaive|TestNaiveServerJSON" -race -count=3 -v -timeout 3m
 
         go test ./cmd -run "TestHelperCertificateRenewal|TestAwaitConfigChange|TestAnInvalidEdit" -race -count=2 -timeout
         5m
@@ -106,7 +158,7 @@ jobs:
     steps:
     - uses: actions/checkout@v7
       with:
-        ref: 55b3104b8e5909d169ae4053879daaca72c825dc
+        ref: 7c07d07b99281b13c2e70a8a046fc05cf8128281
     - uses: actions/setup-go@v7
       with:
         go-version-file: go.mod
@@ -360,73 +412,101 @@ jobs:
     steps:
     - uses: actions/checkout@v7
       with:
-        ref: 15aab4ec7321c42eaa12a660bd9d8370c88b22c7
+        ref: 1f1c0b224b6b176846a234e424422cf55f802eec
     - uses: actions/setup-go@v7
       with:
         go-version-file: go.mod
         cache: true
     - *id002
-    - &id003
+    - &id004
       run: 'python3 - <<''PY''
 
         from pathlib import Path
 
-        Path(''internal/tunnel/naive/xray_contract_external_test.go'').write_text(''package naive\n\nimport (\n "crypto/ed25519"\n
-        "crypto/rand"\n "crypto/x509"\n "crypto/x509/pkix"\n "encoding/json"\n "encoding/pem"\n "math/big"\n "os"\n "os/exec"\n
-        "path/filepath"\n "strings"\n "testing"\n "time"\n "github.com/backpack/backpack/config"\n)\n\nfunc TestXrayConfigContractExternal(t
-        *testing.T) {\n binary:=os.Getenv("BACKPACK_XRAY_BINARY"); if binary=="" { t.Fatal("BACKPACK_XRAY_BINARY required")
-        }\n dir:=t.TempDir(); certPath,keyPath:=filepath.Join(dir,"cert.pem"),filepath.Join(dir,"key.pem")\n pub,priv,err:=ed25519.GenerateKey(rand.Reader);
-        if err!=nil {t.Fatal(err)}\n tmpl:=&x509.Certificate{SerialNumber:big.NewInt(1),Subject:pkix.Name{CommonName:"audit.localhost"},DNSNames:[]string{"audit.localhost"},NotBefore:time.Now().Add(-time.Hour),NotAfter:time.Now().Add(time.Hour),IsCA:true,BasicConstraintsValid:true,KeyUsage:x509.KeyUsageDigitalSignature|x509.KeyUsageCertSign,ExtKeyUsage:[]x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}\n
-        der,err:=x509.CreateCertificate(rand.Reader,tmpl,tmpl,pub,priv);if err!=nil{t.Fatal(err)}\n pk,err:=x509.MarshalPKCS8PrivateKey(priv);if
-        err!=nil{t.Fatal(err)}\n if err=os.WriteFile(certPath,pem.EncodeToMemory(&pem.Block{Type:"CERTIFICATE",Bytes:der}),0600);err!=nil{t.Fatal(err)}\n
-        if err=os.WriteFile(keyPath,pem.EncodeToMemory(&pem.Block{Type:"PRIVATE KEY",Bytes:pk}),0600);err!=nil{t.Fatal(err)}\n
-        output,err:=exec.Command(binary,"x25519").CombinedOutput();if err!=nil{t.Fatalf("x25519: %v %s",err,output)}\n var
-        private,password string\n for _,line:=range strings.Split(string(output),"\\n") { if strings.HasPrefix(line,"PrivateKey:"){private=strings.TrimSpace(strings.TrimPrefix(line,"PrivateKey:"))};if
-        strings.HasPrefix(line,"Password (PublicKey):"){password=strings.TrimSpace(strings.TrimPrefix(line,"Password (PublicKey):"))}
-        }\n if private==""||password==""{t.Fatal("missing X25519 output")}\n client:=config.ClientConfig{Transport:config.TCP,RemoteAddr:"127.0.0.1:26001",Xray:config.XrayClientConfig{Binary:binary,Server:"127.0.0.1:26003",Mode:"xhttp",UUID:"a17c3bc5-8b44-451f-8f43-df6c342e09bc",ServerName:"audit.localhost",Path:"/private-audit",CAFile:certPath}}\n
-        server:=config.ServerConfig{Transport:config.TCP,BindAddr:"127.0.0.1:26001",Xray:config.XrayServerConfig{Binary:binary,Listen:"127.0.0.1:26003",Mode:"xhttp",UUID:client.Xray.UUID,ServerName:"audit.localhost",Path:"/private-audit",Certificate:certPath,Key:keyPath}}\n
-        for _,mode:=range []string{"xhttp","reality"}{t.Run(mode,func(t *testing.T){\n  c,s:=client,server\n  if mode=="reality"
-        { c.Xray.Mode=mode;c.Xray.Path="";c.Xray.CAFile="";c.Xray.PublicKey=password;c.Xray.ShortID="a13e29b451d0c7ef";s.Xray.Mode=mode;s.Xray.Path="";s.Xray.Certificate="";s.Xray.Key="";s.Xray.PrivateKey=private;s.Xray.Target="127.0.0.1:26004";s.Xray.ShortID=c.Xray.ShortID
-        }\n  if err:=ValidateXray(&config.Config{Client:c});err!=nil{t.Fatal(err)};if err:=ValidateXray(&config.Config{Server:s});err!=nil{t.Fatal(err)}\n  body,err:=XrayClientJSON(&c,"127.0.0.1:26002");if
-        err!=nil{t.Fatal(err)}\n  sb,err:=XrayServerJSON(&s);if err!=nil{t.Fatal(err)}\n  for role,data:=range map[string][]byte{"client":body,"server":sb}
-        {\n   path:=filepath.Join(dir,mode+"-"+role+".json");if err:=os.WriteFile(path,data,0600);err!=nil{t.Fatal(err)}\n   out,err:=exec.Command(binary,"run","-test","-config",path).CombinedOutput();if
-        err!=nil{t.Fatalf("official parser %s: %v %s",role,err,out)}\n   var decoded map[string]any;if err:=json.Unmarshal(data,&decoded);err!=nil{t.Fatal(err)}\n   obs:=decoded["outbounds"].([]any);if
-        obs[0].(map[string]any)["protocol"]!="blackhole"{t.Fatal("unmatched routing permits traffic")}\n   rs:=decoded["routing"].(map[string]any);if
-        rs["domainStrategy"]!="AsIs"{t.Fatal("routing unexpectedly resolves names")}\n   rule:=rs["rules"].([]any)[0].(map[string]any);if
-        rule["network"]!="tcp"||rule["port"]!="26001"||rule["ip"].([]any)[0]!="127.0.0.1/32"{t.Fatalf("unrestricted target:
-        %v",rule)}\n   if role=="server"&&obs[1].(map[string]any)["settings"].(map[string]any)["redirect"]!=s.BindAddr{t.Fatal("missing
-        fixed destination")}\n  }\n  for name,mutate:=range map[string]func(*config.ClientConfig){\n   "mode":func(c *config.ClientConfig){c.Xray.Mode="other"},"uuid":func(c
-        *config.ClientConfig){c.Xray.UUID="a17c3bc5-8b44-451f8-f43-df6c342e09bc"},"uuidhex":func(c *config.ClientConfig){c.Xray.UUID="z17c3bc5-8b44-451f-8f43-df6c342e09bc"},"sni":func(c
-        *config.ClientConfig){c.Xray.ServerName="https://bad"},"server":func(c *config.ClientConfig){c.Xray.Server="user@audit.localhost:443"},"url":func(c
-        *config.ClientConfig){c.Xray.Server="https://audit.localhost:443"},"remote":func(c *config.ClientConfig){c.RemoteAddr="localhost:26001"},"nonloopback":func(c
-        *config.ClientConfig){c.RemoteAddr="192.0.2.1:26001"},"udp":func(c *config.ClientConfig){c.Transport=config.UDP},"fallback":func(c
-        *config.ClientConfig){c.FallbackAddrs=[]string{"127.0.0.1:26001"}},"proxy":func(c *config.ClientConfig){c.Proxy="socks5://127.0.0.1:1"},"naive":func(c
-        *config.ClientConfig){c.Naive.Binary=binary},"irrelevant":func(c *config.ClientConfig){if mode=="xhttp"{c.Xray.PublicKey=password}else{c.Xray.Path="/unexpected"}},\n  }{t.Run(name,func(t
-        *testing.T){bad:=c;mutate(&bad);if err:=ValidateXrayClient(&bad);err==nil{t.Fatal("invalid client accepted")}})}\n  if
-        _,err:=XrayClientJSON(&c,"0.0.0.0:26002");err==nil{t.Fatal("public SOCKS bind accepted")}\n  for name,mutate:=range
-        map[string]func(*config.ServerConfig){"public-target":func(s *config.ServerConfig){s.BindAddr="0.0.0.0:26001"},"shared-port":func(s
-        *config.ServerConfig){s.Xray.Listen="127.0.0.1:26001"},"irrelevant":func(s *config.ServerConfig){if mode=="xhttp"{s.Xray.Target="target.example:443"}else{s.Xray.Certificate=certPath}},"naive":func(s
-        *config.ServerConfig){s.Naive.Binary=binary}}{t.Run(name,func(t *testing.T){bad:=s;mutate(&bad);if err:=ValidateXrayServer(&bad);err==nil{t.Fatal("invalid
-        server accepted")}})}\n  if mode=="xhttp"{\n   for _,path:=range []string{"", "/", "relative", "/?query", "/#fragment",
-        "/%0d%0a", "/%3fquery", "/bad\\\\path"}{bad:=c;bad.Xray.Path=path;if ValidateXrayClient(&bad)==nil{t.Fatalf("invalid
-        path accepted: %q",path)}}\n   bad:=s;bad.Xray.ServerName="other.localhost";if ValidateXrayServer(&bad)==nil{t.Fatal("mismatched
-        TLS certificate accepted")}\n  }else{\n   for _,id:=range []string{"","abc","0123456789abcdef00","z123456789abcdef"}{bad:=c;bad.Xray.ShortID=id;if
-        ValidateXrayClient(&bad)==nil{t.Fatalf("invalid short ID accepted: %q",id)}}\n   for _,key:=range []string{"",password+"=",password[:len(password)-1],"not-a-key"}{bad:=c;bad.Xray.PublicKey=key;if
-        ValidateXrayClient(&bad)==nil{t.Fatal("invalid key accepted")}}\n   for _,target:=range []string{"localhost:26003","127.0.0.2:26003","127.0.0.2:26001"}{bad:=s;bad.Xray.Target=target;if
-        ValidateXrayServer(&bad)==nil{t.Fatalf("self-loop accepted: %s",target)}}\n  }\n  both:=config.Config{Client:c,Server:s};if
-        ValidateXray(&both)==nil{t.Fatal("multiple roles accepted")}\n })}\n}\n'',encoding=''utf-8'')
+        Path(''internal/tunnel/naive/xray_contract_external_test.go'').write_text(''package naive\n\nimport (\n\t"crypto/ed25519"\n\t"crypto/rand"\n\t"crypto/x509"\n\t"crypto/x509/pkix"\n\t"encoding/json"\n\t"encoding/pem"\n\t"github.com/backpack/backpack/config"\n\t"math/big"\n\t"os"\n\t"os/exec"\n\t"path/filepath"\n\t"strings"\n\t"testing"\n\t"time"\n)\n\nfunc
+        TestXrayConfigContractExternal(t *testing.T) {\n\tbinary := os.Getenv("BACKPACK_XRAY_BINARY")\n\tif binary == "" {\n\t\tt.Fatal("BACKPACK_XRAY_BINARY
+        required")\n\t}\n\tdir := t.TempDir()\n\tcertPath, keyPath := filepath.Join(dir, "cert.pem"), filepath.Join(dir, "key.pem")\n\tpub,
+        priv, err := ed25519.GenerateKey(rand.Reader)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\ttmpl := &x509.Certificate{SerialNumber:
+        big.NewInt(1), Subject: pkix.Name{CommonName: "audit.localhost"}, DNSNames: []string{"audit.localhost"}, NotBefore:
+        time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour), IsCA: true, BasicConstraintsValid: true, KeyUsage:
+        x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}\n\tder,
+        err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, pub, priv)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tpk,
+        err := x509.MarshalPKCS8PrivateKey(priv)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tif err = os.WriteFile(certPath,
+        pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0600); err != nil {\n\t\tt.Fatal(err)\n\t}\n\tif
+        err = os.WriteFile(keyPath, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: pk}), 0600); err != nil {\n\t\tt.Fatal(err)\n\t}\n\toutput,
+        err := exec.Command(binary, "x25519").CombinedOutput()\n\tif err != nil {\n\t\tt.Fatalf("x25519: %v %s", err, output)\n\t}\n\tvar
+        private, password string\n\tfor _, line := range strings.Split(string(output), "\\n") {\n\t\tif strings.HasPrefix(line,
+        "PrivateKey:") {\n\t\t\tprivate = strings.TrimSpace(strings.TrimPrefix(line, "PrivateKey:"))\n\t\t}\n\t\tif strings.HasPrefix(line,
+        "Password (PublicKey):") {\n\t\t\tpassword = strings.TrimSpace(strings.TrimPrefix(line, "Password (PublicKey):"))\n\t\t}\n\t}\n\tif
+        private == "" || password == "" {\n\t\tt.Fatal("missing X25519 output")\n\t}\n\tclient := config.ClientConfig{Transport:
+        config.TCP, RemoteAddr: "127.0.0.1:26001", Xray: config.XrayClientConfig{Binary: binary, Server: "127.0.0.1:26003",
+        Mode: "xhttp", UUID: "a17c3bc5-8b44-451f-8f43-df6c342e09bc", ServerName: "audit.localhost", Path: "/private-audit",
+        CAFile: certPath}}\n\tserver := config.ServerConfig{Transport: config.TCP, BindAddr: "127.0.0.1:26001", Xray: config.XrayServerConfig{Binary:
+        binary, Listen: "127.0.0.1:26003", Mode: "xhttp", UUID: client.Xray.UUID, ServerName: "audit.localhost", Path: "/private-audit",
+        Certificate: certPath, Key: keyPath}}\n\tfor _, mode := range []string{"xhttp", "reality"} {\n\t\tt.Run(mode, func(t
+        *testing.T) {\n\t\t\tc, s := client, server\n\t\t\tif mode == "reality" {\n\t\t\t\tc.Xray.Mode = mode\n\t\t\t\tc.Xray.Path
+        = ""\n\t\t\t\tc.Xray.CAFile = ""\n\t\t\t\tc.Xray.PublicKey = password\n\t\t\t\tc.Xray.ShortID = "a13e29b451d0c7ef"\n\t\t\t\ts.Xray.Mode
+        = mode\n\t\t\t\ts.Xray.Path = ""\n\t\t\t\ts.Xray.Certificate = ""\n\t\t\t\ts.Xray.Key = ""\n\t\t\t\ts.Xray.PrivateKey
+        = private\n\t\t\t\ts.Xray.Target = "127.0.0.1:26004"\n\t\t\t\ts.Xray.ShortID = c.Xray.ShortID\n\t\t\t}\n\t\t\tif err
+        := ValidateXray(&config.Config{Client: c}); err != nil {\n\t\t\t\tt.Fatal(err)\n\t\t\t}\n\t\t\tif err := ValidateXray(&config.Config{Server:
+        s}); err != nil {\n\t\t\t\tt.Fatal(err)\n\t\t\t}\n\t\t\tbody, err := XrayClientJSON(&c, "127.0.0.1:26002")\n\t\t\tif
+        err != nil {\n\t\t\t\tt.Fatal(err)\n\t\t\t}\n\t\t\tsb, err := XrayServerJSON(&s)\n\t\t\tif err != nil {\n\t\t\t\tt.Fatal(err)\n\t\t\t}\n\t\t\tfor
+        role, data := range map[string][]byte{"client": body, "server": sb} {\n\t\t\t\tpath := filepath.Join(dir, mode+"-"+role+".json")\n\t\t\t\tif
+        err := os.WriteFile(path, data, 0600); err != nil {\n\t\t\t\t\tt.Fatal(err)\n\t\t\t\t}\n\t\t\t\tout, err := exec.Command(binary,
+        "run", "-test", "-config", path).CombinedOutput()\n\t\t\t\tif err != nil {\n\t\t\t\t\tt.Fatalf("official parser %s:
+        %v %s", role, err, out)\n\t\t\t\t}\n\t\t\t\tvar decoded map[string]any\n\t\t\t\tif err := json.Unmarshal(data, &decoded);
+        err != nil {\n\t\t\t\t\tt.Fatal(err)\n\t\t\t\t}\n\t\t\t\tobs := decoded["outbounds"].([]any)\n\t\t\t\tif obs[0].(map[string]any)["protocol"]
+        != "blackhole" {\n\t\t\t\t\tt.Fatal("unmatched routing permits traffic")\n\t\t\t\t}\n\t\t\t\trs := decoded["routing"].(map[string]any)\n\t\t\t\tif
+        rs["domainStrategy"] != "AsIs" {\n\t\t\t\t\tt.Fatal("routing unexpectedly resolves names")\n\t\t\t\t}\n\t\t\t\trule
+        := rs["rules"].([]any)[0].(map[string]any)\n\t\t\t\tif rule["network"] != "tcp" || rule["port"] != "26001" || rule["ip"].([]any)[0]
+        != "127.0.0.1/32" {\n\t\t\t\t\tt.Fatalf("unrestricted target: %v", rule)\n\t\t\t\t}\n\t\t\t\tif role == "server" &&
+        obs[1].(map[string]any)["settings"].(map[string]any)["redirect"] != s.BindAddr {\n\t\t\t\t\tt.Fatal("missing fixed
+        destination")\n\t\t\t\t}\n\t\t\t\tif role == "server" && mode == "xhttp" {\n\t\t\t\t\tinbound := decoded["inbounds"].([]any)[0].(map[string]any)\n\t\t\t\t\tstream
+        := inbound["streamSettings"].(map[string]any)\n\t\t\t\t\tcert := stream["tlsSettings"].(map[string]any)["certificates"].([]any)[0].(map[string]any)\n\t\t\t\t\tif
+        cert["oneTimeLoading"] != true {\n\t\t\t\t\t\tt.Fatal("Xray can independently reload rejected certificate replacements")\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t}\n\t\t\tfor
+        name, mutate := range map[string]func(*config.ClientConfig){\n\t\t\t\t"mode": func(c *config.ClientConfig) { c.Xray.Mode
+        = "other" }, "uuid": func(c *config.ClientConfig) { c.Xray.UUID = "a17c3bc5-8b44-451f8-f43-df6c342e09bc" }, "uuidhex":
+        func(c *config.ClientConfig) { c.Xray.UUID = "z17c3bc5-8b44-451f-8f43-df6c342e09bc" }, "sni": func(c *config.ClientConfig)
+        { c.Xray.ServerName = "https://bad" }, "server": func(c *config.ClientConfig) { c.Xray.Server = "user@audit.localhost:443"
+        }, "url": func(c *config.ClientConfig) { c.Xray.Server = "https://audit.localhost:443" }, "remote": func(c *config.ClientConfig)
+        { c.RemoteAddr = "localhost:26001" }, "nonloopback": func(c *config.ClientConfig) { c.RemoteAddr = "192.0.2.1:26001"
+        }, "udp": func(c *config.ClientConfig) { c.Transport = config.UDP }, "fallback": func(c *config.ClientConfig) { c.FallbackAddrs
+        = []string{"127.0.0.1:26001"} }, "proxy": func(c *config.ClientConfig) { c.Proxy = "socks5://127.0.0.1:1" }, "naive":
+        func(c *config.ClientConfig) { c.Naive.Binary = binary }, "irrelevant": func(c *config.ClientConfig) {\n\t\t\t\t\tif
+        mode == "xhttp" {\n\t\t\t\t\t\tc.Xray.PublicKey = password\n\t\t\t\t\t} else {\n\t\t\t\t\t\tc.Xray.Path = "/unexpected"\n\t\t\t\t\t}\n\t\t\t\t},\n\t\t\t}
+        {\n\t\t\t\tt.Run(name, func(t *testing.T) {\n\t\t\t\t\tbad := c\n\t\t\t\t\tmutate(&bad)\n\t\t\t\t\tif err := ValidateXrayClient(&bad);
+        err == nil {\n\t\t\t\t\t\tt.Fatal("invalid client accepted")\n\t\t\t\t\t}\n\t\t\t\t})\n\t\t\t}\n\t\t\tif _, err :=
+        XrayClientJSON(&c, "0.0.0.0:26002"); err == nil {\n\t\t\t\tt.Fatal("public SOCKS bind accepted")\n\t\t\t}\n\t\t\tfor
+        name, mutate := range map[string]func(*config.ServerConfig){"public-target": func(s *config.ServerConfig) { s.BindAddr
+        = "0.0.0.0:26001" }, "shared-port": func(s *config.ServerConfig) { s.Xray.Listen = "127.0.0.1:26001" }, "irrelevant":
+        func(s *config.ServerConfig) {\n\t\t\t\tif mode == "xhttp" {\n\t\t\t\t\ts.Xray.Target = "target.example:443"\n\t\t\t\t}
+        else {\n\t\t\t\t\ts.Xray.Certificate = certPath\n\t\t\t\t}\n\t\t\t}, "naive": func(s *config.ServerConfig) { s.Naive.Binary
+        = binary }} {\n\t\t\t\tt.Run(name, func(t *testing.T) {\n\t\t\t\t\tbad := s\n\t\t\t\t\tmutate(&bad)\n\t\t\t\t\tif
+        err := ValidateXrayServer(&bad); err == nil {\n\t\t\t\t\t\tt.Fatal("invalid server accepted")\n\t\t\t\t\t}\n\t\t\t\t})\n\t\t\t}\n\t\t\tif
+        mode == "xhttp" {\n\t\t\t\tfor _, path := range []string{"", "/", "relative", "/?query", "/#fragment", "/%0d%0a",
+        "/%3fquery", "/bad\\\\path"} {\n\t\t\t\t\tbad := c\n\t\t\t\t\tbad.Xray.Path = path\n\t\t\t\t\tif ValidateXrayClient(&bad)
+        == nil {\n\t\t\t\t\t\tt.Fatalf("invalid path accepted: %q", path)\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t\tbad := s\n\t\t\t\tbad.Xray.ServerName
+        = "other.localhost"\n\t\t\t\tif ValidateXrayServer(&bad) == nil {\n\t\t\t\t\tt.Fatal("mismatched TLS certificate accepted")\n\t\t\t\t}\n\t\t\t}
+        else {\n\t\t\t\tfor _, id := range []string{"", "abc", "0123456789abcdef00", "z123456789abcdef"} {\n\t\t\t\t\tbad
+        := c\n\t\t\t\t\tbad.Xray.ShortID = id\n\t\t\t\t\tif ValidateXrayClient(&bad) == nil {\n\t\t\t\t\t\tt.Fatalf("invalid
+        short ID accepted: %q", id)\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t\tfor _, key := range []string{"", password + "=", password[:len(password)-1],
+        "not-a-key"} {\n\t\t\t\t\tbad := c\n\t\t\t\t\tbad.Xray.PublicKey = key\n\t\t\t\t\tif ValidateXrayClient(&bad) == nil
+        {\n\t\t\t\t\t\tt.Fatal("invalid key accepted")\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t\tfor _, target := range []string{"localhost:26003",
+        "127.0.0.2:26003", "127.0.0.2:26001"} {\n\t\t\t\t\tbad := s\n\t\t\t\t\tbad.Xray.Target = target\n\t\t\t\t\tif ValidateXrayServer(&bad)
+        == nil {\n\t\t\t\t\t\tt.Fatalf("self-loop accepted: %s", target)\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t}\n\t\t\tboth := config.Config{Client:
+        c, Server: s}\n\t\t\tif ValidateXray(&both) == nil {\n\t\t\t\tt.Fatal("multiple roles accepted")\n\t\t\t}\n\t\t})\n\t}\n}\n'',encoding=''utf-8'')
 
         PY'
-    - &id004
+    - &id005
       run: 'python3 - <<''PY''
 
         from pathlib import Path
 
         Path(''/tmp/real_xray_managed_linux.py'').write_text(''"""Exercise official helpers and the reverse engine on isolated
         Linux loopback.\n\nRun as an unprivileged user inside a disposable network namespace. This is not\nan Internet path
-        test. All files belong to the supplied disposable bundle dir.\n"""\nimport hashlib\nimport json\nimport os\nimport
-        re\nfrom pathlib import Path\nimport signal\nimport socket\nimport struct\nimport subprocess\nimport sys\nimport threading\nimport
-        time\nimport urllib.parse\n\nimport argparse\nparser = argparse.ArgumentParser(description=__doc__)\nparser.add_argument("--backpack",
+        test. All files belong to the supplied disposable bundle dir.\n"""\nimport hashlib\nimport itertools\nimport json\nimport
+        os\nimport re\nfrom pathlib import Path\nimport signal\nimport socket\nimport struct\nimport subprocess\nimport sys\nimport
+        threading\nimport time\nimport urllib.parse\n\nimport argparse\nparser = argparse.ArgumentParser(description=__doc__)\nparser.add_argument("--backpack",
         required=True, type=Path)\nparser.add_argument("--xray", required=True, type=Path)\nparser.add_argument("--profile",
         choices=("both", "xhttp", "reality"), default="both")\nparser.add_argument("--output", required=True, type=Path)\nARGS
         = parser.parse_args()\nif ARGS.profile == "both":\n    ARGS.output.mkdir(mode=0o700, parents=True, exist_ok=True)\n    if
@@ -442,8 +522,10 @@ jobs:
         = [socket.create_server(("127.0.0.1", 0)) for _ in range(4)]\nPUBLIC, REVERSE, ENTRY, BACKEND = [listener.getsockname()[1]
         for listener in listeners]\nfor listener in listeners: listener.close()\nBIN = ROOT / "bin"\nDATA = hashlib.sha256(b"independent-download-fixture").digest()
         * 32768\nPROCS = {}\nLOGS = []\nPRIVATE_DIRS = set()\nHELPER_PIDS = set()\nHELPER_GROUPS = set()\nBACKEND_CONNECTIONS
-        = 0\nRESULT = {"scope": "isolated loopback, managed official Xray, no Internet retest", "profile": ARGS.profile, "fresh":
-        [], "recovery": [], "negative": {}}\n\n\nCOVERS = []\nEXTRA = []\nclass LocalCover:\n    def __init__(self, certificate,
+        = 0\nTRACE_LOCK = threading.Lock()\nAPP_TRACES = []\nBACKEND_TRACES = []\nAPP_IDS = itertools.count()\nUPLOAD_OWNER
+        = {hashlib.sha256(hashlib.sha256(str(index).encode()).digest() * 8192).hexdigest(): index for index in range(8)}\nRESULT
+        = {"scope": "isolated loopback, managed official Xray, no Internet retest", "profile": ARGS.profile, "fresh": [],
+        "recovery": [], "negative": {}}\n\n\nCOVERS = []\nEXTRA = []\nclass LocalCover:\n    def __init__(self, certificate,
         key):\n        import ssl\n        self.tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)\n        self.tls.minimum_version
         = ssl.TLSVersion.TLSv1_3\n        self.tls.set_alpn_protocols(["h2"])\n        self.tls.load_cert_chain(certificate,
         key)\n        self.sock = socket.create_server(("127.0.0.1", 0))\n        self.port = self.sock.getsockname()[1]\n        self.sock.settimeout(.2)\n        self.stop
@@ -466,19 +548,40 @@ jobs:
         curl partial-transfer18.\n        except (OSError, EOFError): pass\n        finally: conn.close()\n    def close(self):
         self.stop.set(); self.sock.close(); self.thread.join(1)\n\ndef readn(conn, size):\n    out = bytearray()\n    while
         len(out) < size:\n        b = conn.recv(size - len(out))\n        if not b:\n            raise EOFError("short application
-        response")\n        out.extend(b)\n    return bytes(out)\n\n\ndef backend(conn):\n    try:\n        with conn:\n            conn.settimeout(15)\n            mode
-        = readn(conn, 1)\n            size = struct.unpack("!I", readn(conn, 4))[0]\n            if size > 2 * 1024 * 1024:\n                raise
-        ValueError("oversized fixture")\n            if mode == b"D":\n                conn.sendall(DATA[:size])\n            else:\n                payload
-        = readn(conn, size)\n                conn.sendall(payload if mode == b"E" else hashlib.sha256(payload).hexdigest().encode())\n    except
-        (OSError, EOFError):\n        pass\n\n\ndef serve(listener):\n    global BACKEND_CONNECTIONS\n    while True:\n        try:\n            conn,
+        response")\n        out.extend(b)\n    return bytes(out)\n\n\ndef backend(conn):\n    record = {"peer": list(conn.getpeername()),
+        "started_monotonic": time.monotonic()}\n    try:\n        with conn:\n            conn.settimeout(15)\n            mode
+        = readn(conn, 1)\n            size = struct.unpack("!I", readn(conn, 4))[0]\n            record.update(operation=mode.decode("ascii",
+        errors="replace"), payload_bytes=size)\n            if size > 2 * 1024 * 1024:\n                raise ValueError("oversized
+        fixture")\n            if mode == b"D":\n                response = DATA[:size]\n                conn.sendall(response)\n                record.update(response_bytes=len(response),
+        response_sha256=hashlib.sha256(response).hexdigest())\n            else:\n                payload = readn(conn, size)\n                digest
+        = hashlib.sha256(payload).hexdigest()\n                record.update(received_bytes=len(payload), received_sha256=digest,
+        known_concurrent_upload_owner=UPLOAD_OWNER.get(digest))\n                response = payload if mode == b"E" else digest.encode()\n                conn.sendall(response)\n                record.update(response_bytes=len(response))\n            record["ok"]
+        = True\n    except (OSError, EOFError, ValueError) as error:\n        record.update(ok=False, error=type(error).__name__
+        + ": " + str(error))\n    finally:\n        record["finished_monotonic"] = time.monotonic()\n        with TRACE_LOCK:
+        BACKEND_TRACES.append(record)\n\n\ndef serve(listener):\n    global BACKEND_CONNECTIONS\n    while True:\n        try:\n            conn,
         _ = listener.accept()\n        except OSError:\n            return\n        BACKEND_CONNECTIONS += 1\n        threading.Thread(target=backend,
-        args=(conn,), daemon=True).start()\n\n\ndef app(mode=b"E", payload=None, timeout=3):\n    if payload is None:\n        payload
-        = os.urandom(32)\n    with socket.create_connection(("127.0.0.1", ENTRY), timeout=timeout) as conn:\n        conn.settimeout(timeout)\n        conn.sendall(mode
-        + struct.pack("!I", len(payload)))\n        if mode != b"D":\n            conn.sendall(payload)\n        expected
-        = DATA[:len(payload)] if mode == b"D" else (payload if mode == b"E" else hashlib.sha256(payload).hexdigest().encode())\n        if
-        readn(conn, len(expected)) != expected:\n            raise ValueError("application checksum/payload mismatch")\n    return
-        True\n\n\ndef start(role):\n    log = (ROOT / (role + ".log")).open("ab")\n    LOGS.append(log)\n    PROCS[role] =
-        subprocess.Popen([str(BIN / "backpack"), "-c", str(ROOT / (role + ".toml"))], stdout=log, stderr=log, start_new_session=True)\n\n\ndef
+        args=(conn,), daemon=True).start()\n\n\ndef app(mode=b"E", payload=None, timeout=3, flow_id=None):\n    if payload
+        is None:\n        payload = os.urandom(32)\n    record = {"flow_id": flow_id or "application-" + str(next(APP_IDS)),
+        "operation": mode.decode(), "payload_bytes": len(payload), "started_monotonic": time.monotonic()}\n    expected =
+        DATA[:len(payload)] if mode == b"D" else (payload if mode == b"E" else hashlib.sha256(payload).hexdigest().encode())\n    actual
+        = bytearray()\n    try:\n        with socket.create_connection(("127.0.0.1", ENTRY), timeout=timeout) as conn:\n            record["local_endpoint"]
+        = list(conn.getsockname())\n            conn.settimeout(timeout)\n            conn.sendall(mode + struct.pack("!I",
+        len(payload)))\n            if mode != b"D":\n                conn.sendall(payload)\n            while len(actual)
+        < len(expected):\n                part = conn.recv(len(expected) - len(actual))\n                if not part: raise
+        EOFError("short application response")\n                actual.extend(part)\n            if bytes(actual) != expected:\n                raise
+        ValueError("application checksum/payload mismatch")\n        record["ok"] = True\n        return True\n    except
+        (OSError, EOFError, ValueError) as error:\n        actual_bytes = bytes(actual)\n        different = next((index for
+        index, pair in enumerate(zip(expected, actual_bytes)) if pair[0] != pair[1]), min(len(expected), len(actual_bytes)))\n        record.update(ok=False,
+        error=type(error).__name__ + ": " + str(error), expected_response_bytes=len(expected), actual_response_bytes=len(actual_bytes),
+        expected_response_sha256=hashlib.sha256(expected).hexdigest(), actual_response_sha256=hashlib.sha256(actual_bytes).hexdigest(),
+        first_difference=different, expected_prefix_hex=expected[:32].hex(), actual_prefix_hex=actual_bytes[:32].hex(), expected_suffix_hex=expected[-32:].hex(),
+        actual_suffix_hex=actual_bytes[-32:].hex())\n        if mode == b"U":\n            response_text = actual_bytes.decode("ascii",
+        errors="replace")\n            record.update(expected_upload_sha256=expected.decode(), actual_upload_response=response_text,
+        actual_upload_owner=UPLOAD_OWNER.get(response_text))\n        detail = "transfer failure " + json.dumps(record, sort_keys=True)\n        if
+        isinstance(error, EOFError): raise EOFError(detail) from error\n        if isinstance(error, OSError): raise OSError(detail)
+        from error\n        raise ValueError(detail) from error\n    finally:\n        record["finished_monotonic"] = time.monotonic()\n        with
+        TRACE_LOCK: APP_TRACES.append(record)\n\n\ndef start(role):\n    log = (ROOT / (role + ".log")).open("ab")\n    LOGS.append(log)\n    PROCS[role]
+        = subprocess.Popen([str(BIN / "backpack"), "-c", str(ROOT / (role + ".toml"))], stdout=log, stderr=log, start_new_session=True)\n\n\ndef
         stop(role):\n    p = PROCS.pop(role)\n    p.terminate()\n    try:\n        p.wait(timeout=8)\n    except subprocess.TimeoutExpired:\n        os.killpg(p.pid,
         signal.SIGKILL)\n        p.wait(timeout=5)\n        raise RuntimeError("engine did not stop gracefully")\n\n\ndef
         helper(role):\n    p = PROCS[role]\n    if p.poll() is not None:\n        raise RuntimeError(role + " engine exited
@@ -548,15 +651,24 @@ jobs:
         upload, timeout=15)\n    app(b"D", DATA, timeout=15)\n    RESULT["files"] = {"bytes_each_direction": len(DATA), "upload_sha256":
         hashlib.sha256(upload).hexdigest(), "download_sha256": hashlib.sha256(DATA).hexdigest(), "correct": True}\n    import
         concurrent.futures\n    def concurrent_files(index):\n        payload = hashlib.sha256(str(index).encode()).digest()
-        * 8192\n        app(b"U", payload, timeout=15)\n        app(b"D", payload, timeout=15)\n        return True\n    begin
-        = time.monotonic()\n    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as workers:\n        if not all(workers.map(concurrent_files,
-        range(8))): raise RuntimeError("concurrent checksum transfer failed")\n    RESULT["concurrent_files"] = {"flows":
-        8, "bytes_each_direction_per_flow": 262144, "seconds": round(time.monotonic() - begin, 3), "ok": True}\n    for role
-        in ("outside", "iran"):\n        for kind in ("helper-crash", "config-generation", "engine-restart"):\n            before,
-        _ = helper(role)\n            parent_before = PROCS[role].pid\n            begin = time.monotonic()\n            if
-        kind == "helper-crash":\n                os.kill(before, signal.SIGKILL)\n            elif kind == "config-generation":\n                cfg
-        = ROOT / (role + ".toml")\n                text = cfg.read_text().replace("skip_optz = true", "skip_optz = true\\nkeepalive_period
-        = 76")\n                cfg.write_text(text)\n            else:\n                stop(role)\n                start(role)\n            after
+        * 8192\n        app(b"U", payload, timeout=15, flow_id="mixed-upload-" + str(index))\n        app(b"D", payload, timeout=15,
+        flow_id="mixed-download-" + str(index))\n        return True\n    def collect_cohort(label, operation):\n        begin
+        = time.monotonic()\n        errors = []\n        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as workers:\n            pending
+        = [workers.submit(operation, index) for index in range(8)]\n            for future in concurrent.futures.as_completed(pending):\n                try:\n                    if
+        not future.result(): raise RuntimeError("worker did not verify payload")\n                except Exception as error:\n                    errors.append(type(error).__name__
+        + ": " + str(error))\n        result = {"cohort": label, "flows": 8, "bytes_each_direction_per_flow": 262144, "seconds":
+        round(time.monotonic() - begin, 3), "ok": not errors, "errors": errors}\n        RESULT.setdefault("concurrent_cohorts",
+        []).append(result)\n        return result\n    mixed = collect_cohort("mixed-upload-then-download", concurrent_files)\n    RESULT["concurrent_files"]
+        = mixed\n    # Separate directions on fresh connections even if the mixed cohort failed.\n    # These are independent
+        controls, never retries and never replace a failure.\n    upload_only = collect_cohort("upload-only", lambda index:
+        app(b"U", hashlib.sha256(str(index).encode()).digest() * 8192, timeout=15, flow_id="upload-only-" + str(index)))\n    download_only
+        = collect_cohort("download-only", lambda index: app(b"D", DATA[:262144], timeout=15, flow_id="download-only-" + str(index)))\n    if
+        not all(result["ok"] for result in (mixed, upload_only, download_only)):\n        raise RuntimeError("one or more
+        concurrent checksum cohorts failed; see transfer-traces.json")\n    for role in ("outside", "iran"):\n        for
+        kind in ("helper-crash", "config-generation", "engine-restart"):\n            before, _ = helper(role)\n            parent_before
+        = PROCS[role].pid\n            begin = time.monotonic()\n            if kind == "helper-crash":\n                os.kill(before,
+        signal.SIGKILL)\n            elif kind == "config-generation":\n                cfg = ROOT / (role + ".toml")\n                text
+        = cfg.read_text().replace("skip_optz = true", "skip_optz = true\\nkeepalive_period = 76")\n                cfg.write_text(text)\n            else:\n                stop(role)\n                start(role)\n            after
         = ready(role, before)\n            recovered(timeout=max(0.1, 30 - (time.monotonic() - begin)))\n            recovery_seconds
         = time.monotonic() - begin\n            for _ in range(3): app()\n            app(b"U", upload, timeout=15)\n            app(b"D",
         DATA, timeout=15)\n            RESULT["recovery"].append({"role": role, "kind": kind, "helper_pid_changed": after
@@ -633,8 +745,9 @@ jobs:
         HELPER_GROUPS:\n            try: os.killpg(group, signal.SIGKILL)\n            except ProcessLookupError: pass\n    RESULT["ports_released"]
         = True\n    for port in (PUBLIC, REVERSE, ENTRY):\n        try:\n            test = socket.create_server(("127.0.0.1",
         port)); test.close()\n        except OSError: RESULT["ports_released"] = False; RESULT["ok"] = False\n    (ROOT /
-        "local-check.json").write_text(json.dumps(RESULT, indent=2) + "\\n")\n    print(json.dumps(RESULT), flush=True)\nsys.exit(0
-        if RESULT.get("ok") else 1)\n'',encoding=''utf-8'')
+        "transfer-traces.json").write_text(json.dumps({"application": APP_TRACES, "backend": BACKEND_TRACES}, indent=2) +
+        "\\n")\n    RESULT["transfer_trace_file"] = "transfer-traces.json"\n    (ROOT / "local-check.json").write_text(json.dumps(RESULT,
+        indent=2) + "\\n")\n    print(json.dumps(RESULT), flush=True)\nsys.exit(0 if RESULT.get("ok") else 1)\n'',encoding=''utf-8'')
 
         PY'
     - run: 'python3 - <<''PY''
@@ -733,7 +846,9 @@ jobs:
       if: always()
       with:
         name: managed-xray-results
-        path: /tmp/backpack-real-xray/**/*.json
+        path: '/tmp/backpack-real-xray/**/*.json
+
+          /tmp/backpack-real-xray/**/*.log'
         if-no-files-found: ignore
   xray-suite:
     name: Managed Xray and Naive complete suite and races
@@ -742,11 +857,12 @@ jobs:
     steps:
     - uses: actions/checkout@v7
       with:
-        ref: 15aab4ec7321c42eaa12a660bd9d8370c88b22c7
+        ref: 1f1c0b224b6b176846a234e424422cf55f802eec
     - uses: actions/setup-go@v7
       with:
         go-version-file: go.mod
         cache: true
+    - *id003
     - *id001
     - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
 
@@ -767,14 +883,14 @@ jobs:
     steps:
     - uses: actions/checkout@v7
       with:
-        ref: 3a11e64dd3603777f9c37147f2f368d27f1c4a18
+        ref: 1e658e9aa4c3c4b7923c624060b798558ef0b11a
     - uses: actions/setup-go@v7
       with:
         go-version-file: go.mod
         cache: true
     - *id002
-    - *id003
     - *id004
+    - *id005
     - run: 'python3 - <<''PY''
 
         from pathlib import Path
@@ -871,7 +987,9 @@ jobs:
       if: always()
       with:
         name: integrated-https-results
-        path: /tmp/backpack-real-*/**/*.json
+        path: '/tmp/backpack-real-*/**/*.json
+
+          /tmp/backpack-real-xray/**/*.log'
         if-no-files-found: ignore
   cohort-suite:
     name: Integrated tunnel full suite races and vet
@@ -880,11 +998,12 @@ jobs:
     steps:
     - uses: actions/checkout@v7
       with:
-        ref: 3a11e64dd3603777f9c37147f2f368d27f1c4a18
+        ref: 1e658e9aa4c3c4b7923c624060b798558ef0b11a
     - uses: actions/setup-go@v7
       with:
         go-version-file: go.mod
         cache: true
+    - *id003
     - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
 
         sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d
@@ -895,3 +1014,22 @@ jobs:
         ./internal/utils/network ./internal/manage/tunnelspec -race -timeout 15m
 
         go vet ./...'
+  cert-baseline:
+    name: Reproduce Naive independent certificate reload contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 55b3104b8e5909d169ae4053879daaca72c825dc
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - *id003
+    - run: 'if go test ./internal/tunnel/naive -run TestNaiveServerJSONFreezesValidatedCertificate -v -timeout 1m > /tmp/cert-baseline.log
+        2>&1; then cat /tmp/cert-baseline.log; exit 1; fi
+
+        cat /tmp/cert-baseline.log
+
+        grep -E "FAIL: TestNaiveServerJSONFreezesValidatedCertificate" /tmp/cert-baseline.log'
