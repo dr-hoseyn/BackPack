@@ -6,47 +6,69 @@ permissions:
     branches:
     - codex/validate-https-protocols
 jobs:
-  quic-baseline:
-    name: Reproduce reverse QUIC DNS cancellation and deadline failures
+  direct-baseline:
+    name: Reproduce permanent TCP and UDP listener outages
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
     - uses: actions/checkout@v7
       with:
-        ref: 5c170cf85e918a3f1519209178af1c6bf752af1b
+        ref: 8e54b4de9aec2721f77f575fa4b38b22e84730aa
     - uses: actions/setup-go@v7
       with:
         go-version-file: go.mod
         cache: true
     - run: '
 
-        if go test ./internal/utils/network -run ''^TestQUICDialDNSStopsWithContext$'' -v -timeout 1m > /tmp/quic-baseline.log
-        2>&1; then cat /tmp/quic-baseline.log; exit 1; fi
+        if go test ./internal/tunnel/direct -run ''^TestForwardedPortRecoversAfterTemporaryBindFailure$'' -v -timeout 1m >
+        /tmp/direct-baseline.log 2>&1; then cat /tmp/direct-baseline.log; exit 1; fi
 
-        cat /tmp/quic-baseline.log
+        cat /tmp/direct-baseline.log
 
-        test "$(grep -c ''QUIC DNS ignored parent cancellation or deadline'' /tmp/quic-baseline.log)" = 2
+        test "$(grep -c ''port stayed down after its temporary bind conflict ended'' /tmp/direct-baseline.log)" = 2
 
         '
-  quic-fixed:
-    name: QUIC resolver budgets, existing transport races and vet
+  direct-fixed:
+    name: Local forwarder retries preserve live traffic and cancel promptly
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
     - uses: actions/checkout@v7
       with:
-        ref: 02850b6d183f89ab82d115cc66a9063c4dc897f2
+        ref: 3c5da21a678170211487803bfb0a6171c2b6e770
     - uses: actions/setup-go@v7
       with:
         go-version-file: go.mod
         cache: true
     - run: '
 
-        go test ./internal/utils/network -run ''TestQUICDialDNSStopsWithContext|TestQUICAddressResolution|TestQUICConnectionOutlivesItsSetupBudget''
-        -race -count=5 -v -timeout 2m
+        go test ./internal/tunnel/direct -run ''TestForwardedPortRecoversAfterTemporaryBindFailure|TestForwarderRetryStopsOnCancellation''
+        -race -count=20 -v -timeout 3m
 
-        go test ./internal/utils/network ./internal/client/transport ./internal/server/transport -race -timeout 8m
+        go test ./internal/tunnel/direct ./cmd -race -timeout 8m
 
-        go vet ./internal/utils/network ./internal/client/transport ./internal/server/transport
+        go vet ./internal/tunnel/direct ./cmd
+
+        '
+  cohort-full:
+    name: Full integrated tunnel regression suite, race checks and vet
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: ba03aaf2ab8a0d4c7687d6f90d8d755d34a84b2e
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - run: '
+
+        go test ./... -timeout 10m
+
+        go test ./internal/utils/network ./internal/client/transport ./internal/server/transport ./internal/tunnel/... ./cmd
+        -race -timeout 10m
+
+        go vet ./...
 
         '
