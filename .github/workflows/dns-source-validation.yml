@@ -1,0 +1,27 @@
+name: Exact standalone UDP DNS regressions
+permissions:
+  contents: read
+'on':
+  push:
+    branches:
+    - codex/validate-dns-source
+jobs:
+  dns:
+    name: Exact raw/reverse UDP DNS cancellation, timeouts and idle cleanup
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 20045f5e0f83686c176a3b71b460168406f97e71
+        fetch-depth: 0
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - run: 'go test ./internal/client/transport -run "TestRawUDPBackendAndEndpointDNSRespectCancellationAndTimeout|TestUDPBackendDNSObeysGenerationAndDialTimeout|TestUDPBackendIdleFlowEndsWithGeneration|TestEachStreamOnASessionReachesTheBackendItNames|TestASessionEndsWithItsGeneration"
+        -race -count=10 -v -timeout 5m
+
+        go vet ./internal/client/transport ./internal/utils/network
+
+        go test ./internal/client/transport ./internal/server/transport ./internal/utils/network -race -timeout 15m'
