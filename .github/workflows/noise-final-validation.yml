@@ -1,0 +1,284 @@
+name: Existing Noise PR52 performance and final static checks
+permissions:
+  contents: read
+'on':
+  push:
+    branches:
+    - codex/validate-noise52-final
+jobs:
+  baseline:
+    name: Measure baseline receive allocations
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: ff86354bcafbd054e7888e48343145323c9b2207
+        fetch-depth: 0
+    - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
+
+        sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/utils/network/runtime_audit_noise_test.go'').write_text(''package
+        network\n\nimport (\n "bytes"\n "encoding/binary"\n "io"\n "net"\n "testing"\n
+        "time"\n "github.com/flynn/noise"\n)\n\ntype noiseAuditMemoryConn struct {
+        net.Conn; input bytes.Reader; output bytes.Buffer }\nfunc(c *noiseAuditMemoryConn)Read(p
+        []byte)(int,error){return c.input.Read(p)}\nfunc(c *noiseAuditMemoryConn)Write(p
+        []byte)(int,error){return c.output.Write(p)}\nfunc(c *noiseAuditMemoryConn)Close()error{return
+        nil}\n\nfunc noiseAuditFixture(t *testing.T,size int)(*noiseConn,*noiseAuditMemoryConn,[]byte,[]byte){\n
+        t.Helper();a,b,ce,se:=noisePair(t,padToken,padToken);if ce!=nil||se!=nil{t.Fatalf("handshake
+        %v %v",ce,se)}\n originalA,originalB:=a.(*noiseConn).Conn,b.(*noiseConn).Conn;t.Cleanup(func(){originalA.Close();originalB.Close()})\n
+        memory:=&noiseAuditMemoryConn{};a.(*noiseConn).Conn=memory;b.(*noiseConn).Conn=memory\n
+        payload:=bytes.Repeat([]byte{0x5a},size);if _,err:=a.Write(payload);err!=nil{t.Fatal(err)}\n
+        wire:=append([]byte(nil),memory.output.Bytes()...)\n return b.(*noiseConn),memory,wire,payload\n}\n\nfunc
+        TestNoiseAuditReceiveAllocations(t *testing.T){\n recv,memory,wire,payload:=noiseAuditFixture(t,8192);dst:=make([]byte,len(payload))\n
+        read:=func(){memory.input.Reset(wire);recv.recv.SetNonce(0);n,err:=io.ReadFull(recv,dst);if
+        err!=nil||n!=len(dst){t.Fatalf("read %d %v",n,err)}}\n read();got:=testing.AllocsPerRun(1000,read)\n
+        if !bytes.Equal(dst,payload){t.Fatal("decryption changed payload")}\n t.Logf("receive8192:
+        %.1f allocs/record",got)\n if got>1.1{t.Errorf("record buffers still allocate:
+        %.1f",got)}\n}\n\nfunc TestNoiseAuditPartialReadThenNextRecord(t *testing.T){\n
+        a,b,ce,se:=noisePair(t,padToken,padToken);if ce!=nil||se!=nil{t.Fatalf("handshake
+        %v %v",ce,se)};defer a.Close();defer b.Close()\n a.SetDeadline(time.Now().Add(5*time.Second));b.SetDeadline(time.Now().Add(5*time.Second))\n
+        for _,size:=range []int{1,8192,65000,13,511,32000,0,5}{payload:=bytes.Repeat([]byte{byte(size)},size);if
+        size==0{payload=[]byte{7}}\n  if _,err:=a.Write(payload);err!=nil{t.Fatal(err)}\n  got:=make([]byte,0,len(payload));chunk:=make([]byte,113)\n  for
+        len(got)<len(payload){n,err:=b.Read(chunk);if err!=nil{t.Fatal(err)};got=append(got,chunk[:n]...)}\n  if
+        !bytes.Equal(got,payload){t.Fatalf("partial-read payload size%d corrupted",size)}\n
+        }\n}\n\nfunc TestNoiseAuditAuthenticationFailureLeaksNoPlaintext(t *testing.T){\n
+        recv,memory,wire,_:=noiseAuditFixture(t,8192);wire[len(wire)-1]^=1;memory.input.Reset(wire)\n
+        dst:=bytes.Repeat([]byte{0x77},8192);n,err:=recv.Read(dst)\n if n!=0||err==nil{t.Fatalf("corrupt
+        frame returned %d %v",n,err)}\n if !bytes.Equal(dst,bytes.Repeat([]byte{0x77},8192)){t.Fatal("caller
+        plaintext modified by unauthenticated frame")}\n}\n\nfunc TestNoiseAuditInvalidPaddingLeaksNoPlaintext(t
+        *testing.T){\n a,b,ce,se:=noisePair(t,padToken,padToken);if ce!=nil||se!=nil{t.Fatalf("handshake
+        %v %v",ce,se)}\n originalA,originalB:=a.(*noiseConn).Conn,b.(*noiseConn).Conn;defer
+        originalA.Close();defer originalB.Close()\n ciphertext,err:=a.(*noiseConn).send.Encrypt(nil,nil,[]byte{255,1});if
+        err!=nil{t.Fatal(err)}\n wire:=make([]byte,2+len(ciphertext));binary.BigEndian.PutUint16(wire[:2],uint16(len(ciphertext)));copy(wire[2:],ciphertext)\n
+        memory:=&noiseAuditMemoryConn{};memory.input.Reset(wire);b.(*noiseConn).Conn=memory\n
+        dst:=bytes.Repeat([]byte{0x77},4);if n,err:=b.Read(dst);n!=0||err==nil{t.Fatalf("invalid
+        padding returned %d %v",n,err)}\n if !bytes.Equal(dst,bytes.Repeat([]byte{0x77},4)){t.Fatal("invalid
+        padding altered caller plaintext")}\n}\n\nfunc BenchmarkNoiseAuditReceive(b
+        *testing.B){\n // Use the production cipher suite with a fixed fixture key.
+        Resetting the\n // fixture nonce replays its captured record; production nonces
+        stay monotonic.\n key:=[32]byte{1,2,3}\n send:=&noiseConn{send:noise.UnsafeNewCipherState(noiseSuite,key,0),pad:true}\n
+        memory:=&noiseAuditMemoryConn{};send.Conn=memory;payload:=bytes.Repeat([]byte{7},8192);send.Write(payload)\n
+        wire:=append([]byte(nil),memory.output.Bytes()...);recv:=&noiseConn{Conn:memory,recv:noise.UnsafeNewCipherState(noiseSuite,key,0),pad:true};dst:=make([]byte,len(payload))\n
+        b.SetBytes(int64(len(payload)));b.ReportAllocs();b.ResetTimer()\n for i:=0;i<b.N;i++{memory.input.Reset(wire);recv.recv.SetNonce(0);if
+        _,err:=io.ReadFull(recv,dst);err!=nil{b.Fatal(err)}}\n}\n\nfunc TestNoiseAuditReadCloseEnds(t
+        *testing.T){\n a,b,ce,se:=noisePair(t,padToken,padToken);if ce!=nil||se!=nil{t.Fatalf("handshake
+        %v %v",ce,se)};defer a.Close();defer b.Close()\n done:=make(chan error,1);go
+        func(){buf:=make([]byte,1024);_,err:=b.Read(buf);done<-err}()\n b.Close();select{case
+        err:=<-done:if err==nil{t.Fatal("closed read succeeded")};case<-time.After(time.Second):t.Fatal("closed
+        reader stayed blocked")}\n}\n'',encoding=''utf-8'')
+
+        PY
+
+        gofmt -w internal/utils/network/runtime_audit_noise_test.go'
+    - run: 'if go test ./internal/utils/network -run TestNoiseAuditReceiveAllocations
+        -v -count=1 > /tmp/noise-allocation.log 2>&1; then cat /tmp/noise-allocation.log;
+        exit 1; fi
+
+        cat /tmp/noise-allocation.log
+
+        grep -q "record buffers still allocate" /tmp/noise-allocation.log
+
+        go test ./internal/utils/network -run X -bench BenchmarkNoiseAuditReceive
+        -benchmem -count=3 -benchtime=1s'
+  source:
+    name: Exact existing PR52 receive optimization
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 5bdc7f2e4081aa8a8729bd0dffa6ac42baa6378a
+        fetch-depth: 0
+    - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
+
+        sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/utils/network/runtime_audit_noise_test.go'').write_text(''package
+        network\n\nimport (\n "bytes"\n "encoding/binary"\n "io"\n "net"\n "testing"\n
+        "time"\n "github.com/flynn/noise"\n)\n\ntype noiseAuditMemoryConn struct {
+        net.Conn; input bytes.Reader; output bytes.Buffer }\nfunc(c *noiseAuditMemoryConn)Read(p
+        []byte)(int,error){return c.input.Read(p)}\nfunc(c *noiseAuditMemoryConn)Write(p
+        []byte)(int,error){return c.output.Write(p)}\nfunc(c *noiseAuditMemoryConn)Close()error{return
+        nil}\n\nfunc noiseAuditFixture(t *testing.T,size int)(*noiseConn,*noiseAuditMemoryConn,[]byte,[]byte){\n
+        t.Helper();a,b,ce,se:=noisePair(t,padToken,padToken);if ce!=nil||se!=nil{t.Fatalf("handshake
+        %v %v",ce,se)}\n originalA,originalB:=a.(*noiseConn).Conn,b.(*noiseConn).Conn;t.Cleanup(func(){originalA.Close();originalB.Close()})\n
+        memory:=&noiseAuditMemoryConn{};a.(*noiseConn).Conn=memory;b.(*noiseConn).Conn=memory\n
+        payload:=bytes.Repeat([]byte{0x5a},size);if _,err:=a.Write(payload);err!=nil{t.Fatal(err)}\n
+        wire:=append([]byte(nil),memory.output.Bytes()...)\n return b.(*noiseConn),memory,wire,payload\n}\n\nfunc
+        TestNoiseAuditReceiveAllocations(t *testing.T){\n recv,memory,wire,payload:=noiseAuditFixture(t,8192);dst:=make([]byte,len(payload))\n
+        read:=func(){memory.input.Reset(wire);recv.recv.SetNonce(0);n,err:=io.ReadFull(recv,dst);if
+        err!=nil||n!=len(dst){t.Fatalf("read %d %v",n,err)}}\n read();got:=testing.AllocsPerRun(1000,read)\n
+        if !bytes.Equal(dst,payload){t.Fatal("decryption changed payload")}\n t.Logf("receive8192:
+        %.1f allocs/record",got)\n if got>1.1{t.Errorf("record buffers still allocate:
+        %.1f",got)}\n}\n\nfunc TestNoiseAuditPartialReadThenNextRecord(t *testing.T){\n
+        a,b,ce,se:=noisePair(t,padToken,padToken);if ce!=nil||se!=nil{t.Fatalf("handshake
+        %v %v",ce,se)};defer a.Close();defer b.Close()\n a.SetDeadline(time.Now().Add(5*time.Second));b.SetDeadline(time.Now().Add(5*time.Second))\n
+        for _,size:=range []int{1,8192,65000,13,511,32000,0,5}{payload:=bytes.Repeat([]byte{byte(size)},size);if
+        size==0{payload=[]byte{7}}\n  if _,err:=a.Write(payload);err!=nil{t.Fatal(err)}\n  got:=make([]byte,0,len(payload));chunk:=make([]byte,113)\n  for
+        len(got)<len(payload){n,err:=b.Read(chunk);if err!=nil{t.Fatal(err)};got=append(got,chunk[:n]...)}\n  if
+        !bytes.Equal(got,payload){t.Fatalf("partial-read payload size%d corrupted",size)}\n
+        }\n}\n\nfunc TestNoiseAuditAuthenticationFailureLeaksNoPlaintext(t *testing.T){\n
+        recv,memory,wire,_:=noiseAuditFixture(t,8192);wire[len(wire)-1]^=1;memory.input.Reset(wire)\n
+        dst:=bytes.Repeat([]byte{0x77},8192);n,err:=recv.Read(dst)\n if n!=0||err==nil{t.Fatalf("corrupt
+        frame returned %d %v",n,err)}\n if !bytes.Equal(dst,bytes.Repeat([]byte{0x77},8192)){t.Fatal("caller
+        plaintext modified by unauthenticated frame")}\n}\n\nfunc TestNoiseAuditInvalidPaddingLeaksNoPlaintext(t
+        *testing.T){\n a,b,ce,se:=noisePair(t,padToken,padToken);if ce!=nil||se!=nil{t.Fatalf("handshake
+        %v %v",ce,se)}\n originalA,originalB:=a.(*noiseConn).Conn,b.(*noiseConn).Conn;defer
+        originalA.Close();defer originalB.Close()\n ciphertext,err:=a.(*noiseConn).send.Encrypt(nil,nil,[]byte{255,1});if
+        err!=nil{t.Fatal(err)}\n wire:=make([]byte,2+len(ciphertext));binary.BigEndian.PutUint16(wire[:2],uint16(len(ciphertext)));copy(wire[2:],ciphertext)\n
+        memory:=&noiseAuditMemoryConn{};memory.input.Reset(wire);b.(*noiseConn).Conn=memory\n
+        dst:=bytes.Repeat([]byte{0x77},4);if n,err:=b.Read(dst);n!=0||err==nil{t.Fatalf("invalid
+        padding returned %d %v",n,err)}\n if !bytes.Equal(dst,bytes.Repeat([]byte{0x77},4)){t.Fatal("invalid
+        padding altered caller plaintext")}\n}\n\nfunc BenchmarkNoiseAuditReceive(b
+        *testing.B){\n // Use the production cipher suite with a fixed fixture key.
+        Resetting the\n // fixture nonce replays its captured record; production nonces
+        stay monotonic.\n key:=[32]byte{1,2,3}\n send:=&noiseConn{send:noise.UnsafeNewCipherState(noiseSuite,key,0),pad:true}\n
+        memory:=&noiseAuditMemoryConn{};send.Conn=memory;payload:=bytes.Repeat([]byte{7},8192);send.Write(payload)\n
+        wire:=append([]byte(nil),memory.output.Bytes()...);recv:=&noiseConn{Conn:memory,recv:noise.UnsafeNewCipherState(noiseSuite,key,0),pad:true};dst:=make([]byte,len(payload))\n
+        b.SetBytes(int64(len(payload)));b.ReportAllocs();b.ResetTimer()\n for i:=0;i<b.N;i++{memory.input.Reset(wire);recv.recv.SetNonce(0);if
+        _,err:=io.ReadFull(recv,dst);err!=nil{b.Fatal(err)}}\n}\n\nfunc TestNoiseAuditReadCloseEnds(t
+        *testing.T){\n a,b,ce,se:=noisePair(t,padToken,padToken);if ce!=nil||se!=nil{t.Fatalf("handshake
+        %v %v",ce,se)};defer a.Close();defer b.Close()\n done:=make(chan error,1);go
+        func(){buf:=make([]byte,1024);_,err:=b.Read(buf);done<-err}()\n b.Close();select{case
+        err:=<-done:if err==nil{t.Fatal("closed read succeeded")};case<-time.After(time.Second):t.Fatal("closed
+        reader stayed blocked")}\n}\n'',encoding=''utf-8'')
+
+        PY
+
+        gofmt -w internal/utils/network/runtime_audit_noise_test.go'
+    - run: 'go test ./internal/utils/network -run "TestNoise|Test.*Padding|Test.*Stealth"
+        -race -count=5 -v -timeout 5m
+
+        GODEBUG=cpu.all=off go test ./internal/utils/network -run TestNoiseAudit -count=3
+        -v -timeout 2m
+
+        go test ./internal/utils/network -run X -bench BenchmarkNoiseAuditReceive
+        -benchmem -count=3 -benchtime=1s
+
+        go test ./internal/utils/network -race -timeout 15m'
+  combined:
+    name: PR52 with all current tunnel corrections
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: d7055eec3ab854a9f295b0e8ced6c2978384cad8
+        fetch-depth: 0
+    - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
+
+        sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/utils/network/runtime_audit_noise_test.go'').write_text(''package
+        network\n\nimport (\n "bytes"\n "encoding/binary"\n "io"\n "net"\n "testing"\n
+        "time"\n "github.com/flynn/noise"\n)\n\ntype noiseAuditMemoryConn struct {
+        net.Conn; input bytes.Reader; output bytes.Buffer }\nfunc(c *noiseAuditMemoryConn)Read(p
+        []byte)(int,error){return c.input.Read(p)}\nfunc(c *noiseAuditMemoryConn)Write(p
+        []byte)(int,error){return c.output.Write(p)}\nfunc(c *noiseAuditMemoryConn)Close()error{return
+        nil}\n\nfunc noiseAuditFixture(t *testing.T,size int)(*noiseConn,*noiseAuditMemoryConn,[]byte,[]byte){\n
+        t.Helper();a,b,ce,se:=noisePair(t,padToken,padToken);if ce!=nil||se!=nil{t.Fatalf("handshake
+        %v %v",ce,se)}\n originalA,originalB:=a.(*noiseConn).Conn,b.(*noiseConn).Conn;t.Cleanup(func(){originalA.Close();originalB.Close()})\n
+        memory:=&noiseAuditMemoryConn{};a.(*noiseConn).Conn=memory;b.(*noiseConn).Conn=memory\n
+        payload:=bytes.Repeat([]byte{0x5a},size);if _,err:=a.Write(payload);err!=nil{t.Fatal(err)}\n
+        wire:=append([]byte(nil),memory.output.Bytes()...)\n return b.(*noiseConn),memory,wire,payload\n}\n\nfunc
+        TestNoiseAuditReceiveAllocations(t *testing.T){\n recv,memory,wire,payload:=noiseAuditFixture(t,8192);dst:=make([]byte,len(payload))\n
+        read:=func(){memory.input.Reset(wire);recv.recv.SetNonce(0);n,err:=io.ReadFull(recv,dst);if
+        err!=nil||n!=len(dst){t.Fatalf("read %d %v",n,err)}}\n read();got:=testing.AllocsPerRun(1000,read)\n
+        if !bytes.Equal(dst,payload){t.Fatal("decryption changed payload")}\n t.Logf("receive8192:
+        %.1f allocs/record",got)\n if got>1.1{t.Errorf("record buffers still allocate:
+        %.1f",got)}\n}\n\nfunc TestNoiseAuditPartialReadThenNextRecord(t *testing.T){\n
+        a,b,ce,se:=noisePair(t,padToken,padToken);if ce!=nil||se!=nil{t.Fatalf("handshake
+        %v %v",ce,se)};defer a.Close();defer b.Close()\n a.SetDeadline(time.Now().Add(5*time.Second));b.SetDeadline(time.Now().Add(5*time.Second))\n
+        for _,size:=range []int{1,8192,65000,13,511,32000,0,5}{payload:=bytes.Repeat([]byte{byte(size)},size);if
+        size==0{payload=[]byte{7}}\n  if _,err:=a.Write(payload);err!=nil{t.Fatal(err)}\n  got:=make([]byte,0,len(payload));chunk:=make([]byte,113)\n  for
+        len(got)<len(payload){n,err:=b.Read(chunk);if err!=nil{t.Fatal(err)};got=append(got,chunk[:n]...)}\n  if
+        !bytes.Equal(got,payload){t.Fatalf("partial-read payload size%d corrupted",size)}\n
+        }\n}\n\nfunc TestNoiseAuditAuthenticationFailureLeaksNoPlaintext(t *testing.T){\n
+        recv,memory,wire,_:=noiseAuditFixture(t,8192);wire[len(wire)-1]^=1;memory.input.Reset(wire)\n
+        dst:=bytes.Repeat([]byte{0x77},8192);n,err:=recv.Read(dst)\n if n!=0||err==nil{t.Fatalf("corrupt
+        frame returned %d %v",n,err)}\n if !bytes.Equal(dst,bytes.Repeat([]byte{0x77},8192)){t.Fatal("caller
+        plaintext modified by unauthenticated frame")}\n}\n\nfunc TestNoiseAuditInvalidPaddingLeaksNoPlaintext(t
+        *testing.T){\n a,b,ce,se:=noisePair(t,padToken,padToken);if ce!=nil||se!=nil{t.Fatalf("handshake
+        %v %v",ce,se)}\n originalA,originalB:=a.(*noiseConn).Conn,b.(*noiseConn).Conn;defer
+        originalA.Close();defer originalB.Close()\n ciphertext,err:=a.(*noiseConn).send.Encrypt(nil,nil,[]byte{255,1});if
+        err!=nil{t.Fatal(err)}\n wire:=make([]byte,2+len(ciphertext));binary.BigEndian.PutUint16(wire[:2],uint16(len(ciphertext)));copy(wire[2:],ciphertext)\n
+        memory:=&noiseAuditMemoryConn{};memory.input.Reset(wire);b.(*noiseConn).Conn=memory\n
+        dst:=bytes.Repeat([]byte{0x77},4);if n,err:=b.Read(dst);n!=0||err==nil{t.Fatalf("invalid
+        padding returned %d %v",n,err)}\n if !bytes.Equal(dst,bytes.Repeat([]byte{0x77},4)){t.Fatal("invalid
+        padding altered caller plaintext")}\n}\n\nfunc BenchmarkNoiseAuditReceive(b
+        *testing.B){\n // Use the production cipher suite with a fixed fixture key.
+        Resetting the\n // fixture nonce replays its captured record; production nonces
+        stay monotonic.\n key:=[32]byte{1,2,3}\n send:=&noiseConn{send:noise.UnsafeNewCipherState(noiseSuite,key,0),pad:true}\n
+        memory:=&noiseAuditMemoryConn{};send.Conn=memory;payload:=bytes.Repeat([]byte{7},8192);send.Write(payload)\n
+        wire:=append([]byte(nil),memory.output.Bytes()...);recv:=&noiseConn{Conn:memory,recv:noise.UnsafeNewCipherState(noiseSuite,key,0),pad:true};dst:=make([]byte,len(payload))\n
+        b.SetBytes(int64(len(payload)));b.ReportAllocs();b.ResetTimer()\n for i:=0;i<b.N;i++{memory.input.Reset(wire);recv.recv.SetNonce(0);if
+        _,err:=io.ReadFull(recv,dst);err!=nil{b.Fatal(err)}}\n}\n\nfunc TestNoiseAuditReadCloseEnds(t
+        *testing.T){\n a,b,ce,se:=noisePair(t,padToken,padToken);if ce!=nil||se!=nil{t.Fatalf("handshake
+        %v %v",ce,se)};defer a.Close();defer b.Close()\n done:=make(chan error,1);go
+        func(){buf:=make([]byte,1024);_,err:=b.Read(buf);done<-err}()\n b.Close();select{case
+        err:=<-done:if err==nil{t.Fatal("closed read succeeded")};case<-time.After(time.Second):t.Fatal("closed
+        reader stayed blocked")}\n}\n'',encoding=''utf-8'')
+
+        PY
+
+        gofmt -w internal/utils/network/runtime_audit_noise_test.go'
+    - run: 'go test ./internal/utils/network -run "TestNoise|Test.*Padding|Test.*Stealth"
+        -race -count=5 -v -timeout 5m
+
+        GODEBUG=cpu.all=off go test ./internal/utils/network -run TestNoiseAudit -count=3
+        -v -timeout 2m
+
+        go test ./internal/utils/network -run X -bench BenchmarkNoiseAuditReceive
+        -benchmem -count=3 -benchtime=1s
+
+        go test ./internal/utils/network -race -timeout 15m
+
+        go vet ./internal/utils/network ./internal/utils/handlers ./internal/tunnel/direct
+        ./internal/tunnel/l3 ./internal/tunnel/limits ./internal/server/transport
+        ./internal/client/transport
+
+        go test ./internal/utils/handlers ./internal/tunnel/direct ./internal/tunnel/l3
+        ./internal/tunnel/limits ./internal/server/transport ./internal/client/transport
+        -race -timeout 20m'
+  audit:
+    name: Final integrated vulnerability and static analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: d7055eec3ab854a9f295b0e8ced6c2978384cad8
+        fetch-depth: 0
+    - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
+
+        sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - run: 'go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+        go run honnef.co/go/tools/cmd/staticcheck@latest ./...'
