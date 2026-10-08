@@ -1,24 +1,43 @@
-name: Upstream managed HTTPS menu validation
+name: Managed connection-test validation
 permissions:
   contents: read
 on:
   push:
-    branches: [codex/validate-menu-upstream]
+    branches: [codex/validate-conntest-managed]
 jobs:
-  menu:
+  checks:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: 7bf520dc0a1879177a4e641d2fc56ec95c1d5a1b
+          ref: 6a4b982e53963f0aa11900e6fba7073590b7e660
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
       - run: |
           sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
-          go test ./internal/manage -run 'TestManagedHTTPS|TestTheReverseWizardOrder|TestTheReverseSummary|TestTheReverseLink|TestTransportMenu' -race -count=5 -v -timeout 4m
-          go test ./internal/manage ./internal/manage/tunnelspec ./internal/tui ./internal/menu ./cmd -short -race -timeout 8m
-          go vet ./internal/manage/... ./internal/tui ./internal/menu ./cmd
+          go test ./internal/manage -run 'TestConnTest|TestTheTestSettingsFitOnePacket' -race -count=3 -v -timeout 5m
+          go test ./internal/manage/... ./internal/tunnel/naive ./internal/tui ./cmd -short -race -timeout 8m
+          go test ./... -timeout 12m
+          go vet ./...
           GOOS=linux GOARCH=arm64 go build ./...
+  helpers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: 6a4b982e53963f0aa11900e6fba7073590b7e660
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: |
+          sudo env "PATH=$PATH" BP_BUILD_FROM_SOURCE=1 BP_HELPERS=naive,xray bash ./install.sh
+          BP_CONNTEST_HELPERS=1 go test ./internal/manage -run '^TestAConnectionTestOverLoopbackPassesEveryReverseTransport$' -count=2 -v -timeout 7m
+      - uses: actions/upload-artifact@v7
+        with:
+          name: backpack-conntest-linux-amd64
+          path: /usr/local/bin/backpack
