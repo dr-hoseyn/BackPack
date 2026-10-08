@@ -1,0 +1,124 @@
+name: Next runtime pacing and raw UDP packet integrity proofs
+permissions:
+  contents: read
+'on':
+  push:
+    branches:
+    - codex/validate-runtime-next-round
+jobs:
+  baseline_pacing:
+    name: Reproduce paced close stall and cancelled-write bypass
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 50d05f0ec686cc28d87d8d7a631939bfce4e53e1
+        fetch-depth: 0
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - &id001
+      run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/server/transport/runtime_audit_pacing_close_test.go'').write_text(''package transport\n\nimport (\n
+        "context"\n "errors"\n "io"\n "net"\n "sync/atomic"\n "testing"\n "time"\n)\n\ntype auditPacingConn struct { net.Conn;
+        writes atomic.Int32; entered chan struct{}; readPayload bool }\nfunc (c *auditPacingConn) Write(p []byte)(int,error)
+        { c.writes.Add(1);return len(p),nil }\nfunc (c *auditPacingConn) Read(p []byte)(int,error) {close(c.entered);copy(p,"tail");if
+        c.readPayload{return 4,io.EOF};return 4,nil}\nfunc TestAuditPacedCloseStopsOnlyItsConnection(t *testing.T) {\n l:=newLimiter(Limits{BandwidthMbps:1})\n
+        socket,peer:=net.Pipe();defer peer.Close()\n plain:=&auditPacingConn{Conn:socket}\n c:=l.wrap(context.Background(),plain)\n
+        l.waitBytes(context.Background(),125000)\n done:=make(chan error,1)\n go func(){_,err:=c.Write(make([]byte,125000));done<-err}()\n
+        time.Sleep(20*time.Millisecond)\n if err:=c.Close();err!=nil{t.Fatal(err)}\n select{case err:=<-done:if err==nil{t.Error("closed
+        pacing write succeeded")};case<-time.After(150*time.Millisecond):t.Error("Close left write waiting for tokens; relay
+        slot remains held")}\n select{case<-done:case<-time.After(1200*time.Millisecond):}\n if n:=plain.writes.Load();n!=0{t.Errorf("closed
+        paced write reached underlying socket %d times",n)}\n}\nfunc TestAuditPacingCancellationNeverStartsWrite(t *testing.T){\n
+        ctx,cancel:=context.WithCancel(context.Background());cancel()\n socket,peer:=net.Pipe();defer socket.Close();defer
+        peer.Close()\n plain:=&auditPacingConn{Conn:socket}\n c:=newLimiter(Limits{BandwidthMbps:1}).wrap(ctx,plain)\n n,err:=c.Write([]byte("rejected"))\n
+        if n!=0||!errors.Is(err,context.Canceled)||plain.writes.Load()!=0{t.Fatalf("cancelled write n=%d err=%v underlying
+        writes=%d",n,err,plain.writes.Load())}\n}\nfunc TestAuditPacingReadReportsCancellationAndKeepsTail(t *testing.T){\n
+        for _,eof:=range []bool{false,true}{t.Run(map[bool]string{false:"read",true:"tailEOF"}[eof],func(t *testing.T){\n
+        ctx,cancel:=context.WithCancel(context.Background());defer cancel()\n socket,peer:=net.Pipe();defer socket.Close();defer
+        peer.Close()\n plain:=&auditPacingConn{Conn:socket,entered:make(chan struct{}),readPayload:eof}\n l:=newLimiter(Limits{BandwidthMbps:1});l.waitBytes(ctx,125000)\n
+        c:=l.wrap(ctx,plain);done:=make(chan error,1)\n go func(){buf:=make([]byte,8);n,err:=c.Read(buf);if n!=4||string(buf[:n])!="tail"{t.Errorf("tail
+        n%d %q",n,buf[:n])};done<-err}()\n <-plain.entered;cancel()\n select{case err:=<-done:if eof{if !errors.Is(err,io.EOF){t.Errorf("lost
+        EOF %v",err)}}else if !errors.Is(err,context.Canceled){t.Errorf("pacing swallowed cancellation: %v",err)};case<-time.After(150*time.Millisecond):t.Fatal("read
+        pacing ignored cancellation")}\n })}\n}\n'',encoding=''utf-8'')
+
+        PY
+
+        gofmt -w internal/server/transport/runtime_audit_pacing_close_test.go'
+    - run: 'if go test ./internal/server/transport -run "TestAuditPacedClose|TestAuditPacing" -count=1 -v -timeout 1m > /tmp/pacing.log
+        2>&1; then cat /tmp/pacing.log; exit 1; fi
+
+        cat /tmp/pacing.log
+
+        grep -q "Close left write waiting for tokens" /tmp/pacing.log
+
+        grep -q "cancelled write n=8 err=<nil>" /tmp/pacing.log
+
+        grep -q "pacing swallowed cancellation" /tmp/pacing.log'
+  baseline_packet:
+    name: Reproduce full raw UDP tunnel truncation and empty datagram loss
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 50d05f0ec686cc28d87d8d7a631939bfce4e53e1
+        fetch-depth: 0
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/e2e/runtime_audit_udp_packet_test.go'').write_text(''package e2e\n\nimport (\n\t"bytes"\n\t"context"\n\t"fmt"\n\t"github.com/backpack/backpack/internal/client"\n\t"github.com/backpack/backpack/internal/server"\n\t"sync"\n\t"testing"\n\t"time"\n)\n\nfunc
+        TestRuntimeAuditRawUDPPacketIntegrity(t *testing.T) {\n\tbackendAddr := startUDPEchoBackend(t)\n\ttunnelPort, entryPort
+        := freePort(t), freePort(t)\n\ttoken := "packet-integrity-token-0123456789"\n\tsrvCfg := baseServerConfig("udp", tunnelPort,
+        entryPort, backendAddr, token)\n\tcliCfg := baseClientConfig("udp", fmt.Sprintf("127.0.0.1:%d", tunnelPort), token,
+        nil)\n\tctx, cancel := context.WithCancel(context.Background())\n\tvar wg sync.WaitGroup\n\tt.Cleanup(func() { cancel();
+        wg.Wait() })\n\tsrv := server.NewServer(srvCfg, ctx)\n\twg.Add(1)\n\tgo func() { defer wg.Done(); srv.Start() }()\n\ttime.Sleep(300
+        * time.Millisecond)\n\tcli := client.NewClient(cliCfg, ctx)\n\twg.Add(1)\n\tgo func() { defer wg.Done(); cli.Start()
+        }()\n\tconn, err := holdUDPFlow(t, fmt.Sprintf("127.0.0.1:%d", entryPort), tunnelReadyTimeout)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tdefer
+        conn.Close()\n\tfor _, size := range []int{16384, 16385, 60000, 0, 7} {\n\t\tt.Run(fmt.Sprint(size), func(t *testing.T)
+        {\n\t\t\tpayload := bytes.Repeat([]byte{byte(size % 251)}, size)\n\t\t\tif err := conn.SetDeadline(time.Now().Add(2
+        * time.Second)); err != nil {\n\t\t\t\tt.Fatal(err)\n\t\t\t}\n\t\t\tn, err := conn.Write(payload)\n\t\t\tif err !=
+        nil {\n\t\t\t\tt.Fatal(err)\n\t\t\t}\n\t\t\tif n != size {\n\t\t\t\tt.Fatalf("send=%d want=%d", n, size)\n\t\t\t}\n\t\t\tgot
+        := make([]byte, 65535)\n\t\t\tn, err = conn.Read(got)\n\t\t\tif err != nil {\n\t\t\t\tt.Fatalf("%d-byte datagram did
+        not return: %v", size, err)\n\t\t\t}\n\t\t\tif !bytes.Equal(got[:n], payload) {\n\t\t\t\tt.Fatalf("datagram integrity
+        lost: got=%d bytes want=%d", n, size)\n\t\t\t}\n\t\t})\n\t}\n}\n'',encoding=''utf-8'')
+
+        PY
+
+        gofmt -w internal/e2e/runtime_audit_udp_packet_test.go'
+    - run: 'if go test ./internal/e2e -run TestRuntimeAuditRawUDPPacketIntegrity -count=1 -v -timeout 1m > /tmp/packet.log
+        2>&1; then cat /tmp/packet.log; exit 1; fi
+
+        cat /tmp/packet.log
+
+        grep -q "FAIL: TestRuntimeAuditRawUDPPacketIntegrity" /tmp/packet.log'
+  pacing:
+    name: Exact reverse connection close and cancelled pacing operations
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 1479daeed527c861555926a0ccccac80eeed8e72
+        fetch-depth: 0
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - *id001
+    - run: 'go test ./internal/server/transport -run "TestAuditPacedClose|TestAuditPacing|TestClosingAPaced|TestPacingRead|TestPacingCancellation|TestPacingStops"
+        -race -count=3 -v -timeout 2m
+
+        go test ./internal/server/transport ./internal/utils/handlers ./internal/tunnel/limits -race -timeout 15m
+
+        go vet ./internal/server/transport ./internal/tunnel/limits'
