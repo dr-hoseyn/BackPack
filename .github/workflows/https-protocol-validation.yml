@@ -83,7 +83,7 @@ jobs:
     steps:
     - uses: actions/checkout@v7
       with:
-        ref: 7c07d07b99281b13c2e70a8a046fc05cf8128281
+        ref: b2a0612af3c86d3712460c6117ba076fdd7186f1
     - uses: actions/setup-go@v7
       with:
         go-version-file: go.mod
@@ -119,21 +119,28 @@ jobs:
         := decode(frozen)\n\tif tlsMaterial.CertificatePath != "" || tlsMaterial.KeyPath != "" {\n\t\tt.Error("generated JSON
         gives sing-box live certificate/key paths; independent fswatch reload bypasses validation")\n\t}\n\tif strings.Join(tlsMaterial.Certificate,
         "\\n") != string(oldCert) || strings.Join(tlsMaterial.Key, "\\n") != string(oldKey) {\n\t\tt.Error("generated JSON
-        does not contain the exact validated certificate/private key")\n\t}\n\t// Replace source files with a well-formed
-        matched pair which the helper\''s\n\t// independent watcher would accept, but which Backpack must reject.\n\twrite(certPath,
-        expiredCert)\n\twrite(keyPath, expiredKey)\n\tif _, err := tls.X509KeyPair(expiredCert, expiredKey); err != nil {\n\t\tt.Fatalf("expiry
-        fixture is not a valid matched pair: %v", err)\n\t}\n\tif err := ValidateServer(&cfg); err == nil {\n\t\tt.Error("expired
-        input unexpectedly validates")\n\t}\n\tif _, err := serverJSON(&cfg); err == nil {\n\t\tt.Error("fresh helper JSON
-        accepts the matched expired replacement")\n\t}\n\t// Retained per-generation material stays usable without touching
-        those files.\n\tretained := decode(frozen)\n\tif retained.CertificatePath != "" || retained.KeyPath != "" {\n\t\tt.Error("retained
-        generation still references the mutated files")\n\t}\n\tif strings.Join(retained.Certificate, "\\n") != string(oldCert)
-        || strings.Join(retained.Key, "\\n") != string(oldKey) {\n\t\tt.Error("retained generation lost the original certificate/key")\n\t}\n\tif
-        len(retained.Certificate) > 0 && len(retained.Key) > 0 {\n\t\toldPair, err := tls.X509KeyPair([]byte(strings.Join(retained.Certificate,
-        "\\n")), []byte(strings.Join(retained.Key, "\\n")))\n\t\tif err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t\tleaf, err
-        := x509.ParseCertificate(oldPair.Certificate[0])\n\t\tif err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t\tif leaf.SerialNumber.Int64()
-        != 1 || !time.Now().Before(leaf.NotAfter) {\n\t\t\tt.Error("retained material is the expired replacement")\n\t\t}\n\t}\n\t//
-        A mismatched save is also rejected before producing a child configuration.\n\twrite(certPath, oldCert)\n\twrite(keyPath,
-        expiredKey)\n\tif _, err := serverJSON(&cfg); err == nil {\n\t\tt.Error("fresh helper JSON accepts a mismatched certificate/key")\n\t}\n}\n'',encoding=''utf-8'')
+        does not contain the exact validated certificate/private key")\n\t}\n\t// IPv4-mapped IPv6 loopback must canonicalize
+        before applying the IPv4\n\t// prefix length; ::ffff:127.0.0.1/32 would allow a vast IPv6 range.\n\tmapped := cfg\n\tmapped.BindAddr
+        = "[::ffff:127.0.0.1]:26001"\n\tmappedJSON, err := serverJSON(&mapped)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tvar
+        mappedDoc struct {\n\t\tRoute struct {\n\t\t\tRules []struct {\n\t\t\t\tCIDR []string `json:"ip_cidr"`\n\t\t\t} `json:"rules"`\n\t\t}
+        `json:"route"`\n\t}\n\tif err := json.Unmarshal(mappedJSON, &mappedDoc); err != nil {\n\t\tt.Fatal(err)\n\t}\n\tif
+        len(mappedDoc.Route.Rules) == 0 || len(mappedDoc.Route.Rules[0].CIDR) != 1 || mappedDoc.Route.Rules[0].CIDR[0] !=
+        "127.0.0.1/32" {\n\t\tt.Errorf("mapped loopback permits a non-canonical or broad destination range: %+v", mappedDoc.Route.Rules)\n\t}\n\t//
+        Replace source files with a well-formed matched pair which the helper\''s\n\t// independent watcher would accept,
+        but which Backpack must reject.\n\twrite(certPath, expiredCert)\n\twrite(keyPath, expiredKey)\n\tif _, err := tls.X509KeyPair(expiredCert,
+        expiredKey); err != nil {\n\t\tt.Fatalf("expiry fixture is not a valid matched pair: %v", err)\n\t}\n\tif err := ValidateServer(&cfg);
+        err == nil {\n\t\tt.Error("expired input unexpectedly validates")\n\t}\n\tif _, err := serverJSON(&cfg); err == nil
+        {\n\t\tt.Error("fresh helper JSON accepts the matched expired replacement")\n\t}\n\t// Retained per-generation material
+        stays usable without touching those files.\n\tretained := decode(frozen)\n\tif retained.CertificatePath != "" || retained.KeyPath
+        != "" {\n\t\tt.Error("retained generation still references the mutated files")\n\t}\n\tif strings.Join(retained.Certificate,
+        "\\n") != string(oldCert) || strings.Join(retained.Key, "\\n") != string(oldKey) {\n\t\tt.Error("retained generation
+        lost the original certificate/key")\n\t}\n\tif len(retained.Certificate) > 0 && len(retained.Key) > 0 {\n\t\toldPair,
+        err := tls.X509KeyPair([]byte(strings.Join(retained.Certificate, "\\n")), []byte(strings.Join(retained.Key, "\\n")))\n\t\tif
+        err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t\tleaf, err := x509.ParseCertificate(oldPair.Certificate[0])\n\t\tif err
+        != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t\tif leaf.SerialNumber.Int64() != 1 || !time.Now().Before(leaf.NotAfter) {\n\t\t\tt.Error("retained
+        material is the expired replacement")\n\t\t}\n\t}\n\t// A mismatched save is also rejected before producing a child
+        configuration.\n\twrite(certPath, oldCert)\n\twrite(keyPath, expiredKey)\n\tif _, err := serverJSON(&cfg); err ==
+        nil {\n\t\tt.Error("fresh helper JSON accepts a mismatched certificate/key")\n\t}\n}\n'',encoding=''utf-8'')
 
         PY'
     - *id001
@@ -158,7 +165,7 @@ jobs:
     steps:
     - uses: actions/checkout@v7
       with:
-        ref: 7c07d07b99281b13c2e70a8a046fc05cf8128281
+        ref: b2a0612af3c86d3712460c6117ba076fdd7186f1
     - uses: actions/setup-go@v7
       with:
         go-version-file: go.mod
@@ -412,7 +419,7 @@ jobs:
     steps:
     - uses: actions/checkout@v7
       with:
-        ref: 1f1c0b224b6b176846a234e424422cf55f802eec
+        ref: b3c43528218e93bdf801ea13ff3aa61abb2ff9f5
     - uses: actions/setup-go@v7
       with:
         go-version-file: go.mod
@@ -506,13 +513,16 @@ jobs:
         Linux loopback.\n\nRun as an unprivileged user inside a disposable network namespace. This is not\nan Internet path
         test. All files belong to the supplied disposable bundle dir.\n"""\nimport hashlib\nimport itertools\nimport json\nimport
         os\nimport re\nfrom pathlib import Path\nimport signal\nimport socket\nimport struct\nimport subprocess\nimport sys\nimport
-        threading\nimport time\nimport urllib.parse\n\nimport argparse\nparser = argparse.ArgumentParser(description=__doc__)\nparser.add_argument("--backpack",
+        threading\nimport time\nimport urllib.parse\n\nimport argparse\ndef positive_integer(raw):\n    try: value = int(raw)\n    except
+        ValueError: raise argparse.ArgumentTypeError("must be a positive integer")\n    if value < 1: raise argparse.ArgumentTypeError("must
+        be a positive integer")\n    return value\nparser = argparse.ArgumentParser(description=__doc__)\nparser.add_argument("--backpack",
         required=True, type=Path)\nparser.add_argument("--xray", required=True, type=Path)\nparser.add_argument("--profile",
-        choices=("both", "xhttp", "reality"), default="both")\nparser.add_argument("--output", required=True, type=Path)\nARGS
-        = parser.parse_args()\nif ARGS.profile == "both":\n    ARGS.output.mkdir(mode=0o700, parents=True, exist_ok=True)\n    if
-        any(ARGS.output.iterdir()): raise SystemExit("fixture output must be empty")\n    summary = {}\n    for profile in
-        ("xhttp", "reality"):\n        result = subprocess.run([sys.executable, __file__, "--backpack", str(ARGS.backpack),
-        "--xray", str(ARGS.xray), "--output", str(ARGS.output / profile), "--profile", profile], timeout=300)\n        path
+        choices=("both", "xhttp", "reality"), default="both")\nparser.add_argument("--concurrency-rounds", type=positive_integer,
+        default=1)\nparser.add_argument("--output", required=True, type=Path)\nARGS = parser.parse_args()\nif ARGS.profile
+        == "both":\n    ARGS.output.mkdir(mode=0o700, parents=True, exist_ok=True)\n    if any(ARGS.output.iterdir()): raise
+        SystemExit("fixture output must be empty")\n    summary = {}\n    for profile in ("xhttp", "reality"):\n        result
+        = subprocess.run([sys.executable, __file__, "--backpack", str(ARGS.backpack), "--xray", str(ARGS.xray), "--output",
+        str(ARGS.output / profile), "--profile", profile, "--concurrency-rounds", str(ARGS.concurrency_rounds)], timeout=300)\n        path
         = ARGS.output / profile / "local-check.json"\n        summary[profile] = json.loads(path.read_text()) if path.exists()
         else {"ok": False, "exit": result.returncode}\n    (ARGS.output / "managed-check.json").write_text(json.dumps(summary,
         indent=2) + "\\n")\n    print(json.dumps(summary), flush=True)\n    raise SystemExit(0 if all(result.get("ok") for
@@ -523,7 +533,7 @@ jobs:
         for listener in listeners]\nfor listener in listeners: listener.close()\nBIN = ROOT / "bin"\nDATA = hashlib.sha256(b"independent-download-fixture").digest()
         * 32768\nPROCS = {}\nLOGS = []\nPRIVATE_DIRS = set()\nHELPER_PIDS = set()\nHELPER_GROUPS = set()\nBACKEND_CONNECTIONS
         = 0\nTRACE_LOCK = threading.Lock()\nAPP_TRACES = []\nBACKEND_TRACES = []\nAPP_IDS = itertools.count()\nUPLOAD_OWNER
-        = {hashlib.sha256(hashlib.sha256(str(index).encode()).digest() * 8192).hexdigest(): index for index in range(8)}\nRESULT
+        = {hashlib.sha256(hashlib.sha256(str(index).encode()).digest() * 8192).hexdigest(): index for index in range(8 * ARGS.concurrency_rounds)}\nRESULT
         = {"scope": "isolated loopback, managed official Xray, no Internet retest", "profile": ARGS.profile, "fresh": [],
         "recovery": [], "negative": {}}\n\n\nCOVERS = []\nEXTRA = []\nclass LocalCover:\n    def __init__(self, certificate,
         key):\n        import ssl\n        self.tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)\n        self.tls.minimum_version
@@ -560,20 +570,20 @@ jobs:
         + ": " + str(error))\n    finally:\n        record["finished_monotonic"] = time.monotonic()\n        with TRACE_LOCK:
         BACKEND_TRACES.append(record)\n\n\ndef serve(listener):\n    global BACKEND_CONNECTIONS\n    while True:\n        try:\n            conn,
         _ = listener.accept()\n        except OSError:\n            return\n        BACKEND_CONNECTIONS += 1\n        threading.Thread(target=backend,
-        args=(conn,), daemon=True).start()\n\n\ndef app(mode=b"E", payload=None, timeout=3, flow_id=None):\n    if payload
-        is None:\n        payload = os.urandom(32)\n    record = {"flow_id": flow_id or "application-" + str(next(APP_IDS)),
-        "operation": mode.decode(), "payload_bytes": len(payload), "started_monotonic": time.monotonic()}\n    expected =
-        DATA[:len(payload)] if mode == b"D" else (payload if mode == b"E" else hashlib.sha256(payload).hexdigest().encode())\n    actual
-        = bytearray()\n    try:\n        with socket.create_connection(("127.0.0.1", ENTRY), timeout=timeout) as conn:\n            record["local_endpoint"]
-        = list(conn.getsockname())\n            conn.settimeout(timeout)\n            conn.sendall(mode + struct.pack("!I",
-        len(payload)))\n            if mode != b"D":\n                conn.sendall(payload)\n            while len(actual)
-        < len(expected):\n                part = conn.recv(len(expected) - len(actual))\n                if not part: raise
-        EOFError("short application response")\n                actual.extend(part)\n            if bytes(actual) != expected:\n                raise
-        ValueError("application checksum/payload mismatch")\n        record["ok"] = True\n        return True\n    except
-        (OSError, EOFError, ValueError) as error:\n        actual_bytes = bytes(actual)\n        different = next((index for
-        index, pair in enumerate(zip(expected, actual_bytes)) if pair[0] != pair[1]), min(len(expected), len(actual_bytes)))\n        record.update(ok=False,
-        error=type(error).__name__ + ": " + str(error), expected_response_bytes=len(expected), actual_response_bytes=len(actual_bytes),
-        expected_response_sha256=hashlib.sha256(expected).hexdigest(), actual_response_sha256=hashlib.sha256(actual_bytes).hexdigest(),
+        args=(conn,), daemon=True).start()\n\n\ndef app(mode=b"E", payload=None, timeout=3, flow_id=None, round_id=None):\n    if
+        payload is None:\n        payload = os.urandom(32)\n    record = {"flow_id": flow_id or "application-" + str(next(APP_IDS)),
+        "operation": mode.decode(), "payload_bytes": len(payload), "started_monotonic": time.monotonic()}\n    if round_id
+        is not None: record["round"] = round_id\n    expected = DATA[:len(payload)] if mode == b"D" else (payload if mode
+        == b"E" else hashlib.sha256(payload).hexdigest().encode())\n    actual = bytearray()\n    try:\n        with socket.create_connection(("127.0.0.1",
+        ENTRY), timeout=timeout) as conn:\n            record["local_endpoint"] = list(conn.getsockname())\n            conn.settimeout(timeout)\n            conn.sendall(mode
+        + struct.pack("!I", len(payload)))\n            if mode != b"D":\n                conn.sendall(payload)\n            while
+        len(actual) < len(expected):\n                part = conn.recv(len(expected) - len(actual))\n                if not
+        part: raise EOFError("short application response")\n                actual.extend(part)\n            if bytes(actual)
+        != expected:\n                raise ValueError("application checksum/payload mismatch")\n        record["ok"] = True\n        return
+        True\n    except (OSError, EOFError, ValueError) as error:\n        actual_bytes = bytes(actual)\n        different
+        = next((index for index, pair in enumerate(zip(expected, actual_bytes)) if pair[0] != pair[1]), min(len(expected),
+        len(actual_bytes)))\n        record.update(ok=False, error=type(error).__name__ + ": " + str(error), expected_response_bytes=len(expected),
+        actual_response_bytes=len(actual_bytes), expected_response_sha256=hashlib.sha256(expected).hexdigest(), actual_response_sha256=hashlib.sha256(actual_bytes).hexdigest(),
         first_difference=different, expected_prefix_hex=expected[:32].hex(), actual_prefix_hex=actual_bytes[:32].hex(), expected_suffix_hex=expected[-32:].hex(),
         actual_suffix_hex=actual_bytes[-32:].hex())\n        if mode == b"U":\n            response_text = actual_bytes.decode("ascii",
         errors="replace")\n            record.update(expected_upload_sha256=expected.decode(), actual_upload_response=response_text,
@@ -650,25 +660,30 @@ jobs:
         True, "elapsed_ms": round((time.monotonic() - begin) * 1000, 2)})\n    upload = os.urandom(1024 * 1024)\n    app(b"U",
         upload, timeout=15)\n    app(b"D", DATA, timeout=15)\n    RESULT["files"] = {"bytes_each_direction": len(DATA), "upload_sha256":
         hashlib.sha256(upload).hexdigest(), "download_sha256": hashlib.sha256(DATA).hexdigest(), "correct": True}\n    import
-        concurrent.futures\n    def concurrent_files(index):\n        payload = hashlib.sha256(str(index).encode()).digest()
-        * 8192\n        app(b"U", payload, timeout=15, flow_id="mixed-upload-" + str(index))\n        app(b"D", payload, timeout=15,
-        flow_id="mixed-download-" + str(index))\n        return True\n    def collect_cohort(label, operation):\n        begin
-        = time.monotonic()\n        errors = []\n        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as workers:\n            pending
-        = [workers.submit(operation, index) for index in range(8)]\n            for future in concurrent.futures.as_completed(pending):\n                try:\n                    if
-        not future.result(): raise RuntimeError("worker did not verify payload")\n                except Exception as error:\n                    errors.append(type(error).__name__
+        concurrent.futures\n    def concurrent_files(index, round_index=0):\n        payload = hashlib.sha256(str(index).encode()).digest()
+        * 8192\n        app(b"U", payload, timeout=15, flow_id="mixed-upload-" + str(index), round_id=round_index)\n        app(b"D",
+        payload, timeout=15, flow_id="mixed-download-" + str(index), round_id=round_index)\n        return True\n    def collect_cohort(label,
+        operation):\n        begin = time.monotonic()\n        errors = []\n        with concurrent.futures.ThreadPoolExecutor(max_workers=8)
+        as workers:\n            pending = [workers.submit(operation, index) for index in range(8)]\n            for future
+        in concurrent.futures.as_completed(pending):\n                try:\n                    if not future.result(): raise
+        RuntimeError("worker did not verify payload")\n                except Exception as error:\n                    errors.append(type(error).__name__
         + ": " + str(error))\n        result = {"cohort": label, "flows": 8, "bytes_each_direction_per_flow": 262144, "seconds":
         round(time.monotonic() - begin, 3), "ok": not errors, "errors": errors}\n        RESULT.setdefault("concurrent_cohorts",
-        []).append(result)\n        return result\n    mixed = collect_cohort("mixed-upload-then-download", concurrent_files)\n    RESULT["concurrent_files"]
-        = mixed\n    # Separate directions on fresh connections even if the mixed cohort failed.\n    # These are independent
-        controls, never retries and never replace a failure.\n    upload_only = collect_cohort("upload-only", lambda index:
-        app(b"U", hashlib.sha256(str(index).encode()).digest() * 8192, timeout=15, flow_id="upload-only-" + str(index)))\n    download_only
-        = collect_cohort("download-only", lambda index: app(b"D", DATA[:262144], timeout=15, flow_id="download-only-" + str(index)))\n    if
-        not all(result["ok"] for result in (mixed, upload_only, download_only)):\n        raise RuntimeError("one or more
-        concurrent checksum cohorts failed; see transfer-traces.json")\n    for role in ("outside", "iran"):\n        for
-        kind in ("helper-crash", "config-generation", "engine-restart"):\n            before, _ = helper(role)\n            parent_before
-        = PROCS[role].pid\n            begin = time.monotonic()\n            if kind == "helper-crash":\n                os.kill(before,
-        signal.SIGKILL)\n            elif kind == "config-generation":\n                cfg = ROOT / (role + ".toml")\n                text
-        = cfg.read_text().replace("skip_optz = true", "skip_optz = true\\nkeepalive_period = 76")\n                cfg.write_text(text)\n            else:\n                stop(role)\n                start(role)\n            after
+        []).append(result)\n        return result\n    mixed_rounds = []\n    for round_index in range(ARGS.concurrency_rounds):\n        mixed
+        = collect_cohort("mixed-upload-then-download-round-" + str(round_index), lambda index, round_index=round_index: concurrent_files(round_index
+        * 8 + index, round_index))\n        mixed["round"] = round_index\n        mixed_rounds.append(mixed)\n    RESULT["concurrent_files"]
+        = {"rounds": ARGS.concurrency_rounds, "flows": 8 * ARGS.concurrency_rounds, "bytes_each_direction_per_flow": 262144,
+        "seconds": round(sum(result["seconds"] for result in mixed_rounds), 3), "ok": all(result["ok"] for result in mixed_rounds)}\n    #
+        Separate directions on fresh connections even if the mixed cohort failed.\n    # These are independent controls, never
+        retries and never replace a failure.\n    upload_only = collect_cohort("upload-only", lambda index: app(b"U", hashlib.sha256(str(index).encode()).digest()
+        * 8192, timeout=15, flow_id="upload-only-" + str(index)))\n    download_only = collect_cohort("download-only", lambda
+        index: app(b"D", DATA[:262144], timeout=15, flow_id="download-only-" + str(index)))\n    if not all(result["ok"] for
+        result in (*mixed_rounds, upload_only, download_only)):\n        raise RuntimeError("one or more concurrent checksum
+        cohorts failed; see transfer-traces.json")\n    for role in ("outside", "iran"):\n        for kind in ("helper-crash",
+        "config-generation", "engine-restart"):\n            before, _ = helper(role)\n            parent_before = PROCS[role].pid\n            begin
+        = time.monotonic()\n            if kind == "helper-crash":\n                os.kill(before, signal.SIGKILL)\n            elif
+        kind == "config-generation":\n                cfg = ROOT / (role + ".toml")\n                text = cfg.read_text().replace("skip_optz
+        = true", "skip_optz = true\\nkeepalive_period = 76")\n                cfg.write_text(text)\n            else:\n                stop(role)\n                start(role)\n            after
         = ready(role, before)\n            recovered(timeout=max(0.1, 30 - (time.monotonic() - begin)))\n            recovery_seconds
         = time.monotonic() - begin\n            for _ in range(3): app()\n            app(b"U", upload, timeout=15)\n            app(b"D",
         DATA, timeout=15)\n            RESULT["recovery"].append({"role": role, "kind": kind, "helper_pid_changed": after
@@ -840,6 +855,7 @@ jobs:
         go test ./internal/tunnel/naive -run TestXrayConfigContractExternal -race -count=2 -v -timeout 5m
 
         python3 /tmp/real_xray_managed_linux.py --backpack /tmp/backpack-protocol --xray "$xray" --output /tmp/backpack-real-xray
+        --concurrency-rounds 20
 
         '
     - uses: actions/upload-artifact@v4
@@ -857,7 +873,7 @@ jobs:
     steps:
     - uses: actions/checkout@v7
       with:
-        ref: 1f1c0b224b6b176846a234e424422cf55f802eec
+        ref: b3c43528218e93bdf801ea13ff3aa61abb2ff9f5
     - uses: actions/setup-go@v7
       with:
         go-version-file: go.mod
@@ -883,7 +899,7 @@ jobs:
     steps:
     - uses: actions/checkout@v7
       with:
-        ref: 1e658e9aa4c3c4b7923c624060b798558ef0b11a
+        ref: a1eb4d24dd72355bddf3e9e69f4644ace44bd3cc
     - uses: actions/setup-go@v7
       with:
         go-version-file: go.mod
@@ -981,6 +997,7 @@ jobs:
         go test ./internal/tunnel/naive -run TestXrayConfigContractExternal -race -count=2 -v -timeout 5m
 
         python3 /tmp/real_xray_managed_linux.py --backpack /tmp/backpack-protocol --xray "$xray" --output /tmp/backpack-real-xray
+        --concurrency-rounds 20
 
         '
     - uses: actions/upload-artifact@v4
@@ -998,7 +1015,7 @@ jobs:
     steps:
     - uses: actions/checkout@v7
       with:
-        ref: 1e658e9aa4c3c4b7923c624060b798558ef0b11a
+        ref: a1eb4d24dd72355bddf3e9e69f4644ace44bd3cc
     - uses: actions/setup-go@v7
       with:
         go-version-file: go.mod
