@@ -1,0 +1,148 @@
+name: Correct baseline diagnostic match and compare allocation measurements
+permissions:
+  contents: read
+'on':
+  push:
+    branches:
+    - codex/validate-performance-baseline
+jobs:
+  baseline:
+    name: Baseline relay and raised-MTU allocation measurements
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 5b6e252c0098457103c8fab63249f577a28cd1f6
+        fetch-depth: 0
+    - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
+
+        sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - name: Temporary measurement fixtures
+      run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/utils/handlers/runtime_audit_relay_alloc_test.go'').write_text(''package
+        handlers\n\nimport (\n\t"bufio"\n\t"bytes"\n\t"crypto/sha1"\n\t"encoding/base64"\n\t"fmt"\n\t"github.com/gorilla/websocket"\n\t"github.com/sirupsen/logrus"\n\t"io"\n\t"net"\n\t"net/http"\n\t"net/url"\n\t"testing"\n\t"time"\n)\n\n//
+        The real gorilla reader parses an HTTP upgrade then repeated binary frames.\n//
+        This isolates framing and relay CPU from socket scheduling, with no backend\n//
+        allocations and no per-frame allocations in the input stream itself.\ntype
+        runtimeAuditWSFrameConn struct {\n\theader    []byte\n\tframe     []byte\n\tremaining
+        int\n\tpos       int\n\tclosed    bool\n}\n\nfunc (c *runtimeAuditWSFrameConn)
+        Read(p []byte) (int, error) {\n\tif len(c.header) > 0 {\n\t\tn := copy(p,
+        c.header)\n\t\tc.header = c.header[n:]\n\t\treturn n, nil\n\t}\n\tif c.closed
+        || c.remaining == 0 {\n\t\treturn 0, io.EOF\n\t}\n\tn := 0\n\tfor n < len(p)
+        && c.remaining > 0 {\n\t\tmoved := copy(p[n:], c.frame[c.pos:])\n\t\tn +=
+        moved\n\t\tc.pos += moved\n\t\tif c.pos == len(c.frame) {\n\t\t\tc.pos = 0\n\t\t\tc.remaining--\n\t\t}\n\t}\n\treturn
+        n, nil\n}\nfunc (c *runtimeAuditWSFrameConn) Write(p []byte) (int, error)
+        {\n\treq, err := http.ReadRequest(bufio.NewReader(bytes.NewReader(p)))\n\tif
+        err != nil {\n\t\treturn 0, err\n\t}\n\tsum := sha1.Sum([]byte(req.Header.Get("Sec-WebSocket-Key")
+        + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"))\n\tc.header = []byte("HTTP/1.1
+        101 Switching Protocols\\r\\nUpgrade: websocket\\r\\nConnection: Upgrade\\r\\nSec-WebSocket-Accept:
+        " + base64.StdEncoding.EncodeToString(sum[:]) + "\\r\\n\\r\\n")\n\treturn
+        len(p), nil\n}\nfunc (c *runtimeAuditWSFrameConn) Close() error                     {
+        c.closed = true; return nil }\nfunc (c *runtimeAuditWSFrameConn) LocalAddr()
+        net.Addr              { return nil }\nfunc (c *runtimeAuditWSFrameConn) RemoteAddr()
+        net.Addr             { return nil }\nfunc (c *runtimeAuditWSFrameConn) SetDeadline(time.Time)
+        error      { return nil }\nfunc (c *runtimeAuditWSFrameConn) SetReadDeadline(time.Time)
+        error  { return nil }\nfunc (c *runtimeAuditWSFrameConn) SetWriteDeadline(time.Time)
+        error { return nil }\n\ntype runtimeAuditWSCountingSink struct {\n\truntimeAuditWSFrameConn\n\twritten
+        int\n}\n\nfunc (c *runtimeAuditWSCountingSink) Write(p []byte) (int, error)
+        {\n\tc.written += len(p)\n\treturn len(p), nil\n}\n\nfunc runtimeAuditWSReader(b
+        *testing.B, size int, n int) *websocket.Conn {\n\tb.Helper()\n\tframe := make([]byte,
+        size+4)\n\tframe[0], frame[1] = 0x82, 126\n\tframe[2], frame[3] = byte(size>>8),
+        byte(size)\n\traw := &runtimeAuditWSFrameConn{frame: frame, remaining: n}\n\tu,
+        _ := url.Parse("ws://benchmark.test/tunnel")\n\tconn, _, err := websocket.NewClient(raw,
+        u, nil, 16*1024, 64*1024)\n\tif err != nil {\n\t\tb.Fatal(err)\n\t}\n\treturn
+        conn\n}\n\nfunc BenchmarkRuntimeAuditWSRelay(b *testing.B) {\n\tfor _, size
+        := range []int{256, 1200, 16000} {\n\t\tb.Run(fmt.Sprintf("%d", size), func(b
+        *testing.B) {\n\t\t\tconn := runtimeAuditWSReader(b, size, b.N)\n\t\t\tsink
+        := &runtimeAuditWSCountingSink{}\n\t\t\tlogger := logrus.New()\n\t\t\tlogger.SetOutput(io.Discard)\n\t\t\tlogger.SetLevel(logrus.InfoLevel)\n\t\t\tb.ReportAllocs()\n\t\t\tb.SetBytes(int64(size))\n\t\t\tb.ResetTimer()\n\t\t\ttransferWebSocketToTCP(conn,
+        sink, logger, nil, 0, false)\n\t\t\tb.StopTimer()\n\t\t\tif sink.written !=
+        b.N*size {\n\t\t\t\tb.Fatalf("wrote %d bytes want%d", sink.written, b.N*size)\n\t\t\t}\n\t\t})\n\t}\n}\n\nfunc
+        BenchmarkRuntimeAuditTCPWriteAll(b *testing.B) {\n\tpayload := make([]byte,
+        64*1024)\n\tsource, target := &runtimeAuditWSCountingSink{}, &runtimeAuditWSCountingSink{}\n\tlogger
+        := logrus.New()\n\tlogger.SetOutput(io.Discard)\n\tlogger.SetLevel(logrus.InfoLevel)\n\tb.ReportAllocs()\n\tb.SetBytes(int64(len(payload)))\n\tb.ResetTimer()\n\tfor
+        range b.N {\n\t\tif !writeAll(source, target, payload, logger, nil, 0, false)
+        {\n\t\t\tb.Fatal("write failed")\n\t\t}\n\t}\n\tb.StopTimer()\n\tif target.written
+        != b.N*len(payload) {\n\t\tb.Fatalf("wrote=%d", target.written)\n\t}\n}\n'',encoding=''utf-8'')
+
+        Path(''internal/tunnel/l3/runtime_audit_mtu_test.go'').write_text(''package
+        l3\n\nimport (\n\t"bytes"\n\t"context"\n\t"fmt"\n\t"io"\n\t"net"\n\t"testing"\n)\n\ntype
+        mtuAuditDevice struct {\n\tremaining int\n\tpacket    []byte\n}\n\nfunc (d
+        *mtuAuditDevice) Read(bufs [][]byte, sizes []int) (int, error) {\n\tif d.remaining
+        == 0 {\n\t\treturn 0, io.EOF\n\t}\n\tn := min(len(bufs), d.remaining)\n\tfor
+        i := range n {\n\t\tsizes[i] = copy(bufs[i], d.packet)\n\t}\n\td.remaining
+        -= n\n\treturn n, nil\n}\nfunc (d *mtuAuditDevice) Write(bufs [][]byte) (int,
+        error) { return len(bufs), nil }\nfunc (d *mtuAuditDevice) BatchSize() int                   {
+        return 32 }\nfunc (d *mtuAuditDevice) Close() error                     {
+        return nil }\nfunc (d *mtuAuditDevice) Name() string                     {
+        return "mtu-audit" }\nfunc (d *mtuAuditDevice) MTU() int                         {
+        return 1440 }\nfunc (d *mtuAuditDevice) SetMTU(int) error                 {
+        return nil }\n\ntype mtuAuditSink struct {\n\t*memCarrier\n\twritten          int\n\tunexpectedLength
+        bool\n\twant             int\n}\n\nfunc (s *mtuAuditSink) WriteTo(p []byte,
+        _ net.Addr) (int, error) {\n\ts.written++\n\tif len(p) != s.want {\n\t\ts.unexpectedLength
+        = true\n\t}\n\treturn len(p), nil\n}\n\nfunc BenchmarkRuntimeAuditPumpMTU(b
+        *testing.B) {\n\tfor _, key := range []uint32{0, 7} {\n\t\tfor _, size :=
+        range []int{1400, 1440} {\n\t\t\tb.Run(fmt.Sprintf("key%d/packet%d", key,
+        size), func(b *testing.B) {\n\t\t\t\tsess, _ := handshakePair(b, "mtu-growth-hotpath-audit")\n\t\t\t\tencap,
+        err := NewEncap("gre", key)\n\t\t\t\tif err != nil {\n\t\t\t\t\tb.Fatal(err)\n\t\t\t\t}\n\t\t\t\tpkt
+        := make([]byte, size)\n\t\t\t\tpkt[0] = 0x45\n\t\t\t\tsink := &mtuAuditSink{memCarrier:
+        newMemCarrier("mtu-audit"), want: size + encap.Overhead() + dataOverhead}\n\t\t\t\tdev
+        := &mtuAuditDevice{remaining: b.N, packet: pkt}\n\t\t\t\ttun := &Tunnel{cfg:
+        Config{Mode: ModeListen, MTU: 1400}, encap: encap, tun: dev, carrier: sink,
+        log: quietLogger(), current: sess, peer: sink.peer}\n\t\t\t\tb.ReportAllocs()\n\t\t\t\tb.SetBytes(int64(size))\n\t\t\t\tb.ResetTimer()\n\t\t\t\ttun.pumpFromTUN(context.Background())\n\t\t\t\tb.StopTimer()\n\t\t\t\tif
+        sink.written != b.N || sink.unexpectedLength {\n\t\t\t\t\tb.Fatalf("actual
+        pump corrupted/omitted packets: written%d want%d badlength%v", sink.written,
+        b.N, sink.unexpectedLength)\n\t\t\t\t}\n\t\t\t})\n\t\t}\n\t}\n}\n\ntype mtuAuditTrackedEncap
+        struct {\n\tEncap\n\twraps, repeatedGrowth int\n}\n\nfunc (e *mtuAuditTrackedEncap)
+        Wrap(dst, pkt []byte) ([]byte, error) {\n\tif e.wraps > 0 && cap(dst) < len(pkt)+e.Overhead()
+        {\n\t\te.repeatedGrowth++\n\t}\n\te.wraps++\n\treturn e.Encap.Wrap(dst, pkt)\n}\n\ntype
+        mtuAuditVerifiedSink struct {\n\t*mtuAuditSink\n\tverify func([]byte) error\n}\n\nfunc
+        (s *mtuAuditVerifiedSink) WriteTo(p []byte, peer net.Addr) (int, error) {\n\tif
+        err := s.verify(p); err != nil {\n\t\treturn 0, err\n\t}\n\treturn s.mtuAuditSink.WriteTo(p,
+        peer)\n}\n\nfunc TestRuntimeAuditPumpMTURetainsGrowth(t *testing.T) {\n\tfor
+        _, key := range []uint32{0, 7} {\n\t\tt.Run(fmt.Sprintf("key%d", key), func(t
+        *testing.T) {\n\t\t\tinitiator, responder := handshakePair(t, "mtu-growth-functional-audit")\n\t\t\tgre,
+        err := NewEncap("gre", key)\n\t\t\tif err != nil {\n\t\t\t\tt.Fatal(err)\n\t\t\t}\n\t\t\tencap
+        := &mtuAuditTrackedEncap{Encap: gre}\n\t\t\tpacket := make([]byte, 1440)\n\t\t\tfor
+        i := range packet {\n\t\t\t\tpacket[i] = byte(i)\n\t\t\t}\n\t\t\tpacket[0]
+        = 0x45\n\t\t\trawSink := &mtuAuditSink{memCarrier: newMemCarrier("mtu-audit"),
+        want: len(packet) + encap.Overhead() + dataOverhead}\n\t\t\tplain := make([]byte,
+        0, 2048)\n\t\t\tsink := &mtuAuditVerifiedSink{mtuAuditSink: rawSink, verify:
+        func(p []byte) error {\n\t\t\t\th, body, err := parseHeader(p)\n\t\t\t\tif
+        err != nil {\n\t\t\t\t\treturn err\n\t\t\t\t}\n\t\t\t\topened, err := responder.open(plain,
+        h, body)\n\t\t\t\tif err != nil {\n\t\t\t\t\treturn err\n\t\t\t\t}\n\t\t\t\tplain
+        = opened[:0]\n\t\t\t\tinner, err := gre.Unwrap(opened)\n\t\t\t\tif err !=
+        nil {\n\t\t\t\t\treturn err\n\t\t\t\t}\n\t\t\t\tif !bytes.Equal(inner, packet)
+        {\n\t\t\t\t\treturn fmt.Errorf("encrypted payload corrupted after frame reuse")\n\t\t\t\t}\n\t\t\t\treturn
+        nil\n\t\t\t}}\n\t\t\tdev := &mtuAuditDevice{remaining: 96, packet: packet}\n\t\t\ttun
+        := &Tunnel{cfg: Config{Mode: ModeListen, MTU: 1400, AutoMTU: true}, encap:
+        encap, tun: dev, carrier: sink, log: quietLogger(), current: initiator, peer:
+        sink.peer, mtuCurrent: 1440}\n\t\t\ttun.pumpFromTUN(context.Background())\n\t\t\tif
+        sink.written != 96 || sink.unexpectedLength {\n\t\t\t\tt.Fatalf("packets missing
+        or malformed: written%d", sink.written)\n\t\t\t}\n\t\t\tif encap.repeatedGrowth
+        != 0 {\n\t\t\t\tt.Fatalf("AutoMTU1440/cfg1400 caused %d per-packet GRE scratch
+        growths", encap.repeatedGrowth)\n\t\t\t}\n\t\t})\n\t}\n}\n'',encoding=''utf-8'')
+
+        PY
+
+        gofmt -w internal/utils/handlers/runtime_audit_relay_alloc_test.go internal/tunnel/l3/runtime_audit_mtu_test.go'
+    - name: Runtime verification and measurement
+      run: 'if go test ./internal/tunnel/l3 -run TestRuntimeAuditPumpMTU -count=1
+        -v > /tmp/mtu-growth.log 2>&1; then cat /tmp/mtu-growth.log; exit 1; fi
+
+        cat /tmp/mtu-growth.log
+
+        grep -q "per-packet GRE scratch growths" /tmp/mtu-growth.log
+
+        go test ./internal/utils/handlers -run X -bench "BenchmarkRuntimeAuditWSRelay|BenchmarkRuntimeAuditTCPWriteAll"
+        -benchmem -count=3 -benchtime=1s
+
+        go test ./internal/tunnel/l3 -run X -bench BenchmarkRuntimeAuditPumpMTU -benchmem
+        -count=3 -benchtime=1s'
