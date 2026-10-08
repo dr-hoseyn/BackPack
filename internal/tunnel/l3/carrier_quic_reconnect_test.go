@@ -7,9 +7,146 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
 	"time"
 )
+
+func TestL3UDPDNSStopsWithItsGeneration(t *testing.T) {
+	if mode := os.Getenv("BACKPACK_L3_UDP_DNS_AUDIT"); mode != "" {
+		parts := strings.Split(mode, ":")
+		started, release := make(chan struct{}, 2), make(chan struct{})
+		defer close(release)
+		net.DefaultResolver = &net.Resolver{PreferGo: true, Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			select {
+			case started <- struct{}{}:
+			default:
+			}
+			if parts[0] == "cached-peer" {
+				return nil, errors.New("temporary DNS failure")
+			}
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-release:
+				return nil, errors.New("resolver released")
+			}
+		}}
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		if parts[1] == "timeout" {
+			ctx, cancel = context.WithTimeout(ctx, 80*time.Millisecond)
+			defer cancel()
+		}
+		done := make(chan error, 1)
+		go func() {
+			cfg := Config{Mode: ModeDial, Carrier: CarrierUDP, Addr: "stalled-l3-udp-dns.invalid:443", Token: "dns-generation"}
+			if parts[0] == "rekey" || parts[0] == "cached-peer" {
+				tun := &Tunnel{cfg: cfg, log: quietLogger()}
+				if parts[0] == "cached-peer" {
+					peer := &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 443}
+					tun.setPeer(peer)
+					err := tun.resolvePeer(ctx)
+					if !sameAddr(tun.peerAddr(), peer) {
+						err = errors.New("temporary DNS failure discarded the working peer")
+					}
+					done <- err
+					return
+				}
+				done <- tun.negotiate(ctx)
+				return
+			}
+			if parts[0] == "multipath" {
+				cfg.Multipath.Paths = 4
+			}
+			carrier, _, err := openCarrierContext(ctx, cfg)
+			if carrier != nil {
+				carrier.Close()
+			}
+			done <- err
+		}()
+		select {
+		case <-started:
+		case <-time.After(time.Second):
+			t.Fatal("DNS lookup never started")
+		}
+		if parts[1] == "cancel" {
+			cancel()
+		}
+		select {
+		case err := <-done:
+			var want error = context.Canceled
+			if parts[1] == "timeout" {
+				want = context.DeadlineExceeded
+			}
+			if parts[0] == "cached-peer" {
+				want = nil
+			}
+			if !errors.Is(err, want) {
+				t.Fatalf("DNS returned %v, want %v", err, want)
+			}
+		case <-time.After(400 * time.Millisecond):
+			t.Fatal("L3 UDP DNS ignored generation cancellation or deadline")
+		}
+		return
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, stage := range []string{"startup", "multipath", "rekey", "cached-peer"} {
+		kinds := []string{"cancel", "timeout"}
+		if stage == "cached-peer" {
+			kinds = []string{"failure"}
+		}
+		for _, kind := range kinds {
+			t.Run(stage+"/"+kind, func(t *testing.T) {
+				ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+				defer cancel()
+				cmd := exec.CommandContext(ctx, executable, "-test.run=^TestL3UDPDNSStopsWithItsGeneration$", "-test.timeout=6s")
+				cmd.Env = append(os.Environ(), "BACKPACK_L3_UDP_DNS_AUDIT="+stage+":"+kind)
+				if out, err := cmd.CombinedOutput(); err != nil {
+					t.Fatalf("isolated %s %s: %v\n%s", stage, kind, err, out)
+				}
+			})
+		}
+	}
+}
+
+func TestL3UDPCarrierOutlivesItsSetupContext(t *testing.T) {
+	listener, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	carrier, peer, err := openCarrierContext(ctx, Config{Mode: ModeDial, Carrier: CarrierUDP, Addr: listener.LocalAddr().String()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer carrier.Close()
+	cancel()
+	time.Sleep(120 * time.Millisecond)
+	payload := []byte("UDP still carries traffic after setup cancellation")
+	if _, err := carrier.WriteTo(payload, peer); err != nil {
+		t.Fatal(err)
+	}
+	_ = listener.SetReadDeadline(time.Now().Add(time.Second))
+	buffer := make([]byte, 128)
+	n, from, err := listener.ReadFromUDP(buffer)
+	if err != nil || !bytes.Equal(buffer[:n], payload) {
+		t.Fatalf("received %q, error %v, want %q", buffer[:n], err, payload)
+	}
+	if _, err := listener.WriteToUDP(payload, from); err != nil {
+		t.Fatal(err)
+	}
+	_ = carrier.SetReadDeadline(time.Now().Add(time.Second))
+	n, _, err = carrier.ReadFrom(buffer)
+	if err != nil || !bytes.Equal(buffer[:n], payload) {
+		t.Fatalf("reply %q, error %v, want %q", buffer[:n], err, payload)
+	}
+}
 
 func openQuicPair(t *testing.T, token, addr string) (listener *quicCarrier) {
 	t.Helper()
@@ -328,7 +465,7 @@ func TestQuicEndpointKeepsResolutionSemantics(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		got, host, err := resolveQuicEndpoint(context.Background(), address)
+		got, host, err := resolveDatagramEndpoint(context.Background(), address)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -338,7 +475,7 @@ func TestQuicEndpointKeepsResolutionSemantics(t *testing.T) {
 		}
 	}
 	for _, address := range []string{"127.0.0.1:65536", "127.0.0.1:-1", "127.0.0.1:unknown-service-audit", "invalid"} {
-		if _, _, err := resolveQuicEndpoint(context.Background(), address); err == nil {
+		if _, _, err := resolveDatagramEndpoint(context.Background(), address); err == nil {
 			t.Fatalf("invalid endpoint %s accepted", address)
 		}
 	}
