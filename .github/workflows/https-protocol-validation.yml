@@ -11,17 +11,18 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: 636dcbfb75f0595820f6995cb24ac3ccc7c780a3
+          ref: c31928a7733ed106d3fe5e712aca6b79cad1cfb5
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
       - run: |
           sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
-          go test ./internal/manage -run 'TestConnTest|TestManagedHTTPS|TestEveryShareLinkFieldHasAnID|TestFormat2|TestTheTestSettingsFitOnePacket' -race -count=3 -v -timeout 5m
+          go test ./internal/manage -run 'TestConnTest|TestManagedHTTPS|TestShareLinkRefusals|TestEveryShareLinkFieldHasAnID|TestFormat2|TestTheTestSettingsFitOnePacket' -race -count=3 -v -timeout 5m
           go test ./internal/spooftest -race -count=5 -timeout 2m
-          go test ./internal/tunnel/l3 ./internal/manage/... ./internal/tunnel/naive ./internal/tui ./cmd -short -race -timeout 8m
+          go test ./... -short -race -timeout 10m
           go test ./internal/manage -run ^$ -fuzz ^FuzzShareLinkRoundTrip$ -fuzztime 20s -timeout 2m
+          go test ./internal/manage -run ^$ -fuzz ^FuzzDecodeShareLink$ -fuzztime 40s -timeout 2m
           go vet ./...
           go run golang.org/x/vuln/cmd/govulncheck@latest ./...
           go run honnef.co/go/tools/cmd/staticcheck@latest ./...
@@ -32,7 +33,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: 636dcbfb75f0595820f6995cb24ac3ccc7c780a3
+          ref: c31928a7733ed106d3fe5e712aca6b79cad1cfb5
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
@@ -50,14 +51,14 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: 0bc2894092ae2a0b134d60b6e370849d1b80e4de
+          ref: 8867241d9f4e281befd916d4ad667b3952ca5954
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
       - run: |
           sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
-          go test ./internal/manage -run 'TestConnTest|TestManagedHTTPS|TestEveryShareLinkFieldHasAnID|TestFormat2|TestTheTestSettingsFitOnePacket' -race -count=3 -v -timeout 5m
+          go test ./internal/manage -run 'TestConnTest|TestManagedHTTPS|TestShareLinkRefusals|TestEveryShareLinkFieldHasAnID|TestFormat2|TestTheTestSettingsFitOnePacket' -race -count=3 -v -timeout 5m
           go test ./internal/spooftest ./internal/manage/... ./internal/tunnel/naive ./internal/tui ./cmd -short -race -timeout 8m
           go vet ./internal/manage/... ./internal/spooftest ./internal/tunnel/naive ./cmd
           go run honnef.co/go/tools/cmd/staticcheck@latest ./internal/manage/... ./internal/spooftest
