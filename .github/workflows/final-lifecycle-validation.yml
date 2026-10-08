@@ -1,0 +1,503 @@
+name: All current tunnel corrections and QUIC directional EOF
+permissions:
+  contents: read
+'on':
+  push:
+    branches:
+    - codex/validate-final-lifecycle
+jobs:
+  test:
+    name: Build and test
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 527da961f57b7542dc0b35b74b0dfd651698c942
+        fetch-depth: 0
+    - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
+
+        sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - uses: actions/setup-node@v7
+      with:
+        node-version: '22'
+    - name: Verify formatting
+      run: "unformatted=\"$(gofmt -l . || true)\"\nif [ -n \"$unformatted\" ]; then\n\
+        \  echo \"These files are not gofmt'd:\"\n  echo \"$unformatted\"\n  exit\
+        \ 1\nfi\n"
+    - name: Vet
+      run: go vet ./...
+    - name: Test
+      run: go test ./... -timeout 20m
+    - name: Test with the race detector
+      run: go test ./... -race -timeout 20m
+    - name: Coverage
+      run: "go test ./... -coverpkg=./... -coverprofile=coverage.out -timeout 20m\n\
+        total=\"$(go tool cover -func=coverage.out | tail -1 | grep -oE '[0-9.]+')\"\
+        \necho \"total coverage: ${total}%\"\nfloor=50\nawk -v t=\"$total\" -v f=\"\
+        $floor\" 'BEGIN {\n  if (t+0 < f+0) {\n    printf \"coverage %.1f%% is below\
+        \ the floor of %d%%\\n\", t, f\n    exit 1\n  }\n}'\n"
+    - name: Per-package coverage floors
+      run: "set -eu\ncheck() {\n  pkg=\"$1\"; floor=\"$2\"; why=\"$3\"\n  got=\"$(go\
+        \ tool cover -func=coverage.out \\\n          | grep \"^github.com/backpack/backpack/$pkg/\"\
+        \ \\\n          | awk '{gsub(/%/,\"\",$3); s+=$3; n++} END {if (n) printf\
+        \ \"%.1f\", s/n; else print \"0\"}')\"\n  echo \"  $pkg: ${got}% (floor ${floor}%)\
+        \ â€” $why\"\n  awk -v g=\"$got\" -v f=\"$floor\" -v p=\"$pkg\" 'BEGIN {\n\
+        \    if (g+0 < f+0) { printf \"%s fell below its floor\\n\", p; exit 1 }\n\
+        \  }'\n}\ncheck internal/tunnel/l3      60 \"the layer-3 data path\"\ncheck\
+        \ internal/tunnel/chain   80 \"transport fallback: a wrong decision here takes\
+        \ a tunnel down\"\ncheck internal/control        50 \"the fleet and the job\
+        \ runner\"\ncheck internal/cli            60 \"the scriptable surface; scripts\
+        \ depend on its exit codes\"\ncheck internal/node           40 \"the fleet\
+        \ RPC and the staged rollout\"\ncheck internal/metrics        60 \"what every\
+        \ other component reads to decide anything\"\ncheck internal/menu        \
+        \   25 \"the screens an operator actually meets this product through\"\ncheck\
+        \ internal/server/transport 85 \"the Iran side of every reverse transport:\
+        \ lifecycle, forwarder, control loop\"\ncheck internal/client/transport 83\
+        \ \"the kharej side of every reverse transport\"\ncheck internal/controlwire\
+        \    95 \"the control channel's wire, shared by both ends\"\ncheck internal/utils/acceptloop\
+        \ 90 \"accept backoff and the pre-authentication gate (ADR 0004)\"\ncheck\
+        \ internal/manage/tunnelspec 70 \"a tunnel's configuration: render, load,\
+        \ apply with revert\"\ncheck internal/manage/host    60 \"this machine's addresses,\
+        \ ports and certificates\"\ncheck internal/manage/health  40 \"tunnel health,\
+        \ the watchdog and the Health Check\"\n"
+  audit:
+    name: Vulnerabilities and static analysis
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 527da961f57b7542dc0b35b74b0dfd651698c942
+        fetch-depth: 0
+    - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
+
+        sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - name: Known vulnerabilities
+      run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+    - name: Static analysis
+      run: 'go run honnef.co/go/tools/cmd/staticcheck@latest ./...
+
+        '
+  fuzz:
+    name: Fuzz the parsers
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 527da961f57b7542dc0b35b74b0dfd651698c942
+        fetch-depth: 0
+    - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
+
+        sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - name: Fuzz
+      run: 'set -eux
+
+        go test ./internal/tunnel/l3/        -run=X -fuzz=FuzzParseHeader        -fuzztime=30s
+
+        go test ./internal/tunnel/l3/        -run=X -fuzz=FuzzParseReplyPayload  -fuzztime=30s
+
+        go test ./internal/utils/network/    -run=X -fuzz=FuzzParsePckFrame      -fuzztime=30s
+
+        go test ./internal/utils/network/    -run=X -fuzz=FuzzDecodeXdiPayload   -fuzztime=30s
+
+        go test ./internal/utils/network/    -run=X -fuzz=FuzzParseTCPFlags      -fuzztime=20s
+
+        go test ./internal/utils/network/    -run=X -fuzz=FuzzParseSpoofProfile  -fuzztime=20s
+
+        go test ./internal/manage/           -run=X -fuzz=FuzzDecodeShareLink    -fuzztime=30s
+
+        go test ./internal/manage/           -run=X -fuzz=FuzzShareLinkRoundTrip -fuzztime=30s
+
+        '
+    - name: Report a crasher
+      if: failure()
+      run: 'echo "A fuzz target failed. The input that did it:"
+
+        find . -path ''*/testdata/fuzz/*'' -type f -print -exec cat {} \;
+
+        '
+  soak:
+    name: Sustained run
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 527da961f57b7542dc0b35b74b0dfd651698c942
+        fetch-depth: 0
+    - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
+
+        sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - name: Two minutes of steady traffic, watching for a leak
+      env:
+        BACKPACK_SOAK_SECONDS: '120'
+      run: go test ./internal/e2e/ -run TestASustainedRunDoesNotLeak -count=1 -v -timeout
+        10m
+  build:
+    name: Cross-build
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 527da961f57b7542dc0b35b74b0dfd651698c942
+        fetch-depth: 0
+    - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
+
+        sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - name: Check the version is in step
+      run: "embedded=\"$(grep -oE 'Version = \"v[0-9.]+\"' internal/app/app.go | grep\
+        \ -oE 'v[0-9.]+')\"\ndeclared=\"$(tr -d ' \\n' < VERSION)\"\necho \"embedded=$embedded\
+        \ declared=$declared\"\nif [ \"$embedded\" != \"$declared\" ]; then\n  echo\
+        \ \"VERSION ($declared) does not match internal/app/app.go ($embedded).\"\n\
+        \  echo \"Run: make version\"\n  exit 1\nfi\n"
+    - name: Build both architectures
+      run: make release
+    - uses: actions/upload-artifact@v7
+      with:
+        name: release-assets
+        path: 'release/backpack_linux_amd64.tar.gz
+
+          release/backpack_linux_arm64.tar.gz
+
+          release/SHA256SUMS
+
+          '
+        retention-days: 14
+  quic_combined:
+    name: Combined QUIC EOF and full teardown regression races
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 527da961f57b7542dc0b35b74b0dfd651698c942
+        fetch-depth: 0
+    - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
+
+        sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/utils/handlers/runtime_audit_quic_halfclose_test.go'').write_text(''package
+        handlers\n\nimport (\n\t"bytes"\n\t"context"\n\t"errors"\n\t"github.com/backpack/backpack/internal/metrics"\n\t"github.com/backpack/backpack/internal/utils/network"\n\t"github.com/quic-go/quic-go"\n\t"io"\n\t"net"\n\t"testing"\n\t"time"\n)\n\nfunc
+        runtimeAuditHalfCloseQUICPair(t *testing.T) (net.Conn, *quic.Stream, *quic.Conn)
+        {\n\tt.Helper()\n\tctx, cancel := context.WithTimeout(context.Background(),
+        10*time.Second)\n\tt.Cleanup(cancel)\n\tsettings := network.QUICSettings{KeepAlivePeriod:
+        time.Second, MaxIdleTimeout: 15 * time.Second}\n\tlistener, err := network.QUICListen("127.0.0.1:0",
+        settings)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tt.Cleanup(func() {
+        listener.Close() })\n\taccepted := make(chan *quic.Conn, 1)\n\tgo func() {\n\t\tc,
+        e := listener.Accept(ctx)\n\t\tif e == nil {\n\t\t\taccepted <- c\n\t\t}\n\t}()\n\tclient,
+        err := network.QUICDial(ctx, listener.Addr().String(), settings)\n\tif err
+        != nil {\n\t\tt.Fatal(err)\n\t}\n\tt.Cleanup(func() { client.CloseWithError(0,
+        "test end") })\n\tvar server *quic.Conn\n\tselect {\n\tcase server = <-accepted:\n\tcase
+        <-ctx.Done():\n\t\tt.Fatal(ctx.Err())\n\t}\n\tt.Cleanup(func() { server.CloseWithError(0,
+        "test end") })\n\tpeer, err := client.OpenStreamSync(ctx)\n\tif err != nil
+        {\n\t\tt.Fatal(err)\n\t}\n\tif _, err := peer.Write([]byte{1}); err != nil
+        {\n\t\tt.Fatal(err)\n\t}\n\tstream, err := server.AcceptStream(ctx)\n\tif
+        err != nil {\n\t\tt.Fatal(err)\n\t}\n\tif _, err := io.ReadFull(stream, make([]byte,
+        1)); err != nil {\n\t\tt.Fatal(err)\n\t}\n\treturn network.NewQUICStreamConn(stream,
+        server), peer, client\n}\n\nfunc TestRuntimeAuditQUICRequestEOFPreservesDelayedReply(t
+        *testing.T) {\n\tfor _, name := range []string{"plain", "counted", "counted_underlying"}
+        {\n\t\tt.Run(name, func(t *testing.T) {\n\t\t\ttunnel, peer, carrier := runtimeAuditHalfCloseQUICPair(t)\n\t\t\trelay,
+        service := tcpPair(t)\n\t\t\tif name == "counted_underlying" {\n\t\t\t\ttunnel
+        = &runtimeAuditUnderlyingConn{Conn: tunnel}\n\t\t\t}\n\t\t\tif name != "plain"
+        {\n\t\t\t\ttunnel = metrics.CountedConn(tunnel)\n\t\t\t}\n\t\t\tctx, cancel
+        := context.WithCancel(context.Background())\n\t\t\tdefer cancel()\n\t\t\tdone
+        := make(chan struct{})\n\t\t\tgo func() {\n\t\t\t\tdefer close(done)\n\t\t\t\tTCPConnectionHandler(ctx,
+        false, tunnel, relay, quietLogger(), nil, 0, false)\n\t\t\t}()\n\t\t\trequest
+        := bytes.Repeat([]byte("request"), 1000)\n\t\t\treply := bytes.Repeat([]byte("delayed-reply"),
+        6000)\n\t\t\tserviceDone := make(chan error, 1)\n\t\t\tgo func() {\n\t\t\t\tservice.SetReadDeadline(time.Now().Add(3
+        * time.Second))\n\t\t\t\tgot, err := io.ReadAll(service)\n\t\t\t\tif err !=
+        nil {\n\t\t\t\t\tserviceDone <- err\n\t\t\t\t\treturn\n\t\t\t\t}\n\t\t\t\tif
+        !bytes.Equal(got, request) {\n\t\t\t\t\tserviceDone <- io.ErrUnexpectedEOF\n\t\t\t\t\treturn\n\t\t\t\t}\n\t\t\t\ttime.Sleep(100
+        * time.Millisecond)\n\t\t\t\tif _, err := service.Write(reply); err != nil
+        {\n\t\t\t\t\tserviceDone <- err\n\t\t\t\t\treturn\n\t\t\t\t}\n\t\t\t\tserviceDone
+        <- service.(*net.TCPConn).CloseWrite()\n\t\t\t}()\n\t\t\tif _, err := peer.Write(request);
+        err != nil {\n\t\t\t\tt.Fatal(err)\n\t\t\t}\n\t\t\tif err := peer.Close();
+        err != nil {\n\t\t\t\tt.Fatal(err)\n\t\t\t} // QUIC native send-FIN, keep
+        receive direction open.\n\t\t\tpeer.SetReadDeadline(time.Now().Add(3 * time.Second))\n\t\t\tgot,
+        err := io.ReadAll(peer)\n\t\t\tif err != nil && !errors.Is(err, io.EOF) {\n\t\t\t\tt.Fatalf("reply
+        read failed: %v", err)\n\t\t\t}\n\t\t\tif !bytes.Equal(got, reply) {\n\t\t\t\tt.Fatalf("request
+        EOF cut off delayed QUIC reply: got=%d want=%d", len(got), len(reply))\n\t\t\t}\n\t\t\tif
+        err := <-serviceDone; err != nil {\n\t\t\t\tt.Fatal("backend:", err)\n\t\t\t}\n\t\t\tselect
+        {\n\t\t\tcase <-done:\n\t\t\tcase <-time.After(time.Second):\n\t\t\t\tt.Fatal("both
+        directional EOFs did not retire relay")\n\t\t\t}\n\t\t\tif carrier.Context().Err()
+        != nil {\n\t\t\t\tt.Fatal("flow EOF closed QUIC carrier")\n\t\t\t}\n\t\t})\n\t}\n}\n\n//
+        This wrapper hides transport methods, as the bandwidth-limiting wrappers do.\ntype
+        runtimeAuditUnderlyingConn struct{ net.Conn }\n\nfunc (c *runtimeAuditUnderlyingConn)
+        UnderlyingConn() net.Conn { return c.Conn }\n\nfunc TestRuntimeAuditQUICTwoRelaysCarryTCPHalfClose(t
+        *testing.T) {\n\ttunnel, peer, carrier := runtimeAuditHalfCloseQUICPair(t)\n\tclient,
+        ingress := tcpPair(t)\n\tegress, service := tcpPair(t)\n\tctx, cancel := context.WithCancel(context.Background())\n\tdefer
+        cancel()\n\tfirstDone, secondDone := make(chan struct{}), make(chan struct{})\n\tgo
+        func() {\n\t\tdefer close(firstDone)\n\t\tTCPConnectionHandler(ctx, false,
+        ingress, metrics.CountedConn(network.NewQUICStreamConn(peer, carrier)), quietLogger(),
+        nil, 0, false)\n\t}()\n\tgo func() {\n\t\tdefer close(secondDone)\n\t\tTCPConnectionHandler(ctx,
+        false, metrics.CountedConn(&runtimeAuditUnderlyingConn{Conn: tunnel}), egress,
+        quietLogger(), nil, 0, false)\n\t}()\n\trequest := bytes.Repeat([]byte("full-request"),
+        1000)\n\treply := bytes.Repeat([]byte("full-delayed-reply"), 6000)\n\tserviceDone
+        := make(chan error, 1)\n\tgo func() {\n\t\tservice.SetReadDeadline(time.Now().Add(3
+        * time.Second))\n\t\tgot, err := io.ReadAll(service)\n\t\tif err != nil {\n\t\t\tserviceDone
+        <- err\n\t\t\treturn\n\t\t}\n\t\tif !bytes.Equal(got, request) {\n\t\t\tserviceDone
+        <- io.ErrUnexpectedEOF\n\t\t\treturn\n\t\t}\n\t\ttime.Sleep(100 * time.Millisecond)\n\t\tif
+        _, err := service.Write(reply); err != nil {\n\t\t\tserviceDone <- err\n\t\t\treturn\n\t\t}\n\t\tserviceDone
+        <- service.(*net.TCPConn).CloseWrite()\n\t}()\n\tif _, err := client.Write(request);
+        err != nil {\n\t\tt.Fatal(err)\n\t}\n\tif err := client.(*net.TCPConn).CloseWrite();
+        err != nil {\n\t\tt.Fatal(err)\n\t}\n\tclient.SetReadDeadline(time.Now().Add(3
+        * time.Second))\n\tgot, err := io.ReadAll(client)\n\tif err != nil || !bytes.Equal(got,
+        reply) {\n\t\tt.Fatalf("TCP->QUIC->TCP EOF lost delayed reply: got=%d want=%d
+        err=%v", len(got), len(reply), err)\n\t}\n\tif err := <-serviceDone; err !=
+        nil {\n\t\tt.Fatal("backend:", err)\n\t}\n\tfor _, done := range []chan struct{}{firstDone,
+        secondDone} {\n\t\tselect {\n\t\tcase <-done:\n\t\tcase <-time.After(time.Second):\n\t\t\tt.Fatal("flow
+        did not retire both relays")\n\t\t}\n\t}\n\tif carrier.Context().Err() !=
+        nil {\n\t\tt.Fatal("flow EOF closed carrier")\n\t}\n}\n'',encoding=''utf-8'')
+
+        Path(''internal/utils/network/runtime_audit_quic_test.go'').write_text(''package
+        network\n\nimport (\n\t"bytes"\n\t"context"\n\t"errors"\n\t"github.com/quic-go/quic-go"\n\t"io"\n\t"net"\n\t"sync"\n\t"testing"\n\t"time"\n)\n\nfunc
+        runtimeAuditQUICPair(t *testing.T) (*QUICStreamConn, *quic.Stream, *quic.Conn)
+        {\n\tt.Helper()\n\tctx, cancel := context.WithTimeout(context.Background(),
+        20*time.Second)\n\tt.Cleanup(cancel)\n\tlistener, err := QUICListen("127.0.0.1:0",
+        QUICSettings{KeepAlivePeriod: time.Second, MaxIdleTimeout: 15 * time.Second})\n\tif
+        err != nil {\n\t\tt.Fatal(err)\n\t}\n\tt.Cleanup(func() { listener.Close()
+        })\n\taccepted := make(chan *quic.Conn, 1)\n\tgo func() {\n\t\tc, err := listener.Accept(ctx)\n\t\tif
+        err == nil {\n\t\t\taccepted <- c\n\t\t}\n\t}()\n\tcfg := (QUICSettings{KeepAlivePeriod:
+        time.Second, MaxIdleTimeout: 15 * time.Second}).quicConfig()\n\tcfg.InitialStreamReceiveWindow
+        = 32 * 1024\n\tcfg.MaxStreamReceiveWindow = 32 * 1024\n\tpeer, err := quic.DialAddr(ctx,
+        listener.Addr().String(), quicClientTLS(), cfg)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tt.Cleanup(func()
+        { peer.CloseWithError(0, "test end") })\n\tvar server *quic.Conn\n\tselect
+        {\n\tcase server = <-accepted:\n\tcase <-ctx.Done():\n\t\tt.Fatal(ctx.Err())\n\t}\n\tt.Cleanup(func()
+        { server.CloseWithError(0, "test end") })\n\tsender, err := peer.OpenStreamSync(ctx)\n\tif
+        err != nil {\n\t\tt.Fatal(err)\n\t}\n\tif _, err := sender.Write([]byte{1});
+        err != nil {\n\t\tt.Fatal(err)\n\t}\n\treceiver, err := server.AcceptStream(ctx)\n\tif
+        err != nil {\n\t\tt.Fatal(err)\n\t}\n\tif _, err := io.ReadFull(receiver,
+        make([]byte, 1)); err != nil {\n\t\tt.Fatal(err)\n\t}\n\treturn NewQUICStreamConn(receiver,
+        server).(*QUICStreamConn), sender, peer\n}\n\nfunc TestRuntimeAuditQUICCloseUnblocksRead(t
+        *testing.T) {\n\tconn, _, peer := runtimeAuditQUICPair(t)\n\tdone := make(chan
+        error, 1)\n\tgo func() { _, err := conn.Read(make([]byte, 1)); done <- err
+        }()\n\tif err := conn.Close(); err != nil {\n\t\tt.Fatal(err)\n\t}\n\tselect
+        {\n\tcase err := <-done:\n\t\tif err == nil {\n\t\t\tt.Fatal("closed read
+        succeeded")\n\t\t}\n\tcase <-time.After(time.Second):\n\t\tt.Fatal("net.Conn.Close
+        left QUIC Read blocked")\n\t}\n\tif peer.Context().Err() != nil {\n\t\tt.Fatal("closing
+        stream closed carrier")\n\t}\n\tif err := conn.Close(); err != nil {\n\t\tt.Fatal("second
+        Close:", err)\n\t}\n}\n\nfunc TestRuntimeAuditQUICCloseUnblocksWrite(t *testing.T)
+        {\n\tconn, _, peer := runtimeAuditQUICPair(t)\n\tdone := make(chan error,
+        1)\n\tgo func() { _, err := conn.Write(make([]byte, 16*1024*1024)); done <-
+        err }()\n\tselect {\n\tcase err := <-done:\n\t\tt.Fatalf("write did not reach
+        flow-control block: %v", err)\n\tcase <-time.After(100 * time.Millisecond):\n\t}\n\tclosed
+        := make(chan error, 1)\n\tgo func() { closed <- conn.Close() }()\n\tselect
+        {\n\tcase err := <-closed:\n\t\tif err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\tcase
+        <-time.After(time.Second):\n\t\tt.Fatal("Close blocked behind Write")\n\t}\n\tselect
+        {\n\tcase err := <-done:\n\t\tif err == nil {\n\t\t\tt.Fatal("blocked Write
+        survived Close")\n\t\t}\n\tcase <-time.After(time.Second):\n\t\tt.Fatal("net.Conn.Close
+        left QUIC Write blocked")\n\t}\n\tif peer.Context().Err() != nil {\n\t\tt.Fatal("closing
+        stream closed carrier")\n\t}\n}\n\nfunc TestRuntimeAuditQUICClosePreservesCompletedReply(t
+        *testing.T) {\n\tconn, peer, _ := runtimeAuditQUICPair(t)\n\tpayload := bytes.Repeat([]byte("reply"),
+        1600)\n\tif n, err := conn.Write(payload); err != nil || n != len(payload)
+        {\n\t\tt.Fatalf("write n=%d err=%v", n, err)\n\t}\n\tif err := conn.Close();
+        err != nil {\n\t\tt.Fatal(err)\n\t}\n\tpeer.SetReadDeadline(time.Now().Add(3
+        * time.Second))\n\tgot, err := io.ReadAll(peer)\n\tif err != nil || !bytes.Equal(got,
+        payload) {\n\t\tt.Fatalf("completed reply lost: got=%d err=%v", len(got),
+        err)\n\t}\n}\n\nfunc TestRuntimeAuditQUICCloseConcurrentWriteAndClose(t *testing.T)
+        {\n\tconn, _, _ := runtimeAuditQUICPair(t)\n\tvar workers sync.WaitGroup\n\tstart
+        := make(chan struct{})\n\tfor range 8 {\n\t\tworkers.Add(1)\n\t\tgo func()
+        {\n\t\t\tdefer workers.Done()\n\t\t\t<-start\n\t\t\t_, err := conn.Write([]byte("reply"))\n\t\t\tif
+        err != nil && !errors.Is(err, net.ErrClosed) { /* active stream reset is also
+        expected */\n\t\t\t}\n\t\t}()\n\t\tworkers.Add(1)\n\t\tgo func() { defer workers.Done();
+        <-start; conn.Close() }()\n\t}\n\tclose(start)\n\tdone := make(chan struct{})\n\tgo
+        func() { workers.Wait(); close(done) }()\n\tselect {\n\tcase <-done:\n\tcase
+        <-time.After(3 * time.Second):\n\t\tt.Fatal("concurrent Write/Close hung")\n\t}\n\tif
+        _, err := conn.Write([]byte{1}); !errors.Is(err, net.ErrClosed) {\n\t\tt.Fatalf("Write
+        after Close err=%v", err)\n\t}\n}\n'',encoding=''utf-8'')
+
+        Path(''internal/utils/handlers/runtime_audit_quic_test.go'').write_text(''package
+        handlers\n\nimport (\n\t"context"\n\t"github.com/backpack/backpack/internal/utils/network"\n\t"github.com/quic-go/quic-go"\n\t"github.com/sirupsen/logrus"\n\t"io"\n\t"net"\n\t"sync/atomic"\n\t"testing"\n\t"time"\n)\n\nfunc
+        TestRuntimeAuditQUICBackendEOFRetiresRelay(t *testing.T) {\n\tctx, cancel
+        := context.WithTimeout(context.Background(), 15*time.Second)\n\tdefer cancel()\n\tsettings
+        := network.QUICSettings{KeepAlivePeriod: time.Second, MaxIdleTimeout: 15 *
+        time.Second}\n\tlistener, err := network.QUICListen("127.0.0.1:0", settings)\n\tif
+        err != nil {\n\t\tt.Fatal(err)\n\t}\n\tdefer listener.Close()\n\taccepted
+        := make(chan *quic.Conn, 1)\n\tgo func() {\n\t\tc, err := listener.Accept(ctx)\n\t\tif
+        err == nil {\n\t\t\taccepted <- c\n\t\t}\n\t}()\n\tclient, err := network.QUICDial(ctx,
+        listener.Addr().String(), settings)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tdefer
+        client.CloseWithError(0, "test end")\n\tvar server *quic.Conn\n\tselect {\n\tcase
+        server = <-accepted:\n\tcase <-ctx.Done():\n\t\tt.Fatal(ctx.Err())\n\t}\n\tdefer
+        server.CloseWithError(0, "test end")\n\tsender, err := client.OpenStreamSync(ctx)\n\tif
+        err != nil {\n\t\tt.Fatal(err)\n\t}\n\tsender.Write([]byte{1})\n\treceiver,
+        err := server.AcceptStream(ctx)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tif
+        _, err := io.ReadFull(receiver, make([]byte, 1)); err != nil {\n\t\tt.Fatal(err)\n\t}\n\tbackend,
+        service := net.Pipe()\n\tdefer backend.Close()\n\tdefer service.Close()\n\tlogger
+        := logrus.New()\n\tlogger.SetOutput(io.Discard)\n\tdone := make(chan struct{})\n\tvar
+        admissionSlots atomic.Int32\n\tadmissionSlots.Store(1)\n\tgo func() {\n\t\tTCPConnectionHandler(ctx,
+        false, network.NewQUICStreamConn(receiver, server), backend, logger, nil,
+        0, false)\n\t\tadmissionSlots.Add(-1)\n\t\tclose(done)\n\t}()\n\tservice.Close()\n\tselect
+        {\n\tcase <-done:\n\tcase <-time.After(time.Second):\n\t\tt.Fatalf("backend
+        EOF left relay and admission slot alive: slots=%d", admissionSlots.Load())\n\t}\n\tif
+        admissionSlots.Load() != 0 {\n\t\tt.Fatal("relay slot not released")\n\t}\n\tif
+        client.Context().Err() != nil {\n\t\tt.Fatal("relay teardown closed QUIC carrier")\n\t}\n}\n'',encoding=''utf-8'')
+
+        Path(''internal/server/transport/runtime_audit_quic_test.go'').write_text(''package
+        transport\n\nimport (\n\t"context"\n\t"errors"\n\t"github.com/backpack/backpack/internal/utils"\n\t"github.com/backpack/backpack/internal/utils/network"\n\t"github.com/quic-go/quic-go"\n\t"io"\n\t"testing"\n\t"time"\n)\n\nfunc
+        TestRuntimeAuditQUICRejectedStreamStopsPeerWrite(t *testing.T) {\n\tctx, cancel
+        := context.WithTimeout(context.Background(), 10*time.Second)\n\tdefer cancel()\n\tsettings
+        := network.QUICSettings{KeepAlivePeriod: time.Second, MaxIdleTimeout: 15 *
+        time.Second}\n\tlistener, err := network.QUICListen("127.0.0.1:0", settings)\n\tif
+        err != nil {\n\t\tt.Fatal(err)\n\t}\n\tdefer listener.Close()\n\taccepted
+        := make(chan *quic.Conn, 1)\n\tgo func() {\n\t\tc, err := listener.Accept(ctx)\n\t\tif
+        err == nil {\n\t\t\taccepted <- c\n\t\t}\n\t}()\n\tclient, err := network.QUICDial(ctx,
+        listener.Addr().String(), settings)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tdefer
+        client.CloseWithError(0, "test end")\n\tvar server *quic.Conn\n\tselect {\n\tcase
+        server = <-accepted:\n\tcase <-ctx.Done():\n\t\tt.Fatal(ctx.Err())\n\t}\n\tdefer
+        server.CloseWithError(0, "test end")\n\tsender, err := client.OpenStreamSync(ctx)\n\tif
+        err != nil {\n\t\tt.Fatal(err)\n\t}\n\tconst token = "a-long-enough-token"\n\tif
+        err := utils.SendBinaryTransportString(network.NewQUICStreamConn(sender, client),
+        token, utils.SG_Ping); err != nil {\n\t\tt.Fatal(err)\n\t}\n\treceiver, err
+        := server.AcceptStream(ctx)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tsrv
+        := NewQuicServer(ctx, &QuicConfig{Token: token, ChannelSize: 1}, quietLogger())\n\tgen
+        := srv.newGen(ctx)\n\tsrv.acceptStream(gen, server, receiver, make(chan quicClaim),
+        &quicGate{pending: make(chan struct{}, unauthenticatedStreams)}, false)\n\tsender.SetReadDeadline(time.Now().Add(time.Second))\n\tif
+        _, err := sender.Read(make([]byte, 1)); err != io.EOF {\n\t\tt.Fatalf("rejected
+        stream did not close send side: %v", err)\n\t}\n\tsender.SetWriteDeadline(time.Now().Add(time.Second))\n\tvar
+        writeErr error\n\tfor i := 0; i < 2048; i++ {\n\t\tif _, writeErr = sender.Write(make([]byte,
+        4096)); writeErr != nil {\n\t\t\tbreak\n\t\t}\n\t}\n\tvar streamErr *quic.StreamError\n\tif
+        !errors.As(writeErr, &streamErr) || !streamErr.Remote {\n\t\tt.Fatalf("server
+        retained rejected receive side: peer Write error=%v (want remote stream cancellation)",
+        writeErr)\n\t}\n\tif client.Context().Err() != nil {\n\t\tt.Fatal("rejecting
+        one stream closed carrier")\n\t}\n}\n'',encoding=''utf-8'')
+
+        PY
+
+        gofmt -w internal/utils/handlers/runtime_audit_quic_halfclose_test.go internal/utils/network/runtime_audit_quic_test.go
+        internal/utils/handlers/runtime_audit_quic_test.go internal/server/transport/runtime_audit_quic_test.go'
+    - run: 'go test ./internal/utils/handlers ./internal/utils/network ./internal/server/transport
+        -run TestRuntimeAuditQUIC -race -count=3 -v -timeout 5m
+
+        go vet ./internal/utils/handlers ./internal/utils/network ./internal/server/transport
+
+        go test ./internal/utils/handlers ./internal/utils/network ./internal/server/transport
+        -race -timeout 15m'
+  quic_source:
+    name: Exact PR69 QUIC directional EOF and package races
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 24a0d7af9fcf007d0e3417a06b74c5b656449a12
+        fetch-depth: 0
+    - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
+
+        sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d'
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/utils/handlers/runtime_audit_quic_halfclose_test.go'').write_text(''package
+        handlers\n\nimport (\n\t"bytes"\n\t"context"\n\t"errors"\n\t"github.com/backpack/backpack/internal/metrics"\n\t"github.com/backpack/backpack/internal/utils/network"\n\t"github.com/quic-go/quic-go"\n\t"io"\n\t"net"\n\t"testing"\n\t"time"\n)\n\nfunc
+        runtimeAuditHalfCloseQUICPair(t *testing.T) (net.Conn, *quic.Stream, *quic.Conn)
+        {\n\tt.Helper()\n\tctx, cancel := context.WithTimeout(context.Background(),
+        10*time.Second)\n\tt.Cleanup(cancel)\n\tsettings := network.QUICSettings{KeepAlivePeriod:
+        time.Second, MaxIdleTimeout: 15 * time.Second}\n\tlistener, err := network.QUICListen("127.0.0.1:0",
+        settings)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tt.Cleanup(func() {
+        listener.Close() })\n\taccepted := make(chan *quic.Conn, 1)\n\tgo func() {\n\t\tc,
+        e := listener.Accept(ctx)\n\t\tif e == nil {\n\t\t\taccepted <- c\n\t\t}\n\t}()\n\tclient,
+        err := network.QUICDial(ctx, listener.Addr().String(), settings)\n\tif err
+        != nil {\n\t\tt.Fatal(err)\n\t}\n\tt.Cleanup(func() { client.CloseWithError(0,
+        "test end") })\n\tvar server *quic.Conn\n\tselect {\n\tcase server = <-accepted:\n\tcase
+        <-ctx.Done():\n\t\tt.Fatal(ctx.Err())\n\t}\n\tt.Cleanup(func() { server.CloseWithError(0,
+        "test end") })\n\tpeer, err := client.OpenStreamSync(ctx)\n\tif err != nil
+        {\n\t\tt.Fatal(err)\n\t}\n\tif _, err := peer.Write([]byte{1}); err != nil
+        {\n\t\tt.Fatal(err)\n\t}\n\tstream, err := server.AcceptStream(ctx)\n\tif
+        err != nil {\n\t\tt.Fatal(err)\n\t}\n\tif _, err := io.ReadFull(stream, make([]byte,
+        1)); err != nil {\n\t\tt.Fatal(err)\n\t}\n\treturn network.NewQUICStreamConn(stream,
+        server), peer, client\n}\n\nfunc TestRuntimeAuditQUICRequestEOFPreservesDelayedReply(t
+        *testing.T) {\n\tfor _, name := range []string{"plain", "counted", "counted_underlying"}
+        {\n\t\tt.Run(name, func(t *testing.T) {\n\t\t\ttunnel, peer, carrier := runtimeAuditHalfCloseQUICPair(t)\n\t\t\trelay,
+        service := tcpPair(t)\n\t\t\tif name == "counted_underlying" {\n\t\t\t\ttunnel
+        = &runtimeAuditUnderlyingConn{Conn: tunnel}\n\t\t\t}\n\t\t\tif name != "plain"
+        {\n\t\t\t\ttunnel = metrics.CountedConn(tunnel)\n\t\t\t}\n\t\t\tctx, cancel
+        := context.WithCancel(context.Background())\n\t\t\tdefer cancel()\n\t\t\tdone
+        := make(chan struct{})\n\t\t\tgo func() {\n\t\t\t\tdefer close(done)\n\t\t\t\tTCPConnectionHandler(ctx,
+        false, tunnel, relay, quietLogger(), nil, 0, false)\n\t\t\t}()\n\t\t\trequest
+        := bytes.Repeat([]byte("request"), 1000)\n\t\t\treply := bytes.Repeat([]byte("delayed-reply"),
+        6000)\n\t\t\tserviceDone := make(chan error, 1)\n\t\t\tgo func() {\n\t\t\t\tservice.SetReadDeadline(time.Now().Add(3
+        * time.Second))\n\t\t\t\tgot, err := io.ReadAll(service)\n\t\t\t\tif err !=
+        nil {\n\t\t\t\t\tserviceDone <- err\n\t\t\t\t\treturn\n\t\t\t\t}\n\t\t\t\tif
+        !bytes.Equal(got, request) {\n\t\t\t\t\tserviceDone <- io.ErrUnexpectedEOF\n\t\t\t\t\treturn\n\t\t\t\t}\n\t\t\t\ttime.Sleep(100
+        * time.Millisecond)\n\t\t\t\tif _, err := service.Write(reply); err != nil
+        {\n\t\t\t\t\tserviceDone <- err\n\t\t\t\t\treturn\n\t\t\t\t}\n\t\t\t\tserviceDone
+        <- service.(*net.TCPConn).CloseWrite()\n\t\t\t}()\n\t\t\tif _, err := peer.Write(request);
+        err != nil {\n\t\t\t\tt.Fatal(err)\n\t\t\t}\n\t\t\tif err := peer.Close();
+        err != nil {\n\t\t\t\tt.Fatal(err)\n\t\t\t} // QUIC native send-FIN, keep
+        receive direction open.\n\t\t\tpeer.SetReadDeadline(time.Now().Add(3 * time.Second))\n\t\t\tgot,
+        err := io.ReadAll(peer)\n\t\t\tif err != nil && !errors.Is(err, io.EOF) {\n\t\t\t\tt.Fatalf("reply
+        read failed: %v", err)\n\t\t\t}\n\t\t\tif !bytes.Equal(got, reply) {\n\t\t\t\tt.Fatalf("request
+        EOF cut off delayed QUIC reply: got=%d want=%d", len(got), len(reply))\n\t\t\t}\n\t\t\tif
+        err := <-serviceDone; err != nil {\n\t\t\t\tt.Fatal("backend:", err)\n\t\t\t}\n\t\t\tselect
+        {\n\t\t\tcase <-done:\n\t\t\tcase <-time.After(time.Second):\n\t\t\t\tt.Fatal("both
+        directional EOFs did not retire relay")\n\t\t\t}\n\t\t\tif carrier.Context().Err()
+        != nil {\n\t\t\t\tt.Fatal("flow EOF closed QUIC carrier")\n\t\t\t}\n\t\t})\n\t}\n}\n\n//
+        This wrapper hides transport methods, as the bandwidth-limiting wrappers do.\ntype
+        runtimeAuditUnderlyingConn struct{ net.Conn }\n\nfunc (c *runtimeAuditUnderlyingConn)
+        UnderlyingConn() net.Conn { return c.Conn }\n\nfunc TestRuntimeAuditQUICTwoRelaysCarryTCPHalfClose(t
+        *testing.T) {\n\ttunnel, peer, carrier := runtimeAuditHalfCloseQUICPair(t)\n\tclient,
+        ingress := tcpPair(t)\n\tegress, service := tcpPair(t)\n\tctx, cancel := context.WithCancel(context.Background())\n\tdefer
+        cancel()\n\tfirstDone, secondDone := make(chan struct{}), make(chan struct{})\n\tgo
+        func() {\n\t\tdefer close(firstDone)\n\t\tTCPConnectionHandler(ctx, false,
+        ingress, metrics.CountedConn(network.NewQUICStreamConn(peer, carrier)), quietLogger(),
+        nil, 0, false)\n\t}()\n\tgo func() {\n\t\tdefer close(secondDone)\n\t\tTCPConnectionHandler(ctx,
+        false, metrics.CountedConn(&runtimeAuditUnderlyingConn{Conn: tunnel}), egress,
+        quietLogger(), nil, 0, false)\n\t}()\n\trequest := bytes.Repeat([]byte("full-request"),
+        1000)\n\treply := bytes.Repeat([]byte("full-delayed-reply"), 6000)\n\tserviceDone
+        := make(chan error, 1)\n\tgo func() {\n\t\tservice.SetReadDeadline(time.Now().Add(3
+        * time.Second))\n\t\tgot, err := io.ReadAll(service)\n\t\tif err != nil {\n\t\t\tserviceDone
+        <- err\n\t\t\treturn\n\t\t}\n\t\tif !bytes.Equal(got, request) {\n\t\t\tserviceDone
+        <- io.ErrUnexpectedEOF\n\t\t\treturn\n\t\t}\n\t\ttime.Sleep(100 * time.Millisecond)\n\t\tif
+        _, err := service.Write(reply); err != nil {\n\t\t\tserviceDone <- err\n\t\t\treturn\n\t\t}\n\t\tserviceDone
+        <- service.(*net.TCPConn).CloseWrite()\n\t}()\n\tif _, err := client.Write(request);
+        err != nil {\n\t\tt.Fatal(err)\n\t}\n\tif err := client.(*net.TCPConn).CloseWrite();
+        err != nil {\n\t\tt.Fatal(err)\n\t}\n\tclient.SetReadDeadline(time.Now().Add(3
+        * time.Second))\n\tgot, err := io.ReadAll(client)\n\tif err != nil || !bytes.Equal(got,
+        reply) {\n\t\tt.Fatalf("TCP->QUIC->TCP EOF lost delayed reply: got=%d want=%d
+        err=%v", len(got), len(reply), err)\n\t}\n\tif err := <-serviceDone; err !=
+        nil {\n\t\tt.Fatal("backend:", err)\n\t}\n\tfor _, done := range []chan struct{}{firstDone,
+        secondDone} {\n\t\tselect {\n\t\tcase <-done:\n\t\tcase <-time.After(time.Second):\n\t\t\tt.Fatal("flow
+        did not retire both relays")\n\t\t}\n\t}\n\tif carrier.Context().Err() !=
+        nil {\n\t\tt.Fatal("flow EOF closed carrier")\n\t}\n}\n'',encoding=''utf-8'')
+
+        PY
+
+        gofmt -w internal/utils/handlers/runtime_audit_quic_halfclose_test.go'
+    - run: 'go test ./internal/utils/handlers -run TestRuntimeAuditQUIC -race -count=3
+        -v -timeout 3m
+
+        go vet ./internal/utils/handlers ./internal/utils/network ./internal/tunnel/limits
+        ./internal/tunnel/l3 ./internal/tunnel/direct
+
+        go test ./internal/utils/handlers ./internal/utils/network ./internal/tunnel/limits
+        ./internal/tunnel/l3 ./internal/tunnel/direct -race -timeout 15m'
