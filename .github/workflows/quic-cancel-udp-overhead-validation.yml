@@ -1,0 +1,223 @@
+name: QUIC dial cancellation and raw UDP allocation overhead
+permissions:
+  contents: read
+'on':
+  push:
+    branches:
+    - codex/validate-quic-cancel-udp-overhead
+jobs:
+  baseline:
+    name: Reproduce initial QUIC dial ignoring parent cancellation
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 50d05f0ec686cc28d87d8d7a631939bfce4e53e1
+        fetch-depth: 0
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - &id001
+      run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/tunnel/l3/runtime_audit_quic_cancel_test.go'').write_text(''package l3\nimport(\n "context"\n "errors"\n
+        "net"\n "testing"\n "sync/atomic"\n "time"\n)\nfunc TestAuditQUICInitialDialParentCancellation(t *testing.T){\n sink,err:=net.ListenUDP("udp",&net.UDPAddr{IP:net.IPv4(127,0,0,1)});if
+        err!=nil {t.Fatal(err)};defer sink.Close()\n tun,err:=New(Config{Mode:ModeDial,Addr:sink.LocalAddr().String(),Token:"cancel-initial-quic",Carrier:CarrierQuic,LocalIP:"10.10.0.1/30",PeerIP:"10.10.0.2",MTU:1300},quietLogger());if
+        err!=nil {t.Fatal(err)}\n tun.openDevice=func(deviceSpec)(packetDevice,error){t.Error("TUN opened before QUIC handshake
+        completed");return newFakeDevice(1300),nil}\n ctx,cancel:=context.WithCancel(context.Background());defer cancel()\n
+        done:=make(chan error,1);go func(){done<-tun.Run(ctx)}()\n if err:=sink.SetReadDeadline(time.Now().Add(2*time.Second));err!=nil
+        {t.Fatal(err)}\n if _,_,err:=sink.ReadFromUDP(make([]byte,4096));err!=nil {t.Fatalf("QUIC dial never sent its initial
+        packet: %v",err)}\n begin:=time.Now();cancel()\n select{case err:=<-done:if err!=nil&&!errors.Is(err,context.Canceled){t.Fatalf("unexpected
+        cancellation result: %v",err)};t.Logf("QUIC initial dial cancelled after %s",time.Since(begin));case<-time.After(300*time.Millisecond):t.Fatal("Tunnel.Run
+        ignores parent cancellation while QUIC initial handshake waits up to 12 seconds")}\n}\n\ntype auditCancelOpenCarrier
+        struct {DatagramCarrier;closed *atomic.Int64}\nfunc(c *auditCancelOpenCarrier)Close()error{c.closed.Add(1);return
+        c.DatagramCarrier.Close()}\nfunc TestAuditQUICCanceledBeforeDeviceClosesCarrier(t *testing.T){\n ctx,cancel:=context.WithCancel(context.Background());defer
+        cancel()\n tun,err:=New(Config{Mode:ModeListen,Addr:"127.0.0.1:0",Token:"cancel-open-quic",Carrier:CarrierQuic,LocalIP:"10.10.0.2/30",PeerIP:"10.10.0.1",MTU:1300},quietLogger());if
+        err!=nil {t.Fatal(err)}\n var closed atomic.Int64\n var local *net.UDPAddr\n tun.wrapCarrier=func(c DatagramCarrier)DatagramCarrier
+        {local=c.LocalAddr().(*net.UDPAddr);cancel();return &auditCancelOpenCarrier{DatagramCarrier:c,closed:&closed}}\n tun.openDevice=func(deviceSpec)(packetDevice,error){t.Error("canceled
+        Run still opened a TUN");return newFakeDevice(1300),nil}\n if err:=tun.Run(ctx);err!=nil&&!errors.Is(err,context.Canceled){t.Fatal(err)}\n
+        if closed.Load()==0 {t.Fatal("wrapped carrier was not closed")}\n bound,err:=net.ListenUDP("udp",local);if err!=nil
+        {t.Fatalf("QUIC socket not released after cancellation: %v",err)};bound.Close()\n}\n'',encoding=''utf-8'')
+
+        PY
+
+        gofmt -w internal/tunnel/l3/runtime_audit_quic_cancel_test.go'
+    - run: 'if go test ./internal/tunnel/l3 -run TestAuditQUICInitialDialParentCancellation -count=1 -v -timeout 2m > /tmp/quic-cancel.log
+        2>&1; then cat /tmp/quic-cancel.log; exit 1; fi
+
+        cat /tmp/quic-cancel.log
+
+        grep -q "Tunnel.Run ignores parent cancellation" /tmp/quic-cancel.log'
+  quic:
+    name: Exact combined QUIC socket recovery reader retirement and dial cancellation
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 6bebdba0b3db692b996dfe311cd2f4c7ff93c242
+        fetch-depth: 0
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - *id001
+    - run: 'go test ./internal/tunnel/l3 -run "TestAuditQUIC|TestQuicInitialDial|TestAClosedQuicPeer|TestQUIC|TestQuic" -race
+        -count=3 -v -timeout 5m
+
+        go test ./internal/tunnel/l3 -race -timeout 15m
+
+        go vet ./internal/tunnel/l3'
+  tcp:
+    name: Exact reverse lifecycle UDP packet integrity and first-packet shutdown
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: b7c23a6587b6456450b6ef85dfef5d8951f8b1f0
+        fetch-depth: 0
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - run: 'go test ./internal/server/transport -run "TestUDPOpeningPacketCanRaceGenerationShutdown|TestUDPHandleLoop" -race
+        -count=5 -v -timeout 5m
+
+        go test ./internal/e2e -run TestTheUDPTransportForwardsDatagrams -race -count=3 -v -timeout 3m
+
+        go test ./internal/client/transport ./internal/server/transport ./internal/utils/network ./internal/utils/handlers
+        -race -timeout 15m
+
+        go vet ./internal/client/transport ./internal/server/transport'
+  paired:
+    name: Same runner disabled UDP logging before and after
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 50d05f0ec686cc28d87d8d7a631939bfce4e53e1
+        fetch-depth: 0
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/client/transport/runtime_audit_udp_log_test.go'').write_text(''package transport\nimport("io";"net";"sync/atomic";"testing";"time";"github.com/sirupsen/logrus")\n\nfunc
+        runtimeAuditListen(b *testing.B)*net.UDPConn{c,e:=net.ListenUDP("udp",&net.UDPAddr{IP:net.IPv4(127,0,0,1)});if e!=nil{b.Fatal(e)};b.Cleanup(func(){c.Close()});return
+        c}\nfunc runtimeAuditLog()*logrus.Logger{l:=logrus.New();l.SetOutput(io.Discard);l.SetLevel(logrus.InfoLevel);return
+        l}\nfunc BenchmarkRuntimeAuditClientUDPInfo(b *testing.B){\n src,sink:=runtimeAuditListen(b),runtimeAuditListen(b)\n
+        sender,e:=net.DialUDP("udp",nil,src.LocalAddr().(*net.UDPAddr));if e!=nil{b.Fatal(e)};defer sender.Close()\n dst,e:=net.DialUDP("udp",nil,sink.LocalAddr().(*net.UDPAddr));if
+        e!=nil{b.Fatal(e)};defer dst.Close()\n c:=&UdpTransport{lifecycle:lifecycle{logger:runtimeAuditLog()},config:&UdpConfig{}}\n
+        var activity atomic.Int64;done:=make(chan struct{});go func(){defer close(done);c.udpCopy(src,dst,0,false,time.Now(),&activity)}()\n
+        defer func(){src.Close();<-done}()\n payload:=make([]byte,1200);buf:=make([]byte,1200);sink.SetReadDeadline(time.Now().Add(30*time.Second))\n
+        sender.Write(payload);if _,e:=sink.Read(buf);e!=nil{b.Fatal(e)}\n b.ReportAllocs();b.SetBytes(1200);b.ResetTimer()\n
+        for i:=0;i<b.N;i++ {if _,e:=sender.Write(payload);e!=nil{b.Fatal(e)};n,e:=sink.Read(buf);if e!=nil||n!=1200{b.Fatalf("sink=%d/%v",n,e)}}\n
+        b.StopTimer()\n}\n'',encoding=''utf-8'')
+
+        PY
+
+        gofmt -w internal/client/transport/runtime_audit_udp_log_test.go'
+    - run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/server/transport/runtime_audit_udp_log_test.go'').write_text(''package transport\nimport("context";"io";"net";"sync/atomic";"testing";"time";"github.com/sirupsen/logrus")\n\nfunc
+        runtimeAuditListen(b *testing.B)*net.UDPConn{c,e:=net.ListenUDP("udp",&net.UDPAddr{IP:net.IPv4(127,0,0,1)});if e!=nil{b.Fatal(e)};b.Cleanup(func(){c.Close()});return
+        c}\nfunc runtimeAuditLog()*logrus.Logger{l:=logrus.New();l.SetOutput(io.Discard);l.SetLevel(logrus.InfoLevel);return
+        l}\nfunc BenchmarkRuntimeAuditServerUDPInfo(b *testing.B){\n for _,direction:=range []string{"uplink","downlink"}{b.Run(direction,func(b
+        *testing.B){\n  dst,sink:=runtimeAuditListen(b),runtimeAuditListen(b)\n  local:=&LocalUDPConn{payload:make(chan []byte,1),listener:dst,addr:sink.LocalAddr().(*net.UDPAddr)}\n  tunnel:=&TunnelUDPConn{payload:make(chan
+        []byte,1),listener:dst,addr:sink.LocalAddr().(*net.UDPAddr)}\n  s:=&UdpTransport{lifecycle:lifecycle{logger:runtimeAuditLog()},config:&UdpConfig{}}\n  ctx,cancel:=context.WithCancel(context.Background());g:=&udpGen{ctx:ctx};done:=make(chan
+        struct{});var activity atomic.Int64\n  queue:=local.payload\n  if direction=="uplink"{go func(){defer close(done);s.udpLocalCopy(g,local,tunnel,time.Now(),&activity)}()}else{queue=tunnel.payload;go
+        func(){defer close(done);s.udpTunnelCopy(g,tunnel,local,time.Now(),&activity)}()}\n  defer func(){cancel();<-done}()\n  payload:=make([]byte,1200);buf:=make([]byte,1200);sink.SetReadDeadline(time.Now().Add(30*time.Second))\n  queue<-payload;if
+        _,e:=sink.Read(buf);e!=nil{b.Fatal(e)}\n  b.ReportAllocs();b.SetBytes(1200);b.ResetTimer()\n  for i:=0;i<b.N;i++ {queue<-payload;n,e:=sink.Read(buf);if
+        e!=nil||n!=1200{b.Fatalf("sink=%d/%v",n,e)}}\n  b.StopTimer()\n })}\n}\n'',encoding=''utf-8'')
+
+        PY
+
+        gofmt -w internal/server/transport/runtime_audit_udp_log_test.go'
+    - name: Baseline raw UDP logging overhead
+      run: go test ./internal/client/transport ./internal/server/transport -run "^$" -bench "BenchmarkRuntimeAudit(Client|Server)UDPInfo"
+        -benchmem -count=3 -benchtime=300ms
+    - name: Fixed raw UDP logging overhead
+      run: 'git checkout b7c23a6587b6456450b6ef85dfef5d8951f8b1f0
+
+        go test ./internal/client/transport ./internal/server/transport -run "^$" -bench "BenchmarkRuntimeAudit(Client|Server)UDPInfo"
+        -benchmem -count=3 -benchtime=300ms'
+    - name: Repeated baseline after warmup
+      run: 'git checkout 50d05f0ec686cc28d87d8d7a631939bfce4e53e1
+
+        go test ./internal/client/transport ./internal/server/transport -run "^$" -bench "BenchmarkRuntimeAudit(Client|Server)UDPInfo"
+        -benchmem -count=3 -benchtime=300ms'
+    - name: Repeated fixed after warmup
+      run: 'git checkout b7c23a6587b6456450b6ef85dfef5d8951f8b1f0
+
+        go test ./internal/client/transport ./internal/server/transport -run "^$" -bench "BenchmarkRuntimeAudit(Client|Server)UDPInfo"
+        -benchmem -count=3 -benchtime=300ms'
+  backend_probe:
+    name: Inspect Linux UDP refused-backend selection behavior
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 50d05f0ec686cc28d87d8d7a631939bfce4e53e1
+        fetch-depth: 0
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/tunnel/l3/runtime_audit_udp_backend_health_test.go'').write_text(''package l3\nimport("fmt";"net";"testing";"time")\nfunc
+        TestAuditForwarderUDPDeadBackendIsCooled(t *testing.T){\n held,err:=net.ListenPacket("udp","127.0.0.1:0");if err!=nil{t.Fatal(err)};dead:=held.LocalAddr().String();held.Close()\n
+        live:=echoUDP(t,"L:");port:=freePort(t);front:=fmt.Sprintf("127.0.0.1:%d",port)\n startForwarder(t,[]string{front+"="+dead+"|"+live},true)\n
+        missed:=0\n for i:=range 12 {\n  client,err:=net.Dial("udp",front);if err!=nil{t.Fatal(err)}\n  client.SetDeadline(time.Now().Add(150*time.Millisecond))\n  _,err=client.Write([]byte("healthy-fallback"));if
+        err!=nil{client.Close();t.Fatal(err)}\n  buf:=make([]byte,128);n,err:=client.Read(buf);client.Close()\n  if err!=nil
+        {missed++;t.Logf("client%d lost: %v",i,err)} else if string(buf[:n])!="L:healthy-fallback" {t.Fatalf("unexpected echo
+        %q",buf[:n])}\n  time.Sleep(10*time.Millisecond)\n }\n if missed>1 {t.Fatalf("%d/12 new UDP clients lost on refused
+        backend despite healthy alternate; after first ECONNREFUSED it should cool down",missed)}\n}\n'',encoding=''utf-8'')
+
+        PY
+
+        gofmt -w internal/tunnel/l3/runtime_audit_udp_backend_health_test.go'
+    - run: if go test ./internal/tunnel/l3 -run TestAuditForwarderUDPDeadBackendIsCooled -count=1 -v -timeout 2m > /tmp/udp-backend.log
+        2>&1; then cat /tmp/udp-backend.log; else cat /tmp/udp-backend.log; grep -q "new UDP clients lost on refused backend"
+        /tmp/udp-backend.log; fi
+  combined:
+    name: Combined current QUIC cancellation UDP integrity and runtime races
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 9923a964a27ed068ccc39c26d8b43fe824129a28
+        fetch-depth: 0
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - *id001
+    - run: 'go test ./internal/tunnel/l3 -run TestAuditQUIC -race -count=3 -v -timeout 5m
+
+        go vet ./...
+
+        go run honnef.co/go/tools/cmd/staticcheck@latest ./...
+
+        go test ./internal/client/transport ./internal/server/transport ./internal/utils/network ./internal/utils/handlers
+        ./internal/socks ./internal/tunnel/direct ./internal/tunnel/l3 ./internal/web ./internal/tunnel/limits -race -timeout
+        15m
+
+        GOOS=linux GOARCH=amd64 go build -o /tmp/backpack-amd64 .
+
+        GOOS=linux GOARCH=arm64 go build -o /tmp/backpack-arm64 .'
