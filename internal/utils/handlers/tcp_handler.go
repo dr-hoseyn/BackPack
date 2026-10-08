@@ -7,6 +7,7 @@ import (
 	"net"
 
 	"github.com/backpack/backpack/internal/metrics"
+	"github.com/backpack/backpack/internal/utils/network"
 	"github.com/backpack/backpack/internal/web"
 	"github.com/sirupsen/logrus"
 )
@@ -43,8 +44,8 @@ func TCPConnectionHandler(ctx context.Context, proxyProtocol bool, from net.Conn
 		done <- struct{}{}
 	}()
 
-	if plainTCP(from) != nil && plainTCP(to) != nil {
-		awaitTCPRelay(ctx, done, from, to)
+	if halfCloser(from) != nil && halfCloser(to) != nil {
+		awaitDirectionalRelay(ctx, done, from, to)
 	} else {
 		awaitRelay(ctx, done, from, to)
 	}
@@ -210,13 +211,10 @@ func spliceTransfer(from net.Conn, to net.Conn, logger *logrus.Logger, usage *we
 	return true
 }
 
-// Only plain TCP can represent directional EOF on the existing tunnel wire.
-// Unwrapping here does not bypass pacing or metrics on the copy path.
-func plainTCP(c net.Conn) *net.TCPConn {
+// Unwrapping here only identifies capabilities; copies still use the original
+// connections so pacing and usage accounting stay on the data path.
+func relayConn(c net.Conn) net.Conn {
 	for range 8 {
-		if tcp, ok := c.(*net.TCPConn); ok {
-			return tcp
-		}
 		raw, counted := metrics.Uncount(c)
 		if counted {
 			c = raw
@@ -226,20 +224,39 @@ func plainTCP(c net.Conn) *net.TCPConn {
 			c = wrapper.UnderlyingConn()
 			continue
 		}
-		return nil
+		return c
 	}
 	return nil
 }
+
+// Plain sockets remain the only candidates for kernel splice.
+func plainTCP(c net.Conn) *net.TCPConn {
+	tcp, _ := relayConn(c).(*net.TCPConn)
+	return tcp
+}
+
+// TCP and QUIC both carry directional EOF without changing the tunnel wire.
+// Other transports retain their existing full-close behavior.
+func halfCloser(c net.Conn) interface{ CloseWrite() error } {
+	switch conn := relayConn(c).(type) {
+	case *net.TCPConn:
+		return conn
+	case *network.QUICStreamConn:
+		return conn
+	default:
+		return nil
+	}
+}
 func finishDirection(from, to net.Conn, err error) {
-	if (err == nil || errors.Is(err, io.EOF)) && plainTCP(from) != nil {
-		if tcp := plainTCP(to); tcp != nil && tcp.CloseWrite() == nil {
+	if (err == nil || errors.Is(err, io.EOF)) && halfCloser(from) != nil {
+		if conn := halfCloser(to); conn != nil && conn.CloseWrite() == nil {
 			return
 		}
 	}
 	from.Close()
 	to.Close()
 }
-func awaitTCPRelay(ctx context.Context, done <-chan struct{}, from, to net.Conn) {
+func awaitDirectionalRelay(ctx context.Context, done <-chan struct{}, from, to net.Conn) {
 	finished := 0
 	for finished < 2 {
 		select {
