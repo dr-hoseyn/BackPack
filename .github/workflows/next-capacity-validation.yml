@@ -1,0 +1,231 @@
+name: QUIC listener failure recovery and reverse UDP capacity
+permissions:
+  contents: read
+'on':
+  push:
+    branches:
+    - codex/validate-next-capacity
+jobs:
+  baseline:
+    name: Reproduce fatal QUIC listener socket hang
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: ff86354bcafbd054e7888e48343145323c9b2207
+        fetch-depth: 0
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/tunnel/l3/runtime_audit_quic_listener_test.go'').write_text(''package
+        l3\n\nimport (\n\t"context"\n\t"errors"\n\t"net"\n\t"sync"\n\t"testing"\n\t"time"\n)\n\nfunc
+        TestRuntimeAuditQuicListenerSocketFailure(t *testing.T) {\n\tc := openQuicPair(t,
+        "quic-listener-failure-audit", "127.0.0.1:0")\n\tdefer c.Close()\n\tresult
+        := make(chan error, 1)\n\tgo func() { _, _, err := c.ReadFrom(make([]byte,
+        2048)); result <- err }()\n\tif err := c.udp.Close(); err != nil {\n\t\tt.Fatal(err)\n\t}\n\tselect
+        {\n\tcase err := <-result:\n\t\tif !errors.Is(err, net.ErrClosed) {\n\t\t\tt.Fatalf("read
+        returned %v", err)\n\t\t}\n\tcase <-time.After(400 * time.Millisecond):\n\t\tt.Fatal("QUIC
+        UDP socket failed but carrier ReadFrom remained blocked; listener generation
+        cannot rebuild")\n\t}\n}\n\nfunc TestRuntimeAuditQuicListenerGenerationFailure(t
+        *testing.T) {\n\ttun, err := New(Config{Mode: ModeListen, Addr: "127.0.0.1:0",
+        Token: "quic-generation-audit", Carrier: CarrierQuic, LocalIP: "10.10.0.1/30",
+        PeerIP: "10.10.0.2", MTU: 1300, AutoMTU: true}, quietLogger())\n\tif err !=
+        nil {\n\t\tt.Fatal(err)\n\t}\n\topened := make(chan *quicCarrier, 1)\n\ttun.wrapCarrier
+        = func(raw DatagramCarrier) DatagramCarrier { opened <- raw.(*quicCarrier);
+        return raw }\n\tdev := newFakeDevice(1300)\n\ttun.openDevice = func(deviceSpec)
+        (packetDevice, error) { return dev, nil }\n\tctx, cancel := context.WithCancel(context.Background())\n\tresult
+        := make(chan error, 1)\n\tstopped := make(chan struct{})\n\tgo func() { defer
+        close(stopped); result <- tun.Run(ctx) }()\n\tt.Cleanup(func() {\n\t\tcancel()\n\t\tdev.Close()\n\t\tselect
+        {\n\t\tcase <-stopped:\n\t\tcase <-time.After(time.Second):\n\t\t\tt.Error("generation
+        cleanup stalled")\n\t\t}\n\t})\n\tvar c *quicCarrier\n\tselect {\n\tcase c
+        = <-opened:\n\tcase <-time.After(time.Second):\n\t\tt.Fatal("carrier did not
+        open")\n\t}\n\tc.udp.Close()\n\tselect {\n\tcase err := <-result:\n\t\tif
+        err == nil || ctx.Err() != nil {\n\t\t\tt.Fatalf("result%v parent%v", err,
+        ctx.Err())\n\t\t}\n\tcase <-time.After(400 * time.Millisecond):\n\t\tt.Fatal("QUIC
+        listener Run stayed stuck after fatal carrier failure")\n\t}\n}\n\nfunc TestRuntimeAuditQuicCarrierConcurrentClose(t
+        *testing.T) {\n\tfor range 10 {\n\t\tc := openQuicPair(t, "quic-close-race-audit",
+        "127.0.0.1:0")\n\t\td := dialQuicCarrier(t, "quic-close-race-audit", c.LocalAddr().String())\n\t\td.WriteTo([]byte("queued"),
+        nil)\n\t\treadWithin(t, c, time.Second)\n\t\tvar wg sync.WaitGroup\n\t\tfor
+        range 4 {\n\t\t\twg.Add(1)\n\t\t\tgo func() { defer wg.Done(); c.Close() }()\n\t\t}\n\t\twg.Add(1)\n\t\tgo
+        func() { defer wg.Done(); c.udp.Close() }()\n\t\tcompleted := make(chan struct{})\n\t\tgo
+        func() { wg.Wait(); close(completed) }()\n\t\tselect {\n\t\tcase <-completed:\n\t\tcase
+        <-time.After(time.Second):\n\t\t\tt.Fatal("concurrent Close deadlocked the
+        QUIC carrier")\n\t\t}\n\t\tc.mu.Lock()\n\t\tclosed := c.closed\n\t\tremaining
+        := len(c.peers)\n\t\tc.mu.Unlock()\n\t\tif !closed || remaining != 0 {\n\t\t\tt.Fatalf("close
+        left state closed=%v peers=%d", closed, remaining)\n\t\t}\n\t\td.Close()\n\t}\n}\n'',encoding=''utf-8'')
+
+        PY
+
+        gofmt -w internal/tunnel/l3/runtime_audit_quic_listener_test.go'
+    - run: 'if go test ./internal/tunnel/l3 -run "TestRuntimeAuditQuicListener(Socket|Generation)Failure"
+        -count=1 -v -timeout 1m > /tmp/quic-listener.log 2>&1; then cat /tmp/quic-listener.log;
+        exit 1; fi
+
+        cat /tmp/quic-listener.log
+
+        grep -q "FAIL: TestRuntimeAuditQuicListenerSocketFailure" /tmp/quic-listener.log
+
+        grep -q "FAIL: TestRuntimeAuditQuicListenerGenerationFailure" /tmp/quic-listener.log'
+  quic:
+    name: Exact QUIC carrier recovery and race checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: dc18137c662ae36f631ddbcaec89bda263bcc948
+        fetch-depth: 0
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/tunnel/l3/runtime_audit_quic_listener_test.go'').write_text(''package
+        l3\n\nimport (\n\t"context"\n\t"errors"\n\t"net"\n\t"sync"\n\t"testing"\n\t"time"\n)\n\nfunc
+        TestRuntimeAuditQuicListenerSocketFailure(t *testing.T) {\n\tc := openQuicPair(t,
+        "quic-listener-failure-audit", "127.0.0.1:0")\n\tdefer c.Close()\n\tresult
+        := make(chan error, 1)\n\tgo func() { _, _, err := c.ReadFrom(make([]byte,
+        2048)); result <- err }()\n\tif err := c.udp.Close(); err != nil {\n\t\tt.Fatal(err)\n\t}\n\tselect
+        {\n\tcase err := <-result:\n\t\tif !errors.Is(err, net.ErrClosed) {\n\t\t\tt.Fatalf("read
+        returned %v", err)\n\t\t}\n\tcase <-time.After(400 * time.Millisecond):\n\t\tt.Fatal("QUIC
+        UDP socket failed but carrier ReadFrom remained blocked; listener generation
+        cannot rebuild")\n\t}\n}\n\nfunc TestRuntimeAuditQuicListenerGenerationFailure(t
+        *testing.T) {\n\ttun, err := New(Config{Mode: ModeListen, Addr: "127.0.0.1:0",
+        Token: "quic-generation-audit", Carrier: CarrierQuic, LocalIP: "10.10.0.1/30",
+        PeerIP: "10.10.0.2", MTU: 1300, AutoMTU: true}, quietLogger())\n\tif err !=
+        nil {\n\t\tt.Fatal(err)\n\t}\n\topened := make(chan *quicCarrier, 1)\n\ttun.wrapCarrier
+        = func(raw DatagramCarrier) DatagramCarrier { opened <- raw.(*quicCarrier);
+        return raw }\n\tdev := newFakeDevice(1300)\n\ttun.openDevice = func(deviceSpec)
+        (packetDevice, error) { return dev, nil }\n\tctx, cancel := context.WithCancel(context.Background())\n\tresult
+        := make(chan error, 1)\n\tstopped := make(chan struct{})\n\tgo func() { defer
+        close(stopped); result <- tun.Run(ctx) }()\n\tt.Cleanup(func() {\n\t\tcancel()\n\t\tdev.Close()\n\t\tselect
+        {\n\t\tcase <-stopped:\n\t\tcase <-time.After(time.Second):\n\t\t\tt.Error("generation
+        cleanup stalled")\n\t\t}\n\t})\n\tvar c *quicCarrier\n\tselect {\n\tcase c
+        = <-opened:\n\tcase <-time.After(time.Second):\n\t\tt.Fatal("carrier did not
+        open")\n\t}\n\tc.udp.Close()\n\tselect {\n\tcase err := <-result:\n\t\tif
+        err == nil || ctx.Err() != nil {\n\t\t\tt.Fatalf("result%v parent%v", err,
+        ctx.Err())\n\t\t}\n\tcase <-time.After(400 * time.Millisecond):\n\t\tt.Fatal("QUIC
+        listener Run stayed stuck after fatal carrier failure")\n\t}\n}\n\nfunc TestRuntimeAuditQuicCarrierConcurrentClose(t
+        *testing.T) {\n\tfor range 10 {\n\t\tc := openQuicPair(t, "quic-close-race-audit",
+        "127.0.0.1:0")\n\t\td := dialQuicCarrier(t, "quic-close-race-audit", c.LocalAddr().String())\n\t\td.WriteTo([]byte("queued"),
+        nil)\n\t\treadWithin(t, c, time.Second)\n\t\tvar wg sync.WaitGroup\n\t\tfor
+        range 4 {\n\t\t\twg.Add(1)\n\t\t\tgo func() { defer wg.Done(); c.Close() }()\n\t\t}\n\t\twg.Add(1)\n\t\tgo
+        func() { defer wg.Done(); c.udp.Close() }()\n\t\tcompleted := make(chan struct{})\n\t\tgo
+        func() { wg.Wait(); close(completed) }()\n\t\tselect {\n\t\tcase <-completed:\n\t\tcase
+        <-time.After(time.Second):\n\t\t\tt.Fatal("concurrent Close deadlocked the
+        QUIC carrier")\n\t\t}\n\t\tc.mu.Lock()\n\t\tclosed := c.closed\n\t\tremaining
+        := len(c.peers)\n\t\tc.mu.Unlock()\n\t\tif !closed || remaining != 0 {\n\t\t\tt.Fatalf("close
+        left state closed=%v peers=%d", closed, remaining)\n\t\t}\n\t\td.Close()\n\t}\n}\n'',encoding=''utf-8'')
+
+        PY
+
+        gofmt -w internal/tunnel/l3/runtime_audit_quic_listener_test.go'
+    - run: 'go test ./internal/tunnel/l3 -run "TestRuntimeAuditQuic|TestQuic|Test.*QUIC"
+        -race -count=3 -v -timeout 5m
+
+        go vet ./internal/tunnel/l3
+
+        go test ./internal/tunnel/l3 -race -timeout 15m'
+  udp:
+    name: Exact reverse UDP buffer boundaries and all transport races
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 0b729bc524e00309929c9ff8fdb340bf39b7cee1
+        fetch-depth: 0
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - run: 'go test ./internal/client/transport -run TestUDPBackendReceivesEveryFramedDatagram
+        -race -count=5 -v -timeout 2m
+
+        go vet ./internal/client/transport ./internal/utils/network
+
+        go test ./internal/client/transport ./internal/server/transport ./internal/utils/network
+        -race -timeout 15m'
+  combined:
+    name: Combined current tunnel lifecycle and capacity checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 2a517c5a99e46b434787a63c14bfc6babedd7e09
+        fetch-depth: 0
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/tunnel/l3/runtime_audit_quic_listener_test.go'').write_text(''package
+        l3\n\nimport (\n\t"context"\n\t"errors"\n\t"net"\n\t"sync"\n\t"testing"\n\t"time"\n)\n\nfunc
+        TestRuntimeAuditQuicListenerSocketFailure(t *testing.T) {\n\tc := openQuicPair(t,
+        "quic-listener-failure-audit", "127.0.0.1:0")\n\tdefer c.Close()\n\tresult
+        := make(chan error, 1)\n\tgo func() { _, _, err := c.ReadFrom(make([]byte,
+        2048)); result <- err }()\n\tif err := c.udp.Close(); err != nil {\n\t\tt.Fatal(err)\n\t}\n\tselect
+        {\n\tcase err := <-result:\n\t\tif !errors.Is(err, net.ErrClosed) {\n\t\t\tt.Fatalf("read
+        returned %v", err)\n\t\t}\n\tcase <-time.After(400 * time.Millisecond):\n\t\tt.Fatal("QUIC
+        UDP socket failed but carrier ReadFrom remained blocked; listener generation
+        cannot rebuild")\n\t}\n}\n\nfunc TestRuntimeAuditQuicListenerGenerationFailure(t
+        *testing.T) {\n\ttun, err := New(Config{Mode: ModeListen, Addr: "127.0.0.1:0",
+        Token: "quic-generation-audit", Carrier: CarrierQuic, LocalIP: "10.10.0.1/30",
+        PeerIP: "10.10.0.2", MTU: 1300, AutoMTU: true}, quietLogger())\n\tif err !=
+        nil {\n\t\tt.Fatal(err)\n\t}\n\topened := make(chan *quicCarrier, 1)\n\ttun.wrapCarrier
+        = func(raw DatagramCarrier) DatagramCarrier { opened <- raw.(*quicCarrier);
+        return raw }\n\tdev := newFakeDevice(1300)\n\ttun.openDevice = func(deviceSpec)
+        (packetDevice, error) { return dev, nil }\n\tctx, cancel := context.WithCancel(context.Background())\n\tresult
+        := make(chan error, 1)\n\tstopped := make(chan struct{})\n\tgo func() { defer
+        close(stopped); result <- tun.Run(ctx) }()\n\tt.Cleanup(func() {\n\t\tcancel()\n\t\tdev.Close()\n\t\tselect
+        {\n\t\tcase <-stopped:\n\t\tcase <-time.After(time.Second):\n\t\t\tt.Error("generation
+        cleanup stalled")\n\t\t}\n\t})\n\tvar c *quicCarrier\n\tselect {\n\tcase c
+        = <-opened:\n\tcase <-time.After(time.Second):\n\t\tt.Fatal("carrier did not
+        open")\n\t}\n\tc.udp.Close()\n\tselect {\n\tcase err := <-result:\n\t\tif
+        err == nil || ctx.Err() != nil {\n\t\t\tt.Fatalf("result%v parent%v", err,
+        ctx.Err())\n\t\t}\n\tcase <-time.After(400 * time.Millisecond):\n\t\tt.Fatal("QUIC
+        listener Run stayed stuck after fatal carrier failure")\n\t}\n}\n\nfunc TestRuntimeAuditQuicCarrierConcurrentClose(t
+        *testing.T) {\n\tfor range 10 {\n\t\tc := openQuicPair(t, "quic-close-race-audit",
+        "127.0.0.1:0")\n\t\td := dialQuicCarrier(t, "quic-close-race-audit", c.LocalAddr().String())\n\t\td.WriteTo([]byte("queued"),
+        nil)\n\t\treadWithin(t, c, time.Second)\n\t\tvar wg sync.WaitGroup\n\t\tfor
+        range 4 {\n\t\t\twg.Add(1)\n\t\t\tgo func() { defer wg.Done(); c.Close() }()\n\t\t}\n\t\twg.Add(1)\n\t\tgo
+        func() { defer wg.Done(); c.udp.Close() }()\n\t\tcompleted := make(chan struct{})\n\t\tgo
+        func() { wg.Wait(); close(completed) }()\n\t\tselect {\n\t\tcase <-completed:\n\t\tcase
+        <-time.After(time.Second):\n\t\t\tt.Fatal("concurrent Close deadlocked the
+        QUIC carrier")\n\t\t}\n\t\tc.mu.Lock()\n\t\tclosed := c.closed\n\t\tremaining
+        := len(c.peers)\n\t\tc.mu.Unlock()\n\t\tif !closed || remaining != 0 {\n\t\t\tt.Fatalf("close
+        left state closed=%v peers=%d", closed, remaining)\n\t\t}\n\t\td.Close()\n\t}\n}\n'',encoding=''utf-8'')
+
+        PY
+
+        gofmt -w internal/tunnel/l3/runtime_audit_quic_listener_test.go'
+    - run: 'go test ./internal/tunnel/l3 -run TestRuntimeAuditQuic -race -count=3
+        -v -timeout 3m
+
+        go test ./internal/client/transport -run TestUDPBackendReceivesEveryFramedDatagram
+        -race -count=5 -v -timeout 2m
+
+        go vet ./...
+
+        go run honnef.co/go/tools/cmd/staticcheck@latest ./...
+
+        go test ./internal/client/transport ./internal/server/transport ./internal/utils/network
+        ./internal/utils/handlers ./internal/tunnel/direct ./internal/tunnel/l3 ./internal/tunnel/limits
+        ./internal/tunnel/bridge ./cmd -race -timeout 20m
+
+        GOOS=linux GOARCH=amd64 go build ./...
+
+        GOOS=linux GOARCH=arm64 go build ./...'
