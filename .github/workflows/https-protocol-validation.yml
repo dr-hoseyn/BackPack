@@ -503,11 +503,12 @@ jobs:
         ]"\n\tif permanent {\n\t\tcondition = "true"\n\t}\n\tscript := "#!/bin/sh\\nif [ \\"$2\\" = -test ]; then exit 0;
         fi\\nprintf \''%s\\\\n\'' \\"$3\\" > \''" + generated + "\''\\nif " + condition + "; then\\n touch \''" + marker +
         "\''\\n sleep 300 &\\n echo $! >> \''" + pids + "\''\\n exit 255\\nfi\\nexec python3 - <<\''PY\''\\nimport socket\\ns=socket.socket();s.bind((\''127.0.0.1\'',"
-        + port + "));s.listen(8)\\nwhile True:\\n c,_=s.accept()\\n try: c.sendall(b\''ready\'')\\n except OSError: pass\\n
-        finally: c.close()\\nPY\\n"\n\tif err := os.WriteFile(binary, []byte(script), 0700); err != nil {\n\t\tt.Fatal(err)\n\t}\n\treturn
-        binary, addr, pids, generated\n}\n\nfunc initialHelperCleanup(t *testing.T, pids, generated string) {\n\tt.Helper()\n\tb,
-        err := os.ReadFile(pids)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tfor _, word := range strings.Fields(string(b))
-        {\n\t\tpid, err := strconv.Atoi(word)\n\t\tif err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t\tauditWaitPIDStopped(t,
+        + port + "));s.listen(8)\\nwhile True:\\n c,_=s.accept()\\n try:\\n  data=b\''\''\\n  while len(data)<3:\\n   part=c.recv(3-len(data))\\n   if
+        not part: break\\n   data+=part\\n  if data==b\''\\\\x05\\\\x01\\\\x00\'': c.sendall(b\''\\\\x05\\\\x00\'')\\n  elif
+        len(data)==3: c.sendall(b\''ready\'')\\n except OSError: pass\\n finally: c.close()\\nPY\\n"\n\tif err := os.WriteFile(binary,
+        []byte(script), 0700); err != nil {\n\t\tt.Fatal(err)\n\t}\n\treturn binary, addr, pids, generated\n}\n\nfunc initialHelperCleanup(t
+        *testing.T, pids, generated string) {\n\tt.Helper()\n\tb, err := os.ReadFile(pids)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tfor
+        _, word := range strings.Fields(string(b)) {\n\t\tpid, err := strconv.Atoi(word)\n\t\tif err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t\tauditWaitPIDStopped(t,
         pid, "initial-startup descendant survived cancellation")\n\t}\n\tb, err = os.ReadFile(generated)\n\tif err != nil
         {\n\t\tt.Fatal(err)\n\t}\n\tif _, err := os.Stat(filepath.Dir(strings.TrimSpace(string(b)))); !os.IsNotExist(err)
         {\n\t\tt.Fatal("initial-startup private configuration survived cancellation")\n\t}\n}\n\nfunc TestManagedHelperInitialRuntimeExitRecoversExternal(t
@@ -515,8 +516,9 @@ jobs:
         5*time.Second)\n\tdefer cancel()\n\tlog := logrus.New()\n\tlog.SetOutput(io.Discard)\n\th, err := startManaged(ctx,
         binary, "xray-client", []byte("{}"), addr, os.Environ(), log, nil)\n\tif err != nil {\n\t\tt.Fatalf("initial helper
         exit was not recovered: %v", err)\n\t}\n\tdefer h.Close()\n\tconn, err := net.DialTimeout("tcp", addr, time.Second)\n\tif
-        err != nil {\n\t\tt.Fatal(err)\n\t}\n\tconn.SetReadDeadline(time.Now().Add(time.Second))\n\tdata, err := io.ReadAll(conn)\n\tconn.Close()\n\tif
-        err != nil || string(data) != "ready" {\n\t\tt.Fatalf("recovered helper did not carry traffic: %q %v", data, err)\n\t}\n\th.Close()\n\tinitialHelperCleanup(t,
+        err != nil {\n\t\tt.Fatal(err)\n\t}\n\tconn.SetReadDeadline(time.Now().Add(time.Second))\n\tif _, err := conn.Write([]byte("app"));
+        err != nil {\n\t\tconn.Close()\n\t\tt.Fatal(err)\n\t}\n\tdata, err := io.ReadAll(conn)\n\tconn.Close()\n\tif err !=
+        nil || string(data) != "ready" {\n\t\tt.Fatalf("recovered helper did not carry traffic: %q %v", data, err)\n\t}\n\th.Close()\n\tinitialHelperCleanup(t,
         pids, generated)\n}\n\nfunc TestManagedHelperInitialRepeatedExitCanceledExternal(t *testing.T) {\n\tbinary, addr,
         pids, generated := initialHelperFixture(t, true)\n\tctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)\n\tdefer
         cancel()\n\tlog := logrus.New()\n\tlog.SetOutput(io.Discard)\n\tstarted := time.Now()\n\th, err := startManaged(ctx,
@@ -1732,11 +1734,12 @@ jobs:
         ]"\n\tif permanent {\n\t\tcondition = "true"\n\t}\n\tscript := "#!/bin/sh\\nif [ \\"$2\\" = -test ]; then exit 0;
         fi\\nprintf \''%s\\\\n\'' \\"$3\\" > \''" + generated + "\''\\nif " + condition + "; then\\n touch \''" + marker +
         "\''\\n sleep 300 &\\n echo $! >> \''" + pids + "\''\\n exit 255\\nfi\\nexec python3 - <<\''PY\''\\nimport socket\\ns=socket.socket();s.bind((\''127.0.0.1\'',"
-        + port + "));s.listen(8)\\nwhile True:\\n c,_=s.accept()\\n try: c.sendall(b\''ready\'')\\n except OSError: pass\\n
-        finally: c.close()\\nPY\\n"\n\tif err := os.WriteFile(binary, []byte(script), 0700); err != nil {\n\t\tt.Fatal(err)\n\t}\n\treturn
-        binary, addr, pids, generated\n}\n\nfunc initialHelperCleanup(t *testing.T, pids, generated string) {\n\tt.Helper()\n\tb,
-        err := os.ReadFile(pids)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tfor _, word := range strings.Fields(string(b))
-        {\n\t\tpid, err := strconv.Atoi(word)\n\t\tif err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t\tauditWaitPIDStopped(t,
+        + port + "));s.listen(8)\\nwhile True:\\n c,_=s.accept()\\n try:\\n  data=b\''\''\\n  while len(data)<3:\\n   part=c.recv(3-len(data))\\n   if
+        not part: break\\n   data+=part\\n  if data==b\''\\\\x05\\\\x01\\\\x00\'': c.sendall(b\''\\\\x05\\\\x00\'')\\n  elif
+        len(data)==3: c.sendall(b\''ready\'')\\n except OSError: pass\\n finally: c.close()\\nPY\\n"\n\tif err := os.WriteFile(binary,
+        []byte(script), 0700); err != nil {\n\t\tt.Fatal(err)\n\t}\n\treturn binary, addr, pids, generated\n}\n\nfunc initialHelperCleanup(t
+        *testing.T, pids, generated string) {\n\tt.Helper()\n\tb, err := os.ReadFile(pids)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tfor
+        _, word := range strings.Fields(string(b)) {\n\t\tpid, err := strconv.Atoi(word)\n\t\tif err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t\tauditWaitPIDStopped(t,
         pid, "initial-startup descendant survived cancellation")\n\t}\n\tb, err = os.ReadFile(generated)\n\tif err != nil
         {\n\t\tt.Fatal(err)\n\t}\n\tif _, err := os.Stat(filepath.Dir(strings.TrimSpace(string(b)))); !os.IsNotExist(err)
         {\n\t\tt.Fatal("initial-startup private configuration survived cancellation")\n\t}\n}\n\nfunc TestManagedHelperInitialRuntimeExitRecoversExternal(t
@@ -1744,8 +1747,9 @@ jobs:
         5*time.Second)\n\tdefer cancel()\n\tlog := logrus.New()\n\tlog.SetOutput(io.Discard)\n\th, err := startManaged(ctx,
         binary, "xray-client", []byte("{}"), addr, os.Environ(), log, nil)\n\tif err != nil {\n\t\tt.Fatalf("initial helper
         exit was not recovered: %v", err)\n\t}\n\tdefer h.Close()\n\tconn, err := net.DialTimeout("tcp", addr, time.Second)\n\tif
-        err != nil {\n\t\tt.Fatal(err)\n\t}\n\tconn.SetReadDeadline(time.Now().Add(time.Second))\n\tdata, err := io.ReadAll(conn)\n\tconn.Close()\n\tif
-        err != nil || string(data) != "ready" {\n\t\tt.Fatalf("recovered helper did not carry traffic: %q %v", data, err)\n\t}\n\th.Close()\n\tinitialHelperCleanup(t,
+        err != nil {\n\t\tt.Fatal(err)\n\t}\n\tconn.SetReadDeadline(time.Now().Add(time.Second))\n\tif _, err := conn.Write([]byte("app"));
+        err != nil {\n\t\tconn.Close()\n\t\tt.Fatal(err)\n\t}\n\tdata, err := io.ReadAll(conn)\n\tconn.Close()\n\tif err !=
+        nil || string(data) != "ready" {\n\t\tt.Fatalf("recovered helper did not carry traffic: %q %v", data, err)\n\t}\n\th.Close()\n\tinitialHelperCleanup(t,
         pids, generated)\n}\n\nfunc TestManagedHelperInitialRepeatedExitCanceledExternal(t *testing.T) {\n\tbinary, addr,
         pids, generated := initialHelperFixture(t, true)\n\tctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)\n\tdefer
         cancel()\n\tlog := logrus.New()\n\tlog.SetOutput(io.Discard)\n\tstarted := time.Now()\n\th, err := startManaged(ctx,
