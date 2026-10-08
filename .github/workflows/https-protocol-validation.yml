@@ -68,6 +68,8 @@ jobs:
         cache: true
     - run: '
 
+        sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
+
         go test ./... -timeout 10m
 
         go test ./internal/utils/network ./internal/client/transport ./internal/server/transport ./internal/tunnel/... ./cmd
