@@ -1,0 +1,314 @@
+name: QUIC backpressure UDP integrity and pacing lifetime verification
+permissions:
+  contents: read
+'on':
+  push:
+    branches:
+    - codex/validate-quic-and-udp-integrity
+jobs:
+  baseline_quic:
+    name: Reproduce full-inbox QUIC peer reader accumulation
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 50d05f0ec686cc28d87d8d7a631939bfce4e53e1
+        fetch-depth: 0
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - &id001
+      run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/tunnel/l3/runtime_audit_quic_inbox_test.go'').write_text(''package l3\nimport (\n "net"\n "context"\n
+        "crypto/tls"\n "github.com/quic-go/quic-go"\n "runtime"\n "strings"\n "testing"\n "time"\n)\nfunc auditPeerReaders()int{b:=make([]byte,1<<20);n:=runtime.Stack(b,true);return
+        strings.Count(string(b[:n]),"github.com/backpack/backpack/internal/tunnel/l3.(*quicCarrier).readPeer(")}\nfunc TestAuditQUICFullInboxPeerClosure(t
+        *testing.T){\n listener,_,err:=openQuic(Config{Mode:ModeListen,Addr:"127.0.0.1:0",Carrier:CarrierQuic});if err!=nil
+        {t.Fatal(err)};defer listener.Close()\n c:=listener.(*quicCarrier)\n dialer,peer,err:=openQuic(Config{Mode:ModeDial,Addr:listener.LocalAddr().String(),Carrier:CarrierQuic});if
+        err!=nil {t.Fatal(err)};defer dialer.Close()\n for end:=time.Now().Add(2*time.Second);len(c.in)<cap(c.in)&&time.Now().Before(end);
+        {if _,err:=dialer.WriteTo([]byte("real-inbox-packet"),peer);err!=nil {t.Fatal(err)};time.Sleep(time.Millisecond)}\n
+        if len(c.in)!=cap(c.in){t.Fatal("real QUIC inbox did not fill")}\n if _,err:=dialer.WriteTo([]byte("blocked-reader-packet"),peer);err!=nil
+        {t.Fatal(err)}\n time.Sleep(50*time.Millisecond)\n var key string\n c.mu.Lock();for k:=range c.peers {key=k};serverPeer:=c.peers[key];c.mu.Unlock();if
+        serverPeer==nil {t.Fatal("no registered peer")}\n started:=time.Now();dialer.Close()\n select {case<-serverPeer.conn.Context().Done():case<-time.After(time.Second):t.Fatal("closed
+        QUIC connection did not notify context")}\n for end:=time.Now().Add(400*time.Millisecond);time.Now().Before(end);
+        {\n  c.mu.Lock();_,exists:=c.peers[key];c.mu.Unlock();if !exists {t.Logf("peer retired after %s with inbox full",time.Since(started));return};time.Sleep(5*time.Millisecond)\n
+        }\n t.Fatalf("closed connection still retains its peer and readPeer goroutine while %d-packet inbox is full; readers=%d",len(c.in),auditPeerReaders())\n}\nfunc
+        TestAuditQUICFullInboxConnectionChurn(t *testing.T){\n listener,_,err:=openQuic(Config{Mode:ModeListen,Addr:"127.0.0.1:0",Carrier:CarrierQuic});if
+        err!=nil {t.Fatal(err)};defer listener.Close();c:=listener.(*quicCarrier)\n // Fill the bounded inbox using genuine
+        datagrams.\n first,peer,err:=openQuic(Config{Mode:ModeDial,Addr:listener.LocalAddr().String(),Carrier:CarrierQuic});if
+        err!=nil {t.Fatal(err)};defer first.Close()\n for end:=time.Now().Add(2*time.Second);len(c.in)<cap(c.in)&&time.Now().Before(end);
+        {if _,err:=first.WriteTo([]byte("queued"),peer);err!=nil {t.Fatal(err)};time.Sleep(time.Millisecond)}\n if len(c.in)!=cap(c.in){t.Fatal("real
+        inbox did not fill")}\n before:=auditPeerReaders()\n const attempts=20\n for range attempts {\n  d,p,err:=openQuic(Config{Mode:ModeDial,Addr:listener.LocalAddr().String(),Carrier:CarrierQuic});if
+        err!=nil {t.Fatal(err)}\n  if _,err:=d.WriteTo([]byte("blocked"),p);err!=nil {d.Close();t.Fatal(err)}\n  time.Sleep(15*time.Millisecond);d.Close()\n
+        }\n time.Sleep(200*time.Millisecond)\n readers:=auditPeerReaders();c.mu.Lock();peers:=len(c.peers);c.mu.Unlock()\n
+        if readers>before+1 {t.Fatalf("20 closed dialers accumulated reader goroutines: before=%d after=%d bounded peer map=%d;
+        queue remains %d",before,readers,peers,len(c.in))}\n}\nvar _ net.Addr\n\nfunc TestAuditQUICBlockedReaderReplacementIdentity(t
+        *testing.T){\n listener,_,err:=openQuic(Config{Mode:ModeListen,Addr:"127.0.0.1:0",Carrier:CarrierQuic});if err!=nil
+        {t.Fatal(err)};defer listener.Close();c:=listener.(*quicCarrier)\n udp,err:=net.ListenUDP("udp",&net.UDPAddr{IP:net.IPv4(127,0,0,1)});if
+        err!=nil {t.Fatal(err)};defer udp.Close()\n tr:=&quic.Transport{Conn:udp};defer tr.Close()\n ctx,cancel:=context.WithTimeout(context.Background(),3*time.Second);defer
+        cancel()\n tlsCfg:=&tls.Config{InsecureSkipVerify:true,NextProtos:[]string{quicALPN},MinVersion:tls.VersionTLS13}\n
+        first,err:=tr.Dial(ctx,c.LocalAddr(),tlsCfg,quicConfig());if err!=nil {t.Fatal(err)};defer first.CloseWithError(0,"")\n
+        for end:=time.Now().Add(2*time.Second);len(c.in)<cap(c.in)&&time.Now().Before(end); {if err:=first.SendDatagram([]byte("queued"));err!=nil
+        {t.Fatal(err)};time.Sleep(time.Millisecond)}\n if len(c.in)!=cap(c.in){t.Fatal("real inbox did not fill")}\n if err:=first.SendDatagram([]byte("blocked"));err!=nil
+        {t.Fatal(err)};time.Sleep(50*time.Millisecond)\n key:=udp.LocalAddr().String();c.mu.Lock();old:=c.peers[key];c.mu.Unlock();if
+        old==nil {t.Fatal("no original server connection")}\n second,err:=tr.Dial(ctx,c.LocalAddr(),tlsCfg,quicConfig());if
+        err!=nil {t.Fatal(err)};defer second.CloseWithError(0,"")\n if err:=second.SendDatagram([]byte("new peer"));err!=nil
+        {t.Fatal(err)}\n var replacement *quicPeer\n for end:=time.Now().Add(time.Second);time.Now().Before(end); {c.mu.Lock();replacement=c.peers[key];c.mu.Unlock();if
+        replacement!=nil&&replacement!=old {break};time.Sleep(5*time.Millisecond)}\n if replacement==nil||replacement==old
+        {t.Fatal("same-address replacement did not register")}\n select{case<-old.conn.Context().Done():case<-time.After(time.Second):t.Fatal("old
+        connection not evicted")}\n time.Sleep(100*time.Millisecond)\n c.mu.Lock();present:=c.peers[key];c.mu.Unlock();if
+        present!=replacement {t.Fatal("old reader deleted the same-address replacement")}\n // The old reader must leave,
+        while the new live one is allowed to block.\n if readers:=auditPeerReaders();readers>1 {t.Fatalf("old reader remained
+        after eviction: %d readers",readers)}\n}\n'',encoding=''utf-8'')
+
+        PY
+
+        gofmt -w internal/tunnel/l3/runtime_audit_quic_inbox_test.go'
+    - run: 'if go test ./internal/tunnel/l3 -run "TestAuditQUICFullInboxPeerClosure|TestAuditQUICFullInboxConnectionChurn"
+        -count=1 -v -timeout 2m > /tmp/quic.log 2>&1; then cat /tmp/quic.log; exit 1; fi
+
+        cat /tmp/quic.log
+
+        grep -q "FAIL: TestAuditQUICFullInboxPeerClosure" /tmp/quic.log
+
+        grep -q "accumulated reader goroutines" /tmp/quic.log'
+  baseline_admission:
+    name: Reproduce shutdown closing raw UDP first-packet queue
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 50d05f0ec686cc28d87d8d7a631939bfce4e53e1
+        fetch-depth: 0
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/server/transport/runtime_audit_udp_first_packet_test.go'').write_text(''package transport\n\nimport
+        (\n\t"context"\n\t"github.com/sirupsen/logrus"\n\t"net"\n\t"strings"\n\t"sync/atomic"\n\t"testing"\n\t"time"\n)\n\ntype
+        runtimeAuditUDPAdmissionHook struct {\n\tcancel   context.CancelFunc\n\tlimits   *limiter\n\tobserved chan struct{}\n\tonce     atomic.Bool\n}\n\nfunc
+        (*runtimeAuditUDPAdmissionHook) Levels() []logrus.Level { return logrus.AllLevels }\nfunc (h *runtimeAuditUDPAdmissionHook)
+        Fire(entry *logrus.Entry) error {\n\tif strings.HasPrefix(entry.Message, "accepted UDP connection from ") && h.once.CompareAndSwap(false,
+        true) {\n\t\t// Pause only at the existing production publication/first-send boundary.\n\t\th.cancel()\n\t\tuntil
+        := time.Now().Add(time.Second)\n\t\tfor h.limits.active.Load() != 0 && time.Now().Before(until) {\n\t\t\ttime.Sleep(time.Millisecond)\n\t\t}\n\t\tclose(h.observed)\n\t}\n\treturn
+        nil\n}\n\nfunc TestRuntimeAuditUDPFirstPacketSurvivesConcurrentGenerationEnd(t *testing.T) {\n\tctx, cancel := context.WithCancel(context.Background())\n\tdefer
+        cancel()\n\tlim := newLimiter(Limits{MaxConnections: 1})\n\tlog := quietLogger()\n\tlog.SetLevel(logrus.DebugLevel)\n\thook
+        := &runtimeAuditUDPAdmissionHook{cancel: cancel, limits: lim, observed: make(chan struct{})}\n\tlog.AddHook(hook)\n\ts
+        := &UdpTransport{config: &UdpConfig{ChannelSize: 1}, limits: lim, lifecycle: lifecycle{logger: log}}\n\tg := &udpGen{ctx:
+        ctx, tunnelChannel: make(chan *TunnelUDPConn), reqNewConnChan: make(chan struct{}, 1)}\n\taddr := freeAddr(t)\n\tdone
+        := make(chan struct{})\n\tgo func() { defer close(done); s.localListener(g, addr, "127.0.0.1:9") }()\n\tt.Cleanup(func()
+        {\n\t\tcancel()\n\t\tselect {\n\t\tcase <-done:\n\t\tcase <-time.After(time.Second):\n\t\t\tt.Error("listener leaked")\n\t\t}\n\t})\n\tpeer,
+        err := net.Dial("udp", addr)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tdefer peer.Close()\n\tuntil := time.Now().Add(3
+        * time.Second)\n\tfor time.Now().Before(until) {\n\t\tpeer.Write([]byte("first"))\n\t\tselect {\n\t\tcase <-hook.observed:\n\t\t\tif
+        lim.active.Load() != 0 {\n\t\t\t\tt.Fatal("generation shutdown did not release flow")\n\t\t\t}\n\t\t\ttime.Sleep(50
+        * time.Millisecond)\n\t\t\treturn\n\t\tcase <-time.After(10 * time.Millisecond):\n\t\t}\n\t}\n\tt.Fatal("listener
+        did not admit a flow")\n}\n'',encoding=''utf-8'')
+
+        PY
+
+        gofmt -w internal/server/transport/runtime_audit_udp_first_packet_test.go'
+    - run: 'if go test ./internal/server/transport -run TestRuntimeAuditUDPFirstPacketSurvivesConcurrentGenerationEnd -count=1
+        -v -timeout 15s > /tmp/admission.log 2>&1; then cat /tmp/admission.log; exit 1; fi
+
+        cat /tmp/admission.log
+
+        grep -q "panic: send on closed channel" /tmp/admission.log'
+  quic:
+    name: Exact QUIC full-inbox closure churn and replacement identity
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 5b0fd192eff6ef98e52602d393c6d1c8625bf6eb
+        fetch-depth: 0
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - *id001
+    - run: 'go test ./internal/tunnel/l3 -run "TestAuditQUIC|TestQUIC|TestQuic" -race -count=3 -v -timeout 5m
+
+        go test ./internal/tunnel/l3 -race -timeout 15m
+
+        go vet ./internal/tunnel/l3'
+  udp:
+    name: Exact whole raw UDP tunnel preserves large and empty datagrams
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 9fa4fd67e5ade2be2994ee74a3dda7fffc564a24
+        fetch-depth: 0
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - &id002
+      run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/e2e/runtime_audit_udp_packet_test.go'').write_text(''package e2e\n\nimport (\n\t"bytes"\n\t"context"\n\t"fmt"\n\t"github.com/backpack/backpack/internal/client"\n\t"github.com/backpack/backpack/internal/server"\n\t"sync"\n\t"testing"\n\t"time"\n)\n\nfunc
+        TestRuntimeAuditRawUDPPacketIntegrity(t *testing.T) {\n\tbackendAddr := startUDPEchoBackend(t)\n\ttunnelPort, entryPort
+        := freePort(t), freePort(t)\n\ttoken := "packet-integrity-token-0123456789"\n\tsrvCfg := baseServerConfig("udp", tunnelPort,
+        entryPort, backendAddr, token)\n\tcliCfg := baseClientConfig("udp", fmt.Sprintf("127.0.0.1:%d", tunnelPort), token,
+        nil)\n\tctx, cancel := context.WithCancel(context.Background())\n\tvar wg sync.WaitGroup\n\tt.Cleanup(func() { cancel();
+        wg.Wait() })\n\tsrv := server.NewServer(srvCfg, ctx)\n\twg.Add(1)\n\tgo func() { defer wg.Done(); srv.Start() }()\n\ttime.Sleep(300
+        * time.Millisecond)\n\tcli := client.NewClient(cliCfg, ctx)\n\twg.Add(1)\n\tgo func() { defer wg.Done(); cli.Start()
+        }()\n\tconn, err := holdUDPFlow(t, fmt.Sprintf("127.0.0.1:%d", entryPort), tunnelReadyTimeout)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tdefer
+        conn.Close()\n\tfor _, size := range []int{16384, 16385, 60000, 0, 7} {\n\t\tt.Run(fmt.Sprint(size), func(t *testing.T)
+        {\n\t\t\tpayload := bytes.Repeat([]byte{byte(size % 251)}, size)\n\t\t\tif err := conn.SetDeadline(time.Now().Add(2
+        * time.Second)); err != nil {\n\t\t\t\tt.Fatal(err)\n\t\t\t}\n\t\t\tn, err := conn.Write(payload)\n\t\t\tif err !=
+        nil {\n\t\t\t\tt.Fatal(err)\n\t\t\t}\n\t\t\tif n != size {\n\t\t\t\tt.Fatalf("send=%d want=%d", n, size)\n\t\t\t}\n\t\t\tgot
+        := make([]byte, 65535)\n\t\t\tn, err = conn.Read(got)\n\t\t\tif err != nil {\n\t\t\t\tt.Fatalf("%d-byte datagram did
+        not return: %v", size, err)\n\t\t\t}\n\t\t\tif !bytes.Equal(got[:n], payload) {\n\t\t\t\tt.Fatalf("datagram integrity
+        lost: got=%d bytes want=%d", n, size)\n\t\t\t}\n\t\t})\n\t}\n}\n'',encoding=''utf-8'')
+
+        PY
+
+        gofmt -w internal/e2e/runtime_audit_udp_packet_test.go'
+    - run: 'go test ./internal/e2e -run "TestRuntimeAuditRawUDPPacketIntegrity|TestTheUDPTransportForwardsDatagrams" -race
+        -count=3 -v -timeout 5m
+
+        go test ./internal/client/transport ./internal/server/transport -race -timeout 15m
+
+        go vet ./internal/client/transport ./internal/server/transport ./internal/e2e'
+  pacing:
+    name: Exact reverse paced-close and deterministic cancellation reads
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: a7b5ea87643fcd2d24fef946ee2d41d75b8c576c
+        fetch-depth: 0
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - &id003
+      run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/server/transport/runtime_audit_pacing_close_test.go'').write_text(''package transport\n\nimport (\n
+        "context"\n "errors"\n "io"\n "net"\n "sync/atomic"\n "testing"\n "time"\n)\n\ntype auditPacingConn struct { net.Conn;
+        writes atomic.Int32; entered chan struct{}; readReady chan struct{}; readPayload bool }\nfunc (c *auditPacingConn)
+        Write(p []byte)(int,error) { c.writes.Add(1);return len(p),nil }\nfunc (c *auditPacingConn) Read(p []byte)(int,error)
+        {close(c.entered);<-c.readReady;copy(p,"tail");if c.readPayload{return 4,io.EOF};return 4,nil}\nfunc TestAuditPacedCloseStopsOnlyItsConnection(t
+        *testing.T) {\n l:=newLimiter(Limits{BandwidthMbps:1})\n socket,peer:=net.Pipe();defer peer.Close()\n plain:=&auditPacingConn{Conn:socket}\n
+        c:=l.wrap(context.Background(),plain)\n l.waitBytes(context.Background(),125000)\n done:=make(chan error,1)\n go func(){_,err:=c.Write(make([]byte,125000));done<-err}()\n
+        time.Sleep(20*time.Millisecond)\n if err:=c.Close();err!=nil{t.Fatal(err)}\n select{case err:=<-done:if err==nil{t.Error("closed
+        pacing write succeeded")};case<-time.After(150*time.Millisecond):t.Error("Close left write waiting for tokens; relay
+        slot remains held")}\n select{case<-done:case<-time.After(1200*time.Millisecond):}\n if n:=plain.writes.Load();n!=0{t.Errorf("closed
+        paced write reached underlying socket %d times",n)}\n}\nfunc TestAuditPacingCancellationNeverStartsWrite(t *testing.T){\n
+        ctx,cancel:=context.WithCancel(context.Background());cancel()\n socket,peer:=net.Pipe();defer socket.Close();defer
+        peer.Close()\n plain:=&auditPacingConn{Conn:socket}\n c:=newLimiter(Limits{BandwidthMbps:1}).wrap(ctx,plain)\n n,err:=c.Write([]byte("rejected"))\n
+        if n!=0||!errors.Is(err,context.Canceled)||plain.writes.Load()!=0{t.Fatalf("cancelled write n=%d err=%v underlying
+        writes=%d",n,err,plain.writes.Load())}\n}\nfunc TestAuditPacingReadReportsCancellationAndKeepsTail(t *testing.T){\n
+        for _,eof:=range []bool{false,true}{t.Run(map[bool]string{false:"read",true:"tailEOF"}[eof],func(t *testing.T){\n
+        ctx,cancel:=context.WithCancel(context.Background());defer cancel()\n socket,peer:=net.Pipe();defer socket.Close();defer
+        peer.Close()\n plain:=&auditPacingConn{Conn:socket,entered:make(chan struct{}),readReady:make(chan struct{}),readPayload:eof}\n
+        l:=newLimiter(Limits{BandwidthMbps:1});l.waitBytes(ctx,125000)\n c:=l.wrap(ctx,plain);done:=make(chan error,1)\n go
+        func(){buf:=make([]byte,8);n,err:=c.Read(buf);if n!=4||string(buf[:n])!="tail"{t.Errorf("tail n%d %q",n,buf[:n])};done<-err}()\n
+        <-plain.entered;cancel();close(plain.readReady)\n select{case err:=<-done:if eof{if !errors.Is(err,io.EOF){t.Errorf("lost
+        EOF %v",err)}}else if !errors.Is(err,context.Canceled){t.Errorf("pacing swallowed cancellation: %v",err)};case<-time.After(150*time.Millisecond):t.Fatal("read
+        pacing ignored cancellation")}\n })}\n}\n'',encoding=''utf-8'')
+
+        PY
+
+        gofmt -w internal/server/transport/runtime_audit_pacing_close_test.go'
+    - run: 'go test ./internal/server/transport -run "TestAuditPacedClose|TestAuditPacing|TestClosingAPaced|TestPacingRead|TestPacingCancellation|TestPacingStops"
+        -race -count=5 -v -timeout 3m
+
+        go test ./internal/server/transport ./internal/utils/handlers ./internal/tunnel/limits -race -timeout 15m
+
+        go vet ./internal/server/transport ./internal/tunnel/limits'
+  combined:
+    name: Combined QUIC backpressure UDP integrity and pacing teardown
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: cc660d98b5264fa6efd2f099ebb5895938157c2e
+        fetch-depth: 0
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - *id001
+    - *id002
+    - *id003
+    - run: 'go test ./internal/tunnel/l3 -run TestAuditQUIC -race -count=3 -v -timeout 5m
+
+        go test ./internal/e2e -run TestRuntimeAuditRawUDPPacketIntegrity -race -count=3 -v -timeout 5m
+
+        go test ./internal/server/transport -run "TestAuditPacedClose|TestAuditPacing" -race -count=5 -v -timeout 3m
+
+        go vet ./...
+
+        go run honnef.co/go/tools/cmd/staticcheck@latest ./...
+
+        go test ./internal/client/transport ./internal/server/transport ./internal/utils/handlers ./internal/utils/network
+        ./internal/tunnel/direct ./internal/tunnel/l3 ./internal/web ./internal/metrics ./internal/tunnel/limits -race -timeout
+        15m
+
+        GOOS=linux GOARCH=amd64 go build -o /tmp/backpack-amd64 .
+
+        GOOS=linux GOARCH=arm64 go build -o /tmp/backpack-arm64 .'
+  full:
+    name: Full combined tests races and unchanged coverage floors
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: cc660d98b5264fa6efd2f099ebb5895938157c2e
+        fetch-depth: 0
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+    - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
+
+        sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d
+
+        go test ./... -timeout 20m
+
+        go test ./... -race -timeout 20m'
+    - name: Coverage
+      run: "go test ./... -coverpkg=./... -coverprofile=coverage.out -timeout 20m\ntotal=\"$(go tool cover -func=coverage.out\
+        \ | tail -1 | grep -oE '[0-9.]+')\"\necho \"total coverage: ${total}%\"\nfloor=50\nawk -v t=\"$total\" -v f=\"$floor\"\
+        \ 'BEGIN {\n  if (t+0 < f+0) {\n    printf \"coverage %.1f%% is below the floor of %d%%\\n\", t, f\n    exit 1\n \
+        \ }\n}'\n"
+    - name: Per-package coverage floors
+      run: "set -eu\ncheck() {\n  pkg=\"$1\"; floor=\"$2\"; why=\"$3\"\n  got=\"$(go tool cover -func=coverage.out \\\n  \
+        \        | grep \"^github.com/backpack/backpack/$pkg/\" \\\n          | awk '{gsub(/%/,\"\",$3); s+=$3; n++} END {if\
+        \ (n) printf \"%.1f\", s/n; else print \"0\"}')\"\n  echo \"  $pkg: ${got}% (floor ${floor}%) \u2014 $why\"\n  awk\
+        \ -v g=\"$got\" -v f=\"$floor\" -v p=\"$pkg\" 'BEGIN {\n    if (g+0 < f+0) { printf \"%s fell below its floor\\n\"\
+        , p; exit 1 }\n  }'\n}\ncheck internal/tunnel/l3      60 \"the layer-3 data path\"\ncheck internal/tunnel/chain  \
+        \ 80 \"transport fallback: a wrong decision here takes a tunnel down\"\ncheck internal/control        50 \"the fleet\
+        \ and the job runner\"\ncheck internal/cli            60 \"the scriptable surface; scripts depend on its exit codes\"\
+        \ncheck internal/node           40 \"the fleet RPC and the staged rollout\"\ncheck internal/metrics        60 \"what\
+        \ every other component reads to decide anything\"\ncheck internal/menu           25 \"the screens an operator actually\
+        \ meets this product through\"\ncheck internal/server/transport 85 \"the Iran side of every reverse transport: lifecycle,\
+        \ forwarder, control loop\"\ncheck internal/client/transport 83 \"the kharej side of every reverse transport\"\ncheck\
+        \ internal/controlwire    95 \"the control channel's wire, shared by both ends\"\ncheck internal/utils/acceptloop\
+        \ 90 \"accept backoff and the pre-authentication gate (ADR 0004)\"\ncheck internal/manage/tunnelspec 70 \"a tunnel's\
+        \ configuration: render, load, apply with revert\"\ncheck internal/manage/host    60 \"this machine's addresses, ports\
+        \ and certificates\"\ncheck internal/manage/health  40 \"tunnel health, the watchdog and the Health Check\"\n"
