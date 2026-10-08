@@ -1,0 +1,251 @@
+name: Tunnel capacity, accounting and L3 seal verification
+permissions:
+  contents: read
+'on':
+  push:
+    branches:
+    - codex/validate-capacity-crypto
+jobs:
+  baseline_distribution:
+    name: Reproduce idle direct sessions and skewed backends
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 2a517c5a99e46b434787a63c14bfc6babedd7e09
+        fetch-depth: 0
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - &id002
+      run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/tunnel/direct/runtime_audit_distribution_test.go'').write_text(''package direct\nimport("context";"fmt";"net";"testing";"time")\nfunc
+        TestRuntimeAuditDirectSessionAndBackendDistribution(t *testing.T){\n for _,count:=range[]int{2,4}{t.Run(fmt.Sprint(count),func(t
+        *testing.T){\n  origin,err:=NewOrigin(Config{Role:RoleOrigin,Addr:"127.0.0.1:0",Token:"distribution"},quietLogger());if
+        err!=nil{t.Fatal(err)}\n  ctx,cancel:=context.WithCancel(context.Background());defer cancel()\n  originDone:=make(chan
+        struct{});go func(){defer close(originDone);origin.Run(ctx)}();defer func(){cancel();<-originDone}()\n  port:=freePort(t);targetA:=echoBackend(t,"A:");targetB:=echoBackend(t,"B:")\n  edge,err:=NewEdge(Config{Role:RoleEdge,Addr:awaitBind(t,origin).String(),Token:"distribution",Sessions:count,Ports:[]string{fmt.Sprintf("127.0.0.1:%d=%s|%s",port,targetA,targetB)},RetryDelay:time.Millisecond*100},quietLogger());if
+        err!=nil{t.Fatal(err)}\n  edgeDone:=make(chan struct{});go func(){defer close(edgeDone);edge.Run(ctx)}();defer func(){cancel();<-edgeDone}()\n  for
+        deadline:=time.Now().Add(5*time.Second);time.Now().Before(deadline);{if edge.Stats().Sessions==int64(count)&&origin.Stats().Sessions==int64(count){break};time.Sleep(5*time.Millisecond)}\n  if
+        edge.Stats().Sessions!=int64(count)||origin.Stats().Sessions!=int64(count){t.Fatal("sessions did not authenticate")}\n  peers:=make([]net.Conn,0,8);defer
+        func(){for _,peer:=range peers{peer.Close()}}()\n  backendCounts:=map[string]int{}\n  for i:=0;i<8;i++{peer,err:=net.DialTimeout("tcp",fmt.Sprintf("127.0.0.1:%d",port),time.Second);if
+        err!=nil{t.Fatal(err)};peers=append(peers,peer);peer.SetDeadline(time.Now().Add(3*time.Second));peer.Write([]byte("x"));buf:=make([]byte,3);if
+        _,err:=peer.Read(buf);err!=nil{t.Fatal(err)};backendCounts[string(buf)]++}\n  sessions:=origin.sessions.snapshot();counts:=make([]int,len(sessions));for
+        i,session:=range sessions{counts[i]=session.NumStreams()}\n  t.Logf("sessions%d active stream distribution %v backend
+        counts %v",count,counts,backendCounts)\n  for _,active:=range counts{if active!=8/count{t.Errorf("session stream counts
+        %v, want %d each",counts,8/count);break}}\n  if backendCounts["A:x"]!=4||backendCounts["B:x"]!=4{t.Errorf("backend
+        choices %v, want4each",backendCounts)}\n })}\n}\n'',encoding=''utf-8'')
+
+        PY
+
+        gofmt -w internal/tunnel/direct/runtime_audit_distribution_test.go'
+    - run: 'if go test ./internal/tunnel/direct -run TestRuntimeAuditDirectSessionAndBackendDistribution -count=1 -v -timeout
+        2m > /tmp/distribution.log 2>&1; then cat /tmp/distribution.log; exit 1; fi
+
+        cat /tmp/distribution.log
+
+        grep -q "FAIL: TestRuntimeAuditDirectSessionAndBackendDistribution" /tmp/distribution.log
+
+        grep -q "session stream counts" /tmp/distribution.log'
+  baseline_perf:
+    name: Baseline usage and seal allocations
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: ff86354bcafbd054e7888e48343145323c9b2207
+        fetch-depth: 0
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - &id001
+      run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/web/runtime_audit_usage_bench_test.go'').write_text(''package web\n\nimport (\n\t"fmt"\n\t"sync/atomic"\n\t"testing"\n)\n\nfunc
+        BenchmarkRuntimeAuditUsageAccounting(b *testing.B) {\n\tfor _, parallel := range []bool{false, true} {\n\t\tfor _,
+        ports := range []int{1, 64} {\n\t\t\tname := fmt.Sprintf("parallel=%v/ports=%d", parallel, ports)\n\t\t\tb.Run(name,
+        func(b *testing.B) {\n\t\t\t\tusage := &Usage{}\n\t\t\t\tvar ids atomic.Int32\n\t\t\t\tb.ReportAllocs()\n\t\t\t\tb.ResetTimer()\n\t\t\t\tif
+        parallel {\n\t\t\t\t\tb.RunParallel(func(pb *testing.PB) {\n\t\t\t\t\t\tid := int(ids.Add(1)) % ports\n\t\t\t\t\t\tfor
+        pb.Next() {\n\t\t\t\t\t\t\tusage.AddOrUpdatePort(8000+id, 64*1024)\n\t\t\t\t\t\t}\n\t\t\t\t\t})\n\t\t\t\t} else {\n\t\t\t\t\tfor
+        i := range b.N {\n\t\t\t\t\t\tusage.AddOrUpdatePort(8000+i%ports, 64*1024)\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t\tb.StopTimer()\n\t\t\t\tvar
+        total uint64\n\t\t\t\tfor _, row := range usage.collectUsageDataFromSyncMap() {\n\t\t\t\t\ttotal += row.Usage\n\t\t\t\t}\n\t\t\t\tif
+        total != uint64(b.N)*64*1024 {\n\t\t\t\t\tb.Fatalf("total=%d expected=%d", total, uint64(b.N)*64*1024)\n\t\t\t\t}\n\t\t\t})\n\t\t}\n\t}\n}\n'',encoding=''utf-8'')
+
+        PY
+
+        gofmt -w internal/web/runtime_audit_usage_bench_test.go'
+    - run: 'go test ./internal/web -run "^$" -bench BenchmarkRuntimeAuditUsageAccounting -benchmem -count=3 -benchtime=300ms
+
+        go test ./internal/tunnel/l3 -run "^$" -bench "Benchmark(SealFullMTU|SealInteractive|PacketRoundTrip)" -benchmem -count=3
+        -benchtime=300ms'
+  distribution:
+    name: Exact direct session and backend distribution
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 7615e1c7b773aac350476d6ab924010e1556479b
+        fetch-depth: 0
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - run: 'go test ./internal/tunnel/direct -run TestEdgeSpreadsAcrossSessions -race -count=10 -v -timeout 5m
+
+        go vet ./internal/tunnel/direct
+
+        go test ./internal/tunnel/direct -race -timeout 15m'
+  usage:
+    name: Exact concurrent accounting, failed saves, symlinks and benchmarks
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 133127ffe75e64937d4c679e7f5051e1f49d3830
+        fetch-depth: 0
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - *id001
+    - run: 'go test ./internal/web -race -count=3 -v -timeout 5m
+
+        go vet ./internal/web
+
+        go test ./internal/web -run "^$" -bench BenchmarkRuntimeAuditUsageAccounting -benchmem -count=3 -benchtime=300ms'
+  crypto:
+    name: Exact wire-compatible L3 seal and allocation budgets
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: ce300abd44a598aafc5fcea933afe0dcd6dfbf85
+        fetch-depth: 0
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - &id003
+      run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/tunnel/l3/runtime_audit_seal_test.go'').write_text(''package l3\n\nimport (\n "bytes"\n "fmt"\n "math/rand"\n
+        "sort"\n "sync"\n "testing"\n "unsafe"\n "github.com/flynn/noise"\n)\n\ntype auditDisjointCipher struct { noise.Cipher;
+        t *testing.T }\nfunc (c auditDisjointCipher) Encrypt(out []byte, n uint64, ad, plaintext []byte) []byte {\n start
+        := uintptr(unsafe.Pointer(unsafe.SliceData(out)))\n end := start+uintptr(len(out)+len(plaintext)+tagLen)\n a := uintptr(unsafe.Pointer(unsafe.SliceData(ad)))\n
+        if start < a+uintptr(len(ad)) && a < end { c.t.Fatal("AD overlaps ciphertext destination") }\n if cap(out) != len(out)+len(plaintext)+tagLen
+        { c.t.Fatal("ciphertext destination capacity includes scratch AD") }\n return c.Cipher.Encrypt(out,n,ad,plaintext)\n}\nfunc
+        TestAuditSealWireEquivalence(t *testing.T) {\n rng:=rand.New(rand.NewSource(8675309))\n for _, size:=range []int{0,1,13,64,1400,9000,65535}
+        {\n  for _, kind:=range []byte{typeData,typeProbe,typeProbeAck} {\n   for _, spare:=range []int{-1,0,headerLen,256}
+        {\n    t.Run(fmt.Sprintf("size%d-kind%d-cap%d",size,kind,spare),func(t *testing.T){\n     init,resp:=handshakePair(t,"wire-equivalence-audit")\n     counter:=uint64(rng.Int63n(1<<45))\n     init.sendCounter.Store(counter)\n     payload:=make([]byte,size);rng.Read(payload)\n     h:=header{kind:kind,session:init.id,counter:counter};ad:=h.bytes()\n     expected:=init.send.Encrypt(append([]byte(nil),ad[:]...),counter,ad[:],payload)\n     init.send=auditDisjointCipher{init.send,t}\n     var
+        dst []byte;if spare>=0 {dst=make([]byte,0,headerLen+size+tagLen+spare)}\n     got,err:=init.sealKind(dst,payload,kind);if
+        err!=nil {t.Fatal(err)}\n     if !bytes.Equal(got,expected) {t.Fatal("wire ciphertext changed")}\n     if cap(got)<len(got)+headerLen
+        {t.Fatal("AD capacity not retained")}\n     if init.sendCounter.Load()!=counter+1 {t.Fatal("nonce increment changed")}\n     for
+        _, field:=range []int{0,1,5} {bad:=append([]byte(nil),got...);bad[field]^=1\n      if _,err:=resp.recv.Decrypt(nil,counter,bad[:headerLen],bad[headerLen:]);err==nil
+        {t.Fatalf("modified header byte %d authenticated",field)}\n     }\n     parsed,body,err:=parseHeader(got);if err!=nil
+        {t.Fatal(err)}\n     plain,err:=resp.open(nil,parsed,body);if err!=nil||!bytes.Equal(plain,payload) {t.Fatalf("roundtrip
+        %v",err)}\n     pointer:=unsafe.SliceData(got)\n     next,err:=init.sealKind(got[:0],payload,kind);if err!=nil {t.Fatal(err)}\n     if
+        unsafe.SliceData(next)!=pointer {t.Fatal("reused buffer allocated again")}\n    })\n   }\n  }\n }\n}\nfunc TestAuditSealConcurrentNonce(t
+        *testing.T) {\n init,resp:=handshakePair(t,"concurrent-seal-audit")\n const count=1000\n packets:=make([][]byte,count)\n
+        var wg sync.WaitGroup\n for i:=range count {wg.Add(1);go func(i int){defer wg.Done();p,err:=init.seal(nil,[]byte(fmt.Sprint(i)));if
+        err!=nil {t.Error(err)};packets[i]=p}(i)}\n wg.Wait()\n sort.Slice(packets,func(i,j int)bool{a,_,_:=parseHeader(packets[i]);b,_,_:=parseHeader(packets[j]);return
+        a.counter<b.counter})\n for i,p:=range packets {h,body,err:=parseHeader(p);if err!=nil {t.Fatal(err)};if h.counter!=uint64(i)
+        {t.Fatal("duplicate or missing nonce")};if _,err:=resp.open(nil,h,body);err!=nil {t.Fatal(err)}}\n if init.sendCounter.Load()!=count
+        {t.Fatal("wrong final nonce counter")}\n}\n'',encoding=''utf-8'')
+
+        PY
+
+        gofmt -w internal/tunnel/l3/runtime_audit_seal_test.go'
+    - run: 'go test ./internal/tunnel/l3 -run "TestAuditSeal|TestThePacketPathStaysWithinBudget|TestEveryPacketPathBenchmarkIsGated"
+        -race -count=3 -v -timeout 5m
+
+        go vet ./internal/tunnel/l3
+
+        go test ./internal/tunnel/l3 -race -timeout 15m
+
+        go test ./internal/tunnel/l3 -run "^$" -bench "Benchmark(SealFullMTU|SealInteractive|PacketRoundTrip)" -benchmem -count=3
+        -benchtime=300ms'
+  combined:
+    name: Combined capacity, wire, accounting and runtime races
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 4bc22d3197b6fa6774a3f310976710a21fd052fb
+        fetch-depth: 0
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - *id001
+    - *id002
+    - *id003
+    - run: 'go test ./internal/tunnel/direct -run TestRuntimeAuditDirectSessionAndBackendDistribution -race -count=5 -v -timeout
+        5m
+
+        go test ./internal/tunnel/l3 -run TestAuditSeal -race -count=3 -v -timeout 5m
+
+        go test ./internal/web -race -count=3 -v -timeout 5m
+
+        go vet ./...
+
+        go run honnef.co/go/tools/cmd/staticcheck@latest ./...
+
+        go test ./internal/client/transport ./internal/server/transport ./internal/utils/handlers ./internal/utils/network
+        ./internal/tunnel/direct ./internal/tunnel/l3 ./internal/web ./internal/metrics ./internal/limits -race -timeout 15m
+
+        GOOS=linux GOARCH=amd64 go build -o /tmp/backpack-amd64 .
+
+        GOOS=linux GOARCH=arm64 go build -o /tmp/backpack-arm64 .'
+  full:
+    name: Full combined test suite, race suite and coverage floors
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 4bc22d3197b6fa6774a3f310976710a21fd052fb
+        fetch-depth: 0
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+    - run: 'sudo mkdir -p /etc/backpack /etc/systemd/system /etc/cron.d
+
+        sudo chmod 777 /etc/backpack /etc/systemd/system /etc/cron.d
+
+        go test ./... -timeout 20m
+
+        go test ./... -race -timeout 20m'
+    - name: Per-package coverage floors
+      run: "set -eu\ncheck() {\n  pkg=\"$1\"; floor=\"$2\"; why=\"$3\"\n  got=\"$(go tool cover -func=coverage.out \\\n  \
+        \        | grep \"^github.com/backpack/backpack/$pkg/\" \\\n          | awk '{gsub(/%/,\"\",$3); s+=$3; n++} END {if\
+        \ (n) printf \"%.1f\", s/n; else print \"0\"}')\"\n  echo \"  $pkg: ${got}% (floor ${floor}%) \u2014 $why\"\n  awk\
+        \ -v g=\"$got\" -v f=\"$floor\" -v p=\"$pkg\" 'BEGIN {\n    if (g+0 < f+0) { printf \"%s fell below its floor\\n\"\
+        , p; exit 1 }\n  }'\n}\ncheck internal/tunnel/l3      60 \"the layer-3 data path\"\ncheck internal/tunnel/chain  \
+        \ 80 \"transport fallback: a wrong decision here takes a tunnel down\"\ncheck internal/control        50 \"the fleet\
+        \ and the job runner\"\ncheck internal/cli            60 \"the scriptable surface; scripts depend on its exit codes\"\
+        \ncheck internal/node           40 \"the fleet RPC and the staged rollout\"\ncheck internal/metrics        60 \"what\
+        \ every other component reads to decide anything\"\ncheck internal/menu           25 \"the screens an operator actually\
+        \ meets this product through\"\ncheck internal/server/transport 85 \"the Iran side of every reverse transport: lifecycle,\
+        \ forwarder, control loop\"\ncheck internal/client/transport 83 \"the kharej side of every reverse transport\"\ncheck\
+        \ internal/controlwire    95 \"the control channel's wire, shared by both ends\"\ncheck internal/utils/acceptloop\
+        \ 90 \"accept backoff and the pre-authentication gate (ADR 0004)\"\ncheck internal/manage/tunnelspec 70 \"a tunnel's\
+        \ configuration: render, load, apply with revert\"\ncheck internal/manage/host    60 \"this machine's addresses, ports\
+        \ and certificates\"\ncheck internal/manage/health  40 \"tunnel health, the watchdog and the Health Check\"\n"
