@@ -13,7 +13,7 @@ jobs:
     steps:
     - uses: actions/checkout@v7
       with:
-        ref: 23676ec
+        ref: 23676ecad726baf047b4b98492930d486238e39d
     - uses: actions/setup-go@v7
       with:
         go-version-file: go.mod
