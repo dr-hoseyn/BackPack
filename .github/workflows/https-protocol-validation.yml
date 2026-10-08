@@ -11,7 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: 1e9efce0dabb98d193673cb0d8ce26e6a798fa7f
+          ref: 632179b2a92390368535f2f8810a7a710e57cd53
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
@@ -19,6 +19,7 @@ jobs:
       - run: |
           sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
           go test ./internal/manage -run 'TestConnTest|TestTheTestSettingsFitOnePacket' -race -count=3 -v -timeout 5m
+          go test ./internal/spooftest -race -count=5 -timeout 2m
           go test ./internal/manage/... ./internal/tunnel/naive ./internal/tui ./cmd -short -race -timeout 8m
           go test ./... -timeout 12m
           go vet ./...
@@ -29,7 +30,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: 1e9efce0dabb98d193673cb0d8ce26e6a798fa7f
+          ref: 632179b2a92390368535f2f8810a7a710e57cd53
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
