@@ -1,0 +1,113 @@
+name: Final refused UDP backend fallback and complete runtime cohort
+permissions:
+  contents: read
+'on':
+  push:
+    branches:
+    - codex/validate-final-udp-backend
+jobs:
+  baseline:
+    name: Reproduce refused backend repeatedly winning least-loaded selection
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: b9e698adfa19893665584655704619502b8f4257
+        fetch-depth: 0
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - &id001
+      run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/tunnel/l3/runtime_audit_udp_backend_test.go'').write_text(''package l3\nimport("fmt";"net";"testing";"time")\nfunc
+        TestAuditForwarderUDPDeadBackendIsCooled(t *testing.T){\n held,err:=net.ListenPacket("udp","127.0.0.1:0");if err!=nil{t.Fatal(err)};dead:=held.LocalAddr().String();held.Close()\n
+        live:=echoUDP(t,"L:");port:=freePort(t);front:=fmt.Sprintf("127.0.0.1:%d",port)\n startForwarder(t,[]string{front+"="+dead+"|"+live},true)\n
+        missed:=0\n for i:=range 12 {\n  client,err:=net.Dial("udp",front);if err!=nil{t.Fatal(err)}\n  client.SetDeadline(time.Now().Add(150*time.Millisecond))\n  _,err=client.Write([]byte("healthy-fallback"));if
+        err!=nil{client.Close();t.Fatal(err)}\n  buf:=make([]byte,128);n,err:=client.Read(buf);client.Close()\n  if err!=nil
+        {missed++;t.Logf("client%d lost: %v",i,err)} else if string(buf[:n])!="L:healthy-fallback" {t.Fatalf("unexpected echo
+        %q",buf[:n])}\n  time.Sleep(10*time.Millisecond)\n }\n if missed>1 {t.Fatalf("%d/12 new UDP clients lost on refused
+        backend despite healthy alternate; after first ECONNREFUSED it should cool down",missed)}\n}\n'',encoding=''utf-8'')
+
+        PY
+
+        gofmt -w internal/tunnel/l3/runtime_audit_udp_backend_test.go'
+    - run: 'if go test ./internal/tunnel/l3 -run TestAuditForwarderUDPDeadBackendIsCooled -count=1 -v -timeout 2m > /tmp/backend.log
+        2>&1; then cat /tmp/backend.log; exit 1; fi
+
+        cat /tmp/backend.log
+
+        grep -q "new UDP clients lost on refused backend" /tmp/backend.log'
+  standalone:
+    name: Exact focused UDP backend failure classification and real fallback
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 1f40c2f24cbae26b25de85125fd9236d3379a04d
+        fetch-depth: 0
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - *id001
+    - run: 'go test ./internal/tunnel/l3 -run "TestAuditForwarderUDPDeadBackendIsCooled|TestUDPClientsSkipAnExplicitlyRefusedBackend|Test.*Backend|Test.*Cooldown"
+        -race -count=3 -v -timeout 5m
+
+        go test ./internal/tunnel/l3 -race -timeout 15m
+
+        go vet ./internal/tunnel/l3'
+  source:
+    name: Exact PR69 combined UDP health and mutable deadline checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 1ad9e1f6245ea19eb8365493a5c14ad35091bda4
+        fetch-depth: 0
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - *id001
+    - run: 'go test ./internal/tunnel/l3 -run "TestAuditForwarderUDPDeadBackendIsCooled|TestUDPClientsSkipAnExplicitlyRefusedBackend|Test.*Backend"
+        -race -count=3 -v -timeout 5m
+
+        go test ./internal/tunnel/l3 ./internal/tunnel/limits ./internal/client/transport ./internal/server/transport ./internal/utils/network
+        ./internal/utils/handlers -race -timeout 15m
+
+        go vet ./internal/tunnel/l3 ./internal/tunnel/limits'
+  combined:
+    name: Final complete runtime cohort regression static and cross-build checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 8e0554d73e2887163bdb2ee46eb9201d588d1dd2
+        fetch-depth: 0
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - *id001
+    - run: 'go test ./internal/tunnel/l3 -run "TestAuditForwarderUDPDeadBackendIsCooled|TestUDPClientsSkipAnExplicitlyRefusedBackend|Test.*Backend"
+        -race -count=3 -v -timeout 5m
+
+        go vet ./...
+
+        go run honnef.co/go/tools/cmd/staticcheck@latest ./...
+
+        go test ./internal/client/transport ./internal/server/transport ./internal/utils/handlers ./internal/utils/network
+        ./internal/socks ./internal/tunnel/direct ./internal/tunnel/l3 ./internal/web ./internal/metrics ./internal/tunnel/limits
+        -race -timeout 15m
+
+        GOOS=linux GOARCH=amd64 go build -o /tmp/backpack-amd64 .
+
+        GOOS=linux GOARCH=arm64 go build -o /tmp/backpack-arm64 .'
