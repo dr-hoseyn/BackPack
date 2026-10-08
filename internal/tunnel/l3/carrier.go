@@ -1,6 +1,7 @@
 package l3
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"strings"
@@ -177,7 +178,12 @@ func knownCarrier(name string) bool {
 // the peer to send to, or nil on the listening side of a carrier that learns
 // its peer from the packets that arrive.
 func openCarrier(cfg Config) (DatagramCarrier, net.Addr, error) {
-	carrier, peer, err := openBareCarrier(cfg)
+	return openCarrierContext(context.Background(), cfg)
+}
+
+// openCarrierContext lets Run cancel a pending QUIC handshake at shutdown.
+func openCarrierContext(ctx context.Context, cfg Config) (DatagramCarrier, net.Addr, error) {
+	carrier, peer, err := openBareCarrier(ctx, cfg)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -194,7 +200,7 @@ func openCarrier(cfg Config) (DatagramCarrier, net.Addr, error) {
 
 // openBareCarrier builds the carrier the config names, without the layers that
 // wrap it.
-func openBareCarrier(cfg Config) (DatagramCarrier, net.Addr, error) {
+func openBareCarrier(ctx context.Context, cfg Config) (DatagramCarrier, net.Addr, error) {
 	switch strings.ToLower(strings.TrimSpace(cfg.Carrier)) {
 	case "", CarrierUDP:
 		return openUDPPaths(cfg)
@@ -205,7 +211,7 @@ func openBareCarrier(cfg Config) (DatagramCarrier, net.Addr, error) {
 	case CarrierSpoof:
 		return openSpoof(cfg)
 	case CarrierQuic:
-		return openQuic(cfg)
+		return openQuicContext(ctx, cfg)
 	case CarrierSNI:
 		return openSNI(cfg)
 	default:
@@ -308,7 +314,7 @@ func (c *pinnedCarrier) WriteTo(p []byte, addr net.Addr) (int, error) {
 	if dst == nil {
 		// Nothing has arrived on this path yet and nobody said where to send:
 		// dropping is right, and the other paths carry the tunnel meanwhile.
-		return len(p), nil
+		return 0, fmt.Errorf("l3: this path has not learned its peer yet")
 	}
 	return c.DatagramCarrier.WriteTo(p, dst)
 }
@@ -328,4 +334,30 @@ func closeAll(paths []DatagramCarrier) {
 	for _, p := range paths {
 		p.Close()
 	}
+}
+
+// WriteBatch uses the learned path address without discarding sendmmsg/GSO.
+func (c *pinnedCarrier) WriteBatch(bufs [][]byte, addr net.Addr) (int, error) {
+	c.mu.Lock()
+	dst := c.peer
+	c.mu.Unlock()
+	if dst == nil {
+		dst = addr
+	}
+	if dst == nil {
+		return 0, fmt.Errorf("l3: this path has not learned its peer yet")
+	}
+	if writer := asBatchWriter(c.DatagramCarrier); writer != nil {
+		return writer.WriteBatch(bufs, dst)
+	}
+	for i, p := range bufs {
+		n, err := c.DatagramCarrier.WriteTo(p, dst)
+		if err != nil {
+			return i, err
+		}
+		if n != len(p) {
+			return i, fmt.Errorf("l3: short datagram write")
+		}
+	}
+	return len(bufs), nil
 }

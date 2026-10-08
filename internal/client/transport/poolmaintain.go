@@ -58,6 +58,8 @@ type poolSizer struct {
 	size int
 	// aggressive selects the tighter factors: grow sooner, shrink later.
 	aggressive bool
+	// mux says open includes traffic-carrying physical sessions.
+	mux bool
 
 	// open counts connections sitting in the pool right now.
 	open *int32
@@ -69,12 +71,26 @@ type poolSizer struct {
 	// dial starts one new pool connection. It is expected to return when that
 	// connection ends, so the loop starts it on its own goroutine.
 	dial func()
+	// spawn registers workers with their generation; nil is useful to callers
+	// that run the sizing policy on its own.
+	spawn   func(func())
+	pending *int32
+	maxSize int
+}
+
+func (p poolSizer) launch() {
+	if p.spawn != nil {
+		p.spawn(p.dial)
+	} else {
+		go p.dial()
+	}
 }
 
 // maintain fills the pool and then keeps it the right size until ctx ends.
 func (p poolSizer) maintain() {
+	var quietSince time.Time
 	for i := 0; i < p.size; i++ { // initial pool filling
-		go p.dial()
+		p.launch()
 	}
 
 	// The factors. a and b decide when the pool is too small, x and y when it
@@ -95,7 +111,11 @@ func (p poolSizer) maintain() {
 	defer tickerLoad.Stop()
 
 	newPoolSize := p.size // initial value
-	var load poolLoad     // throughput signal, see poolload.go
+	ceiling := p.maxSize
+	if ceiling <= 0 {
+		ceiling = p.size * poolGrowthLimit
+	}
+	var load poolLoad // throughput signal, see poolload.go
 	var openSum int32
 
 	for {
@@ -106,13 +126,21 @@ func (p poolSizer) maintain() {
 		case <-tickerPool.C:
 			// Accumulate pool connections over time (every second)
 			atomic.AddInt32(&openSum, atomic.LoadInt32(p.open))
+			// A failed initial dial or a retired session must not permanently
+			// hollow out the pool once automatic growth reaches its ceiling.
+			if p.pending != nil {
+				missing := newPoolSize - int(atomic.LoadInt32(p.open)+atomic.LoadInt32(p.pending))
+				for i := 0; i < missing && p.ctx.Err() == nil; i++ {
+					p.launch()
+				}
+			}
 
 		case <-tickerLoad.C:
+			load.spare = !p.mux
 			// The load over the last ten seconds, and the average pool size
 			// over the same window. +9 before the divide is a ceiling: a pool
 			// that was needed at all should not round down to "not needed".
-			taken := (int(atomic.LoadInt32(p.taken)) + 9) / 10
-			atomic.StoreInt32(p.taken, 0)
+			taken := (int(atomic.SwapInt32(p.taken, 0)) + 9) / 10
 
 			openAvg := (int(atomic.LoadInt32(&openSum)) + 9) / 10
 			atomic.StoreInt32(&openSum, 0)
@@ -125,27 +153,42 @@ func (p poolSizer) maintain() {
 			// the same place — through CountedConn or through AddBytes.
 			mbps := load.mbps()
 
+			quiet := float64(taken+x) < float64(openAvg)*y && mbps < max(openAvg, 1)*(poolScaleMbpsPerConn/2)
+			if !quiet {
+				quietSince = time.Time{}
+			} else if quietSince.IsZero() {
+				quietSince = time.Now()
+			}
+
 			// The pool is allowed to outgrow its configured size, which from
 			// outside is indistinguishable from a leak. Publish what it is
 			// doing and why, so the panel can say "8 configured, 19 open,
 			// carrying 240 Mbit/s" instead of leaving somebody to guess.
 			metrics.ReportPool(openAvg, newPoolSize, p.size, mbps)
 
-			grow := ((taken+a) > openAvg*b && poolCanGrow(newPoolSize, p.size)) ||
-				load.wantsMore(mbps, openAvg, newPoolSize, p.size)
+			grow := newPoolSize < ceiling && (((taken + a) > openAvg*b) ||
+				load.wantsMore(mbps, openAvg, newPoolSize, p.size))
 
 			switch {
 			case grow:
+				quietSince = time.Time{}
 				p.log.Debugf("increasing pool size: %d -> %d, avg pool conn: %d, avg load conn: %d, throughput: %d Mbit/s",
 					newPoolSize, newPoolSize+1, openAvg, taken, mbps)
 				newPoolSize++
-				go p.dial()
+				p.launch()
 
-			case float64(taken+x) < float64(openAvg)*y && newPoolSize > p.size:
+			case quiet && time.Since(quietSince) >= 30*time.Second && newPoolSize > p.size:
+				quietSince = time.Now()
 				p.log.Debugf("decreasing pool size: %d -> %d, avg pool conn: %d, avg load conn: %d",
 					newPoolSize, newPoolSize-1, openAvg, taken)
 				newPoolSize--
-				p.shrink <- struct{}{}
+				select {
+				case p.shrink <- struct{}{}:
+				case <-p.ctx.Done():
+					return
+				default:
+					// A full retirement queue already covers future requests.
+				}
 			}
 		}
 	}

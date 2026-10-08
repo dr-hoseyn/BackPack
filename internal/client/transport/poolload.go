@@ -41,9 +41,20 @@ const (
 	poolGrowthLimit = 4
 )
 
+// muxPoolLimit bounds automatic growth by the aggregate receive windows. Keep
+// an explicitly configured initial pool even when it exceeds this budget.
+func muxPoolLimit(size, receiveBuffer int) int {
+	limit := size * poolGrowthLimit
+	if receiveBuffer > 0 {
+		limit = min(limit, max(size, (128*1024*1024)/receiveBuffer))
+	}
+	return limit
+}
+
 // poolLoad turns the tunnel's cumulative byte counters into a per-interval
 // throughput reading.
 type poolLoad struct {
+	spare           bool
 	lastIn, lastOut uint64
 	lastAt          time.Time
 }
@@ -77,7 +88,7 @@ func (p *poolLoad) mbps() int {
 // dividing by it is what makes this a statement about how hard each connection
 // is working rather than about the tunnel's total speed.
 func (p *poolLoad) wantsMore(mbps, liveConns, poolSize, configuredSize int) bool {
-	if mbps <= 0 || liveConns <= 0 {
+	if p.spare || mbps <= 0 || liveConns <= 0 {
 		return false
 	}
 	if !poolCanGrow(poolSize, configuredSize) {

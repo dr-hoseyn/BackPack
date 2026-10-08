@@ -89,7 +89,7 @@ func (l *lifecycle) relay(user net.Conn, addr string, port int, o backendOpts) {
 // a UDP flow is handed to the UDP forwarder, anything else is resolved and
 // relayed.
 func (l *lifecycle) relayStream(stream net.Conn, target string, o backendOpts) {
-	if dialForwardedUDP(stream, target, l.logger, l.state.Usage(), o.sniffer) {
+	if dialForwardedUDP(l.state.Ctx(), o.dialTimeout, stream, target, l.logger, l.state.Usage(), o.sniffer) {
 		return
 	}
 	port, addr, err := network.ResolveRemoteAddr(target)
@@ -123,14 +123,16 @@ func (l *lifecycle) serveSession(session *smux.Session, from net.Addr, o backend
 			l.logger.Trace("session is closed: ", err)
 			return
 		}
-		go func() {
+		l.state.Go(func() {
+			_ = stream.SetReadDeadline(time.Now().Add(controlAckTimeout))
 			target, err := utils.ReceiveBinaryString(stream)
 			if err != nil {
 				l.logger.Errorf("unable to get port from stream connection %s: %v", from, err)
 				stream.Close()
 				return
 			}
+			_ = stream.SetReadDeadline(time.Time{})
 			l.relayStream(stream, target, o)
-		}()
+		})
 	}
 }

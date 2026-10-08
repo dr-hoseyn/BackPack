@@ -144,6 +144,7 @@ func (s *QuicTransport) Start() {
 // nothing in here reaches back for a field that the next Restart is entitled to
 // replace while this run is still using it.
 func (s *QuicTransport) start(g *quicGen) {
+	go sweepTunnelConns(g.ctx, g.tunnelChannel)
 	if s.config.WebPort > 0 {
 		go g.usageMonitor.Monitor()
 	}
@@ -180,7 +181,12 @@ func (s *QuicTransport) seatClient(g *quicGen, claim quicClaim) {
 			s.status.set("Connected (QUIC)")
 			s.logger.Info("control channel successfully established.")
 		},
-		func(ctx context.Context, lost func()) { s.control(g, ctx, lost).run() })
+		func(ctx context.Context, lost func()) {
+			loop := s.control(g, ctx, lost)
+			// Bind to this claim even if its goroutine starts after replacement.
+			loop.link = controlwire.Net(claim.ctrl)
+			loop.run()
+		})
 }
 
 // vacate empties the seat: the client's connection is closed with a word to
@@ -395,13 +401,13 @@ func (s *QuicTransport) acceptStream(g *quicGen, conn *quic.Conn, stream *quic.S
 	defer judge(false)
 
 	if err := stream.SetReadDeadline(time.Now().Add(controlClaimTimeout)); err != nil {
-		stream.Close()
+		wrapped.Close()
 		return
 	}
 	token, signal, err := utils.ReceiveBinaryTransportString(wrapped)
 	if err != nil {
 		s.logger.Debugf("no announcement from %s: %v", conn.RemoteAddr(), err)
-		stream.Close()
+		wrapped.Close()
 		return
 	}
 	stream.SetReadDeadline(time.Time{})
@@ -433,14 +439,14 @@ func (s *QuicTransport) acceptStream(g *quicGen, conn *quic.Conn, stream *quic.S
 			proof, err := network.QUICServerProof(conn, s.config.Token)
 			if err != nil {
 				s.logger.Errorf("could not bind the answer to the QUIC session: %v", err)
-				stream.Close()
+				wrapped.Close()
 				return
 			}
 			answer = proof
 		}
-		if err := utils.SendBinaryTransportString(wrapped, answer, utils.SG_Chan); err != nil {
+		if err := utils.SendBinaryTransportStringWithin(wrapped, answer, utils.SG_Chan, 10*time.Second); err != nil {
 			s.logger.Errorf("failed to send security token: %v", err)
-			stream.Close()
+			wrapped.Close()
 			return
 		}
 
@@ -458,32 +464,32 @@ func (s *QuicTransport) acceptStream(g *quicGen, conn *quic.Conn, stream *quic.S
 		case handshake <- quicClaim{ctrl: wrapped, conn: conn}:
 		default:
 			s.logger.Warnf("control channel handshake already in progress, discarding duplicate")
-			stream.Close()
+			wrapped.Close()
 		}
 
 	case utils.SG_TCP:
 		// A data stream is useless without a control channel to drive it.
 		if !s.controlChannel.IsSet() {
 			s.logger.Debugf("data stream from %s arrived before a control channel, discarding", conn.RemoteAddr())
-			stream.Close()
+			wrapped.Close()
 			return
 		}
 		// Only the seated client's connection carries its data streams.
 		if c := g.client.Load(); c != nil && c != conn {
 			s.logger.Debugf("data stream from %s on a connection that is no longer the client's, discarding", conn.RemoteAddr())
-			stream.Close()
+			wrapped.Close()
 			return
 		}
 		select {
 		case g.tunnelChannel <- wrapped:
 		default:
 			s.logger.Warnf("tunnel channel is full, discarding data stream from %s", conn.RemoteAddr())
-			stream.Close()
+			wrapped.Close()
 		}
 
 	default:
 		s.logger.Warnf("unexpected announcement signal %v from %s", signal, conn.RemoteAddr())
-		stream.Close()
+		wrapped.Close()
 	}
 }
 
@@ -530,6 +536,10 @@ func (s *QuicTransport) handleLoop(g *quicGen) {
 				ctx: g.ctx, local: localConn, tunnel: g.tunnelChannel,
 				limits: s.limits, log: s.logger, request: askStream,
 				announce: func(st net.Conn, addr string) error {
+					if err := st.SetWriteDeadline(time.Now().Add(pairingWait(localConn.timeCreated))); err != nil {
+						return err
+					}
+					defer st.SetWriteDeadline(time.Time{})
 					return utils.SendBinaryString(st, addr)
 				},
 				discard: func(st net.Conn) { st.Close() },
