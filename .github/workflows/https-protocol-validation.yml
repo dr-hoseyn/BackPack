@@ -11,7 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: 6a4b982e53963f0aa11900e6fba7073590b7e660
+          ref: 1e9efce0dabb98d193673cb0d8ce26e6a798fa7f
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
@@ -29,7 +29,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: 6a4b982e53963f0aa11900e6fba7073590b7e660
+          ref: 1e9efce0dabb98d193673cb0d8ce26e6a798fa7f
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
