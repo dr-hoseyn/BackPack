@@ -1,0 +1,272 @@
+name: Final raw UDP flow lifetime and integrated recovery checks
+permissions:
+  contents: read
+'on':
+  push:
+    branches:
+    - codex/validate-final-udp-lifetime
+jobs:
+  combined:
+    name: Final integrated UDP lifetime, DNS, restart cleanup and runtime checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: 50d05f0ec686cc28d87d8d7a631939bfce4e53e1
+        fetch-depth: 0
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/client/transport/runtime_audit_raw_udp_dns_test.go'').write_text(''package transport\nimport (\n "context"\n
+        "errors"\n "net"\n "sync"\n "testing"\n "time"\n "github.com/backpack/backpack/internal/utils/network"\n)\nfunc TestRuntimeAuditRawUDPBackendAndEndpointDNS(t
+        *testing.T) {\n for _, backendPhase := range []bool{false,true} {\n  for _, cancelGeneration := range []bool{true,false}
+        {\n   name:="endpoint";if backendPhase{name="backend"};if cancelGeneration{name+="/cancel"}else{name+="/timeout"}\n   t.Run(name,func(t
+        *testing.T){\n    previous:=net.DefaultResolver;release:=make(chan struct{});started:=make(chan struct{},1);var once
+        sync.Once;unblock:=func(){once.Do(func(){close(release)})}\n    net.DefaultResolver=&net.Resolver{PreferGo:true,Dial:func(ctx
+        context.Context,_,_ string)(net.Conn,error){select{case started<-struct{}{}:default:};select{case<-ctx.Done():return
+        nil,ctx.Err();case<-release:return nil,errors.New("audit release")}}}\n    ctx,cancel:=context.WithCancel(context.Background());log:=silentLogger()\n    timeout:=40*time.Millisecond;if
+        cancelGeneration{timeout=5*time.Second}\n    config:=&UdpConfig{RemoteAddr:"raw-endpoint.invalid:53",Endpoints:network.NewEndpoints("raw-endpoint.invalid:53"),DialTimeOut:timeout,ConnPoolSize:1,Token:"audit-token"}\n    if
+        backendPhase {\n     listener,err:=net.ListenUDP("udp",&net.UDPAddr{IP:net.IPv4(127,0,0,1)});if err!=nil{t.Fatal(err)};defer
+        listener.Close()\n     config.RemoteAddr=listener.LocalAddr().String();config.Endpoints=network.NewEndpoints(config.RemoteAddr)\n     go
+        func(){listener.SetReadDeadline(time.Now().Add(time.Second));buf:=make([]byte,256);_,peer,err:=listener.ReadFromUDP(buf);if
+        err==nil{listener.WriteToUDP([]byte("raw-backend.invalid:53"),peer)}}()\n    }\n    c:=&UdpTransport{config:config};c.logger=log;c.state.Reset(ctx,cancel,nil)\n    c.state.Go(c.tunnelDialer);joined:=make(chan
+        struct{});go func(){c.state.Wait();close(joined)}()\n    defer func(){c.state.Stop();unblock();select{case<-joined:case<-time.After(time.Second):t.Error("registered
+        raw UDP worker failed cleanup")};net.DefaultResolver=previous}()\n    select{case<-started:case<-time.After(time.Second):t.Fatal("actual
+        raw UDP DNS did not start")}\n    if cancelGeneration{c.state.Stop()}\n    select{case<-joined:case<-time.After(300*time.Millisecond):t.Error("raw
+        UDP DNS ignored generation cancellation/dial timeout and held registered worker")}\n   })\n  }\n }\n}\n'',encoding=''utf-8'')
+
+        PY
+
+        gofmt -w internal/client/transport/runtime_audit_raw_udp_dns_test.go'
+    - run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/client/transport/runtime_audit_reverse_udp_dns_test.go'').write_text(''package transport\nimport("context";"errors";"net";"sync";"testing";"time";"github.com/sirupsen/logrus")\nfunc
+        TestRuntimeAuditReverseUDPGenerationCancelsDNS(t *testing.T){\n old:=net.DefaultResolver;release:=make(chan struct{});started:=make(chan
+        struct{},1);var once sync.Once;unblock:=func(){once.Do(func(){close(release)})}\n net.DefaultResolver=&net.Resolver{PreferGo:true,Dial:func(ctx
+        context.Context,_,_ string)(net.Conn,error){select{case started<-struct{}{}:default:};select{case<-release:return
+        nil,errors.New("audit release");case<-ctx.Done():return nil,ctx.Err()}}}\n defer func(){unblock();net.DefaultResolver=old}()\n
+        ctx,cancel:=context.WithCancel(context.Background());defer cancel();log:=logrus.New();log.SetLevel(logrus.PanicLevel)\n
+        l:=&lifecycle{logger:log};l.state.Reset(ctx,cancel,nil)\n stream,peer:=net.Pipe();defer peer.Close()\n l.state.Go(func(){defer
+        l.state.Own(stream)();l.relayStream(stream,"udp://generation.backend-audit.invalid:53",backendOpts{dialTimeout:40*time.Millisecond})})\n
+        select{case<-started:case<-time.After(time.Second):t.Fatal("UDP resolver did not start")}\n l.state.Stop();joined:=make(chan
+        struct{});go func(){l.state.Wait();close(joined)}()\n select{case<-joined:case<-time.After(250*time.Millisecond):t.Error("stalled
+        UDP DNS held registered worker after generation Stop; restart Wait cannot finish");unblock();select{case<-joined:case<-time.After(time.Second):t.Error("worker
+        still stuck after resolver release")}}\n}\nfunc TestRuntimeAuditReverseUDPBackendTimeoutIncludesDNS(t *testing.T){\n
+        old:=net.DefaultResolver;release:=make(chan struct{});var once sync.Once;unblock:=func(){once.Do(func(){close(release)})}\n
+        net.DefaultResolver=&net.Resolver{PreferGo:true,Dial:func(ctx context.Context,_,_ string)(net.Conn,error){select{case<-release:return
+        nil,errors.New("audit release");case<-ctx.Done():return nil,ctx.Err()}}}\n defer func(){unblock();net.DefaultResolver=old}()\n
+        ctx,cancel:=context.WithCancel(context.Background());defer cancel();log:=logrus.New();log.SetLevel(logrus.PanicLevel)\n
+        l:=&lifecycle{logger:log};l.state.Reset(ctx,cancel,nil);stream,peer:=net.Pipe();defer stream.Close();defer peer.Close()\n
+        done:=make(chan struct{});go func(){defer close(done);l.relayStream(stream,"udp://timeout.backend-audit.invalid:53",backendOpts{dialTimeout:40*time.Millisecond})}()\n
+        select{case<-done:case<-time.After(250*time.Millisecond):t.Error("backend dialTimeout ignored for UDP DNS");unblock();select{case<-done:case<-time.After(time.Second):t.Error("worker
+        still stuck after resolver release")}}\n}\n'',encoding=''utf-8'')
+
+        PY
+
+        gofmt -w internal/client/transport/runtime_audit_reverse_udp_dns_test.go'
+    - run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/server/transport/runtime_audit_pairing_timeout_test.go'').write_text(''package transport\n\nimport
+        (\n\t"context"\n\t"net"\n\t"sync"\n\t"testing"\n\t"time"\n)\n\nfunc TestRuntimeAuditUDPTimeoutReleasesFreshFlow(t
+        *testing.T) {\n\tctx, cancel := context.WithCancel(context.Background())\n\tdefer cancel()\n\tlim := newLimiter(Limits{MaxConnections:
+        1})\n\ts := &UdpTransport{config: &UdpConfig{}, limits: lim, lifecycle: lifecycle{logger: quietLogger()}}\n\tg :=
+        &udpGen{ctx: ctx, tunnelChannel: make(chan *TunnelUDPConn)}\n\tpeer := &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port:
+        12345}\n\tflow := &LocalUDPConn{timeCreated: nowMillis(), payload: make(chan []byte, 1), remoteAddr: "127.0.0.1:8080",
+        addr: peer}\n\tactive := map[string]*LocalUDPConn{peer.String(): flow}\n\tmu := &sync.Mutex{}\n\tqueue := make(chan
+        *LocalUDPConn, 1)\n\tif !lim.acquire() {\n\t\tt.Fatal("slot acquisition failed")\n\t}\n\tqueue <- flow\n\tdone :=
+        make(chan struct{})\n\tgo func() { defer close(done); s.handleLoop(g, queue, &active, mu) }()\n\tt.Cleanup(func()
+        {\n\t\tcancel()\n\t\tselect {\n\t\tcase <-done:\n\t\tcase <-time.After(time.Second):\n\t\t\tt.Error("pairing worker
+        leaked")\n\t\t}\n\t})\n\tuntil := time.Now().Add(pairingTimeout + 500*time.Millisecond)\n\tfor time.Now().Before(until)
+        {\n\t\tmu.Lock()\n\t\tremaining := len(active)\n\t\tmu.Unlock()\n\t\tif remaining == 0 && lim.active.Load() == 0 {\n\t\t\tselect
+        {\n\t\t\tcase _, open := <-flow.payload:\n\t\t\t\tif open {\n\t\t\t\t\tt.Fatal("expired payload channel left open")\n\t\t\t\t}\n\t\t\tdefault:\n\t\t\t\tt.Fatal("expired
+        payload channel not closed")\n\t\t\t}\n\t\t\tif !lim.acquire() {\n\t\t\t\tt.Fatal("timed-out flow exhausted limit")\n\t\t\t}\n\t\t\tlim.release()\n\t\t\tif
+        ctx.Err() != nil {\n\t\t\t\tt.Fatal("timeout required canceling generation")\n\t\t\t}\n\t\t\treturn\n\t\t}\n\t\ttime.Sleep(10
+        * time.Millisecond)\n\t}\n\tmu.Lock()\n\tremaining := len(active)\n\tmu.Unlock()\n\tt.Fatalf("fresh flow timeout did
+        not expire: remaining=%d slots=%d", remaining, lim.active.Load())\n}\n'',encoding=''utf-8'')
+
+        PY
+
+        gofmt -w internal/server/transport/runtime_audit_pairing_timeout_test.go'
+    - run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/tunnel/l3/runtime_audit_mtu_startup_test.go'').write_text(''package l3\nimport (\n "context"\n "net"\n
+        "sync"\n "sync/atomic"\n "testing"\n "time"\n)\ntype auditDelayInitCarrier struct { DatagramCarrier; once sync.Once
+        }\nfunc (c *auditDelayInitCarrier) WriteTo(p []byte,a net.Addr)(int,error) {\n if h,_,err:=parseHeader(p);err==nil
+        && h.kind==typeInit {c.once.Do(func(){time.Sleep(300*time.Millisecond)})}\n return c.DatagramCarrier.WriteTo(p,a)\n}\nfunc
+        TestAuditAutoMTUAfterSlowInitialHandshake(t *testing.T) {\n ctx,cancel:=context.WithCancel(context.Background());t.Cleanup(cancel)\n
+        ld,dd:=newFakeDevice(1400),newFakeDevice(1400)\n listener,err:=New(Config{Mode:ModeListen,Addr:"127.0.0.1:0",Token:"slow-mtu-audit",Encap:"gre",LocalIP:"10.10.0.2/30",PeerIP:"10.10.0.1",MTU:1400},quietLogger());if
+        err!=nil {t.Fatal(err)}\n listener.openDevice=func(deviceSpec)(packetDevice,error){return ld,nil};start(t,ctx,cancel,listener,ld)\n
+        dialer,err:=New(Config{Mode:ModeDial,Addr:awaitBind(t,listener).String(),Token:"slow-mtu-audit",Encap:"gre",LocalIP:"10.10.0.1/30",PeerIP:"10.10.0.2",MTU:1400,AutoMTU:true},quietLogger());if
+        err!=nil {t.Fatal(err)}\n dialer.openDevice=func(deviceSpec)(packetDevice,error){return dd,nil}\n dialer.probe=probeTiming{timeout:10*time.Millisecond,attempts:1,settle:20*time.Millisecond,every:time.Hour}\n
+        var dropped atomic.Int64\n dialer.wrapCarrier=func(c DatagramCarrier)DatagramCarrier{return &auditDelayInitCarrier{DatagramCarrier:&cappedCarrier{DatagramCarrier:c,ceiling:1200,dropped:&dropped}}}\n
+        start(t,ctx,cancel,dialer,dd);awaitSession(t,dialer,2*time.Second)\n small:=make([]byte,64);small[0]=0x45;dd.inject<-small;ld.receive(t,time.Second)\n
+        for end:=time.Now().Add(time.Second);time.Now().Before(end); {if got:=dd.settledMTU();got!=1400 {if got+dialer.carrier.Overhead()+dataOverhead+dialer.encap.Overhead()>1200
+        {t.Fatalf("unsafe MTU %d",got)};return};time.Sleep(5*time.Millisecond)}\n t.Fatalf("handshake completed and 64-byte
+        UDP/TUN packet delivered, but AutoMTU stayed %d instead of measuring 1200-byte capped path (oversized probes dropped=%d)",dd.settledMTU(),dropped.Load())\n}\n\ntype
+        auditNoProbeCarrier struct { DatagramCarrier; probes *atomic.Int64 }\nfunc (c *auditNoProbeCarrier) WriteTo(p []byte,a
+        net.Addr)(int,error) {\n if h,_,err:=parseHeader(p);err==nil && h.kind==typeProbe {c.probes.Add(1);return len(p),nil}\n
+        return c.DatagramCarrier.WriteTo(p,a)\n}\nfunc TestAuditAutoMTUWaitCancellation(t *testing.T) {\n ctx,cancel:=context.WithCancel(context.Background());defer
+        cancel()\n dev:=newFakeDevice(1400)\n tun,err:=New(Config{Mode:ModeListen,Addr:"127.0.0.1:0",Token:"cancel-mtu-audit",Encap:"gre",LocalIP:"10.10.0.2/30",PeerIP:"10.10.0.1",MTU:1400,AutoMTU:true},quietLogger());if
+        err!=nil {t.Fatal(err)}\n tun.openDevice=func(deviceSpec)(packetDevice,error){return dev,nil}\n done:=make(chan error,1);go
+        func(){done<-tun.Run(ctx)}();awaitBind(t,tun)\n time.Sleep(150*time.Millisecond)\n if tun.sendSession()!=nil {t.Fatal("unexpected
+        session")}\n started:=time.Now();cancel()\n select {case err:=<-done:if err!=nil {t.Fatal(err)};t.Logf("no-session
+        cancellation returned in %s",time.Since(started));case<-time.After(250*time.Millisecond):t.Fatal("shutdown stuck waiting
+        for a session")}\n}\nfunc TestAuditAutoMTUNoProbeAnswerBackoff(t *testing.T) {\n ctx,cancel:=context.WithCancel(context.Background());t.Cleanup(cancel)\n
+        ld,dd:=newFakeDevice(1400),newFakeDevice(1400)\n listener,err:=New(Config{Mode:ModeListen,Addr:"127.0.0.1:0",Token:"legacy-mtu-audit",Encap:"gre",LocalIP:"10.10.0.2/30",PeerIP:"10.10.0.1",MTU:1400},quietLogger());if
+        err!=nil {t.Fatal(err)}\n listener.openDevice=func(deviceSpec)(packetDevice,error){return ld,nil};start(t,ctx,cancel,listener,ld)\n
+        dialer,err:=New(Config{Mode:ModeDial,Addr:awaitBind(t,listener).String(),Token:"legacy-mtu-audit",Encap:"gre",LocalIP:"10.10.0.1/30",PeerIP:"10.10.0.2",MTU:1400,AutoMTU:true},quietLogger());if
+        err!=nil {t.Fatal(err)}\n dialer.openDevice=func(deviceSpec)(packetDevice,error){return dd,nil}\n dialer.probe=probeTiming{timeout:10*time.Millisecond,attempts:1,settle:20*time.Millisecond,every:time.Hour}\n
+        var probes atomic.Int64\n dialer.wrapCarrier=func(c DatagramCarrier)DatagramCarrier{return &auditNoProbeCarrier{DatagramCarrier:c,probes:&probes}}\n
+        start(t,ctx,cancel,dialer,dd);awaitSession(t,dialer,time.Second)\n small:=make([]byte,64);small[0]=0x45;dd.inject<-small;ld.receive(t,time.Second)\n
+        for end:=time.Now().Add(time.Second);time.Now().Before(end)&&probes.Load()<2; {time.Sleep(5*time.Millisecond)}\n if
+        probes.Load()!=2 {t.Fatalf("initial measurement probes %d, expected ceiling+floor",probes.Load())}\n time.Sleep(400*time.Millisecond)\n
+        if probes.Load()!=2 {t.Fatalf("unanswered legacy probes were retried too soon: %d",probes.Load())}\n if dd.settledMTU()!=1400
+        {t.Fatal("unanswered probes changed configured MTU")}\n}\n'',encoding=''utf-8'')
+
+        PY
+
+        gofmt -w internal/tunnel/l3/runtime_audit_mtu_startup_test.go'
+    - run: 'go test ./internal/client/transport ./internal/server/transport ./internal/tunnel/l3 -run "TestRuntimeAudit(RawUDP|ReverseUDP|UDPTimeout)|TestAuditAutoMTU"
+        -race -count=3 -v -timeout 5m
+
+        go vet ./...
+
+        go run honnef.co/go/tools/cmd/staticcheck@latest ./...
+
+        go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+        go test ./internal/client/transport ./internal/server/transport ./internal/utils/handlers ./internal/utils/network
+        ./internal/tunnel/direct ./internal/tunnel/l3 ./internal/web ./internal/metrics ./internal/tunnel/limits -race -count=3
+        -timeout 15m
+
+        GOOS=linux GOARCH=amd64 go build -o /tmp/backpack-amd64 .
+
+        GOOS=linux GOARCH=arm64 go build -o /tmp/backpack-arm64 .'
+  tcp:
+    name: Exact TCP lifecycle source and corrected restart-test cleanup
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: cd1450bb0398633457584d10cb18d26317085bba
+        fetch-depth: 0
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - run: 'go test ./internal/client/transport -run "TestARestartForgetsThePoolOfTheRunThatEnded|Test.*Restart" -race -count=3
+        -v -timeout 5m
+
+        go test ./internal/client/transport ./internal/server/transport ./internal/utils/handlers ./internal/utils/network
+        -race -timeout 15m
+
+        go vet ./internal/client/transport'
+  oneway:
+    name: Exact real UDP delayed reply after sixty seconds of active uplink
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: cd1450bb0398633457584d10cb18d26317085bba
+        fetch-depth: 0
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/server/transport/runtime_audit_udp_oneway_test.go'').write_text(''package transport\n\nimport (\n\t"bytes"\n\t"context"\n\t"net"\n\t"sync"\n\t"testing"\n\t"time"\n)\n\nfunc
+        TestRuntimeAuditUDPReplyAfterOneWayTraffic(t *testing.T) {\n\tctx, cancel := context.WithCancel(context.Background())\n\tdefer
+        cancel()\n\tlisten := func() *net.UDPConn {\n\t\tc, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0,
+        0, 1)})\n\t\tif err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t\tt.Cleanup(func() { c.Close() })\n\t\treturn c\n\t}\n\tlocalSock,
+        localPeer, tunnelSock, tunnelPeer := listen(), listen(), listen(), listen()\n\tlim := newLimiter(Limits{MaxConnections:
+        1})\n\tif !lim.acquire() {\n\t\tt.Fatal("cannot acquire flow slot")\n\t}\n\tlocal := &LocalUDPConn{addr: localPeer.LocalAddr().(*net.UDPAddr),
+        listener: localSock, payload: make(chan []byte, 4)}\n\ttunnel := &TunnelUDPConn{addr: tunnelPeer.LocalAddr().(*net.UDPAddr),
+        listener: tunnelSock, payload: make(chan []byte, 4)}\n\tactive := map[string]*LocalUDPConn{local.addr.String(): local}\n\tmu
+        := &sync.Mutex{}\n\ts := &UdpTransport{config: &UdpConfig{}, limits: lim, lifecycle: lifecycle{logger: quietLogger()},
+        activeConnections: map[string]*TunnelUDPConn{tunnel.addr.String(): tunnel}}\n\tg := &udpGen{ctx: ctx}\n\tdone := make(chan
+        struct{})\n\tgo func() { defer close(done); s.udpCopy(g, local, tunnel, &active, mu) }()\n\tt.Cleanup(func() {\n\t\tcancel()\n\t\tselect
+        {\n\t\tcase <-done:\n\t\tcase <-time.After(time.Second):\n\t\t\tt.Error("flow teardown leaked")\n\t\t}\n\t\tif lim.active.Load()
+        != 0 {\n\t\t\tt.Errorf("held slots=%d", lim.active.Load())\n\t\t}\n\t})\n\t// The real production timeout is 60s;
+        keep the uplink active beyond it.\n\tsenderDone := make(chan struct{})\n\tgo func() {\n\t\tdefer close(senderDone)\n\t\ttick
+        := time.NewTicker(100 * time.Millisecond)\n\t\tdefer tick.Stop()\n\t\tfor {\n\t\t\tselect {\n\t\t\tcase <-ctx.Done():\n\t\t\t\treturn\n\t\t\tcase
+        <-tick.C:\n\t\t\t\tmu.Lock()\n\t\t\t\tif active[local.addr.String()] == local {\n\t\t\t\t\tselect {\n\t\t\t\t\tcase
+        local.payload <- []byte("upload"):\n\t\t\t\t\tdefault:\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t\tmu.Unlock()\n\t\t\t}\n\t\t}\n\t}()\n\t//
+        Drain the real loopback tunnel socket and verify uplink still works late.\n\tlastUpload := time.Now()\n\tdeadline
+        := time.Now().Add(idleForward + 500*time.Millisecond)\n\tbuf := make([]byte, 64)\n\tfor time.Now().Before(deadline)
+        {\n\t\tif err := tunnelPeer.SetReadDeadline(time.Now().Add(time.Second)); err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t\tn,
+        _, err := tunnelPeer.ReadFromUDP(buf)\n\t\tif err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t\tif !bytes.Equal(buf[:n],
+        []byte("upload")) {\n\t\t\tt.Fatal("altered upload")\n\t\t}\n\t\tlastUpload = time.Now()\n\t}\n\tif time.Since(lastUpload)
+        > time.Second {\n\t\tt.Fatal("uplink stopped before delayed response")\n\t}\n\ttunnel.payload <- []byte("delayed response")\n\tif
+        err := localPeer.SetReadDeadline(time.Now().Add(time.Second)); err != nil {\n\t\tt.Fatal(err)\n\t}\n\tn, _, err :=
+        localPeer.ReadFromUDP(buf)\n\tif err != nil {\n\t\tt.Fatalf("active one-way UDP flow discarded its delayed response:
+        %v", err)\n\t}\n\tif !bytes.Equal(buf[:n], []byte("delayed response")) {\n\t\tt.Fatalf("response=%q", buf[:n])\n\t}\n\tcancel()\n\t<-senderDone\n}\n'',encoding=''utf-8'')
+
+        PY
+
+        gofmt -w internal/server/transport/runtime_audit_udp_oneway_test.go'
+    - run: 'go test ./internal/server/transport -run TestRuntimeAuditUDPReplyAfterOneWayTraffic -race -count=2 -v -timeout
+        3m
+
+        go test ./internal/client/transport ./internal/server/transport -race -timeout 15m
+
+        go vet ./internal/client/transport ./internal/server/transport'
+  client_oneway:
+    name: Exact raw UDP client keeps delayed backend reply after sustained uplink
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: cd1450bb0398633457584d10cb18d26317085bba
+        fetch-depth: 0
+    - uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+        cache: true
+    - run: 'python3 - <<''PY''
+
+        from pathlib import Path
+
+        Path(''internal/client/transport/runtime_audit_udp_oneway_test.go'').write_text(''package transport\n\nimport (\n\t"bytes"\n\t"context"\n\t"net"\n\t"testing"\n\t"time"\n)\n\nfunc
+        TestRuntimeAuditRawUDPClientReplyAfterOneWayTraffic(t *testing.T) {\n\tctx, cancel := context.WithCancel(context.Background())\n\tdefer
+        cancel()\n\tlisten := func() *net.UDPConn {\n\t\tc, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0,
+        0, 1)})\n\t\tif err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t\tt.Cleanup(func() { c.Close() })\n\t\treturn c\n\t}\n\tserver,
+        backend := listen(), listen()\n\ttunnel, err := net.DialUDP("udp", nil, server.LocalAddr().(*net.UDPAddr))\n\tif err
+        != nil {\n\t\tt.Fatal(err)\n\t}\n\tdefer tunnel.Close()\n\tc := NewUDPClient(ctx, &UdpConfig{DialTimeOut: time.Second},
+        silentLogger())\n\tdone := make(chan struct{})\n\tgo func() {\n\t\tdefer close(done)\n\t\tc.localDialer(backend.LocalAddr().String(),
+        backend.LocalAddr().(*net.UDPAddr).Port, tunnel)\n\t}()\n\tsenderDone := make(chan struct{})\n\tgo func() {\n\t\tdefer
+        close(senderDone)\n\t\ttick := time.NewTicker(100 * time.Millisecond)\n\t\tdefer tick.Stop()\n\t\tfor {\n\t\t\tselect
+        {\n\t\t\tcase <-ctx.Done():\n\t\t\t\treturn\n\t\t\tcase <-tick.C:\n\t\t\t\tif _, err := server.WriteToUDP([]byte("upload"),
+        tunnel.LocalAddr().(*net.UDPAddr)); err != nil {\n\t\t\t\t\treturn\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\t}()\n\tt.Cleanup(func()
+        {\n\t\tcancel()\n\t\ttunnel.Close()\n\t\t<-senderDone\n\t\tselect {\n\t\tcase <-done:\n\t\tcase <-time.After(time.Second):\n\t\t\tt.Error("client
+        relay leaked")\n\t\t}\n\t})\n\tdeadline := time.Now().Add(60*time.Second + 500*time.Millisecond)\n\tbuf := make([]byte,
+        64)\n\tvar clientBackend *net.UDPAddr\n\tfor time.Now().Before(deadline) {\n\t\tbackend.SetReadDeadline(time.Now().Add(time.Second))\n\t\tn,
+        addr, err := backend.ReadFromUDP(buf)\n\t\tif err != nil {\n\t\t\tt.Fatalf("client discarded active one-way upload:
+        %v", err)\n\t\t}\n\t\tif !bytes.Equal(buf[:n], []byte("upload")) {\n\t\t\tt.Fatalf("upload=%q", buf[:n])\n\t\t}\n\t\tclientBackend
+        = addr\n\t}\n\tif _, err := backend.WriteToUDP([]byte("delayed response"), clientBackend); err != nil {\n\t\tt.Fatal(err)\n\t}\n\tserver.SetReadDeadline(time.Now().Add(time.Second))\n\tn,
+        _, err := server.ReadFromUDP(buf)\n\tif err != nil {\n\t\tt.Fatalf("client discarded delayed UDP response despite
+        sustained uplink: %v", err)\n\t}\n\tif !bytes.Equal(buf[:n], []byte("delayed response")) {\n\t\tt.Fatalf("reply=%q",
+        buf[:n])\n\t}\n\tselect {\n\tcase <-done:\n\t\tt.Fatal("relay ended while UDP flow was still active")\n\tdefault:\n\t}\n}\n'',encoding=''utf-8'')
+
+        PY
+
+        gofmt -w internal/client/transport/runtime_audit_udp_oneway_test.go'
+    - run: go test ./internal/client/transport -run TestRuntimeAuditRawUDPClientReplyAfterOneWayTraffic -race -count=2 -v
+        -timeout 3m
