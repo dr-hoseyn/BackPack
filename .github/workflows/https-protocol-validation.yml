@@ -1,78 +1,99 @@
-name: Tunnel runtime cancellation and resource audit
+name: Pinned tunnel sustained load and recovery
 permissions:
   contents: read
-'on':
+on:
   push:
-    branches:
-    - codex/validate-https-protocols
+    branches: [codex/validate-soak-recovery-20261008]
 jobs:
-  l3-baseline:
-    name: Reproduce stalled UDP startup multipath and rekey DNS
+  soak:
+    name: Sustained ${{ matrix.transport }} payload and resource checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        transport: [tcp, wss, tcpmux, wssmux]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: b37d174353aa9e0cdc8ab8cac4bfb9c867869d62
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Strengthen the existing soak only in the validation checkout
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('internal/e2e/soak_test.go')
+          s = p.read_text()
+          replacements = [
+            ('"fmt"', '"fmt"\n"bytes"\n"sync"'),
+            ('backend := startEchoBackend(t)', 'transport := os.Getenv("BACKPACK_SOAK_TRANSPORT")\nworkers, err := strconv.Atoi(os.Getenv("BACKPACK_SOAK_WORKERS"))\nif err != nil || workers < 1 || workers > 128 { t.Fatal("invalid worker count") }\nbackend := startEchoBackend(t)'),
+            ('baseServerConfig("tcp",', 'baseServerConfig(transport,'),
+            ('baseClientConfig("tcp",', 'baseClientConfig(transport,'),
+            ('tun := runPair(t,', 'if transport == "wss" || transport == "wssmux" { srvCfg.TLSCertFile, srvCfg.TLSKeyFile = testCert(t) }\ntun := runPair(t,'),
+            ('close(stop)', 'stopWorkers()'),
+            ('var round, failed atomic.Int64', 'var stopOnce sync.Once\nvar workerWG sync.WaitGroup\nstopWorkers := func() { stopOnce.Do(func() { close(stop) }); workerWG.Wait() }\ndefer stopWorkers()\nvar round, failed atomic.Int64'),
+            ('for i := 0; i < 4; i++ {', 'workerWG.Add(workers)\nfor i := 0; i < workers; i++ {'),
+            ('payload := make([]byte, 4096)', 'defer workerWG.Done()\npayload := bytes.Repeat([]byte{byte(i+1)}, 4096)'),
+            ('t.Logf("%d round trips, %d failed", round.Load(), failed.Load())', 't.Logf("transport=%s workers=%d: %d round trips, %d failed", transport, workers, round.Load(), failed.Load())\nif failed.Load() != 0 { t.Errorf("payload failures during sustained traffic: %d", failed.Load()) }'),
+            ('if _, err := c.Write(payload); err != nil {\n\t\treturn err\n\t}', 'if n, err := c.Write(payload); err != nil { return err } else if n != len(payload) { return fmt.Errorf("short payload write: %d", n) }'),
+            ('_, err = readFull(c, got)\n\treturn err', '_, err = readFull(c, got)\nif err == nil && !bytes.Equal(got, payload) { return fmt.Errorf("payload corruption") }\nreturn err'),
+          ]
+          for old, new in replacements:
+              if s.count(old) != 1: raise SystemExit('unexpected soak source: ' + repr(old))
+              s = s.replace(old, new, 1)
+          p.write_text(s)
+          PY
+          gofmt -w internal/e2e/soak_test.go
+          git diff --stat
+      - name: Ten minutes of connection churn
+        env:
+          BACKPACK_SOAK_SECONDS: '600'
+          BACKPACK_SOAK_WORKERS: '16'
+          BACKPACK_SOAK_TRANSPORT: ${{ matrix.transport }}
+        run: |
+          set -o pipefail
+          /usr/bin/time -v go test ./internal/e2e -run '^TestASustainedRunDoesNotLeak$' -count=1 -v -timeout 12m 2>&1 | tee /tmp/soak.log
+      - name: Higher concurrency with race detection
+        env:
+          BACKPACK_SOAK_SECONDS: '120'
+          BACKPACK_SOAK_WORKERS: '64'
+          BACKPACK_SOAK_TRANSPORT: ${{ matrix.transport }}
+        run: |
+          set -o pipefail
+          /usr/bin/time -v go test ./internal/e2e -run '^TestASustainedRunDoesNotLeak$' -race -count=1 -v -timeout 4m 2>&1 | tee /tmp/soak-race.log
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: soak-${{ matrix.transport }}
+          path: /tmp/soak*.log
+  recovery:
+    name: Real binaries restart recovery and hot path measurements
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-    - uses: actions/checkout@v7
-      with:
-        ref: cbb931a687c95231c5824a8a9ad8f6bc96e7de0d
-    - uses: actions/setup-go@v7
-      with:
-        go-version-file: go.mod
-        cache: true
-    - run: '
-
-        if go test ./internal/tunnel/l3 -run ''^TestL3UDPDNSStopsWithItsGeneration$'' -v -timeout 1m > /tmp/l3-dns-baseline.log
-        2>&1; then cat /tmp/l3-dns-baseline.log; exit 1; fi
-
-        cat /tmp/l3-dns-baseline.log
-
-        test "$(grep -c ''L3 UDP DNS ignored generation cancellation or deadline'' /tmp/l3-dns-baseline.log)" = 6
-
-        '
-  l3-fixed:
-    name: L3 DNS cancellation, cached peers, QUIC recovery and UDP setup lifetime
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-    - uses: actions/checkout@v7
-      with:
-        ref: 002c56ff9c3137c004bfdea4008f0be9063b7b22
-    - uses: actions/setup-go@v7
-      with:
-        go-version-file: go.mod
-        cache: true
-    - run: '
-
-        go test ./internal/tunnel/l3 -run ''TestL3UDPDNSStopsWithItsGeneration|TestL3UDPCarrierOutlivesItsSetupContext'' -race
-        -count=5 -v -timeout 3m
-
-        go test ./internal/tunnel/l3 ./internal/utils/network ./cmd -race -timeout 8m
-
-        go vet ./internal/tunnel/l3 ./internal/utils/network ./cmd
-
-        '
-  cohort-full:
-    name: Full integrated runtime suite with UDP startup and rekey recovery
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-    - uses: actions/checkout@v7
-      with:
-        ref: f53031711dace0d40a23bf7fb5d7dc69da15b93d
-    - uses: actions/setup-go@v7
-      with:
-        go-version-file: go.mod
-        cache: true
-    - run: '
-
-        sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
-
-        go test ./... -timeout 10m
-
-        go test ./internal/utils/network ./internal/client/transport ./internal/server/transport ./internal/tunnel/... ./cmd
-        -race -timeout 10m
-
-        go vet ./...
-
-        GOOS=linux GOARCH=arm64 go build ./...
-
-        '
+      - uses: actions/checkout@v7
+        with:
+          ref: b37d174353aa9e0cdc8ab8cac4bfb9c867869d62
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Restart, partition, failover and throughput
+        run: |
+          set -o pipefail
+          go test ./internal/e2e -run 'TestAKharejReconnectingDoesNotRestartTheIranSide|TestServerRestartRecovery|TestNetworkPartitionRecovery|TestFailoverToBackupAddress|TestTLSTransports|TestSpliceThroughput' -count=2 -v -timeout 12m 2>&1 | tee /tmp/recovery.log
+          go test ./internal/utils/handlers ./internal/utils/network ./internal/tunnel/l3 -run '^$' -bench 'BenchmarkRelayBuffer|BenchmarkSeal|BenchmarkPacketRoundTrip|BenchmarkDatagramReceiveBuffer' -benchmem -count=3 2>&1 | tee /tmp/benchmarks.log
+          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -o /tmp/backpack-linux-amd64 .
+          sha256sum /tmp/backpack-linux-amd64 | tee /tmp/binary-sha256.txt
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: recovery-and-linux-binary
+          path: |
+            /tmp/recovery.log
+            /tmp/benchmarks.log
+            /tmp/backpack-linux-amd64
+            /tmp/binary-sha256.txt
