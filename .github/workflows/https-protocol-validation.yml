@@ -12,6 +12,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: 95011fb5cf2c5635a8c4ce7ddad665d3b052fb2c
+          fetch-depth: 2
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
