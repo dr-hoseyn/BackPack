@@ -92,9 +92,9 @@ if ! [[ -f "$SCRIPT_DIR/go.mod" && -f "$SCRIPT_DIR/main.go" ]]; then
   fi
   test_source_dir="$(mktemp -d /root/backpack-test.XXXXXX)"
   trap 'rm -rf -- "$test_source_dir"' ERR
-  info 'Downloading the validated combined test snapshot 6852b36 (Reality fixes, module proxy fallback and exact Go compiler selection included)'
+  info 'Downloading the validated combined test snapshot eb5bc71 (clean Connection Test startup, Reality diagnostics and installer fixes included)'
   curl -fSL --retry 3 --connect-timeout 20 \
-    https://github.com/dr-hoseyn/BackPack/archive/6852b360fff23f27642928f00a0b657dfe00fa0c.tar.gz \
+    https://github.com/dr-hoseyn/BackPack/archive/eb5bc71736eae9a468ee61bdff7eca952a7f47b5.tar.gz \
     -o "$test_source_dir/source.tar.gz"
   tar -xzf "$test_source_dir/source.tar.gz" -C "$test_source_dir" --strip-components=1
   if ! [[ -f "$test_source_dir/go.mod" && -f "$test_source_dir/main.go" && -f "$test_source_dir/install.sh" ]]; then
