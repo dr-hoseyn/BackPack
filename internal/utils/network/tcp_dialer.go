@@ -43,6 +43,9 @@ func TcpDialerVia(ctx context.Context, out *Outbound, remoteAddress string, time
 	backoff := 1 * time.Second // Initial backoff duration
 
 	for i := 0; i < retries; i++ {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		// DNS, socket setup and proxy negotiation share one attempt budget.
 		attemptCtx := ctx
 		cancelAttempt := func() {}
@@ -85,7 +88,8 @@ func TcpDialerVia(ctx context.Context, out *Outbound, remoteAddress string, time
 			break
 		}
 
-		// Log retry attempt and wait before retrying
+		// A cancelled generation must release its retry worker immediately,
+		// including time spent waiting between refused TCP or proxy dials.
 		timer := time.NewTimer(backoff)
 		select {
 		case <-ctx.Done():
