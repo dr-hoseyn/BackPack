@@ -88,9 +88,9 @@ if ! [[ -f "$SCRIPT_DIR/go.mod" && -f "$SCRIPT_DIR/main.go" ]]; then
   fi
   test_source_dir="$(mktemp -d /root/backpack-test.XXXXXX)"
   trap 'rm -rf -- "$test_source_dir"' ERR
-  info 'Downloading the validated REALITY setup snapshot 596951b (tested cover menu, automatic identity and Space/Enter defaults)'
+  info 'Downloading the validated REALITY setup snapshot 3eae554 (tested cover menu, automatic identity and Space/Enter defaults)'
   curl -fSL --retry 3 --connect-timeout 20 \
-    https://github.com/dr-hoseyn/BackPack/archive/596951beddbfdb06e77afe3740138e9c199afed8.tar.gz \
+    https://github.com/dr-hoseyn/BackPack/archive/3eae5542c89315b7abbcd0d2996fe522926b1874.tar.gz \
     -o "$test_source_dir/source.tar.gz"
   tar -xzf "$test_source_dir/source.tar.gz" -C "$test_source_dir" --strip-components=1
   if ! [[ -f "$test_source_dir/go.mod" && -f "$test_source_dir/main.go" && -f "$test_source_dir/install.sh" ]]; then
