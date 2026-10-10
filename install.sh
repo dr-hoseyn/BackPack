@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
-# Backpack installer — one command on the VPS (as root):
+# Backpack REALITY setup test installer — one command on the VPS (as root):
 #
-#   bash <(curl -fsSL https://raw.githubusercontent.com/AminMGMT/BackPack/main/install.sh)
+#   bash <(curl -fsSL https://raw.githubusercontent.com/dr-hoseyn/BackPack/codex/reality-guided-test-install/install.sh)
 #
 # It downloads the prebuilt release tar.gz for this architecture into
 # /root/BackPack and installs the binary, verifying it against the checksum
@@ -61,6 +61,48 @@ if [[ -f "$SCRIPT_DIR/go.mod" ]]; then
 fi
 
 if [[ $EUID -ne 0 ]]; then err "Please run as root (sudo)."; exit 1; fi
+
+# Fork test snapshot bootstrap.
+if ! [[ -f "$SCRIPT_DIR/go.mod" && -f "$SCRIPT_DIR/main.go" ]]; then
+  [[ "$(uname -s)" == Linux ]] || { err 'The test snapshot installer requires Linux'; exit 1; }
+  test_helpers="${BP_HELPERS-naive,xray}"
+  case "$test_helpers" in
+    ""|naive|xray|naive,xray) ;;
+    *) err 'BP_HELPERS must be empty, naive, xray or naive,xray'; exit 2 ;;
+  esac
+  test_commands=(curl tar gzip)
+  [[ "$test_helpers" != *naive* ]] || test_commands+=(xz)
+  [[ "$test_helpers" != *xray* ]] || test_commands+=(unzip)
+  missing_commands=()
+  for test_command in "${test_commands[@]}"; do
+    command -v "$test_command" >/dev/null 2>&1 || missing_commands+=("$test_command")
+  done
+  if [[ ${#missing_commands[@]} -gt 0 ]]; then
+    if command -v apt-get >/dev/null 2>&1; then
+      apt-get update
+      apt-get install -y curl ca-certificates tar gzip xz-utils unzip
+    else
+      err "Install the missing tools and run again: ${missing_commands[*]}"
+      exit 1
+    fi
+  fi
+  test_source_dir="$(mktemp -d /root/backpack-test.XXXXXX)"
+  trap 'rm -rf -- "$test_source_dir"' ERR
+  info 'Downloading the validated REALITY setup snapshot 596951b (tested cover menu, automatic identity and Space/Enter defaults)'
+  curl -fSL --retry 3 --connect-timeout 20 \
+    https://github.com/dr-hoseyn/BackPack/archive/596951beddbfdb06e77afe3740138e9c199afed8.tar.gz \
+    -o "$test_source_dir/source.tar.gz"
+  tar -xzf "$test_source_dir/source.tar.gz" -C "$test_source_dir" --strip-components=1
+  if ! [[ -f "$test_source_dir/go.mod" && -f "$test_source_dir/main.go" && -f "$test_source_dir/install.sh" ]]; then
+    err 'The downloaded archive is not the expected source checkout'
+    rm -rf -- "$test_source_dir"
+    exit 1
+  fi
+  # Retain the checkout for inspection after installation; forward setup links
+  # and the terminal to the original validated installer and its menu.
+  exec env BP_BUILD_FROM_SOURCE=1 BP_HELPERS="$test_helpers" bash "$test_source_dir/install.sh" "$@"
+fi
+# End fork test snapshot bootstrap.
 
 case "${BP_BUILD_FROM_SOURCE:-0}" in
   0|1) ;;
