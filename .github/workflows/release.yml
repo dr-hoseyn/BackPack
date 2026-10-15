@@ -186,6 +186,6 @@ jobs:
           set -eu
           curl -fsSL --retry 3 "https://raw.githubusercontent.com/$GITHUB_REPOSITORY/main/install.sh" -o "$RUNNER_TEMP/verify-install.sh"
           sudo bash "$RUNNER_TEMP/verify-install.sh" </dev/null
-          test "$(/usr/local/bin/backpack --version | head -1)" = "$TAG"
+          test "$(/usr/local/bin/backpack -v | head -1)" = "$TAG"
           /usr/local/bin/backpack version --json | tee "$RUNNER_TEMP/installed-version.json"
           grep -F "https://github.com/$GITHUB_REPOSITORY" "$RUNNER_TEMP/installed-version.json"

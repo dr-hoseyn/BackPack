@@ -1,0 +1,28 @@
+name: Verify published installer
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Expected installed release"
+        required: true
+        default: "v1.9.1"
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Run the public installer and verify the installed release
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -eu
+          curl -fsSL --retry 3 "https://raw.githubusercontent.com/$GITHUB_REPOSITORY/main/install.sh" -o "$RUNNER_TEMP/verify-install.sh"
+          sudo bash "$RUNNER_TEMP/verify-install.sh" </dev/null
+          test "$(/usr/local/bin/backpack -v | head -1)" = "$TAG"
+          /usr/local/bin/backpack version --json | tee "$RUNNER_TEMP/installed-version.json"
+          grep -F "https://github.com/$GITHUB_REPOSITORY" "$RUNNER_TEMP/installed-version.json"
