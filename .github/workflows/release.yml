@@ -90,6 +90,7 @@ jobs:
         # generated. See tools/signsums and internal/manage/releasesig.go.
         env:
           RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+          GITHUB_REF_NAME: ${{ steps.tag.outputs.tag }}
         run: make release
 
       - name: Verify the tag matches the built version
@@ -132,6 +133,25 @@ jobs:
             echo "Backpack ${tag}" > RELEASE_NOTES.md
           fi
 
+      - name: Require successful CI for this commit
+        timeout-minutes: 40
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          for attempt in $(seq 1 80); do
+            result="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$GITHUB_SHA&per_page=20" \
+              --jq '.workflow_runs | sort_by(.run_number) | last | [.status, .conclusion] | @tsv')"
+            case "$result" in
+              *success*) echo "CI passed for $GITHUB_SHA"; exit 0 ;;
+              completed*) echo "CI did not pass: $result"; exit 1 ;;
+            esac
+            echo "Waiting for CI: $result"
+            sleep 30
+          done
+          echo "CI did not complete before the release deadline."
+          exit 1
+
       - name: Publish
         # Pinned to a commit, not the moving v2 tag: this job holds
         # RELEASE_SIGNING_KEY, and steps in a job share a runner — so whoever
@@ -158,3 +178,14 @@ jobs:
             release/SHA256SUMS.sig
             release/SBOM.txt
             install.sh
+
+      - name: Verify the published one-line installer
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -eu
+          curl -fsSL --retry 3 "https://raw.githubusercontent.com/$GITHUB_REPOSITORY/main/install.sh" -o "$RUNNER_TEMP/verify-install.sh"
+          sudo bash "$RUNNER_TEMP/verify-install.sh" </dev/null
+          test "$(/usr/local/bin/backpack --version | head -1)" = "$TAG"
+          /usr/local/bin/backpack version --json | tee "$RUNNER_TEMP/installed-version.json"
+          grep -F "https://github.com/$GITHUB_REPOSITORY" "$RUNNER_TEMP/installed-version.json"
