@@ -90,7 +90,7 @@ jobs:
         # generated. See tools/signsums and internal/manage/releasesig.go.
         env:
           RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
-          GITHUB_REF_NAME: ${{ steps.tag.outputs.tag }}
+          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
         run: make release
 
       - name: Verify the tag matches the built version

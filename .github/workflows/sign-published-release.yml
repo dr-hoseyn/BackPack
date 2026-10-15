@@ -1,0 +1,35 @@
+name: Sign published release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Published release whose checksum signature should be regenerated"
+        required: true
+        default: "v1.9.1"
+
+permissions:
+  contents: write
+
+jobs:
+  sign:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Sign the existing checksum manifest for its exact release tag
+        env:
+          TAG: ${{ inputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+        run: |
+          set -eu
+          printf '%s' "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'
+          mkdir -p "$RUNNER_TEMP/sign-release"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern SHA256SUMS --dir "$RUNNER_TEMP/sign-release"
+          go run ./tools/signsums "$RUNNER_TEMP/sign-release/SHA256SUMS" "$TAG"
+          gh release upload "$TAG" "$RUNNER_TEMP/sign-release/SHA256SUMS.sig" --repo "$GITHUB_REPOSITORY" --clobber

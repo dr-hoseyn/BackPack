@@ -53,7 +53,7 @@ release: version release-linux
 	@# checksum cannot, because it travels the same channel as the archive it
 	@# describes. Nothing happens without RELEASE_SIGNING_KEY in the
 	@# environment, so a fork and a local build still produce a full set.
-	go run ./tools/signsums release/SHA256SUMS
+	go run ./tools/signsums release/SHA256SUMS "$${RELEASE_TAG:-$$(cat VERSION)}"
 	@# The bill of materials, published with the release.
 	@#
 	@# Go records every module and its hash inside the binary it builds, so this
