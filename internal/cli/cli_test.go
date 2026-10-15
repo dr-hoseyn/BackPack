@@ -48,7 +48,7 @@ func TestVersionCarriesTheSourceInBothForms(t *testing.T) {
 	if plain.Code != CodeOK {
 		t.Fatalf("version exited %d", plain.Code)
 	}
-	if !strings.Contains(plain.Out, "github.com/AminMGMT/BackPack") {
+	if !strings.Contains(plain.Out, "github.com/dr-hoseyn/BackPack") {
 		t.Error("the plain version output does not name the source")
 	}
 	if strings.Contains(plain.Out, "Based on") {

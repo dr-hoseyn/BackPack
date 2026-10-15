@@ -71,6 +71,13 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - name: Prepare configuration test fixtures
+        run: sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
+
       - name: Test before publishing
         # Nothing gets published that has not passed the suite. A broken
         # release is far more expensive to undo than a slow pipeline.

@@ -1,3 +1,11 @@
+# فورک dr-hoseyn
+
+این فورک بر پایهٔ BackPack اصلی v1.9.0 است و بهبودهای PRهای #104، #98 و #108 را دارد. نسخهٔ v1.9.1 و آپدیت‌های داخلی از مخزن `dr-hoseyn/BackPack` دریافت می‌شوند. قابلیت Short HTTPS IP آزمایشی است.
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/dr-hoseyn/BackPack/main/install.sh)
+```
+
 <div dir="rtl">
 
 <p align="center"><img src="img/cover.png" alt="Backpack" width="100%"></p>
@@ -5,11 +13,11 @@
 # بک‌پک 🎒
 
 <p align="center">
-  <a href="go.mod"><img alt="Go version" src="https://img.shields.io/github/go-mod/go-version/AminMGMT/BackPack?logo=go&label=Go"></a>
-  <a href="https://github.com/AminMGMT/BackPack/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/AminMGMT/BackPack?logo=github&label=release&color=blue"></a>
+  <a href="go.mod"><img alt="Go version" src="https://img.shields.io/github/go-mod/go-version/dr-hoseyn/BackPack?logo=go&label=Go"></a>
+  <a href="https://github.com/dr-hoseyn/BackPack/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/dr-hoseyn/BackPack?logo=github&label=release&color=blue"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/AminMGMT/BackPack?color=green"></a>
-  <a href="https://github.com/AminMGMT/BackPack/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/AminMGMT/BackPack?style=flat&logo=github&color=yellow"></a>
-  <a href="https://github.com/AminMGMT/BackPack/releases"><img alt="Total downloads across all releases" src="https://img.shields.io/github/downloads/AminMGMT/BackPack/total?logo=github&label=total%20downloads&color=orange"></a>
+  <a href="https://github.com/dr-hoseyn/BackPack/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/dr-hoseyn/BackPack?style=flat&logo=github&color=yellow"></a>
+  <a href="https://github.com/dr-hoseyn/BackPack/releases"><img alt="Total downloads across all releases" src="https://img.shields.io/github/downloads/dr-hoseyn/BackPack/total?logo=github&label=total%20downloads&color=orange"></a>
 </p>
 
 **بک‌پک** یک هستهٔ تونل با کارایی بالاست که کاملاً با **Go** نوشته شده و برای
@@ -146,7 +154,7 @@ replay، و **MTU خودش را اندازه می‌گیرد**. تنها چیز�
 </div>
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/AminMGMT/BackPack/main/install.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/dr-hoseyn/BackPack/main/install.sh)
 ```
 
 <div dir="rtl">

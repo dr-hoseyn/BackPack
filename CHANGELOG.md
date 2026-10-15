@@ -2,6 +2,15 @@
 
 All notable changes to Backpack are documented here.
 
+## v1.9.1 — 2026-10-15 (dr-hoseyn fork)
+
+- Sync with upstream main at `132467b` (BackPack v1.9.0).
+- Merge #104: managed-helper readiness, startup deadlines and preserved tunnel settings.
+- Merge #98: experimental Short HTTPS IP relay and independent HTTPS path probes.
+- Merge #108: automatic address discovery and sequential IPv4/IPv6 Connection Tests.
+- Keep HTTPS probe reports and unavailable-family reports in the combined coordinator.
+- Install and update from dr-hoseyn/BackPack, with the fork's own signed release assets.
+
 ## v1.9.0 — 2026-10-09
 
 ### Added

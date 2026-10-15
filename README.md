@@ -1,3 +1,11 @@
+# dr-hoseyn fork
+
+This fork combines upstream BackPack v1.9.0 with PRs [#104](https://github.com/AminMGMT/BackPack/pull/104), [#98](https://github.com/AminMGMT/BackPack/pull/98), and [#108](https://github.com/AminMGMT/BackPack/pull/108). Fork release **v1.9.1** installs and updates from `dr-hoseyn/BackPack`. Short HTTPS IP is experimental.
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/dr-hoseyn/BackPack/main/install.sh)
+```
+
 <p align="center">
   <img src="img/image.png" alt="BackPack" width="100%">
 </p>
@@ -9,20 +17,20 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/AminMGMT/BackPack/releases/latest">
-    <img src="https://img.shields.io/github/v/release/AminMGMT/BackPack?logo=github&label=release&color=orange" alt="Latest release">
+  <a href="https://github.com/dr-hoseyn/BackPack/releases/latest">
+    <img src="https://img.shields.io/github/v/release/dr-hoseyn/BackPack?logo=github&label=release&color=orange" alt="Latest release">
   </a>
   <a href="go.mod">
-    <img src="https://img.shields.io/github/go-mod/go-version/AminMGMT/BackPack?logo=go&label=Go" alt="Go version">
+    <img src="https://img.shields.io/github/go-mod/go-version/dr-hoseyn/BackPack?logo=go&label=Go" alt="Go version">
   </a>
   <a href="LICENSE">
     <img src="https://img.shields.io/github/license/AminMGMT/BackPack?color=orange" alt="License">
   </a>
-  <a href="https://github.com/AminMGMT/BackPack/stargazers">
-    <img src="https://img.shields.io/github/stars/AminMGMT/BackPack?style=flat&logo=github&color=orange" alt="GitHub stars">
+  <a href="https://github.com/dr-hoseyn/BackPack/stargazers">
+    <img src="https://img.shields.io/github/stars/dr-hoseyn/BackPack?style=flat&logo=github&color=orange" alt="GitHub stars">
   </a>
-  <a href="https://github.com/AminMGMT/BackPack/releases">
-    <img src="https://img.shields.io/github/downloads/AminMGMT/BackPack/total?logo=github&label=downloads&color=orange" alt="Downloads">
+  <a href="https://github.com/dr-hoseyn/BackPack/releases">
+    <img src="https://img.shields.io/github/downloads/dr-hoseyn/BackPack/total?logo=github&label=downloads&color=orange" alt="Downloads">
   </a>
 </p>
 
@@ -234,7 +242,7 @@ See [Forwarded UDP](docs/forwarded-udp.md).
 On both servers:
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/AminMGMT/BackPack/main/install.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/dr-hoseyn/BackPack/main/install.sh)
 ```
 
 Then:

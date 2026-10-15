@@ -116,6 +116,35 @@ func TestHTTPSProbeCoordinatorAuthenticatesBoundsAndFreezesReports(t *testing.T)
 	}
 }
 
+func TestHTTPSProbeAndUnavailableFamilyReportsCoexist(t *testing.T) {
+	missing := -1
+	c := &ctCoordinator{tok: "secret", routeUnavailable: func(i int) bool {
+		missing = i
+		return i == 1
+	}}
+	if got := c.answer("unavailable wrong 1", "127.0.0.1"); got != "" || missing != -1 {
+		t.Fatal("unauthenticated family report reached the suite")
+	}
+	if got := c.answer("https-probe secret xhttp:tls-ok", "127.0.0.1"); got != "ok" {
+		t.Fatalf("HTTPS probe rejected by combined coordinator: %q", got)
+	}
+	if got := c.answer("unavailable secret 1", "127.0.0.1"); got != "ok" || missing != 1 {
+		t.Fatalf("unavailable family report lost: answer=%q family=%d", got, missing)
+	}
+	if c.httpsProbes["xhttp"] != "tls-ok" {
+		t.Fatal("family report overwrote the independent HTTPS probe")
+	}
+	c.stopped = true
+	for _, request := range []string{"https-probe secret xhttp:tcp-failed", "unavailable secret 0"} {
+		if got := c.answer(request, "127.0.0.1"); got != "stopped" {
+			t.Fatalf("stopped coordinator accepted %q: %q", request, got)
+		}
+	}
+	if missing != 1 || c.httpsProbes["xhttp"] != "tls-ok" {
+		t.Fatal("reports changed after cancellation")
+	}
+}
+
 func TestHTTPSProbeRetriesTemporaryHelperPortReservation(t *testing.T) {
 	identity := httptest.NewTLSServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	defer identity.Close()

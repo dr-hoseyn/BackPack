@@ -188,7 +188,7 @@ const ACTIONS = [
     note: 'The panel, alerts and backups' },
   { icon: 'life', label: 'Support', to: '/support',
     note: 'Where to ask, and what to send' },
-  { icon: 'bug', label: 'Bug reports', href: 'https://github.com/AminMGMT/BackPack/issues',
+  { icon: 'bug', label: 'Bug reports', href: 'https://github.com/dr-hoseyn/BackPack/issues',
     note: 'Report one, or read the open ones' },
 ];
 

@@ -2,7 +2,7 @@
 #
 # Backpack installer — one command on the VPS (as root):
 #
-#   bash <(curl -fsSL https://raw.githubusercontent.com/AminMGMT/BackPack/main/install.sh)
+#   bash <(curl -fsSL https://raw.githubusercontent.com/dr-hoseyn/BackPack/main/install.sh)
 #
 # It downloads the prebuilt release tar.gz for this architecture into
 # /root/BackPack and installs the binary, verifying it against the checksum
@@ -27,7 +27,7 @@ info() { echo -e "${WHITE}[*]${NC} $*"; }
 warn() { echo -e "${GRAY}[!]${NC} $*"; }
 err()  { echo -e "${RED}[x]${NC} $*" >&2; }
 
-REPO="AminMGMT/BackPack"
+REPO="dr-hoseyn/BackPack"
 BIN_PATH="/usr/local/bin/backpack"
 INSTALL_DIR="/root/BackPack"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-/tmp}")" 2>/dev/null && pwd || echo /tmp)"
