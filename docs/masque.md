@@ -89,7 +89,9 @@ tunnel secret.
   distinct private target port for each tunnel, identical in its paired configs.
 - The listener bounds both QUIC connections and authenticated CONNECT requests
   to 16, and request headers to 8 KiB. Connections use keepalives and an idle
-  timeout. Closing the carrier releases the listener, backend and proxy flows.
+  timeout. Connections that do not authenticate within 12 seconds are closed
+  even if they keep sending QUIC keepalives. Closing the carrier releases the
+  listener, backend and proxy flows.
 - MASQUE authenticates HTTP requests using a credential derived from the tunnel
   token, over verified TLS. Noise still authenticates and encrypts tunnel data.
 - FEC is available. Multipath is limited to plain UDP and is rejected here.

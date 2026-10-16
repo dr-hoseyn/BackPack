@@ -6,6 +6,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
@@ -19,8 +20,8 @@ import (
 	"testing"
 	"time"
 
-	"crypto/tls"
 	"github.com/backpack/backpack/config"
+	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
 )
 
@@ -99,6 +100,48 @@ func TestMasqueDatagramsAndReconnect(t *testing.T) {
 			t.Fatalf("down: %d bytes, %v", n, err)
 		}
 		dialer.Close()
+	}
+}
+
+func TestMasqueExpiresUnauthenticatedConnectionsButKeepsItsPeer(t *testing.T) {
+	cfg := Config{Mode: ModeListen, Addr: "127.0.0.1:0", Token: "auth-timeout-test", Masque: masqueTestConfig(t)}
+	listener, _, err := listenMasqueWithAuthTimeout(context.Background(), cfg, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { listener.Close() })
+	cfg.Mode, cfg.Addr = ModeDial, listener.LocalAddr().String()
+	authenticated, peer, err := openMasque(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { authenticated.Close() })
+	pem, err := os.ReadFile(cfg.Masque.CAFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	roots := x509.NewCertPool()
+	roots.AppendCertsFromPEM(pem)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	stranger, err := quic.DialAddr(ctx, cfg.Addr, &tls.Config{RootCAs: roots, ServerName: "localhost", NextProtos: []string{http3.NextProtoH3}}, quicConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stranger.CloseWithError(0, "")
+	select {
+	case <-stranger.Context().Done():
+	case <-ctx.Done():
+		t.Fatal("unauthenticated connection retained its slot")
+	}
+	if _, err := authenticated.WriteTo([]byte("still authenticated"), peer); err != nil {
+		t.Fatal(err)
+	}
+	listener.SetReadDeadline(time.Now().Add(time.Second))
+	buf := make([]byte, 128)
+	n, _, err := listener.ReadFrom(buf)
+	if err != nil || string(buf[:n]) != "still authenticated" {
+		t.Fatalf("authenticated peer was expired: %q, %v", buf[:n], err)
 	}
 }
 

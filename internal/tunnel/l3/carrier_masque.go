@@ -25,6 +25,8 @@ import (
 // QUIC DATAGRAM. Reserve IPv6 outer headers and the largest varint IDs too.
 const masqueOverhead = quicOverhead + 20 + 16
 
+type masqueAuthenticationKey struct{}
+
 type masqueCarrier struct {
 	net.PacketConn
 	local    net.Addr
@@ -120,6 +122,10 @@ func dialMasque(ctx context.Context, cfg Config) (DatagramCarrier, net.Addr, err
 }
 
 func listenMasque(ctx context.Context, cfg Config) (DatagramCarrier, net.Addr, error) {
+	return listenMasqueWithAuthTimeout(ctx, cfg, quicHandshakeTimeout)
+}
+
+func listenMasqueWithAuthTimeout(ctx context.Context, cfg Config, authTimeout time.Duration) (DatagramCarrier, net.Addr, error) {
 	pair, err := tls.LoadX509KeyPair(cfg.Masque.CertFile, cfg.Masque.KeyFile)
 	if err != nil {
 		return nil, nil, fmt.Errorf("l3: masque: loading TLS certificate: %w", err)
@@ -158,6 +164,15 @@ func listenMasque(ctx context.Context, cfg Config) (DatagramCarrier, net.Addr, e
 	slots := make(chan struct{}, quicMaxPeers)
 	auth := masqueAuthorization(cfg.Token)
 	srv := &http3.Server{EnableDatagrams: true, MaxHeaderBytes: 8192,
+		ConnContext: func(ctx context.Context, conn *quic.Conn) context.Context {
+			// QUIC keepalives can keep an unauthenticated connection alive
+			// forever. Bound the time it may occupy a connection slot.
+			timer := time.AfterFunc(authTimeout, func() {
+				conn.CloseWithError(quic.ApplicationErrorCode(http3.ErrCodeRequestRejected), "authentication timeout")
+			})
+			context.AfterFunc(ctx, func() { timer.Stop() })
+			return context.WithValue(ctx, masqueAuthenticationKey{}, timer)
+		},
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), []byte(auth)) != 1 {
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -176,6 +191,9 @@ func listenMasque(ctx context.Context, cfg Config) (DatagramCarrier, net.Addr, e
 			if req.Target != cfg.Masque.TargetAddr() {
 				http.Error(w, "target not allowed", http.StatusForbidden)
 				return
+			}
+			if timer, ok := r.Context().Value(masqueAuthenticationKey{}).(*time.Timer); ok {
+				timer.Stop()
 			}
 			select {
 			case slots <- struct{}{}:
