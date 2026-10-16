@@ -305,4 +305,4 @@ them both ends have to agree on. This says what exists.
 
 ---
 
-*Generated from `config/` on 2026-10-16. Last verified against Backpack v1.9.1.*
+*Generated from `config/` on 2026-10-17. Last verified against Backpack v1.9.2.*

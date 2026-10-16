@@ -483,4 +483,4 @@ FEC؛ و zero-copy (فقط روی tcp ساده).
 
 ---
 
-*Last verified against Backpack v1.9.1.*
+*Last verified against Backpack v1.9.2.*

@@ -117,4 +117,4 @@ Noise و امکان فوروارد TCP و UDP. حالت HTTP/2 و اتصال م�
 
 ---
 
-*Last verified against Backpack v1.9.1.*
+*Last verified against Backpack v1.9.2.*

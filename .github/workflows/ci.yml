@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   masque:
-    name: MASQUE transport and setup links
+    name: MASQUE and installation readiness
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -26,10 +26,10 @@ jobs:
           cache: true
       # Give the new carrier, its authentication boundary and paired setup
       # links fast feedback before the full connection-test suite completes.
-      - name: Verify MASQUE data, TLS, authentication, lifecycle and setup links
+      - name: Verify MASQUE, setup links and installer readiness
         run: >-
           go test -race ./internal/tunnel/l3 ./internal/manage ./internal/cli ./config ./internal/app
-          -run '^(TestMasque|TestLinkApply|TestEveryShareLinkFieldHasAnID|TestEveryDocument|TestTheConfigReference)'
+          -run '^(TestMasque|TestLinkApply|TestEveryShareLinkFieldHasAnID|TestEveryDocument|TestTheConfigReference|TestConnectionTestStartup|TestInstallerInstallsHTTPSHelpers|TestInstallerFetchesOnlyMissingHelper)'
           -count=1 -timeout 3m
 
   test:

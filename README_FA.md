@@ -1,6 +1,6 @@
 # فورک dr-hoseyn
 
-این فورک بر پایهٔ BackPack اصلی v1.9.0 است و بهبودهای PRهای #104، #98 و #108 را دارد. نسخهٔ v1.9.1 و آپدیت‌های داخلی از مخزن `dr-hoseyn/BackPack` دریافت می‌شوند. قابلیت Short HTTPS IP آزمایشی است.
+این فورک بر پایهٔ BackPack اصلی v1.9.0 است و بهبودهای PRهای #104، #98 و #108 را دارد. نسخهٔ v1.9.2 و آپدیت‌های داخلی از مخزن `dr-hoseyn/BackPack` دریافت می‌شوند. قابلیت Short HTTPS IP آزمایشی است.
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/dr-hoseyn/BackPack/main/install.sh)
