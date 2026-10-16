@@ -19,6 +19,7 @@ Reference pages: what each part of Backpack **is**, and every setting it has.
 
 ### Transports
 - [Transports — every one explained](transports.md)
+- [MASQUE over HTTP/3](masque.md) — this fork's authenticated CONNECT-UDP carrier for L3 tunnels
 - [Choosing a transport (Link Test)](choosing-a-transport.md)
 - [TCP + PCK](tcp-pck.md) — TCP without the kernel's TCP stack
 - [IP Spoofing](ip-spoofing.md) — the forged-source carrier, setting by setting

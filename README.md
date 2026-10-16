@@ -1032,3 +1032,7 @@ Forks should use their own name and branding.
 It is permitted to truthfully state that a project is based on or compatible with BackPack.
 
 See [TRADEMARK.md](TRADEMARK.md) for the complete terms.
+
+## MASQUE in this fork
+
+This fork supports authenticated HTTP/3 CONNECT-UDP for L3 tunnels. See [MASQUE setup](docs/masque.md).

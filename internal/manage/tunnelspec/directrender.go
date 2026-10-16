@@ -149,6 +149,7 @@ type L3Spec struct {
 	Name    string
 	Side    DirectSide
 	Carrier string
+	Masque  config.MasqueConfig
 	// SNIDomain is the server name the "sni" carrier announces. Ignored by
 	// every other carrier, and empty means the engine's default.
 	SNIDomain      string
@@ -209,6 +210,17 @@ func (s L3Spec) Render() string {
 	writeKV(&b, "addr", quote(s.Addr))
 	writeKV(&b, "token", quote(s.Token))
 	writeKV(&b, "carrier", quote(s.Carrier))
+	if s.Carrier == "masque" {
+		writeKV(&b, "masque_target", quote(s.Masque.TargetAddr()))
+		for _, kv := range [][2]string{
+			{"masque_cert", s.Masque.CertFile}, {"masque_key", s.Masque.KeyFile},
+			{"masque_server_name", s.Masque.ServerName}, {"masque_ca", s.Masque.CAFile},
+		} {
+			if kv[1] != "" {
+				writeKV(&b, kv[0], quote(kv[1]))
+			}
+		}
+	}
 	// Only where it means something. A domain in a udp tunnel's file is a
 	// setting nothing reads, which is the kind an operator later spends time
 	// wondering about.

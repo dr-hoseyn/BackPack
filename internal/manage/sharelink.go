@@ -76,9 +76,11 @@ type ShareLink struct {
 	// the same one — each is only telling the box in front of it what to
 	// think, but two different names on one tunnel is a thing to remember for
 	// no benefit.
-	SNI  string `json:"sni,omitempty"` // direct, sni carrier only
-	Port string `json:"p"`             // the tunnel port
-	Host string `json:"h,omitempty"`   // the producing side's real address
+	SNI              string `json:"sni,omitempty"` // direct, sni carrier only
+	MasqueTarget     string `json:"mat,omitempty"`
+	MasqueServerName string `json:"masn,omitempty"`
+	Port             string `json:"p"`           // the tunnel port
+	Host             string `json:"h,omitempty"` // the producing side's real address
 
 	Preset    string `json:"pr,omitempty"`
 	Ports     string `json:"po,omitempty"` // forwarded ports, as the Iran side has them
@@ -300,18 +302,19 @@ type PeerForm struct {
 	Side string `json:"side"` // the side this form is for
 	Name string `json:"name,omitempty"`
 
-	Transport  string `json:"transport,omitempty"`  // reverse
-	Carrier    string `json:"carrier,omitempty"`    // direct
-	SNIDomain  string `json:"sniDomain,omitempty"`  // direct, sni carrier only
-	Encap      string `json:"encap,omitempty"`      // direct
-	ServerAddr string `json:"serverAddr,omitempty"` // the address this side dials
-	TunnelPort string `json:"tunnelPort,omitempty"`
-	Token      string `json:"token,omitempty"`
-	Ports      string `json:"ports,omitempty"`
-	AcceptUDP  bool   `json:"acceptUdp,omitempty"`
-	Preset     string `json:"preset,omitempty"`
-	MSS        int    `json:"mss,omitempty"`
-	MTU        int    `json:"mtu,omitempty"`
+	Transport  string              `json:"transport,omitempty"` // reverse
+	Carrier    string              `json:"carrier,omitempty"`   // direct
+	SNIDomain  string              `json:"sniDomain,omitempty"` // direct, sni carrier only
+	Masque     config.MasqueConfig `json:"masque,omitempty"`
+	Encap      string              `json:"encap,omitempty"`      // direct
+	ServerAddr string              `json:"serverAddr,omitempty"` // the address this side dials
+	TunnelPort string              `json:"tunnelPort,omitempty"`
+	Token      string              `json:"token,omitempty"`
+	Ports      string              `json:"ports,omitempty"`
+	AcceptUDP  bool                `json:"acceptUdp,omitempty"`
+	Preset     string              `json:"preset,omitempty"`
+	MSS        int                 `json:"mss,omitempty"`
+	MTU        int                 `json:"mtu,omitempty"`
 
 	LocalIP string `json:"localIp,omitempty"`
 	PeerIP  string `json:"peerIp,omitempty"`
@@ -418,6 +421,10 @@ func MirrorForPeer(l ShareLink) PeerForm {
 		}
 	} else {
 		f.Carrier = l.Tr
+		if l.Tr == "masque" {
+			f.Masque.Target, f.Masque.ServerName = l.MasqueTarget, l.MasqueServerName
+			paired = append(paired, "masque.target", "masque.serverName")
+		}
 		if l.SNI != "" {
 			f.SNIDomain = l.SNI
 			paired = append(paired, "sniDomain")
@@ -599,6 +606,10 @@ func shareLinkOf(name, host string, cfg config.Config) (string, error) {
 		l.Tok = cfg.L3.Token
 		l.Tr = orDefault(cfg.L3.Carrier, "udp")
 		l.SNI = cfg.L3.SNIDomain
+		if l.Tr == "masque" {
+			l.MasqueTarget = cfg.L3.MasqueConfig.TargetAddr()
+			l.MasqueServerName = cfg.L3.MasqueConfig.ServerName
+		}
 		l.Encap = "gre"
 		l.Port = addrPort(cfg.L3.Addr)
 		l.Preset = cfg.L3.Preset

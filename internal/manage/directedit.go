@@ -360,6 +360,7 @@ func l3SpecOf(t Tunnel, l config.L3Config) l3Spec {
 	return l3Spec{
 		Name: t.Name, Side: side,
 		Carrier: orDefault(l.Carrier, "udp"),
+		Masque:  l.MasqueConfig,
 		Encap:   "gre", GREKey: l.GREKey,
 		Addr: l.Addr, Token: l.Token,
 		Iface:   orDefault(l.Iface, "bp0"),
