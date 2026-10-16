@@ -104,6 +104,8 @@ tunnel secret.
 
 <div dir="rtl">
 
+## خلاصهٔ فارسی
+
 این قابلیت مخصوص همین فورک است: MASQUE واقعی روی HTTP/3 برای تانل L3، همراه با
 Noise و امکان فوروارد TCP و UDP. حالت HTTP/2 و اتصال مستقیم به MASQUE در Xray
 در این پیاده‌سازی وجود ندارد. گواهی TLS معتبر یا CA خصوصی لازم است؛ پورت UDP
@@ -112,3 +114,7 @@ Noise و امکان فوروارد TCP و UDP. حالت HTTP/2 و اتصال م�
 دیگر تعمیم نده.
 
 </div>
+
+---
+
+*Last verified against Backpack v1.9.1.*
