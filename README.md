@@ -6,6 +6,9 @@ This fork combines upstream BackPack v1.9.0 with PRs [#104](https://github.com/A
 bash <(curl -fsSL https://raw.githubusercontent.com/dr-hoseyn/BackPack/main/install.sh)
 ```
 
+On Linux glibc amd64/arm64, the installer now includes the pinned NaiveProxy, sing-box and Xray helpers automatically. Set `BP_HELPERS=` explicitly to install BackPack alone.
+
+
 <p align="center">
   <img src="img/image.png" alt="BackPack" width="100%">
 </p>
@@ -776,7 +779,7 @@ For example:
 scp install.sh SHA256SUMS backpack_linux_amd64.tar.gz root@SERVER_IP:/root/
 
 ssh root@SERVER_IP \
-  "cd /root && sudo bash install.sh"
+  "cd /root && sudo env BP_HELPERS= bash install.sh"
 ```
 
 Or install manually after verifying the checksum:

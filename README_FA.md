@@ -6,6 +6,9 @@
 bash <(curl -fsSL https://raw.githubusercontent.com/dr-hoseyn/BackPack/main/install.sh)
 ```
 
+نصاب روی لینوکس glibc و معماری amd64/arm64 ابزارهای NaiveProxy، sing-box و Xray را هم خودکار نصب می‌کند. برای نصب فقط خود BackPack از `BP_HELPERS=` استفاده کن.
+
+
 <div dir="rtl">
 
 <p align="center"><img src="img/cover.png" alt="Backpack" width="100%"></p>

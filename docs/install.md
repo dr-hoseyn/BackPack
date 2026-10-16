@@ -12,6 +12,16 @@ It downloads the prebuilt release archive for your architecture (amd64/arm64)
 into `/root/BackPack`, **verifies it against the checksum published with the
 release**, installs the binary, and opens the menu when it finishes.
 
+On Linux glibc amd64/arm64, a normal install also installs the pinned official
+NaiveProxy, sing-box and Xray helpers, verifying every archive's SHA256. Missing
+download/archive utilities are installed through the system package manager.
+Existing helper versions are retained, and installing a helper does not start it.
+On supported musl systems only Xray is selected automatically; on other
+architectures the installer keeps the standalone BackPack installation.
+
+To install BackPack alone, explicitly set `BP_HELPERS=`. `BP_HELPERS=xray` and
+`BP_HELPERS=naive` select just one helper family.
+
 Reopen the menu any time with:
 
 ```bash
@@ -49,7 +59,7 @@ and never touches the network:
 
 ```bash
 scp install.sh SHA256SUMS backpack_linux_amd64.tar.gz root@SERVER_IP:/root/
-ssh root@SERVER_IP "cd /root && sudo bash install.sh"
+ssh root@SERVER_IP "cd /root && sudo env BP_HELPERS= bash install.sh"
 ```
 
 ### By hand
@@ -97,6 +107,10 @@ installed. [More](updates.md).
 **نصب عادی:** یک دستور با کاربر root روی سرور — آرشیو ریلیز مخصوص معماری سرور را
 دانلود می‌کند، با چک‌سام منتشرشده **تأیید** می‌کند، نصب می‌کند و خودش منو را باز
 می‌کند. بعداً با `sudo backpack` منو را باز کن.
+
+نصب عادی روی لینوکس glibc و معماری amd64/arm64 ابزارهای NaiveProxy، sing-box و
+Xray را هم با بررسی چک‌سام نصب می‌کند. برای نصب بدون این ابزارها، از
+`BP_HELPERS=` استفاده کن؛ دستور نصب آفلاین بالا همین حالت را انتخاب می‌کند.
 
 **نصب آفلاین (سروری که به گیت‌هاب دسترسی ندارد):** فایل ریلیز را روی یک ماشین با
 اینترنت دانلود کن و به سرور کپی کن. با `uname -m` معماری را ببین: `x86_64` یعنی

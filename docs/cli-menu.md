@@ -29,9 +29,18 @@ long form. For *how to set a tunnel up*, use the
 | 10 | **Exit** | |
 
 Connection Test includes **Naive / HTTP2**, **XHTTP / TLS** and **REALITY / Vision**.
-Install the optional pinned helpers on both servers (`BP_HELPERS=naive,xray`);
-a missing helper is shown as **SKIPPED** with its reason. Iran automatically
-selects a reachable REALITY cover endpoint after verifying its certificate,
+The normal installer includes the pinned helpers on Linux glibc amd64/arm64
+(`BP_HELPERS=naive,xray`); run it on both servers before testing.
+A missing helper is shown as **SKIPPED** with its reason.
+
+The preparation screen lists IPv4 and IPv6 together with separate **ready /
+skipped** counts. Shared prerequisite warnings appear once, labelled with the
+paths they affect. Raw IPv4-only carriers are skipped on IPv6; those exclusions
+are listed too. **Skipped** means a test was not run, rather than a failed
+network measurement. The optional-helper installer updates the BackPack binary
+as well, so use the same intended build on both servers before starting a new test.
+
+Iran automatically selects a reachable REALITY cover endpoint after verifying its certificate,
 TLS 1.3 and HTTP/2 support; no cover question is asked. If no candidate is
 reachable, only REALITY is skipped with its reason. Naive and XHTTP use a temporary certificate verified
 by the peer; private keys remain on Iran and all temporary files are removed
