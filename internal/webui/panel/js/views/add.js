@@ -410,6 +410,8 @@ export function addView(ctx) {
         show('.step3rev', !direct);
         show('.step3direct', direct);
         if (direct) suggestDirect(chosen.side);
+		const masqueBox = root.querySelector('#masqueSettings');
+		if (masqueBox) masqueBox.hidden = !(direct && chosen.carrier === 'masque');
 
         /* "server" is the Iran side, "client" the kharej side — the words the
            create endpoints use. */
@@ -910,6 +912,15 @@ export function addView(ctx) {
         const side = root.querySelector('.step[data-s="0"]');
         const details = root.querySelector('.step[data-s="1"]');
         if (!body || !side || !details || root.dataset.staged) return;
+		const masqueBox = el('div', { class: 'grp3', id: 'masqueSettings', hidden: true });
+		masqueBox.innerHTML = `<div class="gl3">MASQUE · HTTP/3</div><div class="fgrid">
+		  <div class="f3"><label>Private UDP target on Kharej</label><input name="masque.target" value="127.0.0.1:62101"><div class="hint">Use a different loopback port for each MASQUE tunnel. Both ends must match.</div></div>
+		  <div class="f3"><label>TLS certificate hostname</label><input name="masque.serverName" placeholder="kharej.example.com"></div>
+		  <div class="f3 full" data-when="server-masque"><label>Private CA file on Iran (optional)</label><input name="masque.caFile" placeholder="Blank for system trust"></div>
+		  <div class="f3 full" data-when="client-masque"><label>TLS certificate file on Kharej</label><input name="masque.certFile" placeholder="/etc/letsencrypt/live/example.com/fullchain.pem"></div>
+		  <div class="f3 full" data-when="client-masque"><label>TLS private key file on Kharej</label><input name="masque.keyFile" placeholder="/etc/letsencrypt/live/example.com/privkey.pem"></div>
+		</div>`;
+		root.querySelector('.step3direct')?.append(masqueBox);
         root.dataset.staged = '1';
         root.querySelector('#nodeGrp')?.remove();
 

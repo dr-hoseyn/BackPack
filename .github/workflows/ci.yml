@@ -14,6 +14,24 @@ permissions:
   contents: read
 
 jobs:
+  masque:
+    name: MASQUE transport and setup links
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      # Give the new carrier, its authentication boundary and paired setup
+      # links fast feedback before the full connection-test suite completes.
+      - name: Verify MASQUE data, TLS, authentication, lifecycle and setup links
+        run: >-
+          go test -race ./internal/tunnel/l3 ./internal/manage ./internal/cli ./config ./internal/app
+          -run '^(TestMasque|TestLinkApply|TestEveryShareLinkFieldHasAnID|TestEveryDocument|TestTheConfigReference)'
+          -count=1 -timeout 3m
+
   test:
     name: Build and test
     runs-on: ubuntu-latest

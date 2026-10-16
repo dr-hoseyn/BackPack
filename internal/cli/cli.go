@@ -499,6 +499,20 @@ func runLink(args []string) Result {
 	rest := args[1:]
 	for i := 0; i < len(rest); i++ {
 		switch a := rest[i]; {
+		case a == "--masque-cert" || a == "--masque-key":
+			if i+1 >= len(rest) {
+				return fail(CodeUsage, "%s needs a value\n", a)
+			}
+			if a == "--masque-cert" {
+				o.MasqueCert = rest[i+1]
+			} else {
+				o.MasqueKey = rest[i+1]
+			}
+			i++
+		case strings.HasPrefix(a, "--masque-cert="):
+			o.MasqueCert = strings.TrimPrefix(a, "--masque-cert=")
+		case strings.HasPrefix(a, "--masque-key="):
+			o.MasqueKey = strings.TrimPrefix(a, "--masque-key=")
 		case a == "--name" || a == "--host":
 			if i+1 >= len(rest) {
 				return fail(CodeUsage, "%s needs a value\n", a)

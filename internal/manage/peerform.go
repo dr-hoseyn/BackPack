@@ -89,6 +89,7 @@ func (f PeerForm) ToNewDirectTunnel() NewDirectTunnel {
 		FECParity:   f.FECParity,
 		SpoofPeerIP: f.SpoofPeerIP,
 		SNIDomain:   f.SNIDomain,
+		Masque:      f.Masque,
 		GREKey:      f.GREKey,
 		MTU:         f.MTU,
 		MSSClamp:    f.MSSClamp,

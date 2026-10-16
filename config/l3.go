@@ -51,15 +51,18 @@ type L3Config struct {
 	// Carrier is the datagram transport underneath: "udp" (the default, and
 	// the right choice on a path that does not interfere), "pck" (raw TCP
 	// segments, so a capture sees an ordinary flow), "quic" (a real QUIC
-	// session, so a capture sees HTTP/3), "sni" (pck, plus a TLS ClientHello
+	// session), "masque" (RFC 9298 CONNECT-UDP over verified HTTP/3), "sni" (pck, plus a TLS ClientHello
 	// naming an allowed domain at the start of the flow), "xdi" (inside ICMP
-	// echo) or "spoof" (raw IP with a forged source). All but udp and quic are
+	// echo) or "spoof" (raw IP with a forged source). All but udp, quic and masque are
 	// Linux-only and need CAP_NET_RAW.
 	//
 	// A reliable carrier is not an option here — see the l3 package doc for
 	// why stacking retransmission is actively harmful rather than merely
 	// wasteful.
 	Carrier string `toml:"carrier"`
+
+	// MASQUE uses verified TLS and an authenticated, loopback-only UDP target.
+	MasqueConfig
 
 	// Encap is always GRE now: four bytes, or eight with gre_key. "ipip" is
 	// still accepted and read as GRE, so a file written when there was a choice

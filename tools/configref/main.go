@@ -152,6 +152,8 @@ func sectionOf(name string) string {
 		return "[direct]"
 	case "L3Config":
 		return "[l3]"
+	case "MasqueConfig":
+		return "[l3] — the MASQUE carrier"
 	case "NaiveClientConfig":
 		return "[client.naive]"
 	case "NaiveServerConfig":

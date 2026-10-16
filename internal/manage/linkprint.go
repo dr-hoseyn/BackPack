@@ -19,6 +19,9 @@ import (
 // the tunnel in link there. It is run as root on the kharej; install.sh hands
 // what follows it to the installed binary (see the end of install.sh).
 func InstallCommand(link string) string {
+	if l, err := DecodeShareLink(link); err == nil && l.Kind == "direct" && l.Tr == "masque" {
+		return "" // the released binary may predate this fork-only carrier
+	}
 	// The published release may predate managed HTTPS link support. Installing
 	// it here would replace the matching test build and lose the optional helpers.
 	if l, err := DecodeShareLink(link); err == nil && managedTransport(l.Tr) {
@@ -31,6 +34,12 @@ func InstallCommand(link string) string {
 // printLinkBlock prints the two ways to build the kharej from link. menuPath
 // is where the Setup Link answer is in the kharej's menu, for the first.
 func printLinkBlock(link, menuPath string) {
+	if l, err := DecodeShareLink(link); err == nil && l.Kind == "direct" && l.Tr == "masque" {
+		fmt.Println()
+		tui.Info("Install This Fork's MASQUE Build On Kharej, Then Use Setup From A Link Or:")
+		fmt.Println(tui.Color(tui.Bold+tui.White, "sudo backpack link apply '"+link+"' --masque-cert /path/fullchain.pem --masque-key /path/privkey.pem"))
+		return
+	}
 	command := InstallCommand(link)
 	if command == "" {
 		menuPath = "sudo backpack → Setup Kharej → Reverse → HTTPS → Same Protocol → Setup Link"
