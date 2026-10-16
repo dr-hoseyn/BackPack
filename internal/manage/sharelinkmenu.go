@@ -94,6 +94,17 @@ func setupFromLink() {
 	}
 
 	form := MirrorForPeer(link)
+	if form.Carrier == "masque" {
+		side := sideIran
+		if form.Side == "kharej" {
+			side = sideKharej
+		}
+		cfg := l3Spec{Carrier: "masque", Masque: form.Masque}
+		if !askL3CarrierExtras(&cfg, side) {
+			return
+		}
+		form.Masque = cfg.Masque
+	}
 	if !askMissingAddress(&form) {
 		return
 	}

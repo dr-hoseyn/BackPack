@@ -68,6 +68,7 @@ type Config struct {
 
 	// Carrier names the datagram carrier beneath the tunnel.
 	Carrier string
+	Masque  config.MasqueConfig
 
 	// Encap names the framing. There is one: "gre". A config that still says
 	// "ipip" is read as GRE — see NewEncap.
@@ -209,8 +210,13 @@ func (c *Config) Validate() error {
 		c.Carrier = CarrierUDP
 	}
 	if !knownCarrier(c.Carrier) {
-		return fmt.Errorf("l3: carrier %q is not available (have %q, %q, %q, %q, %q, %q)",
-			c.Carrier, CarrierUDP, CarrierPck, CarrierXdi, CarrierSpoof, CarrierQuic, CarrierSNI)
+		return fmt.Errorf("l3: carrier %q is not available (have %q, %q, %q, %q, %q, %q, %q)",
+			c.Carrier, CarrierUDP, CarrierPck, CarrierXdi, CarrierSpoof, CarrierQuic, CarrierSNI, CarrierMasque)
+	}
+	if c.Carrier == CarrierMasque {
+		if err := c.Masque.Validate(c.Mode == ModeListen); err != nil {
+			return fmt.Errorf("l3: %w", err)
+		}
 	}
 	// The listening side of the forged-source carrier cannot learn where its
 	// peer really is, because every packet it receives carries a forged
@@ -355,6 +361,7 @@ func ConfigFromTable(table config.L3Config) (Config, error) {
 		Addr:           table.Addr,
 		Token:          table.Token,
 		Carrier:        table.Carrier,
+		Masque:         table.MasqueConfig,
 		Encap:          table.Encap,
 		GREKey:         table.GREKey,
 		Iface:          table.Iface,

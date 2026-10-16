@@ -2,6 +2,19 @@
 
 All notable changes to Backpack are documented here.
 
+## v1.9.2 — 2026-10-17 (dr-hoseyn fork)
+
+- Add authenticated HTTP/3 CONNECT-UDP MASQUE as an L3 tunnel carrier, with
+  certificate verification, restricted loopback targets, paired Setup Links,
+  terminal and web setup, and FEC support. HTTP/2 and CONNECT-IP are not included.
+- Install the pinned NaiveProxy, sing-box and Xray helpers by default on supported
+  glibc Linux amd64/arm64 hosts, including missing archive tools. On musl, install
+  Xray and explain the Naive limitation. Preserve explicit `BP_HELPERS` overrides;
+  `BP_HELPERS=` installs Backpack alone.
+- Show Connection Test readiness in one IPv4/IPv6 table, group shared missing-helper
+  notices, and explain the IPv4-only cases skipped on IPv6.
+- Verify the public installer and default helper files after publishing a release.
+
 ## v1.9.1 — 2026-10-15 (dr-hoseyn fork)
 
 - Sync with upstream main at `132467b` (BackPack v1.9.0).

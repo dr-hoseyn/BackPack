@@ -152,7 +152,7 @@ them both ends have to agree on. This says what exists.
 | `addr` | `string` | Addr is the peer's host:port when dialling, or the address to bind when listening. |
 | `auto_mtu` | `*bool` | AutoMTU measures what the path really carries, once the tunnel is up, and sets the interface to match. |
 | `bandwidth_mbps` | `int` | BandwidthMbps caps total throughput across this tunnel, in megabits per second. 0 is unlimited. |
-| `carrier` | `string` | Carrier is the datagram transport underneath: "udp" (the default, and the right choice on a path that does not interfere), "pck" (raw TCP segments, so a capture sees an ordinary flow), "quic" (a real QUIC session, so a capture sees HTTP/3), "sni" (pck, plus a TLS ClientHello naming an allowed domain at the start of the flow), "xdi" (inside ICMP echo) or "spoof" (raw IP with a forged source). All but udp and quic are Linux-only and need CAP_NET_RAW. |
+| `carrier` | `string` | Carrier is the datagram transport underneath: "udp" (the default, and the right choice on a path that does not interfere), "pck" (raw TCP segments, so a capture sees an ordinary flow), "quic" (a real QUIC session), "masque" (RFC 9298 CONNECT-UDP over verified HTTP/3), "sni" (pck, plus a TLS ClientHello naming an allowed domain at the start of the flow), "xdi" (inside ICMP echo) or "spoof" (raw IP with a forged source). All but udp, quic and masque are Linux-only and need CAP_NET_RAW. |
 | `encap` | `string` | Encap is always GRE now: four bytes, or eight with gre_key. "ipip" is still accepted and read as GRE, so a file written when there was a choice keeps working. One tunnel carries both IPv4 and IPv6. |
 | `fec_data` | `int` | FECData and FECParity add forward error correction to the carrier: for every FECData datagrams, FECParity extra ones are sent, and any FECParity of the group may be lost without losing anything. Both zero — the default — is no error correction. |
 | `fec_parity` | `int` | FECParity is how many parity packets accompany each group. Both ends must agree on this and on fec_data. |
@@ -172,6 +172,16 @@ them both ends have to agree on. This says what exists.
 | `sockbuf` | `int` | SockBuf sizes the carrier's socket buffers in bytes. Zero takes the carrier default of 4 MiB. |
 | `token` | `string` | Token is the shared secret. It is the only credential: the handshake derives its pre-shared key from it, and a peer without it is answered with silence. |
 | `txqueuelen` | `int` | TxQueueLen is how many packets the kernel may hold for the interface while the tunnel drains it. Deeper is not better — a queue is latency, and a full one is the jitter. Zero takes the default. |
+
+## [l3] — the MASQUE carrier
+
+| Key | Type | Description |
+|---|---|---|
+| `masque_ca` | `string` | CAFile is an optional PEM trust bundle for a private CA on the dialling side. Empty uses the system trust store. Certificate verification is always enabled. |
+| `masque_cert` | `string` | CertFile is the PEM certificate chain on the listening side. |
+| `masque_key` | `string` | KeyFile is the corresponding PEM private key on the listening side. |
+| `masque_server_name` | `string` | ServerName is the TLS hostname to verify when dialling. Empty uses addr's host. |
+| `masque_target` | `string` | Target is the listener's private loopback UDP address, identical on both ends. Empty takes 127.0.0.1:62101. Use a different port for each MASQUE tunnel. |
 
 ## [l3] — the spoof carrier
 
@@ -295,4 +305,4 @@ them both ends have to agree on. This says what exists.
 
 ---
 
-*Generated from `config/` on 2026-10-09. Last verified against Backpack v1.9.1.*
+*Generated from `config/` on 2026-10-17. Last verified against Backpack v1.9.2.*

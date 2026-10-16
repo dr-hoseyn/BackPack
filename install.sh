@@ -127,7 +127,27 @@ case "$(uname -m)" in
   *) err "Unsupported architecture: $(uname -m)"; exit 1 ;;
 esac
 
-# Optional protocol helpers: pinned, isolated and installed only on request.
+# Protocol helpers are installed by default on supported Linux machines.
+# An explicitly empty BP_HELPERS opts out; explicit selections stay unchanged.
+helpers_defaults() {
+  [[ "${BP_HELPERS+x}" == x ]] && return 0
+  BP_HELPERS=""
+  if [[ "$(uname -s)" != Linux ]]; then
+    warn 'Protocol helpers are unavailable on this operating system.'
+    return 0
+  fi
+  case "$ARCH" in
+    amd64|arm64) ;;
+    *) warn "Protocol helpers are unavailable for $ARCH; installing BackPack only."; return 0 ;;
+  esac
+  BP_HELPERS=xray
+  if getconf GNU_LIBC_VERSION >/dev/null 2>&1; then
+    BP_HELPERS=naive,xray
+  else
+    warn 'Naive helpers require glibc; installing Xray only on this system.'
+  fi
+}
+
 helpers_validate() {
   case "${BP_HELPERS:-}" in
     ""|naive|xray|naive,xray) ;;
@@ -138,12 +158,49 @@ helpers_validate() {
   case "$ARCH" in amd64|arm64) ;; *) err "Optional helpers do not support $ARCH"; return 1 ;; esac
   if [[ "$BP_HELPERS" == *naive* ]]; then
     getconf GNU_LIBC_VERSION >/dev/null 2>&1 || { err 'Pinned Naive helpers require glibc; install suitable binaries manually on musl'; return 1; }
-    command -v xz >/dev/null || { err 'xz is required for the Naive archive'; return 1; }
+  fi
+}
+
+# Install only missing archive/download tools before fetching pinned helpers.
+helpers_require_tools() {
+  [[ -n "$BP_HELPERS" ]] || return 0
+  local -a tools=() packages=()
+  local tool package
+  command -v curl >/dev/null || tools+=(curl)
+  if [[ "$BP_HELPERS" == *naive* ]]; then
+    command -v xz >/dev/null || tools+=(xz)
+    command -v tar >/dev/null || tools+=(tar)
   fi
   if [[ "$BP_HELPERS" == *xray* ]]; then
-    command -v unzip >/dev/null || { err 'unzip is required for the Xray archive'; return 1; }
+    command -v unzip >/dev/null || tools+=(unzip)
   fi
-  command -v sha256sum >/dev/null || command -v shasum >/dev/null || { err 'A SHA256 utility is required'; return 1; }
+  if ! command -v sha256sum >/dev/null && ! command -v shasum >/dev/null; then tools+=(sha256sum); fi
+  [[ ${#tools[@]} -gt 0 ]] || return 0
+  for tool in "${tools[@]}"; do
+    package="$tool"
+    if [[ "$tool" == xz ]] && command -v apt-get >/dev/null; then package=xz-utils; fi
+    [[ "$tool" != sha256sum ]] || package=coreutils
+    packages+=("$package")
+  done
+  info "Installing helper prerequisites: ${packages[*]}"
+  if command -v apt-get >/dev/null; then
+    apt-get update || return 1
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${packages[@]}" || return 1
+  elif command -v dnf >/dev/null; then
+    dnf install -y "${packages[@]}" || return 1
+  elif command -v yum >/dev/null; then
+    yum install -y "${packages[@]}" || return 1
+  elif command -v apk >/dev/null; then
+    apk add --no-cache "${packages[@]}" || return 1
+  elif command -v zypper >/dev/null; then
+    zypper --non-interactive install --no-recommends "${packages[@]}" || return 1
+  else
+    err "Install these helper prerequisites, then retry: ${tools[*]} (BP_HELPERS= disables helpers)."
+    return 1
+  fi
+  for tool in "${tools[@]}"; do
+    command -v "$tool" >/dev/null || { err "Helper prerequisite is still missing: $tool"; return 1; }
+  done
 }
 
 # Exact immutable archive pins, obtained from each official release API digest.
@@ -221,7 +278,14 @@ install_helpers() {
 
 
 # End optional protocol helpers.
+helpers_defaults
 helpers_validate || exit $?
+helpers_require_tools || { err 'Could not prepare protocol helper prerequisites'; exit 1; }
+if [[ -n "$BP_HELPERS" ]]; then
+  info "Protocol helpers selected: $BP_HELPERS"
+else
+  info 'Installing BackPack without protocol helpers (BP_HELPERS is empty).'
+fi
 
 ASSET="backpack_linux_${ARCH}.tar.gz"
 mkdir -p /etc/backpack "$INSTALL_DIR/backups"

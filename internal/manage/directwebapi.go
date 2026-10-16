@@ -104,7 +104,8 @@ type NewDirectTunnel struct {
 	// the flow. Empty takes the built-in default. Both ends may name different
 	// domains — each one is only telling the box in front of it what to think —
 	// but the same one on both is one less thing to remember.
-	SNIDomain string `json:"sniDomain"`
+	SNIDomain string              `json:"sniDomain"`
+	Masque    config.MasqueConfig `json:"masque"`
 
 	// GREKey separates tunnels that share the same two servers. Both ends must
 	// match. Zero omits it.
@@ -134,6 +135,8 @@ func DirectCarriers() []map[string]string {
 			"desc": "plain and simple — use it where the path does not interfere"},
 		{"value": "quic", "label": "Quic", "needsRoot": "",
 			"desc": "a real QUIC session on UDP — indistinguishable from HTTP/3, and needs no root"},
+		{"value": "masque", "label": "MASQUE (HTTP/3)", "needsRoot": "",
+			"desc": "authenticated CONNECT-UDP over HTTPS; requires a TLS certificate on Kharej"},
 		// cliOnly keeps a carrier out of the panel without taking it away.
 		//
 		// These two are the ones whose answers depend on the route rather than
@@ -434,6 +437,7 @@ func (n NewDirectTunnel) spec() (l3Spec, error) {
 		// removal in the CLI wizard for why.
 		Encap: "gre", GREKey: n.GREKey,
 		SNIDomain: strings.ToLower(strings.TrimSpace(n.SNIDomain)),
+		Masque:    n.Masque,
 		Addr:      addr, Token: token,
 		Iface: freeL3Iface(), LocalIP: local, PeerIP: peer,
 		MTU:            defaultL3MTU,
@@ -491,6 +495,11 @@ func (n NewDirectTunnel) spec() (l3Spec, error) {
 			return l3Spec{}, fmt.Errorf(
 				"the spoof carrier needs the Iran server's real IP on this side, " +
 					"because the peer forges the source of every packet it sends")
+		}
+	}
+	if carrier == "masque" {
+		if err := spec.Masque.Validate(side == sideKharej); err != nil {
+			return l3Spec{}, err
 		}
 	}
 	return spec, nil
@@ -842,6 +851,7 @@ func directSpecFrom(name string, l config.L3Config) l3Spec {
 		Carrier:   orDefault(l.Carrier, "udp"),
 		Encap:     orDefault(l.Encap, "gre"),
 		SNIDomain: l.SNIDomain,
+		Masque:    l.MasqueConfig,
 		GREKey:    l.GREKey,
 		Addr:      l.Addr,
 		Token:     l.Token,

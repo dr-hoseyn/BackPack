@@ -270,6 +270,21 @@ func pendingShareLinkFrom(cfg l3Spec, host string, extras linkExtras) string {
 // askL3CarrierExtras asks the questions only some carriers have. It reports
 // false when the setup cannot go on.
 func askL3CarrierExtras(cfg *l3Spec, side directSide) bool {
+	if cfg.Carrier == "masque" {
+		cfg.Masque.Target = strings.TrimSpace(tui.PromptDefault("MASQUE Private UDP Target (Same On Both Ends)", cfg.Masque.TargetAddr()))
+		cfg.Masque.ServerName = strings.TrimSpace(tui.PromptDefault("TLS Server Name (Certificate Hostname)", cfg.Masque.ServerName))
+		if side == sideKharej {
+			cfg.Masque.CertFile = strings.TrimSpace(tui.Prompt("TLS Certificate File: "))
+			cfg.Masque.KeyFile = strings.TrimSpace(tui.Prompt("TLS Private Key File: "))
+		} else {
+			cfg.Masque.CAFile = strings.TrimSpace(tui.Prompt("Private CA File (Blank For System Trust): "))
+		}
+		if err := cfg.Masque.Validate(side == sideKharej); err != nil {
+			tui.Error(err.Error())
+			tui.PressEnter()
+			return false
+		}
+	}
 	// The SNI carrier has one question: which name to announce. It matters
 	// more than most defaults do — the whole technique is that the box in
 	// front already lets that name through, and which names those are is a
@@ -344,6 +359,13 @@ func setupL3FromLink(chosen string) {
 
 	form := MirrorForPeer(link)
 	form.Name = uniqueName(tui.PromptDefault("Tunnel Name", form.Name))
+	if link.Tr == "masque" {
+		cfg := l3Spec{Carrier: "masque", Masque: form.Masque}
+		if !askL3CarrierExtras(&cfg, sideKharej) {
+			return
+		}
+		form.Masque = cfg.Masque
+	}
 	if link.Tr == "spoof" {
 		// What the link cannot carry is this side's own: the source it forges,
 		// its interface — and, from a link made without it, where the Iran

@@ -14,6 +14,57 @@ permissions:
   contents: read
 
 jobs:
+  masque:
+    name: MASQUE and installation readiness
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      # Give the new carrier, its authentication boundary and paired setup
+      # links fast feedback before the full connection-test suite completes.
+      - name: Verify MASQUE, setup links and installer readiness
+        run: >-
+          go test -race ./internal/tunnel/l3 ./internal/manage ./internal/cli ./config ./internal/app
+          -run '^(TestMasque|TestLinkApply|TestEveryShareLinkFieldHasAnID|TestEveryDocument|TestTheConfigReference|TestConnectionTestStartup|TestInstallerInstallsHTTPSHelpers|TestInstallerFetchesOnlyMissingHelper)'
+          -count=1 -timeout 3m
+
+  masque-live:
+    name: MASQUE over real Linux TUN
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Prepare network test tools and binary
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends iproute2 iputils-ping netcat-openbsd bc openssl
+          go build -o "$RUNNER_TEMP/backpack-live" .
+      # Root is confined to fresh network/mount namespaces on an ephemeral
+      # runner. This avoids changing the host's user-namespace security policy.
+      - name: Transfer traffic, restart the listener and exercise a lossy path
+        run: |
+          set -eu
+          for scenario in normal restart loss; do
+            echo "MASQUE real TUN: $scenario"
+            extra=()
+            case "$scenario" in
+              restart) extra+=(RESTART=1) ;;
+              loss) extra+=("NETEM=delay 20ms loss 1%") ;;
+            esac
+            sudo env BIN="$RUNNER_TEMP/backpack-live" W="$RUNNER_TEMP/masque-$scenario" "${extra[@]}" \
+              timeout -k 5s 6m unshare --net --mount --fork -- \
+              bash internal/e2e/testdata/l3live.sh masque 1 | tee "$RUNNER_TEMP/masque-$scenario.out"
+            grep -q '^RESULT OK' "$RUNNER_TEMP/masque-$scenario.out"
+          done
+
   test:
     name: Build and test
     runs-on: ubuntu-latest

@@ -12,8 +12,10 @@ settings on each machine; these remain outside automatic transport selection.
 Each side owns its helper under the tunnel context; TCP forwarding
 and one endpoint are currently supported.
 
-`BP_HELPERS=xray` installs the pinned official Xray helper in a versioned
-directory; `BP_HELPERS=naive,xray` installs both sets. Existing helper directories
+The normal installer selects `BP_HELPERS=naive,xray` by default on Linux glibc
+amd64/arm64, installing both helper families. Set `BP_HELPERS=` explicitly to
+skip helpers, or `BP_HELPERS=xray` / `BP_HELPERS=naive` to select just one family.
+On supported musl systems the default is Xray only. Existing helper directories
 are retained. No helper is started by the installer. Xray transport settings
 require a Backpack build that implements the managed Xray wrapper.
 
@@ -492,4 +494,4 @@ UDP را می‌بندد ولی ICMP را نه) و *IP Spoofing* که مبدأ �
 
 ---
 
-*Last verified against Backpack v1.9.1.*
+*Last verified against Backpack v1.9.2.*

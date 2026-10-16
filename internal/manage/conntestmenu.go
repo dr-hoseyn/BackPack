@@ -75,11 +75,7 @@ func connTestIranMenu() {
 		return
 	}
 	defer suite.Close()
-	for _, test := range suite.tests {
-		if test != nil {
-			ctMenuStartup(os.Stdout, test)
-		}
-	}
+	ctMenuStartup(os.Stdout, suite)
 	fmt.Println()
 	ctMenuStage(os.Stdout, "2", "Connect the Kharej", "Paste this one link on Kharej. Selected IP paths run one after another.")
 	fmt.Println(tui.Color(tui.Bold+tui.White, link))

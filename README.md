@@ -1,10 +1,13 @@
 # dr-hoseyn fork
 
-This fork combines upstream BackPack v1.9.0 with PRs [#104](https://github.com/AminMGMT/BackPack/pull/104), [#98](https://github.com/AminMGMT/BackPack/pull/98), and [#108](https://github.com/AminMGMT/BackPack/pull/108). Fork release **v1.9.1** installs and updates from `dr-hoseyn/BackPack`. Short HTTPS IP is experimental.
+This fork combines upstream BackPack v1.9.0 with PRs [#104](https://github.com/AminMGMT/BackPack/pull/104), [#98](https://github.com/AminMGMT/BackPack/pull/98), and [#108](https://github.com/AminMGMT/BackPack/pull/108). Fork release **v1.9.2** installs and updates from `dr-hoseyn/BackPack`. Short HTTPS IP is experimental.
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/dr-hoseyn/BackPack/main/install.sh)
 ```
+
+On Linux glibc amd64/arm64, the installer now includes the pinned NaiveProxy, sing-box and Xray helpers automatically. Set `BP_HELPERS=` explicitly to install BackPack alone.
+
 
 <p align="center">
   <img src="img/image.png" alt="BackPack" width="100%">
@@ -776,7 +779,7 @@ For example:
 scp install.sh SHA256SUMS backpack_linux_amd64.tar.gz root@SERVER_IP:/root/
 
 ssh root@SERVER_IP \
-  "cd /root && sudo bash install.sh"
+  "cd /root && sudo env BP_HELPERS= bash install.sh"
 ```
 
 Or install manually after verifying the checksum:
@@ -1032,3 +1035,7 @@ Forks should use their own name and branding.
 It is permitted to truthfully state that a project is based on or compatible with BackPack.
 
 See [TRADEMARK.md](TRADEMARK.md) for the complete terms.
+
+## MASQUE in this fork
+
+This fork supports authenticated HTTP/3 CONNECT-UDP for L3 tunnels. See [MASQUE setup](docs/masque.md).

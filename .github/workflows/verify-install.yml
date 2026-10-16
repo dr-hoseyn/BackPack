@@ -6,7 +6,7 @@ on:
       tag:
         description: "Expected installed release"
         required: true
-        default: "v1.9.1"
+        default: "v1.9.2"
 
 permissions:
   contents: read
@@ -14,7 +14,7 @@ permissions:
 jobs:
   install:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - name: Run the public installer and verify the installed release
         env:
@@ -26,3 +26,7 @@ jobs:
           test "$(/usr/local/bin/backpack -v | head -1)" = "$TAG"
           /usr/local/bin/backpack version --json | tee "$RUNNER_TEMP/installed-version.json"
           grep -F "https://github.com/$GITHUB_REPOSITORY" "$RUNNER_TEMP/installed-version.json"
+          test -x /usr/local/lib/backpack/helpers/naive/v154.0.8037.49-4-amd64/naive
+          test -x /usr/local/lib/backpack/helpers/sing-box/v1.14.2-amd64/sing-box
+          test -s /usr/local/lib/backpack/helpers/sing-box/v1.14.2-amd64/libcronet.so
+          test -x /usr/local/lib/backpack/helpers/xray/v26.3.27-amd64/xray

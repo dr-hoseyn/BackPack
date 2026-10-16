@@ -28,6 +28,8 @@ type LinkApplyOptions struct {
 	// Host is the Iran server's address, for a link made where it could not
 	// be found, or to dial another one.
 	Host string
+	// MASQUE certificate files are local to the listening server, never shared.
+	MasqueCert, MasqueKey string
 }
 
 // LinkApplied is what was built.
@@ -240,6 +242,12 @@ func reverseLinkClash(s TunnelSpec) string {
 
 func applyDirectLink(link ShareLink, o LinkApplyOptions) (LinkApplied, error) {
 	form := MirrorForPeer(link)
+	if link.Tr == "masque" {
+		form.Masque.CertFile, form.Masque.KeyFile = o.MasqueCert, o.MasqueKey
+		if form.Masque.CertFile == "" || form.Masque.KeyFile == "" {
+			return LinkApplied{}, fmt.Errorf("MASQUE needs the TLS files on Kharej: add --masque-cert /path/fullchain.pem --masque-key /path/privkey.pem, or use Setup from a link in the menu")
+		}
+	}
 	if form.Side != "kharej" {
 		return LinkApplied{}, fmt.Errorf("this direct link is for the %s side", form.Side)
 	}

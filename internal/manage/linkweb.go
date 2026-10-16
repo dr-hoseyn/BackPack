@@ -52,6 +52,11 @@ func SetupLinkFor(name, host string) (SetupLinkInfo, error) {
 		info.Apply = "sudo backpack link apply '" + raw + "'"
 		info.Install = InstallCommand(raw)
 		info.Where = "sudo backpack → Setup Kharej → Setup Link"
+		if l.Tr == "masque" {
+			info.Apply += " --masque-cert /path/fullchain.pem --masque-key /path/privkey.pem"
+			info.Install = "" // install first, then supply this server's certificate paths
+			info.Where = "sudo backpack → Setup Kharej → Direct → MASQUE → Setup Link (provide TLS files)"
+		}
 		if managedTransport(l.Tr) {
 			info.Where = "sudo backpack → Setup Kharej → Reverse → HTTPS → Same Protocol → Setup Link"
 		}

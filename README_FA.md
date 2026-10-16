@@ -1,10 +1,13 @@
 # فورک dr-hoseyn
 
-این فورک بر پایهٔ BackPack اصلی v1.9.0 است و بهبودهای PRهای #104، #98 و #108 را دارد. نسخهٔ v1.9.1 و آپدیت‌های داخلی از مخزن `dr-hoseyn/BackPack` دریافت می‌شوند. قابلیت Short HTTPS IP آزمایشی است.
+این فورک بر پایهٔ BackPack اصلی v1.9.0 است و بهبودهای PRهای #104، #98 و #108 را دارد. نسخهٔ v1.9.2 و آپدیت‌های داخلی از مخزن `dr-hoseyn/BackPack` دریافت می‌شوند. قابلیت Short HTTPS IP آزمایشی است.
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/dr-hoseyn/BackPack/main/install.sh)
 ```
+
+نصاب روی لینوکس glibc و معماری amd64/arm64 ابزارهای NaiveProxy، sing-box و Xray را هم خودکار نصب می‌کند. برای نصب فقط خود BackPack از `BP_HELPERS=` استفاده کن.
+
 
 <div dir="rtl">
 
@@ -108,7 +111,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/dr-hoseyn/BackPack/main/inst
 
 ---
 
-## تونل مستقیم — ۶ حامل
+## تونل مستقیم — ۷ حامل
 
 ایران **بیرون** زنگ می‌زند، پس **هیچ پورت ورودی روی ایران لازم نیست**. این یکی
 یک تونل کامل IP است: روی هر هاست یک اینترفیس که پکت کامل IP حمل می‌کند، پس دو
@@ -123,6 +126,7 @@ replay، و **MTU خودش را اندازه می‌گیرد**. تنها چیز�
 |---|---|---|---|
 | **udp** | دیتاگرام معمولی UDP. پیش‌فرض، و سریع‌ترین. | UDP باز | [→](docs/l3-direct-tunnel.md) |
 | **quic** | یک سشن واقعی QUIC که تونل را در دیتاگرام‌های RFC 9221 حمل می‌کند. | UDP باز | [→](docs/l3-direct-tunnel.md) |
+| **masque** | CONNECT-UDP واقعی داخل HTTP/3، با بررسی گواهی TLS؛ مخصوص این فورک. | UDP باز و گواهی TLS | [→](docs/masque.md) |
 | **pck** | سگمنت‌های TCP که زیر کرنل ساخته می‌شوند — نه handshake، نه state. جواب وقتی UDP throttle می‌شود. | لینوکس، root | [→](docs/tcp-pck.md) |
 | **sni** | همان `pck`، با یک TLS hello که یک دامنهٔ مجاز را ابتدای جریان اعلام می‌کند. | لینوکس، root | [→](docs/l3-direct-tunnel.md) |
 | **xdi** | ICMP echo، برای مسیری که UDP و TCP را می‌بندد ولی پینگ را نه. | لینوکس، root، ICMP باز | [→](docs/l3-direct-tunnel.md) |
