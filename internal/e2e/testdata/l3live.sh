@@ -44,6 +44,15 @@ TOKEN="l3-live-token-0123456789abcdef"
 extra_k=""; extra_i=""
 case "$CARRIER" in
   pck|sni) extra_k='pck_interface = "vk"'; extra_i='pck_interface = "vi"' ;;
+  masque)
+    # The test owns a private CA and verifies the listener's veth address.
+    # Both namespaces share these files; only the listener uses the key.
+    openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
+      -keyout "$W/masque-key.pem" -out "$W/masque-cert.pem" -days 1 \
+      -subj /CN=masque-live -addext subjectAltName=IP:10.99.0.2 >/dev/null 2>&1 || exit 1
+    extra_k="masque_cert = \"$W/masque-cert.pem\"
+masque_key = \"$W/masque-key.pem\""
+    extra_i="masque_ca = \"$W/masque-cert.pem\"" ;;
   spoof) extra_k='spoof_peer_ip = "10.99.0.1"
 spoof_src_pool = ["198.51.100.77"]'
          extra_i='spoof_src_pool = ["198.51.100.66"]' ;;
