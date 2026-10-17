@@ -21,6 +21,7 @@ func ctThemeLine(line string) string {
 		strings.HasPrefix(text, "SETTING"), strings.HasPrefix(text, "Transport") && strings.Contains(text, "RTT"),
 		strings.HasPrefix(text, "Speed uses"), strings.HasPrefix(text, "Showing"), strings.HasPrefix(text, "⚪"),
 		strings.HasPrefix(text, "Summary:"), strings.HasPrefix(text, "Loss ="), strings.HasPrefix(text, "'-' ="),
+		strings.HasPrefix(text, "K NAME"), strings.HasPrefix(text, "R reverse /"),
 		strings.HasPrefix(line, "      "):
 		color = tui.Gray
 	case strings.HasPrefix(text, "🔴"):

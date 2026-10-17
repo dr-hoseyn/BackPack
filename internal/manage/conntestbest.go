@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // Best settings: what the Connection Test measured, turned into the numbers
@@ -304,7 +305,8 @@ func ctLastMatch(dir, name string) int {
 func ConnTestBestTable(b ConnTestBest) string {
 	var s strings.Builder
 	row := func(setting, value, measured string) {
-		fmt.Fprintf(&s, "%-15s %-*s %s\n", setting, max(26, len("Reverse ")+ctNameWidth), value, measured)
+		prefix := fmt.Sprintf("%-15s %-*s ", setting, max(26, len("Reverse ")+ctNameWidth), value)
+		ctWriteWrapped(&s, prefix, strings.Repeat(" ", utf8.RuneCountInString(prefix)), measured)
 	}
 	s.WriteString("BEST SETTINGS\n" + ctRule() + "\n\n")
 	s.WriteString(ConnTestRecommendationsTable(b.Recommendations))

@@ -30,6 +30,20 @@ long form. For *how to set a tunnel up*, use the
 
 Connection Test includes **Naive / HTTP2**, **XHTTP / TLS** and **REALITY / Vision**.
 
+The terminal tables keep full protocol names aligned and show a status summary.
+Narrow terminals use a compact live table: **R** = reverse, **D** = direct and
+**S** = spoofing. **LOSS** is the percentage of echo/probe attempts that failed,
+using attempts actually made rather than the planned total. Pending, skipped or
+unmeasured tests show `-`. This measures tunnel delivery; transport retransmissions
+can hide network packet loss. Long diagnostics and settings explanations wrap
+under their own columns.
+
+در جدول ترمینال، ستون **LOSS** درصد درخواست‌های تست ناموفق را از تعداد تلاش‌های
+انجام‌شده نشان می‌دهد. برای تست در حال اجرا، ردشده یا اندازه‌گیری‌نشده، `-` نمایش
+داده می‌شود. این عدد کیفیت تحویل ترافیک تونل را نشان می‌دهد؛ بازفرستادن بسته‌ها
+می‌تواند پکت‌لاست شبکه را پنهان کند. در نمای فشرده، **R**، **D** و **S** به‌ترتیب
+یعنی معکوس، مستقیم و تست جعل IP.
+
 Finished tests show separate recommendations for **Download**, **Games / calls**
 and **Stability**, in the terminal and web panel, per IP path and across the
 completed IPv4/IPv6 paths. Download ranks verified download throughput, then

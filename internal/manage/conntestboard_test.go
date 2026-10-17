@@ -209,3 +209,22 @@ func TestConnectionTestDiagnosticsKeepTheirOwnIndentation(t *testing.T) {
 		t.Fatalf("diagnostic text changed: %q", got)
 	}
 }
+
+func TestConnectionTestBestSettingsWrapWithinTheTable(t *testing.T) {
+	table := ConnTestBestTable(ConnTestBest{
+		Transport: "reverse hysteria2", Mbps: 1245.3, UploadMbps: 766.8, RTTms: 106,
+		JitterMs: 12, Preset: PresetAggressive, BDPKB: 16384, DirectMTU: 1400,
+		DirectBy: "direct hysteria2", PathMTU: 1440, MSS: 1400,
+	})
+	for _, line := range strings.Split(table, "\n") {
+		if utf8.RuneCountInString(line) > utf8.RuneCountInString(ctHeader) {
+			t.Fatalf("settings row exceeded the table: %q", line)
+		}
+	}
+	plain := strings.Join(strings.Fields(table), " ")
+	for _, want := range []string{"Reverse Hysteria2 / Salamander", "1245.3 Mbps", "4 streams, verified receiver bytes", "measured by Direct Hysteria2 / Salamander (Auto MTU does this)"} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("wrapped settings lost %q:\n%s", want, table)
+		}
+	}
+}

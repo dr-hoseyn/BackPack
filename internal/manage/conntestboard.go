@@ -87,7 +87,7 @@ func ctEmoji(status string) string {
 // Every emoji here takes two columns; the rest of the RESULT column is spaces.
 const ctRowFormat = "%s       %-9s %-*s %-8s %-6s %6s %s"
 
-var ctHeader = fmt.Sprintf("%-8s %-9s %-*s %-8s %-6s %6s %s", "RESULT", "KIND", ctNameWidth, "NAME", "STATUS", "ECHOES", "LOSS", "PROGRESS")
+var ctHeader = fmt.Sprintf("%-8s %-9s %-*s %-8s %-6s %6s %-13s", "RESULT", "KIND", ctNameWidth, "NAME", "STATUS", "ECHOES", "LOSS", "PROGRESS")
 
 // ctRow is one tunnel's line. While it runs, ECHOES and the bar are the echoes
 // sent; once it has a verdict, the echoes that came back.
@@ -155,18 +155,23 @@ func ctSummary(rows []ConnTestResult) string {
 // paths and hostnames must remain copyable.
 func ctWriteNote(out io.Writer, text string) {
 	const indent = "      "
-	line := indent
+	ctWriteWrapped(out, indent, indent, text)
+}
+
+func ctWriteWrapped(out io.Writer, prefix, continuation, text string) {
+	line, hasWords := prefix, false
 	for _, word := range strings.Fields(text) {
-		if line != indent && utf8.RuneCountInString(line)+1+utf8.RuneCountInString(word) > utf8.RuneCountInString(ctHeader) {
+		if hasWords && utf8.RuneCountInString(line)+1+utf8.RuneCountInString(word) > utf8.RuneCountInString(ctHeader) {
 			fmt.Fprintln(out, line)
-			line = indent
+			line, hasWords = continuation, false
 		}
-		if line != indent {
+		if hasWords {
 			line += " "
 		}
 		line += word
+		hasWords = true
 	}
-	if line != indent {
+	if hasWords {
 		fmt.Fprintln(out, line)
 	}
 }
@@ -375,6 +380,10 @@ func (b *ctBoard) lines(width, height int) []string {
 		return nil
 	}
 	out := []string{"CONNECTION TEST — " + b.title, ctRule(), ctSummary(b.rows), ctHeader, ""}
+	compact := width-1 < utf8.RuneCountInString(ctHeader)
+	if compact {
+		out[3] = fmt.Sprintf("   K %-*s %-8s %6s", ctNameWidth, "NAME", "STATUS", "LOSS")
+	}
 	rows := b.rows
 	// Keep the whole live region inside the viewport, including the cursor
 	// below it. Cursor-up cannot reach a row that has scrolled off the screen.
@@ -402,12 +411,24 @@ func (b *ctBoard) lines(width, height int) []string {
 		rows = rows[:limit]
 	}
 	for _, r := range rows {
-		out = append(out, ctRow(r))
+		if compact {
+			kind := ctKind(r.Kind)
+			if kind == "" {
+				kind = "Reverse"
+			}
+			out = append(out, fmt.Sprintf("%s %s %-*s %-8s %6s", ctEmoji(r.Status), kind[:1], ctNameWidth, ctResultName(r), ctStatusLabel(r), ctLossLabel(r)))
+		} else {
+			out = append(out, ctRow(r))
+		}
 	}
 	if len(rows) < len(b.rows) {
 		out = append(out, fmt.Sprintf("Showing %d/%d; active tests first. Full results at finish.", len(rows), len(b.rows)))
 	}
-	out = append(out, "", ctRule())
+	hint := ""
+	if compact {
+		hint = "R reverse / D direct / S spoof"
+	}
+	out = append(out, hint, ctRule())
 	if height > 0 && len(out) >= height {
 		out = out[:max(0, height-1)]
 	}
