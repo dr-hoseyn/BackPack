@@ -10,7 +10,8 @@ falls back to ordinary TCP when the kernel or peer does not support it. The
 server's debug log records the actual negotiated result for each tunnel socket.
 An MPTCP connection can still have only one subflow: additional independent
 interfaces, addresses and Linux path-manager configuration are required to
-gain path diversity. BackPack does not change routing, sysctls or endpoints.
+gain path diversity. The MPTCP option does not configure routing, MPTCP sysctls
+or path-manager endpoints.
 
 Managed helpers, outbound proxies and other transports reject `mptcp`: a
 setting on their loopback connection would not enable MPTCP on the Internet

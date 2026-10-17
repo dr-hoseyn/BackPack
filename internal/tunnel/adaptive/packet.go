@@ -126,7 +126,9 @@ func (p *packetConn) WriteTo(b []byte, a net.Addr) (int, error) {
 		return 0, os.ErrDeadlineExceeded
 	}
 	if pc == nil {
-		return len(b), nil
+		// The caller counts failed writes as dropped datagrams. Never report
+		// bytes sent when no verified native association can accept them.
+		return 0, errors.New("no verified native UDP association is available")
 	}
 	pc.SetWriteDeadline(deadline)
 	return pc.WriteTo(b, p.peer)
