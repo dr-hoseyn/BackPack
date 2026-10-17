@@ -7,9 +7,14 @@ mkdir -p "$W"
 mount --make-rprivate /
 mount -t tmpfs none /run
 mkdir -p /run/netns
-server_pid= client_pid=
+server_pid= client_pid= receiver_pid=
 cleanup() {
-  for pid in "$server_pid" "$client_pid"; do
+  status=$?
+  if [ "$status" -ne 0 ]; then
+    cat "$W/server.log" "$W/client.log" 2>/dev/null || true
+    for ns in awg-server awg-client; do ip -n "$ns" -brief address 2>/dev/null || true; ip -n "$ns" -6 route 2>/dev/null || true; done
+  fi
+  for pid in "$server_pid" "$client_pid" "$receiver_pid"; do
     if [ -n "$pid" ]; then kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true; fi
   done
   for ns in awg-server awg-client; do ip netns del "$ns" 2>/dev/null || true; done
@@ -63,11 +68,14 @@ await_ping 30
 head -c 1048576 /dev/urandom > "$W/payload"
 copy() {
   local from=$1 to=$2 destination=$3 port=$4
-  ip netns exec "$to" timeout 20 nc -l -p "$port" > "$W/received" &
-  local receiver=$!
+  local family=()
+  case "$destination" in *:*) family=(-6) ;; esac
+  ip netns exec "$to" timeout 20 nc "${family[@]}" -l -p "$port" > "$W/received" &
+  receiver_pid=$!
   sleep .2
   ip netns exec "$from" timeout 20 nc -N -w 15 "$destination" "$port" < "$W/payload"
-  wait "$receiver"
+  wait "$receiver_pid"
+  receiver_pid=
   cmp "$W/payload" "$W/received"
 }
 copy awg-client awg-server "$server_ip" 26001
