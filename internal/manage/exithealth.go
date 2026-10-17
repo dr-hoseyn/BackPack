@@ -36,7 +36,7 @@ func ExitHealth() {
 	} else {
 		opts := make([]tui.Option, len(cands))
 		for i, t := range cands {
-			opts[i] = tui.Option{Title: t.Name, Desc: t.Addr + " — " + transportLabel(t.Transport)}
+			opts[i] = tui.Option{Title: t.Name, Desc: t.Addr + " — " + TunnelTransportLabel(t)}
 		}
 		idx := tui.ChooseOpt("Tunnel", opts)
 		if idx < 0 {

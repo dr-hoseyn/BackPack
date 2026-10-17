@@ -196,6 +196,7 @@ function bestPane(v) {
     <div class="ct-bgrid">
       ${cell('IP path', b.family || '')}
       ${cell('Server address', b.host || '')}
+      ${cell('Best Direct SNI', b.sni || '')}
       ${cell('Download', b.mb ? b.mb.toFixed(b.mb < 10 ? 1 : 0) : '', 'Mb/s')}
       ${cell('Upload', b.upload_mb ? b.upload_mb.toFixed(b.upload_mb < 10 ? 1 : 0) : '', 'Mb/s')}
       ${cell('Round trip', b.rt, 'ms')}
@@ -228,7 +229,7 @@ function endPane(v) {
 /* ---- right: the transports ----------------------------------------------- */
 const tone = st => ({ ok: 'ok', unstable: 'wr', down: 'er', skipped: 'sk' }[st] || 'run');
 const statusWord = st => ({ ok: 'Held', unstable: 'Unstable', down: 'Down', skipped: 'Skipped', testing: 'Testing' }[st] || st);
-const keyOf = r => `${r.kind}:${r.tr}`;
+const keyOf = r => `${r.kind}:${r.tr}:${r.sni || ''}`;
 
 function rowHTML() {
   return `<span class="dot"></span>
@@ -248,8 +249,8 @@ function fillRow(n, r) {
   n.className = `ct-row ${tone(r.status)}${r.uploadMbps ? ' has-speed' : ''}`;
   n.querySelector('.nm b').textContent = r.name;
   const sm = n.querySelector('.nm small');
-  sm.textContent = r.detail || (r.uploadMbps ? '4 connections · download / upload' : '');
-  sm.title = r.detail || '';
+  sm.textContent = [r.sni, r.detail || (r.uploadMbps ? '4 connections · download / upload' : '')].filter(Boolean).join(' · ');
+  sm.title = sm.textContent;
   n.querySelector('.bar i').style.setProperty('--w', (share * 100).toFixed(1) + '%');
   n.querySelector('.ec').textContent = r.status === 'skipped' ? '—' : `${testing ? r.tried : r.ok}/${total}`;
   n.querySelector('.fg').innerHTML = [

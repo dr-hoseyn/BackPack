@@ -53,8 +53,11 @@ func TunnelMetrics() {
 
 // printSnapshot renders one tunnel's counters.
 func printSnapshot(t Tunnel, s metrics.Snapshot) {
+	if t.Transport == "" {
+		t.Transport = s.Transport
+	}
 	tui.Info(tui.Color(tui.Bold+tui.White, t.Name) +
-		tui.Color(tui.Gray, fmt.Sprintf("  %s / %s", s.Role, transportLabel(s.Transport))))
+		tui.Color(tui.Gray, fmt.Sprintf("  %s / %s", s.Role, TunnelTransportLabel(t))))
 
 	age := time.Since(s.Taken).Round(time.Second)
 	tui.Warn(fmt.Sprintf("  Recorded %s Ago, Up %s", age, s.Uptime))

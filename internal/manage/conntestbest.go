@@ -29,6 +29,7 @@ import (
 
 // ConnTestBest is the recommendation table's content.
 type ConnTestBest struct {
+	SNIDomain  string  `json:"sni,omitempty"` // fastest steady Direct SNI candidate, independently of the overall winner
 	Host       string  `json:"host,omitempty"`
 	Family     string  `json:"family,omitempty"`
 	Transport  string  `json:"tr,omitempty"` // "direct pck"
@@ -154,6 +155,14 @@ var ctDirectMTURe = regexp.MustCompile(`the path carries (\d+) bytes`)
 func ctComputeBest(results []ConnTestResult, cases []*connTestCase, pmtu int, logDir string) ConnTestBest {
 	var b ConnTestBest
 	b.PathMTU = pmtu
+	bestSNI := -1
+	for i, r := range results {
+		if r.Kind == "direct" && r.Transport == "sni" && r.Status == ctOK && r.SNIDomain != "" &&
+			(bestSNI < 0 || r.Mbps > results[bestSNI].Mbps) {
+			bestSNI = i
+			b.SNIDomain = r.SNIDomain
+		}
+	}
 
 	// The tunnel whose numbers to go by: the fastest that carried everything,
 	// else the one that carried the most.
@@ -309,6 +318,9 @@ func ConnTestBestTable(b ConnTestBest) string {
 		}
 	} else {
 		row("Transport", "-", "nothing carried traffic steadily")
+	}
+	if b.SNIDomain != "" {
+		row("Direct SNI", b.SNIDomain, "best steady SNI candidate")
 	}
 	if b.BDPKB > 0 {
 		row("Preset", titleWord(b.Preset), fmt.Sprintf("%d KB in flight (speed × round trip)", b.BDPKB))

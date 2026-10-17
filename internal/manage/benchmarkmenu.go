@@ -29,7 +29,7 @@ func LinkTest() {
 	} else {
 		opts := make([]tui.Option, len(clients))
 		for i, t := range clients {
-			opts[i] = tui.Option{Title: t.Name, Desc: t.Addr + " — " + transportLabel(t.Transport)}
+			opts[i] = tui.Option{Title: t.Name, Desc: t.Addr + " — " + TunnelTransportLabel(t)}
 		}
 		idx := tui.ChooseOpt("Tunnel To Test", opts)
 		if idx < 0 {
@@ -187,7 +187,7 @@ func reportDatagramLink(t Tunnel) {
 	tui.Title("Results")
 	fmt.Println()
 	tui.Info("  Target    : " + t.Addr)
-	tui.Info("  Transport : " + transportLabel(t.Transport))
+	tui.Info("  Transport : " + TunnelTransportLabel(t))
 	fmt.Println()
 	tui.Warn("A UDP Port Cannot Be Probed From Here — Use Connection Test.")
 	fmt.Println()

@@ -59,7 +59,7 @@ func connTestIranMenu() {
 	// Every transport is tested; what needs root is left out only without it.
 	// IP spoofing is checked as the IP Spoofing Tester checks it, both ways,
 	// from the one forged source.
-	// The sni carrier announces its default domain; nothing is asked.
+	// Direct SNI compares the built-in domains without another setup question.
 	direct, spoof := root, ConnTestSpoofSource
 	if !root {
 		tui.Warn("Not Root — Direct, PCK And IP Spoofing Are Left Out.")

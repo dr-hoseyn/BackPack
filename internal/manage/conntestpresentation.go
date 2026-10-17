@@ -141,6 +141,17 @@ func ctMenuStartup(out io.Writer, suite *ConnTestSuite) {
 			}
 		}
 	}
+	for _, s := range suite.tests {
+		if s == nil {
+			continue
+		}
+		var rows []ConnTestResult
+		for _, c := range s.cases {
+			rows = append(rows, c.initialResult())
+		}
+		ctSNINotes(out, rows)
+		break
+	}
 }
 
 // Keep the full skip diagnostics on each test case and in its final result.
