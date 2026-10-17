@@ -226,7 +226,11 @@ var kcpKeys sync.Map
 func ApplyKCPSettings(session *kcp.UDPSession, s KCPSettings) {
 	session.SetNoDelay(s.NoDelay, s.Interval, s.Resend, s.NoCongestion)
 	session.SetWindowSize(s.SndWnd, s.RcvWnd)
-	session.SetMtu(s.effectiveMTU())
+	mtu := s.effectiveMTU()
+	if (s.UseICMP || s.Pck != nil) && session.RemoteAddr() != nil && endpointIPv6(session.RemoteAddr().String()) {
+		mtu -= 20
+	}
+	session.SetMtu(mtu)
 	// Stream mode, which kcp-go leaves off by default.
 	//
 	// Off, every Write becomes its own segment (or run of segments) and the last
@@ -278,7 +282,7 @@ func KCPListen(bindAddr, token string, s KCPSettings) (*kcp.Listener, io.Closer,
 	// meaningless here, and the session tag is what separates tunnels. KCP is
 	// handed that socket and does not know the difference.
 	if s.UseICMP {
-		conn, err := newICMPServerConn(token)
+		conn, err := newICMPServerConn(token, endpointIPv6(bindAddr))
 		if err != nil {
 			return nil, nil, err
 		}
@@ -297,6 +301,7 @@ func KCPListen(bindAddr, token string, s KCPSettings) (*kcp.Listener, io.Closer,
 	if s.Pck != nil {
 		carrier := *s.Pck
 		carrier.Token = token
+		carrier.IPv6 = endpointIPv6(bindAddr)
 		if carrier.Port == 0 {
 			carrier.Port = portOf(bindAddr)
 		}
@@ -373,7 +378,7 @@ func KCPDialContext(ctx context.Context, remoteAddr, token string, s KCPSettings
 
 	var session *kcp.UDPSession
 	if s.UseICMP {
-		conn, err := newICMPClientConn(token)
+		conn, err := newICMPClientConn(token, ipAddr.IP.To4() == nil)
 		if err != nil {
 			return nil, err
 		}
@@ -470,16 +475,19 @@ func hostToIPAddrContext(ctx context.Context, remoteAddr string) (*net.IPAddr, e
 	if host == "" {
 		return &net.IPAddr{}, nil
 	}
-	addresses, err := net.DefaultResolver.LookupIP(ctx, "ip4", host)
+	addresses, err := net.DefaultResolver.LookupIPAddr(ctx, host)
 	if err != nil {
 		return nil, err
 	}
+	if len(addresses) == 0 {
+		return nil, &net.AddrError{Err: "no suitable IP address found", Addr: remoteAddr}
+	}
 	for _, ip := range addresses {
-		if ip.To4() != nil {
-			return &net.IPAddr{IP: ip}, nil
+		if ip.IP.To4() != nil {
+			return &net.IPAddr{IP: ip.IP, Zone: ip.Zone}, nil
 		}
 	}
-	return nil, &net.AddrError{Err: "no suitable IPv4 address found", Addr: remoteAddr}
+	return &net.IPAddr{IP: addresses[0].IP, Zone: addresses[0].Zone}, nil
 }
 
 // portOf returns the port of a "host:port" address, or 0 when there is none.

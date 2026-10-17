@@ -25,3 +25,12 @@ func TestATargetResolvesWithOrWithoutAHostIncludingIPv6(t *testing.T) {
 		}
 	}
 }
+
+func TestIPv6RawEndpointResolverPreservesTheAddressFamily(t *testing.T) {
+	for _, addr := range []string{"[2001:db8::1]:9000", "2001:db8::1", "[::1]:9000"} {
+		ip, err := hostToIPAddr(addr)
+		if err != nil || ip.IP.To4() != nil {
+			t.Fatalf("IPv6 endpoint %q: %v %v", addr, ip, err)
+		}
+	}
+}

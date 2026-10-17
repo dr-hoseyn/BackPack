@@ -416,6 +416,14 @@ func randomIPID() uint16 {
 // its IPv4 pseudo-header, as UDP and TCP both require. The checksum field within
 // the segment must be zero when this is called.
 func l4Checksum(src, dst net.IP, proto int, segment []byte) uint16 {
+	if src.To4() == nil && src.To16() != nil && dst.To4() == nil && dst.To16() != nil {
+		var pseudo [40]byte
+		copy(pseudo[0:16], src.To16())
+		copy(pseudo[16:32], dst.To16())
+		binary.BigEndian.PutUint32(pseudo[32:36], uint32(len(segment)))
+		pseudo[39] = byte(proto)
+		return onesComplement(pseudo[:], segment)
+	}
 	pseudo := make([]byte, 12)
 	copy(pseudo[0:4], src.To4())
 	copy(pseudo[4:8], dst.To4())

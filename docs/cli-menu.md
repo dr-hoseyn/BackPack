@@ -35,7 +35,7 @@ A missing helper is shown as **SKIPPED** with its reason.
 
 The preparation screen lists IPv4 and IPv6 together with separate **ready /
 skipped** counts. Shared prerequisite warnings appear once, labelled with the
-paths they affect. Raw IPv4-only carriers are skipped on IPv6; those exclusions
+paths they affect. PCK, SNI, xDi and MASQUE run over IPv4 and IPv6. MASQUE uses a temporary private certificate, verified by the Iran side; its private key stays on Kharej. IP spoofing probes remain IPv4-only and are skipped on IPv6; those exclusions
 are listed too. **Skipped** means a test was not run, rather than a failed
 network measurement. The optional-helper installer updates the BackPack binary
 as well, so use the same intended build on both servers before starting a new test.
@@ -120,7 +120,8 @@ server pastes. The Iran questions, in order:
 
 | Prompt | Notes |
 |---|---|
-| **How Should The Packets Travel?** | **xDi**, **PCK**, **UDP**, **Quic**, **IP Spoofing**, **SNI Spoofing**, in that order; both ends choose the same one |
+| **Select Direct Transport Family** | **ICMP**, **TCP**, **UDP**, **HTTPS**, or **IP Spoofing** |
+| **Select … Carrier** | ICMP: **xDi**; TCP: **PCK**, **SNI Spoofing**; UDP: **UDP**, **Quic**; HTTPS: **MASQUE (HTTP/3)**; IP Spoofing: **IP Spoofing**. Both ends choose the same carrier. Back returns to the family list. |
 | **Kharej IP Or Domain** | Iran dials out, so it needs no inbound port of its own |
 | **Tunnel Port** `[9000]` | what kharej binds and Iran reaches |
 | **Forwarded Ports (Blank For TUN)** | optional. Blank is a plain private network that routes what it is given. A port something here already listens on (the panel's `7777`) is refused |
@@ -138,6 +139,8 @@ config file — with the **Setup Link** (`backpack://…`) and the one-line
 **Install BackPack And Set Up This Tunnel** under it, as for reverse, and
 **Create This Tunnel**. The link is shown again under **Manage tunnels → the
 tunnel → Setup Link**.
+
+The panel uses the same families, with its existing CLI-only restrictions for IP and SNI spoofing.
 
 On kharej: the same carrier, then **How Do You Want To Set Up This Side?** —
 **Setup Link** (paste the line; asks only for a name) or **Manual** (tunnel
@@ -483,4 +486,4 @@ FEC؛ و zero-copy (فقط روی tcp ساده).
 
 ---
 
-*Last verified against Backpack v1.9.2.*
+*Last verified against Backpack v1.9.3.*

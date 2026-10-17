@@ -199,7 +199,7 @@ func TestTheConnectionTestAcrossAnIPv6OnlyPath(t *testing.T) {
 		t.Fatalf("missing IPv6 results: %+v", rows)
 	}
 	for _, r := range rows {
-		unsupported := r.Kind == "spoof" || r.Transport == "pck" || r.Transport == "xdi" || r.Transport == "sni"
+		unsupported := r.Kind == "spoof"
 		if unsupported {
 			if r.Status != ctSkipped || !strings.Contains(r.Detail, "IPv6 is not supported") {
 				t.Errorf("raw IPv6 verdict: %+v", r)
@@ -208,6 +208,14 @@ func TestTheConnectionTestAcrossAnIPv6OnlyPath(t *testing.T) {
 			t.Logf("optional helper %s: %s", r.Transport, r.Detail)
 		} else if r.Status != ctOK {
 			t.Errorf("supported IPv6 path failed: %+v", r)
+		}
+	}
+	if t.Failed() {
+		logs, _ := filepath.Glob(filepath.Join(w, "iran-*.log"))
+		for _, path := range logs {
+			if b, err := os.ReadFile(path); err == nil {
+				t.Logf("%s:\n%s", filepath.Base(path), b)
+			}
 		}
 	}
 	// The Iran-side helper prints the same recommendation as the CLI, including

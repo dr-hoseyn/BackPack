@@ -29,6 +29,9 @@ type icmpBatch struct {
 }
 
 func (c *icmpConn) batchConn() *ipv4.PacketConn {
+	if c.proto == 58 {
+		return nil
+	}
 	c.batch.once.Do(func() {
 		if pc, ok := c.pc.(*icmp.PacketConn); ok {
 			c.batch.p4 = pc.IPv4PacketConn()

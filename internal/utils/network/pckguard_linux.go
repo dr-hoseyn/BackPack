@@ -38,6 +38,7 @@ import (
 // rules rather than sixteen.
 type pckGuard struct {
 	key, id string
+	tool    string
 	owned   bool
 	rules   [][]string // each entry is a full rule body, table first
 	added   [][]string
@@ -69,18 +70,19 @@ type sharedGuard struct {
 // they were left by a run of this tunnel that did not exit cleanly, and since a
 // client's ports are no longer the same from one run to the next, only the tag
 // can find them. Untagged legacy rules are swept only without another owner.
-func installPckGuard(id string, legacy [][][]string, rules [][]string) (*pckGuard, error) {
+func installPckGuard(id string, legacy [][][]string, rules [][]string, v6 ...bool) (*pckGuard, error) {
 	guardMu.Lock()
 	defer guardMu.Unlock()
 
-	key := id + "\x00" + strings.Join(rules[0], "\x00")
+	tool := echoFirewall(v6...)
+	key := tool + id + "\x00" + strings.Join(rules[0], "\x00")
 	if sh, ok := guardShared[key]; ok {
 		sh.ref++
 		return sh.g, nil
 	}
 
-	g := &pckGuard{key: key, id: id, rules: rules}
-	if _, err := exec.LookPath("iptables"); err != nil {
+	g := &pckGuard{key: key, id: id, tool: tool, rules: rules}
+	if _, err := exec.LookPath(tool); err != nil {
 		guardShared[key] = &sharedGuard{g: g, ref: 1}
 		return g, nil
 	}
@@ -96,24 +98,24 @@ func installPckGuard(id string, legacy [][][]string, rules [][]string) (*pckGuar
 	}
 	g.owned = true
 	if first {
-		sweepTunnelRules(id)
+		sweepTunnelRulesFor(tool, id)
 	}
 	// Untagged rules predate ownership. Only remove them when no other PCK
 	// process or guard can own an overlapping range.
 	if first && len(pckOwners) == 1 && !otherPckProcess("") {
 		for _, set := range legacy {
 			for _, r := range set {
-				sweepPckRule(r[0], r[1:])
+				sweepPckRuleFor(tool, r[0], r[1:])
 			}
 		}
 	}
 	for _, r := range g.rules {
 		table, body := r[0], r[1:]
 		// Anything identical still in the table is ours, left behind by a
-		// process that did not exit cleanly. See sweepPckRule.
-		sweepPckRule(table, body)
+		// process that did not exit cleanly. See sweepPckRuleFor.
+		sweepPckRuleFor(tool, table, body)
 		args := append([]string{"-t", table, "-I"}, body...)
-		if _, err := pckIptables(args...); err == nil {
+		if _, err := pckFirewall(tool, args...); err == nil {
 			g.added = append(g.added, r)
 		}
 	}
@@ -121,13 +123,16 @@ func installPckGuard(id string, legacy [][][]string, rules [][]string) (*pckGuar
 	return g, nil
 }
 
-func pckIptables(args ...string) ([]byte, error) {
+func pckFirewall(tool string, args ...string) ([]byte, error) {
+	if tool == "" {
+		tool = "iptables"
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	return exec.CommandContext(ctx, "iptables", append([]string{"-w", "5"}, args...)...).Output()
+	return exec.CommandContext(ctx, tool, append([]string{"-w", "5"}, args...)...).Output()
 }
 
-// sweepPckRule deletes every copy of one rule before it is installed again.
+// sweepPckRuleFor deletes every copy of one rule before it is installed again.
 //
 // The rules are only removed when a carrier closes cleanly. A crash, a kill, a
 // interrupted restart or a failed start can leave them in the table. A server
@@ -144,26 +149,26 @@ func pckIptables(args ...string) ([]byte, error) {
 // Deleting first and adding once leaves exactly one, and clears whatever an
 // earlier run left behind. The cap is there so that a delete which reports
 // success without removing anything cannot spin.
-func sweepPckRule(table string, body []string) {
+func sweepPckRuleFor(tool, table string, body []string) {
 	args := append([]string{"-t", table, "-D"}, body...)
 	for i := 0; i < 1024; i++ {
-		if _, err := pckIptables(args...); err != nil {
+		if _, err := pckFirewall(tool, args...); err != nil {
 			return // no more copies, which is the ordinary first-start case
 		}
 	}
 }
 
-// sweepTunnelRules deletes every rule in the tables the guard writes to whose
+// sweepTunnelRulesFor deletes every rule in the tables the guard writes to whose
 // comment carries this tunnel's tag.
-func sweepTunnelRules(id string) {
+func sweepTunnelRulesFor(tool, id string) {
 	prefix := pckRulePrefix(id)
 	for _, table := range []string{"filter", "raw"} {
-		out, err := pckIptables("-t", table, "-S")
+		out, err := pckFirewall(tool, "-t", table, "-S")
 		if err != nil {
 			continue
 		}
 		for _, del := range tunnelRuleDeletions(string(out), prefix) {
-			_, _ = pckIptables(append([]string{"-t", table}, del...)...)
+			_, _ = pckFirewall(tool, append([]string{"-t", table}, del...)...)
 		}
 	}
 }
@@ -189,7 +194,7 @@ func (g *pckGuard) remove() {
 	for _, r := range g.added {
 		table, body := r[0], r[1:]
 		args := append([]string{"-t", table, "-D"}, body...)
-		_, _ = pckIptables(args...)
+		_, _ = pckFirewall(g.tool, args...)
 	}
 	if g.owned {
 		releasePckOwnership(g.id)

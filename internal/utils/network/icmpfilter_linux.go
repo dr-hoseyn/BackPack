@@ -55,6 +55,15 @@ func attachICMPFilter(pc icmpSocket, wantType uint8, id int) {
 	}
 	p4 := real.IPv4PacketConn()
 	if p4 == nil {
+		if p6 := real.IPv6PacketConn(); p6 != nil {
+			prog := []bpf.Instruction{bpf.LoadAbsolute{Off: 0, Size: 1}, bpf.JumpIf{Cond: bpf.JumpNotEqual, Val: uint32(wantType), SkipTrue: 3}, bpf.LoadAbsolute{Off: 4, Size: 2}, bpf.JumpIf{Cond: bpf.JumpNotEqual, Val: uint32(id), SkipTrue: 1}, bpf.RetConstant{Val: 0xffff}, bpf.RetConstant{Val: 0}}
+			if id < 0 {
+				prog = []bpf.Instruction{bpf.LoadAbsolute{Off: 0, Size: 1}, bpf.JumpIf{Cond: bpf.JumpNotEqual, Val: uint32(wantType), SkipTrue: 1}, bpf.RetConstant{Val: 0xffff}, bpf.RetConstant{Val: 0}}
+			}
+			if raw, err := bpf.Assemble(prog); err == nil {
+				_ = p6.SetBPF(raw)
+			}
+		}
 		return
 	}
 	raw, err := bpf.Assemble(icmpFilter(wantType, id))

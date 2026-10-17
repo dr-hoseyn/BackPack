@@ -57,7 +57,7 @@ func TestConnectionTestStartupGroupsSharedWarningsAndExplainsIPv6Skips(t *testin
 			}
 			s.cases = append(s.cases, c)
 		}
-		for _, tr := range connTestDirect {
+		for _, tr := range []string{"udp", "quic", "pck", "xdi", "sni"} {
 			c := &connTestCase{kind: "direct", tr: tr}
 			if ipv6 && tr != "udp" && tr != "quic" {
 				c.skip = "this raw carrier uses IPv4 packets; IPv6 is not supported"

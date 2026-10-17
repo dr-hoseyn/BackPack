@@ -10,7 +10,15 @@ routed.
 It is the GRE/IPIP idea, built into Backpack's own core rather than borrowed
 from the kernel, and carried inside Backpack's own transports.
 
-### Always GRE + Noise
+### IPv6 paths and carrier families
+
+The direct wizard groups carriers as ICMP (xDi), TCP (PCK and SNI), UDP
+(UDP and QUIC), HTTPS (MASQUE), and IP Spoofing. The panel uses the same groups
+with its existing CLI-only restrictions. PCK, SNI, xDi and MASQUE support public
+IPv6 endpoints; xDi uses real ICMPv6 echo messages and narrowly scoped ip6tables
+rules. IP Spoofing remains IPv4-only. Both ends must use the updated build.
+
+## Always GRE + Noise
 
 Every direct tunnel is wrapped the same way: **GRE + Noise**. There is no
 choice to make and the wizard does not ask — but the name is worth eight
@@ -712,4 +720,4 @@ obfuscated به `CAP_NET_RAW` هم نیاز دارند). **هیچ‌وقت حا�
 
 ---
 
-*Last verified against Backpack v1.9.2.*
+*Last verified against Backpack v1.9.3.*

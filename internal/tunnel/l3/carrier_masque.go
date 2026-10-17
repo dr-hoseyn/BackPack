@@ -160,7 +160,6 @@ func listenMasqueWithAuthTimeout(ctx context.Context, cfg Config, authTimeout ti
 	}
 	c := newMasqueCarrier(backend, ln.Addr())
 	c.allowed = make(map[string]bool)
-	proxy := &masque.Proxy{}
 	slots := make(chan struct{}, quicMaxPeers)
 	auth := masqueAuthorization(cfg.Token)
 	srv := &http3.Server{EnableDatagrams: true, MaxHeaderBytes: 8192,
@@ -213,7 +212,7 @@ func listenMasqueWithAuthTimeout(ctx context.Context, cfg Config, authTimeout ti
 			c.allowed[key] = true
 			c.mu.Unlock()
 			defer func() { c.mu.Lock(); delete(c.allowed, key); c.mu.Unlock() }()
-			_ = proxy.ProxyConnectedSocket(w, req, sock)
+			proxyMasqueSocket(r.Context(), w, sock)
 		})}
 	acceptDone := make(chan struct{})
 	var workers sync.WaitGroup
@@ -224,7 +223,6 @@ func listenMasqueWithAuthTimeout(ctx context.Context, cfg Config, authTimeout ti
 		srv.Close()
 		tr.Close()
 		udp.Close()
-		proxy.Close()
 		workers.Wait()
 		backend.Close()
 	}

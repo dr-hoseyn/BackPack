@@ -66,7 +66,7 @@ var (
 // have to delete it and make it again; auto reset is on both servers." The
 // restarts brought back the blocked flow; only a new tunnel, with a new token
 // and so a new port, got out. Leftover rules are now found by the tunnel's tag
-// instead (see pckTunnelID and sweepTunnelRules), so nothing depends on the
+// instead (see pckTunnelID and sweepTunnelRulesFor), so nothing depends on the
 // port staying put.
 func pckClientPortBase(token string) uint16 {
 	pckPortMu.Lock()

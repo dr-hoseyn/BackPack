@@ -543,31 +543,34 @@ func askL3Advanced(cfg *l3Spec, side directSide, addresses bool) {
 	}
 }
 
-// askL3Carrier offers the datagram carriers, in the operator's order: xDi,
-// PCK, UDP, Quic, then IP and SNI spoofing for a route that needs them.
-//
-// A layer-3 tunnel carries IP packets, which already belong to something that
-// handles its own loss; stacking that on a retransmitting transport makes
-// throughput collapse rather than degrade, so tcp, ws and kcp are not offered
-// at all.
+// askL3Carrier asks for a connection family and then a carrier, as the reverse
+// wizard does. Back from the carrier list returns to the family list.
 func askL3Carrier() (string, bool) {
-	// Built from the same list the panel offers, so the two cannot drift: they
-	// used to be two literals in two files, which is a difference nobody sees
-	// until an operator is told about a carrier one of the screens does not have.
-	carriers := DirectCarriers()
-	opts := make([]tui.Option, 0, len(carriers))
-	for _, c := range carriers {
-		desc := c["desc"]
-		if c["needsRoot"] != "" {
-			desc += " · needs root"
+	families := DirectCarrierFamilies()
+	for {
+		groups := make([]tui.Option, len(families))
+		for i, family := range families {
+			groups[i] = tui.Option{Title: family.Label, Desc: family.Desc}
 		}
-		opts = append(opts, tui.Option{Title: c["label"], Desc: desc})
+		gi := tui.ChooseOpt("Select Direct Transport Family", groups)
+		if gi < 0 || gi >= len(families) {
+			return "", false
+		}
+		family := families[gi]
+		opts := make([]tui.Option, len(family.Entries))
+		for i, carrier := range family.Entries {
+			desc := carrier["desc"]
+			if carrier["needsRoot"] != "" {
+				desc += " · needs root"
+			}
+			opts[i] = tui.Option{Title: carrier["label"], Desc: desc}
+		}
+		ci := tui.ChooseOpt("Select "+family.Label+" Carrier", opts)
+		if ci < 0 || ci >= len(family.Entries) {
+			continue
+		}
+		return family.Entries[ci]["value"], true
 	}
-	i := tui.ChooseOpt("How Should The Packets Travel?", opts)
-	if i < 0 || i >= len(carriers) {
-		return "", false
-	}
-	return carriers[i]["value"], true
 }
 
 // askGREKey is the RFC 2890 key, which both GRE kinds offer and mean the same

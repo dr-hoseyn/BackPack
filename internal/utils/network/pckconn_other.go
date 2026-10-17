@@ -15,6 +15,7 @@ import (
 // PcapCarrier is declared on every platform so configs and the management layer
 // stay portable. See the Linux build for what each field does.
 type PcapCarrier struct {
+	IPv6       bool // selected from the bind/peer address, not a separate user setting
 	Port       uint16
 	Token      string
 	Interface  string

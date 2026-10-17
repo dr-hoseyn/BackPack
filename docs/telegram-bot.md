@@ -74,4 +74,4 @@ forward می‌شود و **سمت خارج** اتصال بیرونی را برق
 
 ---
 
-*Last verified against Backpack v1.9.2.*
+*Last verified against Backpack v1.9.3.*

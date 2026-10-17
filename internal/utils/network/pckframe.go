@@ -362,6 +362,9 @@ func buildPckEthernet(dstMAC, srcMAC net.HardwareAddr, ip []byte) []byte {
 // anything at all.
 func parsePckFrame(frame []byte, linkLen int, wantPort uint16) (pckSegment, bool) {
 	var seg pckSegment
+	if len(frame) > linkLen && frame[linkLen]>>4 == 6 {
+		return parsePckV6Frame(frame, linkLen, wantPort)
+	}
 	if len(frame) < linkLen+ipv4.HeaderLen {
 		return seg, false
 	}

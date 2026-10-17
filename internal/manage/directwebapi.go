@@ -124,18 +124,17 @@ func DirectCarriers() []map[string]string {
 	// is built, and a screen that decided that for itself would be a second
 	// place to keep in step.
 	//
-	// The order is the operator's: xDi, PCK, UDP, Quic, then the two spoofing
-	// carriers, whose answers depend on the route.
+	// Entries keep their existing values; the family menu groups their wire protocols.
 	return []map[string]string{
-		{"value": "xdi", "label": "xDi", "needsRoot": "1",
+		{"value": "xdi", "family": "icmp", "label": "xDi", "needsRoot": "1",
 			"desc": "inside ping (ICMP), for a path that filters UDP and TCP but lets ping through"},
-		{"value": "pck", "label": "PCK", "needsRoot": "1",
+		{"value": "pck", "family": "tcp", "label": "PCK", "needsRoot": "1",
 			"desc": "looks like an ordinary TCP flow, but with no socket the firewall can touch"},
-		{"value": "udp", "label": "UDP", "needsRoot": "",
+		{"value": "udp", "family": "udp", "label": "UDP", "needsRoot": "",
 			"desc": "plain and simple — use it where the path does not interfere"},
-		{"value": "quic", "label": "Quic", "needsRoot": "",
+		{"value": "quic", "family": "udp", "label": "Quic", "needsRoot": "",
 			"desc": "a real QUIC session on UDP — indistinguishable from HTTP/3, and needs no root"},
-		{"value": "masque", "label": "MASQUE (HTTP/3)", "needsRoot": "",
+		{"value": "masque", "family": "https", "label": "MASQUE (HTTP/3)", "needsRoot": "",
 			"desc": "authenticated CONNECT-UDP over HTTPS; requires a TLS certificate on Kharej"},
 		// cliOnly keeps a carrier out of the panel without taking it away.
 		//
@@ -145,11 +144,53 @@ func DirectCarriers() []map[string]string {
 		// up and moves nothing, and finding out costs a capture on the machine
 		// itself. That is CLI work, so the panel does not offer them — and the
 		// engine still runs a config that names one, whichever screen wrote it.
-		{"value": "spoof", "label": "IP Spoofing", "needsRoot": "1", "cliOnly": "1",
+		{"value": "spoof", "family": "spoof", "label": "IP Spoofing", "needsRoot": "1", "cliOnly": "1",
 			"desc": "raw packets with a forged source address — needs testing on your route"},
-		{"value": "sni", "label": "SNI Spoofing", "needsRoot": "1", "cliOnly": "1",
+		{"value": "sni", "family": "tcp", "label": "SNI Spoofing", "needsRoot": "1", "cliOnly": "1",
 			"desc": "PCK, plus a TLS hello naming a domain your route allows — the box in front reads that name and lets the rest through"},
 	}
+}
+
+// DirectCarrierFamily is one connection family and the carriers offered in it.
+// Entries retain the same metadata as the flat API list, including root needs.
+type DirectCarrierFamily struct {
+	Value   string              `json:"value"`
+	Label   string              `json:"label"`
+	Desc    string              `json:"desc"`
+	Entries []map[string]string `json:"entries"`
+}
+
+// DirectCarrierFamilies drives the terminal's family and carrier menus.
+func DirectCarrierFamilies() []DirectCarrierFamily {
+	return groupDirectCarriers(DirectCarriers())
+}
+
+// PanelDirectCarrierFamilies applies the panel's existing carrier restrictions
+// before grouping, so it never offers an empty family or a CLI-only carrier.
+func PanelDirectCarrierFamilies() []DirectCarrierFamily {
+	return groupDirectCarriers(PanelDirectCarriers())
+}
+
+func groupDirectCarriers(carriers []map[string]string) []DirectCarrierFamily {
+	families := []DirectCarrierFamily{
+		{Value: "icmp", Label: "ICMP", Desc: "inside ping packets", Entries: nil},
+		{Value: "tcp", Label: "TCP", Desc: "packet-level TCP, with optional SNI camouflage", Entries: nil},
+		{Value: "udp", Label: "UDP", Desc: "plain datagrams or QUIC", Entries: nil},
+		{Value: "https", Label: "HTTPS", Desc: "authenticated CONNECT-UDP over HTTP/3", Entries: nil},
+		{Value: "spoof", Label: "IP Spoofing", Desc: "forged-source packets for a route you have tested", Entries: nil},
+	}
+	out := make([]DirectCarrierFamily, 0, len(families))
+	for _, family := range families {
+		for _, carrier := range carriers {
+			if carrier["family"] == family.Value {
+				family.Entries = append(family.Entries, carrier)
+			}
+		}
+		if len(family.Entries) > 0 {
+			out = append(out, family)
+		}
+	}
+	return out
 }
 
 // carrierNames is DirectCarriers reduced to the values, in the same order.

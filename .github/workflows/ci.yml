@@ -29,7 +29,7 @@ jobs:
       - name: Verify MASQUE, setup links and installer readiness
         run: >-
           go test -race ./internal/tunnel/l3 ./internal/manage ./internal/cli ./config ./internal/app
-          -run '^(TestMasque|TestLinkApply|TestEveryShareLinkFieldHasAnID|TestEveryDocument|TestTheConfigReference|TestConnectionTestStartup|TestInstallerInstallsHTTPSHelpers|TestInstallerFetchesOnlyMissingHelper)'
+          -run '^(TestMasque|TestLinkApply|TestEveryShareLinkFieldHasAnID|TestEveryDocument|TestTheConfigReference|TestConnectionTestStartup|TestInstallerInstallsHTTPSHelpers|TestInstallerFetchesOnlyMissingHelper|TestConnectionTestMasque|TestIPv6Pck)'
           -count=1 -timeout 3m
 
   masque-live:
@@ -210,12 +210,49 @@ jobs:
           cache: true
       - name: Selection, fallback, sequencing, cancellation and panel API regressions
         run: |
-          go test ./internal/manage ./internal/webui -race -count=1 -v -timeout 6m \
-            -run '^(TestConnectionTest|TestAnUnreachablePath|TestIPv6RawCarriers|TestBothFamilies|TestUnjoinedFamilies|TestStoppingASuite|TestStoppingBetweenPaths|TestBackgroundProbes|TestTheScreensReadTunnelStateThroughOnePlace|TestEveryPanelCallReachesAHandlerThatReadsWhatItSends)'
-      - name: Native transports, direct UDP/QUIC, PMTU and unsupported raw carriers
+          go test ./internal/manage ./internal/webui ./internal/utils/network -race -count=1 -v -timeout 6m \
+            -run '^(TestConnectionTest|TestAnUnreachablePath|TestIPv6|TestBothFamilies|TestUnjoinedFamilies|TestStoppingASuite|TestStoppingBetweenPaths|TestBackgroundProbes|TestTheScreensReadTunnelStateThroughOnePlace|TestEveryPanelCallReachesAHandlerThatReadsWhatItSends)'
+      - name: IPv6-only native, PCK, SNI, xDi and MASQUE data paths; PMTU and spoof exclusions
         run: |
           sudo env PATH="$PATH" GOMODCACHE="$(go env GOMODCACHE)" GOCACHE="$(go env GOCACHE)" BP_L3_LIVE=1 \
+            unshare --net -- go test ./internal/utils/network -run '^TestIPv6PckFirewallCleanupPreservesLiveOwners$' -count=1 -v -timeout 1m
+          sudo env PATH="$PATH" GOMODCACHE="$(go env GOMODCACHE)" GOCACHE="$(go env GOCACHE)" BP_L3_LIVE=1 \
             go test ./internal/manage -run '^TestTheConnectionTestAcrossAnIPv6OnlyPath$' -count=1 -v -timeout 10m
+
+      - name: IPv6 raw carriers survive listener restart and packet loss
+        if: success() || failure()
+        run: |
+          set -eu
+          go build -o "$RUNNER_TEMP/backpack-ipv6" .
+          for carrier in pck sni xdi; do
+            for scenario in restart loss; do
+              extra=()
+              case "$scenario" in
+                restart) extra+=(RESTART=1) ;;
+                loss) extra+=("NETEM=delay 20ms loss 1%") ;;
+              esac
+              sudo env IPV6=1 BIN="$RUNNER_TEMP/backpack-ipv6" W="$RUNNER_TEMP/v6-$carrier-$scenario" "${extra[@]}" \
+                timeout -k 5s 6m unshare --net --mount --fork -- \
+                bash internal/e2e/testdata/l3live.sh "$carrier" 1 | tee "$RUNNER_TEMP/v6-$carrier-$scenario.out"
+              grep -q '^RESULT OK' "$RUNNER_TEMP/v6-$carrier-$scenario.out"
+            done
+          done
+      - name: MASQUE Connection Test on IPv4 with verified temporary trust
+        if: success() || failure()
+        run: |
+          set -eu
+          go test -c -o "$RUNNER_TEMP/conntest-ipv4.test" ./internal/manage
+          sudo env BIN="$RUNNER_TEMP/backpack-ipv6" TESTBIN="$RUNNER_TEMP/conntest-ipv4.test" \
+            W="$RUNNER_TEMP/masque-ct-ipv4" SOAK=3 ONLY=direct/masque \
+            timeout -k 5s 6m unshare --net --mount --fork -- \
+            bash internal/manage/testdata/conntestlive.sh | tee "$RUNNER_TEMP/masque-ct-ipv4.out"
+          grep -q '^RESULT DONE' "$RUNNER_TEMP/masque-ct-ipv4.out"
+          sudo python3 - "$RUNNER_TEMP/masque-ct-ipv4/iran.json" <<'PY'
+          import json, sys
+          rows = json.load(open(sys.argv[1]))
+          masque = [r for r in rows if r['k'] == 'direct' and r['t'] == 'masque']
+          assert len(masque) == 1 and masque[0]['s'] == 'ok', rows
+          PY
 
   audit:
     name: Vulnerabilities and static analysis

@@ -103,6 +103,49 @@ func TestMasqueDatagramsAndReconnect(t *testing.T) {
 	}
 }
 
+func TestMasqueOversizedProbeKeepsProxyAlive(t *testing.T) {
+	listener, cfg := masqueTestListener(t)
+	dialer, peer, err := openMasque(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { dialer.Close() })
+	if _, err := dialer.WriteTo([]byte("identify"), peer); err != nil {
+		t.Fatal(err)
+	}
+	listener.SetReadDeadline(time.Now().Add(3 * time.Second))
+	buf := make([]byte, 2048)
+	_, from, err := listener.ReadFrom(buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// An auto-MTU search deliberately exceeds QUIC's datagram limit. Losing
+	// that probe must not close CONNECT-UDP or discard subsequent small traffic.
+	if _, err := listener.WriteTo(make([]byte, 1450), from); err != nil {
+		t.Fatal(err)
+	}
+	want := []byte("after the oversized probe")
+	if _, err := listener.WriteTo(want, from); err != nil {
+		t.Fatal(err)
+	}
+	dialer.SetReadDeadline(time.Now().Add(3 * time.Second))
+	n, _, err := dialer.ReadFrom(buf)
+	if err != nil || !bytes.Equal(buf[:n], want) {
+		t.Fatalf("oversized probe killed CONNECT-UDP: %q, %v", buf[:n], err)
+	}
+	if _, err := dialer.WriteTo(make([]byte, 1450), peer); err == nil {
+		t.Fatal("client accepted a datagram larger than QUIC's limit")
+	}
+	if _, err := dialer.WriteTo(want, peer); err != nil {
+		t.Fatal(err)
+	}
+	listener.SetReadDeadline(time.Now().Add(3 * time.Second))
+	n, _, err = listener.ReadFrom(buf)
+	if err != nil || !bytes.Equal(buf[:n], want) {
+		t.Fatalf("uplink lost after oversized probe: %q, %v", buf[:n], err)
+	}
+}
+
 func TestMasqueExpiresUnauthenticatedConnectionsButKeepsItsPeer(t *testing.T) {
 	cfg := Config{Mode: ModeListen, Addr: "127.0.0.1:0", Token: "auth-timeout-test", Masque: masqueTestConfig(t)}
 	listener, _, err := listenMasqueWithAuthTimeout(context.Background(), cfg, time.Second)

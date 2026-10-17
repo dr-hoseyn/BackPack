@@ -6,7 +6,7 @@ on:
       tag:
         description: "Published release whose checksum signature should be regenerated"
         required: true
-        default: "v1.9.2"
+        default: "v1.9.3"
 
 permissions:
   contents: write

@@ -197,8 +197,8 @@ func TestKCPAddressResolutionPreservesUDPAndRawCarrierAddresses(t *testing.T) {
 			t.Fatalf("resolved raw peer %v, error %v, want %s", got, err, want)
 		}
 	}
-	if _, err := hostToIPAddrContext(context.Background(), "[::1]:443"); err == nil {
-		t.Fatal("IPv6 was accepted for an IPv4-only raw carrier")
+	if ip, err := hostToIPAddrContext(context.Background(), "[::1]:443"); err != nil || !ip.IP.IsLoopback() || ip.IP.To4() != nil {
+		t.Fatalf("IPv6 raw endpoint rejected or rewritten: %v %v", ip, err)
 	}
 }
 

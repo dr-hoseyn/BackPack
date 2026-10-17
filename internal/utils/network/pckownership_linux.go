@@ -85,15 +85,20 @@ func releasePckOwnership(id string) {
 func CleanupPckGuards(tokens ...string) {
 	guardMu.Lock()
 	defer guardMu.Unlock()
+	cleanupPckFamily("iptables", "", tokens)
+	cleanupPckFamily("ip6tables", "v6-", tokens)
+}
+
+func cleanupPckFamily(tool, tokenPrefix string, tokens []string) {
 	ids := map[string]bool{}
 	for _, token := range tokens {
 		if token != "" {
-			ids[pckTunnelID(token)] = true
+			ids[pckTunnelID(tokenPrefix+token)] = true
 		}
 	}
 	if len(tokens) == 0 {
 		for _, table := range []string{"filter", "raw"} {
-			out, err := pckIptables("-t", table, "-S")
+			out, err := pckFirewall(tool, "-t", table, "-S")
 			if err != nil {
 				continue
 			}
@@ -111,7 +116,7 @@ func CleanupPckGuards(tokens ...string) {
 			continue
 		}
 		if !otherPckProcess(id) {
-			sweepTunnelRules(id)
+			sweepTunnelRulesFor(tool, id)
 		}
 		f.Close()
 	}

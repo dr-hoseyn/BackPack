@@ -47,9 +47,15 @@ type pckEgress struct {
 // identify the interface or the local address is fatal, because nothing can be
 // built without those.
 func discoverEgress(dst net.IP, ifaceName, gatewayMAC string) (*pckEgress, error) {
+	if dst != nil && dst.To4() == nil && dst.To16() != nil {
+		if gatewayMAC != "" {
+			return nil, fmt.Errorf("pck: IPv6 uses kernel neighbour discovery; configure the neighbour table instead of pck_gateway_mac")
+		}
+		return discoverEgress6(dst, ifaceName)
+	}
 	dst = dst.To4()
 	if dst == nil {
-		return nil, fmt.Errorf("pck: only IPv4 peers are supported")
+		return nil, fmt.Errorf("pck: a valid IPv4 or IPv6 peer address is required")
 	}
 
 	name := ifaceName
