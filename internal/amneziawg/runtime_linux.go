@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/amnezia-vpn/amneziawg-go/v3/device"
@@ -34,20 +35,21 @@ func runDevice(ctx context.Context, c Config, out io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("AmneziaWG requires Linux TUN and CAP_NET_ADMIN: %w", err)
 	}
-	file := os.NewFile(uintptr(fd), "/dev/net/tun")
 	ifr, err := unix.NewIfreq(c.Interface)
 	if err == nil {
 		ifr.SetUint16(unix.IFF_TUN | unix.IFF_NO_PI | unix.IFF_VNET_HDR | unix.IFF_TUN_EXCL)
 		err = unix.IoctlIfreq(fd, unix.TUNSETIFF, ifr)
 	}
 	if err != nil {
-		file.Close()
+		unix.Close(fd)
 		return fmt.Errorf("create exclusive AmneziaWG interface: %w", err)
 	}
 	if err := unix.SetNonblock(fd, true); err != nil {
-		file.Close()
+		unix.Close(fd)
 		return err
 	}
+	// Nonblocking mode must be set before os.NewFile enrolls the fd in netpoll.
+	file := os.NewFile(uintptr(fd), "/dev/net/tun")
 	t, err := tun.CreateTUNFromFile(file, c.MTU)
 	if err != nil {
 		file.Close()
@@ -71,10 +73,10 @@ func runDevice(ctx context.Context, c Config, out io.Writer) error {
 		{"route", "add", c.PeerAddress, "dev", c.Interface},
 	} {
 		cmdctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		err := exec.CommandContext(cmdctx, ip, args...).Run()
+		output, err := exec.CommandContext(cmdctx, ip, args...).CombinedOutput()
 		cancel()
 		if err != nil {
-			return fmt.Errorf("configure AmneziaWG interface (existing routes are never replaced): %w", err)
+			return fmt.Errorf("configure AmneziaWG interface (existing routes are never replaced), ip %s: %w: %.512s", strings.Join(args, " "), err, strings.TrimSpace(string(output)))
 		}
 	}
 	if err := d.Up(); err != nil {

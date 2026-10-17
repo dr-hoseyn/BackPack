@@ -87,3 +87,7 @@ not certify a particular commercial CDN or filtering environment.
 را با هم تنظیم نکن. سازگاری CDN و پایداری مسیر را با انتقال واقعی داده بسنج.
 
 </div>
+
+---
+
+*Last verified against Backpack v1.9.3.*

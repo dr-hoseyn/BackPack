@@ -99,3 +99,7 @@ tests establish implementation behavior, not resistance to every censor.
 واقعی داده بسنج؛ بالا آمدن رابط به معنی برقراری تونل نیست.
 
 </div>
+
+---
+
+*Last verified against Backpack v1.9.3.*
