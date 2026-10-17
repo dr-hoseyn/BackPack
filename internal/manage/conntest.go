@@ -1072,7 +1072,7 @@ func (s *ConnTestIran) Run(ctx context.Context, progress func(int, ConnTestResul
 		}
 		r.Phase, r.Detail = "speed", "measuring download and upload"
 		reportRow(i, r)
-		speed, err := ctSpeed(ctx, func() (net.Conn, error) { return ctDial(ctx, c, s.link.L3) })
+		speed, err := ctSpeed(ctx, func(dialCtx context.Context) (net.Conn, error) { return ctDial(dialCtx, c, s.link.L3) })
 		r.Phase, r.Detail = "", ""
 		if err != nil {
 			r.Status, r.Detail = ctUnstable, "speed test failed ("+ctShortErr(err)+")"

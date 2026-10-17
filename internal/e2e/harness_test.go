@@ -11,6 +11,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -22,6 +23,7 @@ import (
 	"github.com/backpack/backpack/internal/client"
 	"github.com/backpack/backpack/internal/server"
 	"github.com/backpack/backpack/internal/testport"
+	"github.com/backpack/backpack/internal/utils/acceptloop"
 )
 
 // tunnelReadyTimeout is how long a tunnel gets to come up before a test fails.
@@ -79,19 +81,28 @@ func startEchoBackend(t *testing.T) *echoBackend {
 		t.Fatalf("cannot start the echo backend: %v", err)
 	}
 	b := &echoBackend{addr: l.Addr().String(), listener: l}
+	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
+		var backoff acceptloop.Backoff
 		for {
 			conn, err := l.Accept()
 			if err != nil {
-				return // listener closed
+				// The FD chaos test starves the whole process, including this
+				// fixture. EMFILE must not permanently kill the echo service and
+				// misreport a healthy tunnel as unable to recover.
+				if errors.Is(err, net.ErrClosed) || !backoff.Fail(ctx) {
+					return
+				}
+				continue
 			}
+			backoff.OK()
 			go func(c net.Conn) {
 				defer c.Close()
 				io.Copy(c, c)
 			}(conn)
 		}
 	}()
-	t.Cleanup(func() { l.Close() })
+	t.Cleanup(func() { cancel(); l.Close() })
 	return b
 }
 

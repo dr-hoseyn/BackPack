@@ -1,0 +1,30 @@
+name: Recovery regressions
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  recovery:
+    name: Descriptor recovery and IPv6 KCP transfers
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Exhaust descriptors with an independent caller and backend
+        run: go test ./internal/e2e -run '^TestATunnelSurvivesRunningOutOfFileDescriptors$' -count=5 -race -v -timeout 5m
+      - name: Exercise descriptor recovery with coverage instrumentation
+        run: go test ./internal/e2e -run '^TestATunnelSurvivesRunningOutOfFileDescriptors$' -count=5 -coverpkg=./... -v -timeout 5m
+      - name: Repeat KCP download and upload over a 1400-byte IPv6 path
+        run: |
+          sudo env PATH="$PATH" GOMODCACHE="$(go env GOMODCACHE)" GOCACHE="$(go env GOCACHE)" BP_L3_LIVE=1 \
+            go test ./internal/manage -run '^TestTheKCPConnectionTestAcrossAnIPv6OnlyPath$' -count=5 -v -timeout 8m
+      - name: Keep slow setup within both directional budgets and cancel pending dials
+        run: go test ./internal/manage -run '^TestConnectionTestSpeed' -race -count=1 -v -timeout 1m
