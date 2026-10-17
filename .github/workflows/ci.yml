@@ -29,7 +29,7 @@ jobs:
       - name: Verify MASQUE, setup links and installer readiness
         run: >-
           go test -race ./internal/tunnel/l3 ./internal/manage ./internal/cli ./config ./internal/app
-          -run '^(TestMasque|TestLinkApply|TestEveryShareLinkFieldHasAnID|TestEveryDocument|TestTheConfigReference|TestConnectionTestStartup|TestInstallerInstallsHTTPSHelpers|TestInstallerFetchesOnlyMissingHelper)'
+          -run '^(TestMasque|TestLinkApply|TestEveryShareLinkFieldHasAnID|TestEveryDocument|TestTheConfigReference|TestConnectionTestStartup|TestInstallerInstallsHTTPSHelpers|TestInstallerFetchesOnlyMissingHelper|TestConnectionTestMasque|TestIPv6Pck)'
           -count=1 -timeout 3m
 
   masque-live:
@@ -210,9 +210,9 @@ jobs:
           cache: true
       - name: Selection, fallback, sequencing, cancellation and panel API regressions
         run: |
-          go test ./internal/manage ./internal/webui -race -count=1 -v -timeout 6m \
-            -run '^(TestConnectionTest|TestAnUnreachablePath|TestIPv6RawCarriers|TestBothFamilies|TestUnjoinedFamilies|TestStoppingASuite|TestStoppingBetweenPaths|TestBackgroundProbes|TestTheScreensReadTunnelStateThroughOnePlace|TestEveryPanelCallReachesAHandlerThatReadsWhatItSends)'
-      - name: Native transports, direct UDP/QUIC, PMTU and unsupported raw carriers
+          go test ./internal/manage ./internal/webui ./internal/utils/network -race -count=1 -v -timeout 6m \
+            -run '^(TestConnectionTest|TestAnUnreachablePath|TestIPv6|TestBothFamilies|TestUnjoinedFamilies|TestStoppingASuite|TestStoppingBetweenPaths|TestBackgroundProbes|TestTheScreensReadTunnelStateThroughOnePlace|TestEveryPanelCallReachesAHandlerThatReadsWhatItSends)'
+      - name: IPv6-only native, PCK, SNI, xDi and MASQUE data paths; PMTU and spoof exclusions
         run: |
           sudo env PATH="$PATH" GOMODCACHE="$(go env GOMODCACHE)" GOCACHE="$(go env GOCACHE)" BP_L3_LIVE=1 \
             go test ./internal/manage -run '^TestTheConnectionTestAcrossAnIPv6OnlyPath$' -count=1 -v -timeout 10m

@@ -199,7 +199,7 @@ func TestTheConnectionTestAcrossAnIPv6OnlyPath(t *testing.T) {
 		t.Fatalf("missing IPv6 results: %+v", rows)
 	}
 	for _, r := range rows {
-		unsupported := r.Kind == "spoof" || r.Transport == "pck" || r.Transport == "xdi" || r.Transport == "sni"
+		unsupported := r.Kind == "spoof"
 		if unsupported {
 			if r.Status != ctSkipped || !strings.Contains(r.Detail, "IPv6 is not supported") {
 				t.Errorf("raw IPv6 verdict: %+v", r)

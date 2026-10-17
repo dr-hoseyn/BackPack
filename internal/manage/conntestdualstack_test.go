@@ -161,7 +161,7 @@ func TestAnUnreachablePathDoesNotHoldTheOtherFamilyForTheJoinTimeout(t *testing.
 	}
 }
 
-func TestIPv6RawCarriersAreSkippedBeforeStartingAnEngine(t *testing.T) {
+func TestIPv6RawCarriersOnlySkipIPSpoofing(t *testing.T) {
 	ctRequireIPv6(t)
 	previous := connTestReverse
 	connTestReverse = []string{"pck"}
@@ -172,7 +172,7 @@ func TestIPv6RawCarriersAreSkippedBeforeStartingAnEngine(t *testing.T) {
 	}
 	defer s.Close()
 	for _, c := range s.cases {
-		raw := c.kind == "spoof" || c.tr == "pck" || c.tr == "sni" || c.tr == "xdi"
+		raw := c.kind == "spoof"
 		if raw && !strings.Contains(c.skip, "IPv6 is not supported") {
 			t.Errorf("%s/%s not explicitly unsupported: %s", c.kind, c.tr, c.skip)
 		}

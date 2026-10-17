@@ -30,7 +30,7 @@ var ctTransportNames = map[string]string{
 	"tcp": "TCP", "tcpmux": "TCP MUX", "stealth": "Stealth", "pck": "PCK",
 	"ws": "WS", "wss": "WSS", "wsmux": "WS MUX", "wssmux": "WSS MUX",
 	"kcp": "KCP FEC", "quic": "QUIC", "udp": "UDP", "xdi": "xDi", "sni": "SNI",
-	"naive": "Naive / HTTP2", "xhttp": "XHTTP / TLS", "reality": "REALITY / Vision",
+	"masque": "MASQUE / HTTP3", "naive": "Naive / HTTP2", "xhttp": "XHTTP / TLS", "reality": "REALITY / Vision",
 	ctSpoofToKharej: "Iran→Kharej", ctSpoofToIran: "Kharej→Iran",
 }
 
@@ -114,27 +114,39 @@ func ConnTestTable(results []ConnTestResult) string {
 	}
 	b.WriteString("\n" + ctRule() + "\n\nWorks Steadily:\n\n")
 	steady := 0
-	for _, group := range ctGroups(results) {
-		for _, r := range group {
-			if r.Status != ctOK {
-				continue
+	for _, kind := range []string{"reverse", "direct", "spoof"} {
+		var rows []ConnTestResult
+		for _, r := range results {
+			if r.Status == ctOK && (r.Kind == kind || kind == "reverse" && r.Kind == "") {
+				rows = append(rows, r)
 			}
+		}
+		if len(rows) == 0 {
+			continue
+		}
+		sort.SliceStable(rows, func(i, j int) bool { return rows[i].Mbps > rows[j].Mbps })
+		fmt.Fprintf(&b, "  %s\n", ctKind(kind))
+		fmt.Fprintf(&b, "    %-18s %8s %12s %12s\n", "Transport", "RTT", "Down Mbps", "Up Mbps")
+		for _, r := range rows {
 			steady++
-			rtt, speed := "-", "-"
-			// The spoofing probes carry no reply, so they have no round trip.
+			rtt, down, up := "-", "-", "-"
 			if r.RTTms > 0 {
 				rtt = fmt.Sprintf("%dms", r.RTTms)
-			} else if r.OK > 0 && r.Kind != "spoof" {
+			} else if r.OK > 0 && kind != "spoof" {
 				rtt = "<1ms"
 			}
 			if r.Mbps > 0 {
-				speed = fmt.Sprintf("%.1f Mbps", r.Mbps)
-				if r.UploadMbps > 0 {
-					speed = fmt.Sprintf("↓ %.1f / ↑ %.1f Mbps (4 streams)", r.Mbps, r.UploadMbps)
-				}
+				down = fmt.Sprintf("%.1f", r.Mbps)
 			}
-			fmt.Fprintf(&b, "%s %-26s %-7s %s\n", ctEmoji(ctOK), ctKind(r.Kind)+" "+ctName(r.Transport), rtt, speed)
+			if r.UploadMbps > 0 {
+				up = fmt.Sprintf("%.1f", r.UploadMbps)
+			}
+			fmt.Fprintf(&b, "    %-18s %8s %12s %12s\n", ctName(r.Transport), rtt, down, up)
 		}
+		b.WriteByte('\n')
+	}
+	if steady > 0 {
+		b.WriteString("  Speed uses 4 parallel TCP streams per direction; '-' = not measured.\n")
 	}
 	if steady == 0 {
 		b.WriteString("Nothing carried traffic steadily between these two servers. See the\n" +

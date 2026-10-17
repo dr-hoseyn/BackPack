@@ -84,6 +84,9 @@ func openPck(cfg Config) (DatagramCarrier, net.Addr, error) {
 	// pck tunnel's operator could not see the source port its flow uses, which
 	// is the thing that changes when it is reopened after the path stopped
 	// passing it (see flowStuckAfter).
+	if h, ok := conn.(interface{ IPHeaderLen() int }); ok {
+		base.overhead += h.IPHeaderLen() - 20
+	}
 	if d, ok := conn.(interface{ PckDiag() string }); ok {
 		base.note = d.PckDiag()
 	}
@@ -128,6 +131,9 @@ func openXdi(cfg Config) (DatagramCarrier, net.Addr, error) {
 		PacketConn: conn,
 		overhead:   network.XdiOverhead(),
 		name:       "xdi",
+	}
+	if h, ok := conn.(interface{ IPHeaderLen() int }); ok {
+		base.overhead += h.IPHeaderLen() - 20
 	}
 	if f, ok := conn.(interface{ FirewallNote() string }); ok {
 		base.warning = f.FirewallNote()

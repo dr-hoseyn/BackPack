@@ -15,6 +15,7 @@ import (
 
 	"golang.org/x/net/bpf"
 	"golang.org/x/net/ipv4"
+	"golang.org/x/net/ipv6"
 	"golang.org/x/sys/unix"
 )
 
@@ -52,6 +53,7 @@ import (
 // PcapCarrier is the pck carrier's tuning, carried in KCPSettings the same way
 // the ICMP and spoof carriers are.
 type PcapCarrier struct {
+	IPv6 bool // selected from the bind/peer address, not a separate user setting
 	// Port is the TCP port the tunnel's segments are addressed to on the
 	// server. It is the tunnel port the operator configured, so what shows up
 	// in a capture is the port they expect.
@@ -79,6 +81,7 @@ type pckConn struct {
 	rxConn  syscall.RawConn
 	rxBatch pckRecvBatch // recvmmsg's arrays, reused; see pckbatch_linux.go
 	txBatch pckSendBatch // sendmmsg's, likewise
+	tx6     *ipv6.PacketConn
 	txRaw   *ipv4.RawConn
 	txRawPC net.PacketConn
 	txFile  *os.File // AF_PACKET send, when the link has an L2 header we can build
@@ -153,6 +156,7 @@ type pckPeer struct {
 // was 15%, on a VM whose clock is not the cheap vDSO kind).
 type pckPeerKey struct {
 	ip   [4]byte
+	ip6  [16]byte
 	port uint16
 }
 
@@ -163,9 +167,13 @@ func PckOverhead() int { return pckOverhead }
 // newPckConn opens the carrier. server decides only which end learns its peer
 // from the wire and which is told; the framing is identical in both directions.
 func newPckConn(server bool, listenPort uint16, carrier PcapCarrier) (net.PacketConn, error) {
-	peer := net.ParseIP(carrier.PeerIP).To4()
+	peer := net.ParseIP(carrier.PeerIP)
+	v6 := carrier.IPv6 || peer != nil && peer.To4() == nil
+	if !v6 {
+		peer = peer.To4()
+	}
 	if !server && peer == nil {
-		return nil, fmt.Errorf("pck: the server's IPv4 address is required on the client")
+		return nil, fmt.Errorf("pck: the server's IP address is required on the client")
 	}
 
 	// The egress lookup needs somewhere to route toward. On the server, which
@@ -174,6 +182,9 @@ func newPckConn(server bool, listenPort uint16, carrier PcapCarrier) (net.Packet
 	toward := peer
 	if toward == nil {
 		toward = net.IPv4(1, 1, 1, 1).To4()
+		if v6 {
+			toward = net.ParseIP("2001:4860:4860::8888")
+		}
 	}
 	egress, err := discoverEgress(toward, carrier.Interface, carrier.GatewayMAC)
 	if err != nil && server && carrier.Interface == "" {
@@ -204,6 +215,9 @@ func newPckConn(server bool, listenPort uint16, carrier PcapCarrier) (net.Packet
 		flags = []TCPFlags{FlagPSH | FlagACK}
 	}
 
+	if v6 {
+		carrier.Token = "v6-" + carrier.Token
+	}
 	c := &pckConn{
 		egress:  egress,
 		port:    carrier.Port,
@@ -279,7 +293,10 @@ func newPckConn(server bool, listenPort uint16, carrier PcapCarrier) (net.Packet
 		peerScope = peer.String()
 	}
 	rules := scopedPckRules(c.tunnelID, guardLo, guardHi, egress.Iface.Name, egress.LocalIP.String(), peerScope, carrier.Port)
-	c.guard, err = installPckGuard(c.tunnelID, legacy, rules)
+	if v6 {
+		legacy = nil
+	}
+	c.guard, err = installPckGuard(c.tunnelID, legacy, rules, v6)
 	if err != nil {
 		c.Close()
 		return nil, err
@@ -290,12 +307,25 @@ func newPckConn(server bool, listenPort uint16, carrier PcapCarrier) (net.Packet
 // Binding without listen keeps this port out of the kernel's TCP allocator,
 // while leaving the raw carrier and the kernel's RST behaviour unchanged.
 func reservePckPort(ip net.IP, port uint16) (*os.File, error) {
-	fd, err := unix.Socket(unix.AF_INET, unix.SOCK_STREAM|unix.SOCK_CLOEXEC, unix.IPPROTO_TCP)
+	family := unix.AF_INET
+	if ip.To4() == nil {
+		family = unix.AF_INET6
+	}
+	fd, err := unix.Socket(family, unix.SOCK_STREAM|unix.SOCK_CLOEXEC, unix.IPPROTO_TCP)
 	if err != nil {
 		return nil, err
 	}
-	addr := &unix.SockaddrInet4{Port: int(port)}
-	copy(addr.Addr[:], ip.To4())
+	var addr unix.Sockaddr
+	if family == unix.AF_INET6 {
+		_ = unix.SetsockoptInt(fd, unix.IPPROTO_IPV6, unix.IPV6_V6ONLY, 1)
+		a := &unix.SockaddrInet6{Port: int(port)}
+		copy(a.Addr[:], ip.To16())
+		addr = a
+	} else {
+		a := &unix.SockaddrInet4{Port: int(port)}
+		copy(a.Addr[:], ip.To4())
+		addr = a
+	}
 	if err := unix.Bind(fd, addr); err != nil {
 		unix.Close(fd)
 		return nil, fmt.Errorf("pck: cannot reserve TCP source port %d: %w", port, err)
@@ -332,7 +362,12 @@ func reservePckClientPort(id string, base uint16, ip net.IP) (uint16, *os.File, 
 // openRx opens the AF_PACKET receive socket and filters it down to this
 // tunnel's segments in the kernel.
 func (c *pckConn) openRx() error {
-	fd, err := unix.Socket(unix.AF_PACKET, unix.SOCK_RAW|unix.SOCK_CLOEXEC, int(htons(unix.ETH_P_IP)))
+	proto, kind := uint16(unix.ETH_P_IP), unix.SOCK_RAW
+	if c.IPHeaderLen() == 40 {
+		proto = unix.ETH_P_IPV6
+		kind = unix.SOCK_DGRAM
+	}
+	fd, err := unix.Socket(unix.AF_PACKET, kind|unix.SOCK_CLOEXEC, int(htons(proto)))
 	if err != nil {
 		if errors.Is(err, unix.EPERM) {
 			return fmt.Errorf("pck: a packet socket needs root or CAP_NET_RAW: %w", err)
@@ -340,7 +375,7 @@ func (c *pckConn) openRx() error {
 		return fmt.Errorf("pck: could not open the packet socket: %w", err)
 	}
 	if err := unix.Bind(fd, &unix.SockaddrLinklayer{
-		Protocol: htons(unix.ETH_P_IP),
+		Protocol: htons(proto),
 		Ifindex:  c.egress.Iface.Index,
 	}); err != nil {
 		unix.Close(fd)
@@ -350,7 +385,11 @@ func (c *pckConn) openRx() error {
 	// between waking on this tunnel's packets and waking on every packet the
 	// machine receives. Best effort: parsePckFrame checks the port again, so a
 	// kernel that refuses the filter costs CPU rather than correctness.
-	if prog, err := pckBPFProgram(c.local, c.egress.LinkLen); err == nil {
+	filter := pckBPFProgram
+	if c.IPHeaderLen() == 40 {
+		filter = pckV6BPFProgram
+	}
+	if prog, err := filter(c.local, c.egress.LinkLen); err == nil {
 		_ = attachSockFilter(fd, prog)
 	}
 	// A burst that arrives while the reader is busy is held here rather than
@@ -376,6 +415,9 @@ func (c *pckConn) openRx() error {
 // openTx opens the send path: a second packet socket where the link has an
 // Ethernet header this process can build, and a raw IP socket where it does not.
 func (c *pckConn) openTx() error {
+	if c.IPHeaderLen() == 40 {
+		return c.openTx6()
+	}
 	if c.egress.Ethernet && c.egress.NextHop != nil {
 		fd, err := unix.Socket(unix.AF_PACKET, unix.SOCK_RAW|unix.SOCK_CLOEXEC, int(htons(unix.ETH_P_IP)))
 		if err == nil {
@@ -481,7 +523,11 @@ func (c *pckConn) timestamp() uint32 {
 // first time it is seen.
 func (c *pckConn) peerFor(addr *net.UDPAddr, sending bool) *pckPeer {
 	var key pckPeerKey
-	copy(key.ip[:], addr.IP.To4())
+	if ip := addr.IP.To4(); ip != nil {
+		copy(key.ip[:], ip)
+	} else {
+		copy(key.ip6[:], addr.IP.To16())
+	}
 	key.port = uint16(addr.Port)
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -562,6 +608,9 @@ func (c *pckConn) WriteTo(p []byte, addr net.Addr) (int, error) {
 	// consistent instead of jumping.
 	peer.seq += uint32(len(p))
 	c.mu.Unlock()
+	if c.IPHeaderLen() == 40 {
+		return c.write6(p, dst, seq, ack, tsEcr)
+	}
 
 	f := c.flags[int(c.flagRot.Add(1)-1)%len(c.flags)]
 	id := uint16(c.ipID.Add(1))
@@ -772,11 +821,11 @@ func (c *pckConn) SetWriteDeadline(t time.Time) error { return nil }
 func toUDPAddr(a net.Addr) (*net.UDPAddr, bool) {
 	switch v := a.(type) {
 	case *net.UDPAddr:
-		if v.IP.To4() != nil {
+		if v.IP.To16() != nil {
 			return v, true
 		}
 	case *net.IPAddr:
-		if v.IP.To4() != nil {
+		if v.IP.To16() != nil {
 			return &net.UDPAddr{IP: v.IP}, true
 		}
 	}

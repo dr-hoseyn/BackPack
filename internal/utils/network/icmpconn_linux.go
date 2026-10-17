@@ -13,6 +13,7 @@ import (
 
 	"golang.org/x/net/icmp"
 	"golang.org/x/net/ipv4"
+	"golang.org/x/net/ipv6"
 )
 
 // A net.PacketConn that carries datagrams inside ICMP echo.
@@ -98,8 +99,12 @@ const icmpMTUOverhead = 8 + xdiHeaderLen
 
 // listenICMP opens the raw ICMP socket both ends share. It needs privilege, and
 // says so plainly when it does not have it rather than failing obscurely later.
-func listenICMP() (*icmp.PacketConn, error) {
-	pc, err := icmp.ListenPacket("ip4:icmp", "0.0.0.0")
+func listenICMP(v6 ...bool) (*icmp.PacketConn, error) {
+	network, bind := "ip4:icmp", "0.0.0.0"
+	if len(v6) > 0 && v6[0] {
+		network, bind = "ip6:ipv6-icmp", "::"
+	}
+	pc, err := icmp.ListenPacket(network, bind)
 	if err != nil {
 		if errors.Is(err, os.ErrPermission) {
 			return nil, fmt.Errorf("xdi needs a raw ICMP socket, which requires root or CAP_NET_RAW: %w", err)
@@ -111,15 +116,18 @@ func listenICMP() (*icmp.PacketConn, error) {
 
 // newICMPServerConn opens the server side: it will read echo requests and
 // answer with echo replies.
-func newICMPServerConn(token string) (net.PacketConn, error) {
-	pc, err := listenICMP()
+func newICMPServerConn(token string, v6 ...bool) (net.PacketConn, error) {
+	pc, err := listenICMP(v6...)
 	if err != nil {
 		return nil, err
 	}
-	attachICMPFilter(pc, uint8(icmpEchoRequest), -1)
 	c := newICMPServerConnWith(pc, token).(*icmpConn)
-	c.echoGuard = installXdiEchoGuard(c.tag)
-	c.accept = installXdiAcceptRule(c.tag, true)
+	if len(v6) > 0 && v6[0] {
+		c.proto = 58
+	}
+	attachICMPFilter(pc, c.echoType(true), -1)
+	c.echoGuard = installXdiEchoGuard(c.tag, c.proto == 58)
+	c.accept = installXdiAcceptRule(c.tag, true, c.proto == 58)
 	return c, nil
 }
 
@@ -131,14 +139,18 @@ func newICMPServerConnWith(pc icmpSocket, token string) net.PacketConn {
 
 // newICMPClientConn opens the client side: it will send echo requests and read
 // the replies.
-func newICMPClientConn(token string) (net.PacketConn, error) {
-	pc, err := listenICMP()
+func newICMPClientConn(token string, v6 ...bool) (net.PacketConn, error) {
+	pc, err := listenICMP(v6...)
 	if err != nil {
 		return nil, err
 	}
 	c := newICMPClientConnWith(pc, token)
-	attachICMPFilter(pc, uint8(icmpEchoReply), int(c.(*icmpConn).id))
-	c.(*icmpConn).accept = installXdiAcceptRule(c.(*icmpConn).tag, false)
+	cc := c.(*icmpConn)
+	if len(v6) > 0 && v6[0] {
+		cc.proto = 58
+	}
+	attachICMPFilter(pc, cc.echoType(false), int(cc.id))
+	cc.accept = installXdiAcceptRule(cc.tag, false, cc.proto == 58)
 	return c, nil
 }
 
@@ -169,10 +181,7 @@ func (c *icmpConn) WriteTo(p []byte, dst net.Addr) (int, error) {
 		return 0, err
 	}
 
-	typ := icmpEchoRequest
-	if c.server {
-		typ = icmpEchoReply
-	}
+	typ := c.echoType(!c.server)
 	// The echo is built straight into one pooled buffer: header, tag,
 	// direction, payload, then the checksum over all of it. It used to go
 	// through icmp.Message.Marshal, which allocated the message, its body and
@@ -182,7 +191,9 @@ func (c *icmpConn) WriteTo(p []byte, dst net.Addr) (int, error) {
 	defer xdiBuffers.Put(wp)
 	wire := appendEcho((*wp)[:0], byte(typ), uint16(c.echoIDFor(dst)), uint16(c.seq.Add(1)))
 	wire = appendXdiPayload(wire, c.tag, outboundDir(c.server), p)
-	setICMPChecksum(wire)
+	if c.proto != 58 {
+		setICMPChecksum(wire)
+	} // Linux supplies the ICMPv6 pseudo-header checksum.
 	if _, err := c.pc.WriteTo(wire, ipAddr); err != nil {
 		return 0, err
 	}
@@ -201,10 +212,7 @@ func (c *icmpConn) ReadFrom(p []byte) (int, net.Addr, error) {
 	bp := xdiBuffers.Get().(*[]byte)
 	defer xdiBuffers.Put(bp)
 	buf := *bp
-	wantType := icmpEchoRequest // the server reads requests
-	if !c.server {
-		wantType = icmpEchoReply // the client reads replies
-	}
+	wantType := c.echoType(c.server)
 	wantDir := inboundDir(c.server)
 
 	for {
@@ -286,7 +294,7 @@ func (c *icmpConn) peerAddr(peer net.Addr, echoID int) net.Addr {
 	if !c.server {
 		return peer
 	}
-	return &net.UDPAddr{IP: addrIP(peer), Port: echoID}
+	return &net.UDPAddr{IP: addrIP(peer), Zone: peerZone(peer), Port: echoID}
 }
 
 // addrIP pulls the IP out of whatever the socket reported, through the same
@@ -337,4 +345,32 @@ func toIPAddr(addr net.Addr) (*net.IPAddr, error) {
 		}
 		return &net.IPAddr{IP: parsed}, nil
 	}
+}
+
+func (c *icmpConn) echoType(request bool) uint8 {
+	if c.proto == 58 {
+		if request {
+			return uint8(ipv6.ICMPTypeEchoRequest)
+		}
+		return uint8(ipv6.ICMPTypeEchoReply)
+	}
+	if request {
+		return uint8(icmpEchoRequest)
+	}
+	return uint8(icmpEchoReply)
+}
+func (c *icmpConn) IPHeaderLen() int {
+	if c.proto == 58 {
+		return 40
+	}
+	return 20
+}
+func peerZone(addr net.Addr) string {
+	switch a := addr.(type) {
+	case *net.IPAddr:
+		return a.Zone
+	case *net.UDPAddr:
+		return a.Zone
+	}
+	return ""
 }

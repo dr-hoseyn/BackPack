@@ -342,3 +342,34 @@ func TestTheXdiPeerAddressIsStableForOneSession(t *testing.T) {
 		t.Fatalf("the peer was reported as %q, which does not name %s", first, clientIP)
 	}
 }
+
+func TestIPv6XdiDemultiplexesEchoTypesAndSessions(t *testing.T) {
+	wire := newICMPWire()
+	src, dst := net.ParseIP("2001:db8::1"), net.ParseIP("2001:db8::2")
+	server := newICMPServerConnWith(wire.socket(dst), "same-token").(*icmpConn)
+	server.proto = 58
+	defer server.Close()
+	client := newICMPClientConnWith(wire.socket(src), "same-token").(*icmpConn)
+	client.proto = 58
+	defer client.Close()
+	if client.echoType(true) != 128 || client.echoType(false) != 129 || client.IPHeaderLen() != 40 {
+		t.Fatal("not using ICMPv6")
+	}
+	if _, err := client.WriteTo([]byte("client"), &net.IPAddr{IP: dst}); err != nil {
+		t.Fatal(err)
+	}
+	_ = server.SetReadDeadline(time.Now().Add(time.Second))
+	buf := make([]byte, 128)
+	n, peer, err := server.ReadFrom(buf)
+	if err != nil || string(buf[:n]) != "client" || peer.(*net.UDPAddr).Port != int(client.id) {
+		t.Fatalf("server: %s %v %v", buf[:n], peer, err)
+	}
+	if _, err = server.WriteTo([]byte("server"), peer); err != nil {
+		t.Fatal(err)
+	}
+	_ = client.SetReadDeadline(time.Now().Add(time.Second))
+	n, _, err = client.ReadFrom(buf)
+	if err != nil || string(buf[:n]) != "server" {
+		t.Fatalf("client: %s %v", buf[:n], err)
+	}
+}

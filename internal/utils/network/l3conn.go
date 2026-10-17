@@ -47,6 +47,7 @@ func SpoofOverhead(p SpoofProfile) int { return spoofOverhead(p) }
 // the segments that arrive exactly as a UDP socket would.
 func NewPckPacketConn(listening bool, token, addr string, carrier PcapCarrier) (net.PacketConn, net.Addr, error) {
 	carrier.Token = token
+	carrier.IPv6 = endpointIPv6(addr)
 	if carrier.Port == 0 {
 		carrier.Port = portOf(addr)
 	}
@@ -81,21 +82,29 @@ func NewPckPacketConn(listening bool, token, addr string, carrier PcapCarrier) (
 // from their token.
 func NewXdiPacketConn(listening bool, token, addr string) (net.PacketConn, net.Addr, error) {
 	if listening {
-		conn, err := newICMPServerConn(token)
+		conn, err := newICMPServerConn(token, endpointIPv6(addr))
 		if err != nil {
 			return nil, nil, err
 		}
 		return conn, nil, nil
 	}
 
-	conn, err := newICMPClientConn(token)
+	peer, err := hostToIPAddr(addr)
 	if err != nil {
 		return nil, nil, err
 	}
-	peer, err := hostToIPAddr(addr)
+	conn, err := newICMPClientConn(token, peer.IP.To4() == nil)
 	if err != nil {
-		conn.Close()
 		return nil, nil, err
 	}
 	return conn, peer, nil
+}
+
+func endpointIPv6(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = addr
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.To4() == nil
 }

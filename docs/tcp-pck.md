@@ -8,6 +8,18 @@ Setup → TCP → TCP + PCK
 
 Linux only. Needs root (or `CAP_NET_RAW`). **Both ends must be on it.**
 
+## IPv4 and IPv6
+
+PCK and the SNI direct carrier support IPv4 and IPv6 endpoints. Use bracketed
+IPv6 literals with a port, for example `[2001:db8::2]:9000`, on both ends.
+The IPv6 send path builds TCP segments itself and lets the kernel route IPv6
+and resolve neighbours; its receive path uses an IPv6 packet socket. Scoped
+`ip6tables` rules suppress kernel resets and connection tracking for this
+carrier only. Install the iptables package (including ip6tables) on both ends.
+`pck_interface` can select the interface. `pck_gateway_mac` is IPv4-only; for
+IPv6 manage neighbour discovery through the operating system. Update both
+servers before selecting the IPv6 path. IPv4 framing remains compatible.
+
 ## What it is
 
 Every other transport hands its bytes to a socket and lets the kernel produce
@@ -155,4 +167,4 @@ throttle می‌شود و علتش چیزی است که روی *اتصال* عم
 
 ---
 
-*Last verified against Backpack v1.9.2.*
+*Last verified against Backpack v1.9.3.*

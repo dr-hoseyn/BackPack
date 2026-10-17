@@ -31,6 +31,12 @@ func XdiFirewallNote(server bool) string {
 // rule is in place, since that lets its echoes through whatever the rest of
 // the firewall drops; otherwise what XdiFirewallNote reads off the rules.
 func (c *icmpConn) FirewallNote() string {
+	if c.proto == 58 {
+		if c.accept.Installed() {
+			return ""
+		}
+		return "xdi: IPv6 tunnel rules could not be installed; check ip6tables INPUT for ICMPv6 echo traffic"
+	}
 	if c.accept.Installed() {
 		return ""
 	}

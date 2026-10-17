@@ -74,7 +74,7 @@ const connTestKind = "test"
 // ConnTestOptions.SpoofSrc); pck, on either side, needs root on both servers.
 var (
 	connTestReverse = []string{"tcp", "tcpmux", "stealth", "pck", "ws", "wss", "wsmux", "wssmux", "kcp", "quic", "udp", "naive", "xhttp", "reality"}
-	connTestDirect  = []string{"udp", "quic", "pck", "xdi", "sni"}
+	connTestDirect  = []string{"udp", "quic", "pck", "xdi", "sni", "masque"}
 )
 
 // connTestNeedsRoot is a reverse transport that builds its own packets.
@@ -473,11 +473,6 @@ func StartConnTestIran(o ConnTestOptions) (*ConnTestIran, string, error) {
 			s.cases = append(s.cases, c)
 			continue
 		}
-		if ctFamily(host) == "IPv6" && tr == "pck" {
-			c.skip = "PCK uses raw IPv4 packets; IPv6 is not supported"
-			s.cases = append(s.cases, c)
-			continue
-		}
 		if connTestNeedsRoot(tr) && !s.root {
 			c.skip = "needs root on both servers"
 			s.cases = append(s.cases, c)
@@ -522,11 +517,6 @@ func StartConnTestIran(o ConnTestOptions) (*ConnTestIran, string, error) {
 				return fail(err)
 			}
 			c := &connTestCase{kind: "direct", tr: carrier, name: fmt.Sprintf("ct-%s-d%s", id, carrier)}
-			if ctFamily(host) == "IPv6" && carrier != "udp" && carrier != "quic" {
-				c.skip = "this raw carrier uses IPv4 packets; IPv6 is not supported"
-				s.cases = append(s.cases, c)
-				continue
-			}
 			if !s.root {
 				c.skip = "needs root on both servers"
 				s.cases = append(s.cases, c)
@@ -989,6 +979,17 @@ func (s *ConnTestIran) Run(ctx context.Context, progress func(int, ConnTestResul
 		_, port, _ := net.SplitHostPort(c.l3.Addr)
 		port = s.coord.directPort(c.tr, port)
 		c.l3.Addr = net.JoinHostPort(kharej, port)
+		if c.tr == "masque" {
+			s.coord.mu.Lock()
+			raw := s.coord.masqueSettings
+			s.coord.mu.Unlock()
+			cfg, err := ctMasqueClient(raw, s.dir, c.name)
+			if err != nil {
+				c.skip = "MASQUE test identity unavailable: " + err.Error()
+				continue
+			}
+			c.l3.Masque = cfg
+		}
 		_, body, err := directBodyFromSpec(c.l3)
 		if err == nil {
 			var e *ctEngine
@@ -1650,24 +1651,25 @@ func ctLastLine(path string) string {
 //	hello <token>   → ok          the kharej is in; its address is noted
 //	result <token>  → wait | done <verdict>
 type ctCoordinator struct {
-	tok         string
-	tcp         net.Listener
-	udp         net.PacketConn
-	mu          sync.Mutex
-	peer        string
-	verdict     string
-	config      string            // the answer to "config"; see ctConfig
-	carriers    map[string]string // public helper settings, fetched one small packet at a time
-	httpsProbes map[string]string // bounded preflight codes; frozen when Kharej joins
-	skipped     map[string]bool   // managed cases unavailable on kharej
-	directPorts map[string]string // direct listener ports selected on Kharej
-	live        func() []ConnTestResult
-	joined      chan struct{}
-	fetched     chan struct{}
-	joinOne     sync.Once
-	fetchOn     sync.Once
-	sockets     ctEchoes
-	slots       chan struct{}
+	tok            string
+	tcp            net.Listener
+	udp            net.PacketConn
+	mu             sync.Mutex
+	peer           string
+	verdict        string
+	config         string            // the answer to "config"; see ctConfig
+	carriers       map[string]string // public helper settings, fetched one small packet at a time
+	httpsProbes    map[string]string // bounded preflight codes; frozen when Kharej joins
+	skipped        map[string]bool   // managed cases unavailable on kharej
+	masqueSettings string            // public certificate/target announced before the peer joins
+	directPorts    map[string]string // direct listener ports selected on Kharej
+	live           func() []ConnTestResult
+	joined         chan struct{}
+	fetched        chan struct{}
+	joinOne        sync.Once
+	fetchOn        sync.Once
+	sockets        ctEchoes
+	slots          chan struct{}
 	// spoofArrived is the kharej's count of the Iran server's forged probes.
 	spoofArrived chan int
 	spoofOnce    sync.Once
@@ -1713,7 +1715,7 @@ func (c *ctCoordinator) serveTCP() {
 			defer func() { <-c.slots; c.sockets.remove(conn) }()
 			defer conn.Close()
 			_ = conn.SetDeadline(time.Now().Add(10 * time.Second))
-			line, err := bufio.NewReader(io.LimitReader(conn, 512)).ReadString('\n')
+			line, err := bufio.NewReader(io.LimitReader(conn, 2048)).ReadString('\n')
 			if err != nil {
 				return
 			}
@@ -1781,6 +1783,18 @@ func (c *ctCoordinator) answer(line, from string) string {
 	}
 	if len(f) > 3 {
 		return ""
+	}
+	if f[0] == "masque-cert" && len(f) == 3 {
+		if _, err := ctDecodeMasqueSettings(f[2]); err != nil {
+			return ""
+		}
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		if c.peer != "" || c.masqueSettings != "" && c.masqueSettings != f[2] {
+			return ""
+		}
+		c.masqueSettings = f[2]
+		return "ok"
 	}
 	if f[0] == "https-probe" && len(f) == 3 {
 		tr, probe, ok := strings.Cut(f[2], ":")
@@ -1914,7 +1928,7 @@ func (c *ctCoordinator) directPort(tr, fallback string) string {
 }
 
 func ctPortCarrier(tr string) bool {
-	return tr == "udp" || tr == "quic" || tr == "pck" || tr == "sni"
+	return tr == "udp" || tr == "quic" || tr == "pck" || tr == "sni" || tr == "masque"
 }
 
 func ctSkippableCase(value string) bool {
@@ -2137,7 +2151,16 @@ func runConnTestKharejLink(ctx context.Context, link ConnTestLink, out io.Writer
 				}
 				form.TunnelPort = port
 			}
-			spec, err := form.ToNewDirectTunnel().spec()
+			n := form.ToNewDirectTunnel()
+			if c.Tr == "masque" {
+				var err error
+				n.Masque, err = ctMasqueListener(ctx, link, dir, name, usedDirectPorts)
+				if err != nil {
+					local[c.Kind+"/"+c.Tr] = err.Error()
+					continue
+				}
+			}
+			spec, err := n.spec()
 			if err != nil {
 				local[c.Kind+"/"+c.Tr] = err.Error()
 				continue

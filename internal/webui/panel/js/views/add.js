@@ -36,7 +36,7 @@ export function addView(ctx) {
          is asked for different things — the Iran side owns the forwarded ports,
          the kharej side owns the address that is dialled. */
       const chosen = { side: 'server', direction: 'reverse', transport: null,
-                       family: 0, carrier: 'pck', preset: null };
+                       family: 0, carrier: 'xdi', carrierFamily: null, preset: null };
 
       /* The preset the form is already showing counts as chosen.
        *
@@ -168,20 +168,43 @@ export function addView(ctx) {
          carrier added to the others was offered nowhere here, and the endpoint
          behind this screen refused what this screen did not know about. There
          is one list now and this reads it. */
+      let directFamilies = [];
+      function paintDirectChoices() {
+        const grid = root.querySelector('.step3direct .trgrid');
+        const row = root.querySelector('.direct-families');
+        const family = directFamilies.find(f => f.value === chosen.carrierFamily);
+        if (!grid || !row || !family) return;
+        if (!family.entries.some(c => c.value === chosen.carrier)) chosen.carrier = family.entries[0].value;
+        if (!row.children.length) row.innerHTML = directFamilies.map(f =>
+          `<button type="button" class="${f.value === family.value ? 'on' : ''}"
+            aria-pressed="${f.value === family.value}" data-family="${esc(f.value)}" data-fn="setCarFam" data-args="'${esc(f.value)}'"
+            title="${esc(f.desc)}"><b>${esc(f.label)}</b></button>`).join('');
+        row.querySelectorAll('button').forEach(b => {
+          b.classList.toggle('on', b.dataset.family === family.value);
+          b.setAttribute('aria-pressed', String(b.dataset.family === family.value));
+        });
+        root.querySelector('.direct-family-note').textContent = family.desc;
+        grid.innerHTML = family.entries.map(c => {
+          const needsRoot = c.needsRoot ? '<span class="root2">needs root</span>' : '';
+          return `<button type="button" class="dc${c.value === chosen.carrier ? ' on' : ''}" data-car="${esc(c.value)}"
+            aria-pressed="${c.value === chosen.carrier}" data-fn="setCar" data-args="'${esc(c.value)}'" title="${esc(c.desc || '')}">
+            <span class="tn2"><b>${esc(c.label)}</b><span class="key2">${esc(c.value)}</span>${needsRoot}</span></button>`;
+        }).join('');
+      }
       async function paintCarriers() {
         const grid = root.querySelector('.step3direct .trgrid');
         if (!grid) return;
-        let carriers = [];
-        try { carriers = (await api.directOptions()).carriers || []; } catch (e) { return; }
-        if (!carriers.length) return;
-        grid.innerHTML = carriers.map((c, i) => {
-          const needsRoot = c.needsRoot ? '<span class="root2">needs root</span>' : '';
-          return `<button class="dc${i === 0 ? ' on' : ''}" data-car="${esc(c.value)}"
-            data-fn="setCar" data-args="'${esc(c.value)}'" title="${esc(c.desc || '')}">
-            <span class="tn2"><b>${esc(c.label)}</b>
-            <span class="key2">${esc(c.value)}</span>${needsRoot}</span></button>`;
-        }).join('');
-        chosen.carrier = carriers[0].value;
+        let options;
+        try { options = await api.directOptions(); } catch (e) { return; }
+        directFamilies = options.families || [];
+        if (!directFamilies.length) return;
+        if (!root.querySelector('.direct-families')) {
+          const row = el('div', { class: 'fam direct-families', role: 'group', 'aria-label': 'Direct transport family' });
+          const note = el('div', { class: 'hint direct-family-note' });
+          grid.before(row, note);
+        }
+        chosen.carrierFamily = (directFamilies.find(f => f.entries.some(c => c.value === chosen.carrier)) || directFamilies[0]).value;
+        paintDirectChoices();
         applyShape();
       }
       paintCarriers();
@@ -605,7 +628,11 @@ export function addView(ctx) {
         if (fn === 'mode3') chosen.direction = value === 'dir' ? 'direct' : 'reverse';
         if (fn === 'setFam') { chosen.family = Number(value); paintTransports(); }
         if (fn === 'setTr') { chosen.transport = value; applyFields(); applyPresets(); }
-        if (fn === 'setCar') chosen.carrier = value;
+        if (fn === 'setCarFam') { chosen.carrierFamily = value; paintDirectChoices(); }
+        if (fn === 'setCar') {
+          chosen.carrier = value;
+          root.querySelectorAll('.step3direct .dc').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.car === value)));
+        }
         if (fn === 'setPre') chosen.preset = (el.querySelector('.key2, .k3')?.textContent
           || el.textContent).trim().toLowerCase().split(/\s+/)[0];
         applyShape();

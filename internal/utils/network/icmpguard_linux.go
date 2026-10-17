@@ -40,6 +40,7 @@ import (
 // works and wastes some uplink is a better failure than one whose private
 // network cannot carry a ping. The carrier logs which happened.
 type icmpEchoGuard struct {
+	tool   string
 	port   uint16
 	rule   []string
 	active bool
@@ -66,13 +67,16 @@ func installICMPEchoGuard(port uint16) *icmpEchoGuard {
 // tag, and what only the kernel's copies carry on the way out is the client's
 // direction byte — the server's own replies are stamped with its own. So the
 // rule matches the two together.
-func installXdiEchoGuard(tag [xdiTagLen]byte) *icmpEchoGuard {
-	return installEchoRule(&icmpEchoGuard{rule: xdiEchoRule(tag)})
+func installXdiEchoGuard(tag [xdiTagLen]byte, v6 ...bool) *icmpEchoGuard {
+	return installEchoRule(&icmpEchoGuard{rule: xdiEchoRule(tag, v6...), tool: echoFirewall(v6...)})
 }
 
 // installEchoRule inserts a guard's rule and records whether it took.
 func installEchoRule(g *icmpEchoGuard) *icmpEchoGuard {
-	key := strings.Join(g.rule, " ")
+	if g.tool == "" {
+		g.tool = "iptables"
+	}
+	key := g.tool + " " + strings.Join(g.rule, " ")
 	echoRules.Lock()
 	defer echoRules.Unlock()
 	// Shared within the process: the sessions of one reverse xdi tunnel each
@@ -84,15 +88,15 @@ func installEchoRule(g *icmpEchoGuard) *icmpEchoGuard {
 		g.active = true
 		return g
 	}
-	if _, err := exec.LookPath("iptables"); err != nil {
+	if _, err := exec.LookPath(g.tool); err != nil {
 		return g
 	}
 	// A rule already there is one a crashed run left behind — the process
 	// died before it could remove it. It is adopted rather than doubled, so
 	// crash after crash does not stack copies, and this run's exit removes it.
-	if exec.Command("iptables", append([]string{"-C"}, g.rule...)...).Run() == nil {
+	if exec.Command(g.tool, append([]string{"-C"}, g.rule...)...).Run() == nil {
 		g.active = true
-	} else if exec.Command("iptables", append([]string{"-I"}, g.rule...)...).Run() == nil {
+	} else if exec.Command(g.tool, append([]string{"-I"}, g.rule...)...).Run() == nil {
 		g.active = true
 	}
 	if g.active {
@@ -114,14 +118,17 @@ func (g *icmpEchoGuard) remove() {
 		return
 	}
 	g.active = false
-	key := strings.Join(g.rule, " ")
+	if g.tool == "" {
+		g.tool = "iptables"
+	}
+	key := g.tool + " " + strings.Join(g.rule, " ")
 	echoRules.Lock()
 	defer echoRules.Unlock()
 	if echoRules.users[key]--; echoRules.users[key] > 0 {
 		return
 	}
 	delete(echoRules.users, key)
-	_ = exec.Command("iptables", append([]string{"-D"}, g.rule...)...).Run()
+	_ = exec.Command(g.tool, append([]string{"-D"}, g.rule...)...).Run()
 }
 
 // Installed reports whether the rule is in place, so the carrier can log which
@@ -160,7 +167,10 @@ func icmpEchoRule(port uint16) []string {
 //	0>>22&0x3C   the IP header length, where the ICMP header begins
 //	@8           the first word of the echo data: the tunnel's four-byte tag
 //	@12>>24      the byte after it: the direction marker
-func xdiEchoRule(tag [xdiTagLen]byte) []string {
+func xdiEchoRule(tag [xdiTagLen]byte, v6 ...bool) []string {
+	if len(v6) > 0 && v6[0] {
+		return xdiV6Rule(tag, true, false)
+	}
 	word := uint32(tag[0])<<24 | uint32(tag[1])<<16 | uint32(tag[2])<<8 | uint32(tag[3])
 	return []string{
 		"OUTPUT",
@@ -183,12 +193,15 @@ func xdiEchoRule(tag [xdiTagLen]byte) []string {
 // accepts the client's requests, the client the server's replies — so the
 // host stays as silent to ping as it was. Inserted at the top of INPUT so a
 // drop further down cannot pre-empt it, and removed when the carrier closes.
-func installXdiAcceptRule(tag [xdiTagLen]byte, server bool) *icmpEchoGuard {
-	return installEchoRule(&icmpEchoGuard{rule: xdiAcceptRule(tag, server)})
+func installXdiAcceptRule(tag [xdiTagLen]byte, server bool, v6 ...bool) *icmpEchoGuard {
+	return installEchoRule(&icmpEchoGuard{rule: xdiAcceptRule(tag, server, v6...), tool: echoFirewall(v6...)})
 }
 
 // xdiAcceptRule is the INPUT rule body for installXdiAcceptRule.
-func xdiAcceptRule(tag [xdiTagLen]byte, server bool) []string {
+func xdiAcceptRule(tag [xdiTagLen]byte, server bool, v6 ...bool) []string {
+	if len(v6) > 0 && v6[0] {
+		return xdiV6Rule(tag, false, server)
+	}
 	word := uint32(tag[0])<<24 | uint32(tag[1])<<16 | uint32(tag[2])<<8 | uint32(tag[3])
 	typ, dir, side := "echo-reply", xdiDirServer, "client"
 	if server {
@@ -202,4 +215,25 @@ func xdiAcceptRule(tag [xdiTagLen]byte, server bool) []string {
 		"-m", "comment", "--comment", fmt.Sprintf("backpack-xdi-in-%s-%08x", side, word),
 		"-j", "ACCEPT",
 	}
+}
+
+func echoFirewall(v6 ...bool) string {
+	if len(v6) > 0 && v6[0] {
+		return "ip6tables"
+	}
+	return "iptables"
+}
+
+// Only tunnel-generated, extension-free ICMPv6 is matched. ND and ordinary ping
+// never carry this tag/direction pair and are left untouched.
+func xdiV6Rule(tag [xdiTagLen]byte, output, server bool) []string {
+	word := uint32(tag[0])<<24 | uint32(tag[1])<<16 | uint32(tag[2])<<8 | uint32(tag[3])
+	chain, typ, action, dir, side := "INPUT", "echo-reply", "ACCEPT", xdiDirServer, "client"
+	if server {
+		typ, dir, side = "echo-request", xdiDirClient, "server"
+	}
+	if output {
+		chain, typ, action, dir, side = "OUTPUT", "echo-reply", "DROP", xdiDirClient, "echo"
+	}
+	return []string{chain, "-p", "ipv6-icmp", "--icmpv6-type", typ, "-m", "u32", "--u32", fmt.Sprintf("6>>24&0xff=58&&48=0x%08x&&52>>24=0x%02x", word, dir), "-m", "comment", "--comment", fmt.Sprintf("backpack-xdi-v6-%s-%08x", side, word), "-j", action}
 }

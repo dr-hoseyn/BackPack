@@ -82,6 +82,14 @@ in the menu. Transfer that public CA certificate separately. Never transfer
 the TLS private key to Iran. Protect configs and setup links: both contain the
 tunnel secret.
 
+## Connection Test
+
+MASQUE is included among the direct Connection Tests on IPv4 and IPv6. The test
+creates a temporary certificate on Kharej and shares only the public trust anchor
+with Iran. No domain or existing certificate is required for this test. It uses
+a temporary UDP port and verifies real Noise/IP payload transfer and throughput;
+a passing test does not prove that a permanent UDP/443 route will behave alike.
+
 ## Limits and troubleshooting
 
 - `masque_target` is a numeric loopback IP and UDP port on Kharej, defaulting to
@@ -117,4 +125,4 @@ Noise و امکان فوروارد TCP و UDP. حالت HTTP/2 و اتصال م�
 
 ---
 
-*Last verified against Backpack v1.9.2.*
+*Last verified against Backpack v1.9.3.*
