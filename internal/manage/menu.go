@@ -31,13 +31,9 @@ func ManageTunnels() {
 		tui.Clear()
 		opts := make([]tui.Option, len(tunnels))
 		for i, t := range tunnels {
-			transport := t.Transport
-			if spec, err := LoadSpec(t.Name); err == nil {
-				transport = selectedTransport(spec)
-			}
 			opts[i] = tui.Option{
 				Title: t.Name,
-				Desc:  fmt.Sprintf("%s %s — %s", t.Role, transportLabel(transport), plainState(t.Service)),
+				Desc:  fmt.Sprintf("%s %s — %s", t.Role, TunnelTransportLabel(t), plainState(t.Service)),
 			}
 		}
 
@@ -62,7 +58,7 @@ func manageOne(t Tunnel) {
 	for {
 		tui.Clear()
 		tui.Title(fmt.Sprintf("Tunnel: %s", t.Name))
-		fmt.Printf("  %s%s %s%s  %s\n\n", tui.Gray, t.Role, t.Transport, tui.Reset, stateLabel(t.Service))
+		fmt.Printf("  %s%s %s%s  %s\n\n", tui.Gray, t.Role, TunnelTransportLabel(t), tui.Reset, stateLabel(t.Service))
 
 		// A tunnel whose other end is on a managed server is one tunnel in two
 		// places, and this menu can only change one of them: the channel to the

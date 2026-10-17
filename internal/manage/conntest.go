@@ -136,6 +136,8 @@ type ConnTestLink struct {
 	// New peers may choose a direct listener port on the machine that binds it.
 	// An older peer keeps the port picked on Iran, as before.
 	DirectPorts bool `json:"dp,omitempty"`
+	// SNI variants use domain-qualified identities for independent ports/tokens.
+	SNIVariants bool `json:"sv,omitempty"`
 	// The spoofing check: the forged source, and the UDP port each side's
 	// receiver counts probes on. Empty SpoofSrc is no check.
 	SpoofSrc string `json:"ss,omitempty"`
@@ -275,7 +277,7 @@ func fetchConnTestLink(ctx context.Context, a connTestAddr) (ConnTestLink, error
 			}
 			out.Host, out.Coord, out.Tok = a.Host, a.Coord, a.Tok
 			for i := range out.Cases {
-				out.Cases[i].Tok = ctCaseToken(a.Tok, out.Cases[i].Kind, out.Cases[i].Tr)
+				out.Cases[i].Tok = ctCaseToken(a.Tok, out.Cases[i].Kind, ctLinkCaseKey(out, out.Cases[i]))
 			}
 			return out, nil
 		}
@@ -318,6 +320,8 @@ func unGzipB64(s string) ([]byte, error) {
 
 // ConnTestResult is one tunnel's verdict.
 type ConnTestResult struct {
+	CaseID      string  `json:"case,omitempty"`
+	SNIDomain   string  `json:"sni,omitempty"`
 	Kind        string  `json:"k"` // "reverse" or "direct"
 	Transport   string  `json:"t"`
 	Status      string  `json:"s"` // ok, unstable, down, skipped
@@ -348,6 +352,7 @@ const (
 // connTestCase is one tunnel under test, as the Iran side holds it.
 type connTestCase struct {
 	kind, tr   string
+	key        string // transport, or the domain-qualified SNI candidate identity
 	name       string
 	udp        bool   // the forwarded traffic is UDP (the udp transport)
 	entry      int    // reverse: where on this server the tunnel's users arrive
@@ -379,7 +384,7 @@ type ConnTestOptions struct {
 	ports     map[int]bool
 	Context   context.Context // optional cancellation, including startup
 	Host      string          // this server's address, as the kharej dials it
-	SNIDomain string          // what the sni carrier announces
+	SNIDomain string          // explicit single SNI; empty tests the built-in candidates
 	// RealityTarget is an explicit reachable TLS 1.3/H2 hostname:port used
 	// for the REALITY cover handshake. Empty selects a verified endpoint automatically.
 	RealityTarget string
@@ -454,6 +459,7 @@ func StartConnTestIran(o ConnTestOptions) (*ConnTestIran, string, error) {
 		TCP: ctPickPort(used, false), UDP: ctPickPort(used, false), L3: ctPickPort(used, false),
 		Until:       time.Now().Add(connTestJoinWait + ConnTestRunTime() + connTestSlack).Unix(),
 		DirectPorts: true,
+		SNIVariants: o.Direct && strings.TrimSpace(o.SNIDomain) == "",
 	}
 	s.link.Coord = ctPickPort(used, true)
 	if s.link.TCP == 0 || s.link.UDP == 0 || s.link.L3 == 0 || s.link.Coord == 0 {
@@ -508,15 +514,13 @@ func StartConnTestIran(o ConnTestOptions) (*ConnTestIran, string, error) {
 	}
 
 	if o.Direct {
-		sni := strings.TrimSpace(o.SNIDomain)
-		if sni == "" {
-			sni = "www.speedtest.net"
-		}
-		for i, carrier := range connTestDirect {
+		for i, plan := range ctDirectPlans(o.SNIDomain) {
+			carrier := plan.carrier
 			if err := ctx.Err(); err != nil {
 				return fail(err)
 			}
-			c := &connTestCase{kind: "direct", tr: carrier, name: fmt.Sprintf("ct-%s-d%s", id, carrier)}
+			c := &connTestCase{kind: "direct", tr: carrier, key: plan.key, name: fmt.Sprintf("ct-%s-d%s-%d", id, carrier, i)}
+			c.l3.SNIDomain = plan.sni
 			if !s.root {
 				c.skip = "needs root on both servers"
 				s.cases = append(s.cases, c)
@@ -529,17 +533,15 @@ func StartConnTestIran(o ConnTestOptions) (*ConnTestIran, string, error) {
 				// The kharej's address is not known until it joins; the link
 				// carries only the port.
 				Addr:  net.JoinHostPort("0.0.0.0", strconv.Itoa(ctPickPort(used, true))),
-				Token: ctCaseToken(s.link.Tok, "direct", carrier), Iface: fmt.Sprintf("bpt%d", i),
-				LocalIP: block + "1/30", PeerIP: block + "2",
+				Token: ctCaseToken(s.link.Tok, "direct", plan.key), Iface: fmt.Sprintf("bpt%d", i),
+				SNIDomain: plan.sni,
+				LocalIP:   block + "1/30", PeerIP: block + "2",
 				// The wizard's defaults, the path MTU measured included: a
 				// tunnel tested with other settings is not the one that
 				// would be built.
 				MTU: defaultL3MTU,
 			}
 			findL3Preset(preset).apply(&c.l3)
-			if carrier == "sni" {
-				c.l3.SNIDomain = sni
-			}
 			raw := pendingShareLink(c.l3, linkExtras{})
 			if c.link, err = DecodeShareLink(raw); err != nil {
 				return fail(fmt.Errorf("building the %s test link: %w", carrier, err))
@@ -967,8 +969,11 @@ func (s *ConnTestIran) Run(ctx context.Context, progress func(int, ConnTestResul
 		if c.skip == "" && s.coord.skipped[c.tr] {
 			c.skip = "managed helper could not start on kharej; see its local diagnostic"
 		}
-		if c.skip == "" && s.coord.skipped[c.kind+"/"+c.tr] {
+		if c.skip == "" && (s.coord.skipped[c.kind+"/"+c.caseKey()] || s.coord.skipped[c.kind+"/"+c.tr]) {
 			c.skip = "test could not start on Kharej; see its local diagnostic"
+		}
+		if c.skip == "" && ctSNIVariantKey(c.caseKey()) && s.coord.directPorts[c.caseKey()] == "" {
+			c.skip = "automatic SNI candidates need an updated Kharej; update Backpack on both servers"
 		}
 	}
 	s.coord.mu.Unlock()
@@ -977,7 +982,7 @@ func (s *ConnTestIran) Run(ctx context.Context, progress func(int, ConnTestResul
 			continue
 		}
 		_, port, _ := net.SplitHostPort(c.l3.Addr)
-		port = s.coord.directPort(c.tr, port)
+		port = s.coord.directPort(c.caseKey(), port)
 		c.l3.Addr = net.JoinHostPort(kharej, port)
 		if c.tr == "masque" {
 			s.coord.mu.Lock()
@@ -1016,7 +1021,7 @@ func (s *ConnTestIran) Run(ctx context.Context, progress func(int, ConnTestResul
 		}
 	}
 	for i, c := range s.cases {
-		results[i] = ConnTestResult{Kind: c.kind, Transport: c.tr, Status: ctTesting, Total: connTestSoak}
+		results[i] = c.initialResult()
 		results[i] = ctHTTPSResult(results[i], c)
 		if c.skip != "" {
 			results[i].Status, results[i].Detail = ctSkipped, c.skip
@@ -1268,7 +1273,7 @@ func (s *ConnTestIran) Close() {
 // report is told the tunnel's state whenever it changes: after every echo,
 // and once more with the verdict, which is also returned.
 func ctProbe(ctx context.Context, c *connTestCase, l3Echo int, report func(ConnTestResult)) ConnTestResult {
-	r := ConnTestResult{Kind: c.kind, Transport: c.tr, Status: ctTesting, Total: connTestSoak}
+	r := c.initialResult()
 	say := func(string) {
 		if report != nil {
 			report(r)
@@ -1928,7 +1933,7 @@ func (c *ctCoordinator) directPort(tr, fallback string) string {
 }
 
 func ctPortCarrier(tr string) bool {
-	return tr == "udp" || tr == "quic" || tr == "pck" || tr == "sni" || tr == "masque"
+	return tr == "udp" || tr == "quic" || tr == "pck" || tr == "sni" || tr == "masque" || ctSNIVariantKey(tr)
 }
 
 func ctSkippableCase(value string) bool {
@@ -1942,6 +1947,9 @@ func ctSkippableCase(value string) bool {
 	var cases []string
 	switch kind {
 	case "direct":
+		if ctSNIVariantKey(tr) {
+			return true
+		}
 		cases = connTestDirect
 	case "reverse":
 		cases = connTestReverse
@@ -2106,12 +2114,13 @@ func runConnTestKharejLink(ctx context.Context, link ConnTestLink, out io.Writer
 	usedDirectPorts := map[int]bool{link.TCP: true, link.UDP: true, link.L3: true}
 	for i, c := range link.Cases {
 		name := c.Name
-		caseOf[name] = c.Kind + "/" + c.Tr
+		key := ctLinkCaseKey(link, c)
+		caseOf[name] = c.Kind + "/" + key
 		var body string
 		switch c.Kind {
 		case "reverse":
 			if connTestNeedsRoot(c.Tr) && !root {
-				local[c.Kind+"/"+c.Tr] = "needs root"
+				local[c.Kind+"/"+key] = "needs root"
 				continue
 			}
 			var spec TunnelSpec
@@ -2122,7 +2131,7 @@ func runConnTestKharejLink(ctx context.Context, link ConnTestLink, out io.Writer
 				spec, err = kharejFromLink(c, LinkApplyOptions{Host: link.Host})
 			}
 			if err != nil {
-				local[c.Kind+"/"+c.Tr] = err.Error()
+				local[c.Kind+"/"+key] = err.Error()
 				if managedTransport(c.Tr) {
 					_, _ = ctAskContext(ctx, link.Host, link.Coord, "skip "+link.Tok+" "+c.Tr)
 				}
@@ -2138,15 +2147,15 @@ func runConnTestKharejLink(ctx context.Context, link ConnTestLink, out io.Writer
 			body = ctQuiet(spec.Render())
 		case "direct":
 			if !root {
-				local[c.Kind+"/"+c.Tr] = "needs root"
+				local[c.Kind+"/"+key] = "needs root"
 				continue
 			}
 			form := MirrorForPeer(c)
 			form.Name = name
-			if link.DirectPorts && ctPortCarrier(c.Tr) {
-				port, err := ctKharejDirectPort(ctx, link, c.Tr, usedDirectPorts)
+			if link.DirectPorts && ctPortCarrier(key) {
+				port, err := ctKharejDirectPort(ctx, link, key, usedDirectPorts)
 				if err != nil {
-					local[c.Kind+"/"+c.Tr] = err.Error()
+					local[c.Kind+"/"+key] = err.Error()
 					continue
 				}
 				form.TunnelPort = port
@@ -2156,13 +2165,13 @@ func runConnTestKharejLink(ctx context.Context, link ConnTestLink, out io.Writer
 				var err error
 				n.Masque, err = ctMasqueListener(ctx, link, dir, name, usedDirectPorts)
 				if err != nil {
-					local[c.Kind+"/"+c.Tr] = err.Error()
+					local[c.Kind+"/"+key] = err.Error()
 					continue
 				}
 			}
 			spec, err := n.spec()
 			if err != nil {
-				local[c.Kind+"/"+c.Tr] = err.Error()
+				local[c.Kind+"/"+key] = err.Error()
 				continue
 			}
 			spec.Name, spec.Iface = name, fmt.Sprintf("bpt%d", i)
@@ -2170,14 +2179,14 @@ func runConnTestKharejLink(ctx context.Context, link ConnTestLink, out io.Writer
 				spec.Addr = net.JoinHostPort("::", addrPort(spec.Addr))
 			}
 			if _, body, err = directBodyFromSpec(spec); err != nil {
-				local[c.Kind+"/"+c.Tr] = err.Error()
+				local[c.Kind+"/"+key] = err.Error()
 				continue
 			}
 			echoes.l3(ctx, strings.SplitN(spec.LocalIP, "/", 2)[0], link.L3)
 		}
 		e, err := startCTEngine(dir, name, body)
 		if err != nil {
-			local[c.Kind+"/"+c.Tr] = err.Error()
+			local[c.Kind+"/"+key] = err.Error()
 			if managedTransport(c.Tr) {
 				_, _ = ctAskContext(ctx, link.Host, link.Coord, "skip "+link.Tok+" "+c.Tr)
 			}
@@ -2257,7 +2266,7 @@ func runConnTestKharejLink(ctx context.Context, link ConnTestLink, out io.Writer
 				return nil, ConnTestBest{}, fmt.Errorf("the verdict arrived damaged — read it on the Iran server")
 			}
 			for i, r := range v.Results {
-				if why := local[r.Kind+"/"+r.Transport]; why != "" && r.Status != ctOK {
+				if why := local[r.Kind+"/"+ctResultCaseKey(r)]; why != "" && r.Status != ctOK {
 					v.Results[i].Detail = strings.TrimPrefix(v.Results[i].Detail+"; kharej: "+why, "; ")
 				}
 			}

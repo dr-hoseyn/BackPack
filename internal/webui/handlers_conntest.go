@@ -38,6 +38,7 @@ const (
 
 // conntestRow is one tunnel under test, as the browser draws it.
 type conntestRow struct {
+	SNIDomain  string  `json:"sni,omitempty"`
 	Kind       string  `json:"kind"`
 	Tr         string  `json:"tr"`
 	Name       string  `json:"name"`
@@ -139,7 +140,8 @@ func (c *conntestRunner) stop() {
 
 func rowOf(r manage.ConnTestResult) conntestRow {
 	return conntestRow{
-		Kind: r.Kind, Tr: r.Transport, Name: manage.ConnTestName(r.Transport),
+		SNIDomain: r.SNIDomain,
+		Kind:      r.Kind, Tr: r.Transport, Name: manage.ConnTestName(r.Transport),
 		Status: r.Status, Detail: r.Detail, OK: r.OK, Tried: r.Tried, Total: r.Total,
 		RTTms: r.RTTms, Mbps: r.Mbps, Connect: r.Connect,
 		UploadMbps: r.UploadMbps, Phase: r.Phase,

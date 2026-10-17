@@ -33,6 +33,20 @@ The normal installer includes the pinned helpers on Linux glibc amd64/arm64
 (`BP_HELPERS=naive,xray`); run it on both servers before testing.
 A missing helper is shown as **SKIPPED** with its reason.
 
+Direct SNI automatically compares `www.speedtest.net`, `www.microsoft.com` and
+`www.apple.com` over separate temporary tunnels on each selected IP path.
+Every domain must pass the normal echo/persistence and download/upload tests;
+an HTTPS website check is not used as its tunnel verdict. The CLI labels the
+rows **SNI #1–#3** and lists the corresponding domains; the panel displays the
+domain on each row. **Best settings → Direct SNI** shows the fastest candidate
+that stayed up. If all fail, no SNI is recommended. Update both servers before
+using automatic candidates; an older Kharej is reported as skipped.
+
+The live table fits the terminal's current width and height. Small terminals
+show active tests first, with a visible count of the displayed rows; the final
+report includes every result. Resizing redraws the viewport. Titles, values
+and notes use the normal Backpack red/white/gray palette.
+
 The preparation screen lists IPv4 and IPv6 together with separate **ready /
 skipped** counts. Shared prerequisite warnings appear once, labelled with the
 paths they affect. PCK, SNI, xDi and MASQUE run over IPv4 and IPv6. MASQUE uses a temporary private certificate, verified by the Iran side; its private key stays on Kharej. IP spoofing probes remain IPv4-only and are skipped on IPv6; those exclusions

@@ -24,7 +24,8 @@ type TunnelInfo struct {
 	// Transport is the raw value the rest of the panel keys off — "tcp",
 	// "l3/pck", "direct/wss". Kept exactly as it was, because the edit form and
 	// several capability checks compare against it.
-	Transport string `json:"transport"`
+	Transport      string `json:"transport"`
+	TransportLabel string `json:"transportLabel,omitempty"`
 
 	// Direction and Carrier are the same thing split for the card, which has
 	// two badges rather than one: whether the tunnel is dialled from Iran or
@@ -212,13 +213,14 @@ func tunnelInfo(t manage.Tunnel, h manage.Health, peersByPort map[string][]peerC
 	ports, relayPort, bot := splitBotRelay(t.Ports, "")
 	pair, paired := manage.PairFor(t.Name)
 	info := TunnelInfo{
-		Name:         t.Name,
-		Role:         t.Role,
-		Transport:    t.Transport,
-		Addr:         t.Addr,
-		Ports:        ports,
-		BotRelay:     bot,
-		BotRelayPort: relayPort,
+		Name:           t.Name,
+		Role:           t.Role,
+		Transport:      t.Transport,
+		TransportLabel: manage.TunnelTransportLabel(t),
+		Addr:           t.Addr,
+		Ports:          ports,
+		BotRelay:       bot,
+		BotRelayPort:   relayPort,
 		// The port clients dial. It was declared and documented but
 		// never filled in, so every server card showed a dash where
 		// its own port should be — the one number on the card you

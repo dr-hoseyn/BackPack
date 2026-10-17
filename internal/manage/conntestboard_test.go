@@ -86,7 +86,7 @@ func TestConnTestTableExplainsLocalFailuresWithoutClaimingFiltering(t *testing.T
 // Only the rows that changed are written again.
 func TestTheLiveTableRewritesOnlyWhatChanged(t *testing.T) {
 	var out bytes.Buffer
-	b := &ctBoard{out: &out, title: "1.2.3.4", tty: true}
+	b := &ctBoard{out: &out, title: "1.2.3.4", tty: true, size: func() (int, int) { return 100, 40 }}
 	b.set(0, ConnTestResult{Kind: "reverse", Transport: "tcp", Status: ctTesting, Total: 60})
 	b.set(1, ConnTestResult{Kind: "direct", Transport: "pck", Status: ctTesting, Total: 60})
 	b.draw()

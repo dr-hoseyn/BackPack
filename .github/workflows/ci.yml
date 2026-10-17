@@ -67,7 +67,7 @@ jobs:
       - name: Verify MASQUE, setup links and installer readiness
         run: >-
           go test -race ./internal/tunnel/l3 ./internal/manage ./internal/cli ./config ./internal/app
-          -run '^(TestMasque|TestLinkApply|TestEveryShareLinkFieldHasAnID|TestEveryDocument|TestTheConfigReference|TestConnectionTestStartup|TestInstallerInstallsHTTPSHelpers|TestInstallerFetchesOnlyMissingHelper|TestConnectionTestMasque|TestIPv6Pck)'
+          -run '^(TestMasque|TestLinkApply|TestEveryShareLinkFieldHasAnID|TestEveryDocument|TestTheConfigReference|TestConnectionTestStartup|TestInstallerInstallsHTTPSHelpers|TestInstallerFetchesOnlyMissingHelper|TestConnectionTestMasque|TestIPv6Pck|TestManagedAndDirectProtocolLabels)'
           -count=1 -timeout 3m
 
   masque-live:
@@ -276,6 +276,8 @@ jobs:
             -run '^(TestConnectionTest|TestAnUnreachablePath|TestIPv6|TestBothFamilies|TestUnjoinedFamilies|TestStoppingASuite|TestStoppingBetweenPaths|TestBackgroundProbes|TestTheScreensReadTunnelStateThroughOnePlace|TestEveryPanelCallReachesAHandlerThatReadsWhatItSends)'
       - name: IPv6-only native, PCK, SNI, xDi and MASQUE data paths; PMTU and spoof exclusions
         run: |
+          sudo env PATH="$PATH" GOMODCACHE="$(go env GOMODCACHE)" GOCACHE="$(go env GOCACHE)" \
+            go test ./internal/manage -run '^TestTheTestSettingsFitOnePacketAndCarryNoToken$' -count=1 -v -timeout 1m
           sudo env PATH="$PATH" GOMODCACHE="$(go env GOMODCACHE)" GOCACHE="$(go env GOCACHE)" BP_L3_LIVE=1 \
             unshare --net -- go test ./internal/utils/network -run '^TestIPv6PckFirewallCleanupPreservesLiveOwners$' -count=1 -v -timeout 1m
           sudo env PATH="$PATH" GOMODCACHE="$(go env GOMODCACHE)" GOCACHE="$(go env GOCACHE)" BP_L3_LIVE=1 \
@@ -314,6 +316,26 @@ jobs:
           rows = json.load(open(sys.argv[1]))
           masque = [r for r in rows if r['k'] == 'direct' and r['t'] == 'masque']
           assert len(masque) == 1 and masque[0]['s'] == 'ok', rows
+          PY
+
+      - name: Direct SNI candidates and recommendation on IPv4
+        if: success() || failure()
+        run: |
+          set -eu
+          sudo env BIN="$RUNNER_TEMP/backpack-ipv6" TESTBIN="$RUNNER_TEMP/conntest-ipv4.test" \
+            W="$RUNNER_TEMP/sni-ct-ipv4" SOAK=3 ONLY=direct/sni \
+            timeout -k 5s 6m unshare --net --mount --fork -- \
+            bash internal/manage/testdata/conntestlive.sh | tee "$RUNNER_TEMP/sni-ct-ipv4.out"
+          grep -q '^RESULT DONE' "$RUNNER_TEMP/sni-ct-ipv4.out"
+          sudo python3 - "$RUNNER_TEMP/sni-ct-ipv4" <<'PY'
+          import json, pathlib, sys
+          root = pathlib.Path(sys.argv[1])
+          rows = json.loads((root / 'iran.json').read_text())
+          sni = [r for r in rows if r['k'] == 'direct' and r['t'] == 'sni']
+          assert len(sni) == 3 and all(r['s'] == 'ok' for r in sni), rows
+          assert len({r['sni'] for r in sni}) == 3 and len({r['case'] for r in sni}) == 3, sni
+          best = json.loads((root / 'iran-best.json').read_text())
+          assert best['sni'] == max(sni, key=lambda r: r['m'])['sni'], (best, sni)
           PY
 
   audit:

@@ -94,7 +94,7 @@ func TestTheTestSettingsFitOnePacketAndCarryNoToken(t *testing.T) {
 		if strings.Contains(reply, c.Tok) {
 			t.Errorf("the %s token travels in the settings", c.Tr)
 		}
-		if got := ctCaseToken(s.link.Tok, c.Kind, c.Tr); got != c.Tok {
+		if got := ctCaseToken(s.link.Tok, c.Kind, ctLinkCaseKey(s.link, c)); got != c.Tok {
 			t.Errorf("%s/%s: the kharej would derive %q, the Iran side has %q", c.Kind, c.Tr, got, c.Tok)
 		}
 		if managedTransport(c.Tr) {
