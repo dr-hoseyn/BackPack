@@ -210,6 +210,14 @@ func TestTheConnectionTestAcrossAnIPv6OnlyPath(t *testing.T) {
 			t.Errorf("supported IPv6 path failed: %+v", r)
 		}
 	}
+	if t.Failed() {
+		logs, _ := filepath.Glob(filepath.Join(w, "iran-*.log"))
+		for _, path := range logs {
+			if b, err := os.ReadFile(path); err == nil {
+				t.Logf("%s:\n%s", filepath.Base(path), b)
+			}
+		}
+	}
 	// The Iran-side helper prints the same recommendation as the CLI, including
 	// the measured PMTU and IPv6 MSS (1400 - 40 - 20).
 	if !strings.Contains(string(out), "1400") {

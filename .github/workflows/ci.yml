@@ -215,9 +215,12 @@ jobs:
       - name: IPv6-only native, PCK, SNI, xDi and MASQUE data paths; PMTU and spoof exclusions
         run: |
           sudo env PATH="$PATH" GOMODCACHE="$(go env GOMODCACHE)" GOCACHE="$(go env GOCACHE)" BP_L3_LIVE=1 \
+            unshare --net -- go test ./internal/utils/network -run '^TestIPv6PckFirewallCleanupPreservesLiveOwners$' -count=1 -v -timeout 1m
+          sudo env PATH="$PATH" GOMODCACHE="$(go env GOMODCACHE)" GOCACHE="$(go env GOCACHE)" BP_L3_LIVE=1 \
             go test ./internal/manage -run '^TestTheConnectionTestAcrossAnIPv6OnlyPath$' -count=1 -v -timeout 10m
 
       - name: IPv6 raw carriers survive listener restart and packet loss
+        if: success() || failure()
         run: |
           set -eu
           go build -o "$RUNNER_TEMP/backpack-ipv6" .
@@ -235,6 +238,7 @@ jobs:
             done
           done
       - name: MASQUE Connection Test on IPv4 with verified temporary trust
+        if: success() || failure()
         run: |
           set -eu
           go test -c -o "$RUNNER_TEMP/conntest-ipv4.test" ./internal/manage

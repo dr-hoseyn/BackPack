@@ -112,7 +112,7 @@ func installPckGuard(id string, legacy [][][]string, rules [][]string, v6 ...boo
 	for _, r := range g.rules {
 		table, body := r[0], r[1:]
 		// Anything identical still in the table is ours, left behind by a
-		// process that did not exit cleanly. See sweepPckRule.
+		// process that did not exit cleanly. See sweepPckRuleFor.
 		sweepPckRuleFor(tool, table, body)
 		args := append([]string{"-t", table, "-I"}, body...)
 		if _, err := pckFirewall(tool, args...); err == nil {
@@ -123,7 +123,6 @@ func installPckGuard(id string, legacy [][][]string, rules [][]string, v6 ...boo
 	return g, nil
 }
 
-func pckIptables(args ...string) ([]byte, error) { return pckFirewall("iptables", args...) }
 func pckFirewall(tool string, args ...string) ([]byte, error) {
 	if tool == "" {
 		tool = "iptables"
@@ -133,7 +132,7 @@ func pckFirewall(tool string, args ...string) ([]byte, error) {
 	return exec.CommandContext(ctx, tool, append([]string{"-w", "5"}, args...)...).Output()
 }
 
-// sweepPckRule deletes every copy of one rule before it is installed again.
+// sweepPckRuleFor deletes every copy of one rule before it is installed again.
 //
 // The rules are only removed when a carrier closes cleanly. A crash, a kill, a
 // interrupted restart or a failed start can leave them in the table. A server
@@ -150,7 +149,6 @@ func pckFirewall(tool string, args ...string) ([]byte, error) {
 // Deleting first and adding once leaves exactly one, and clears whatever an
 // earlier run left behind. The cap is there so that a delete which reports
 // success without removing anything cannot spin.
-func sweepPckRule(table string, body []string) { sweepPckRuleFor("iptables", table, body) }
 func sweepPckRuleFor(tool, table string, body []string) {
 	args := append([]string{"-t", table, "-D"}, body...)
 	for i := 0; i < 1024; i++ {
@@ -160,9 +158,8 @@ func sweepPckRuleFor(tool, table string, body []string) {
 	}
 }
 
-// sweepTunnelRules deletes every rule in the tables the guard writes to whose
+// sweepTunnelRulesFor deletes every rule in the tables the guard writes to whose
 // comment carries this tunnel's tag.
-func sweepTunnelRules(id string) { sweepTunnelRulesFor("iptables", id) }
 func sweepTunnelRulesFor(tool, id string) {
 	prefix := pckRulePrefix(id)
 	for _, table := range []string{"filter", "raw"} {
