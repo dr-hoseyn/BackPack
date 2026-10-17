@@ -21,6 +21,8 @@ func awgForwarder(c config.AWGConfig) (*l3.Forwarder, error) {
 	return l3.NewForwarder(l3.Config{PeerIP: p.Addr().String(), Ports: c.Ports, AcceptUDP: c.AcceptUDP, MaxConnections: c.MaxConnections, BandwidthMbps: c.BandwidthMbps}, nil)
 }
 
+var runManagedAWG = amneziawg.RunManaged
+
 func runAWGTunnel(cfg *config.Config, ctx context.Context, path string) {
 	var in, out atomic.Uint64
 	var up atomic.Bool
@@ -30,7 +32,10 @@ func runAWGTunnel(cfg *config.Config, ctx context.Context, path string) {
 	}
 	metrics.ClearPeer()
 	defer metrics.ClearPeer()
-	stop := startMetricsWithTraffic(ctx, path, "awg", role, in.Load, out.Load)
+	// Device counters are sampled through IPC, including once during shutdown.
+	// Keep the collector alive until that final sample has been published;
+	// cancelling it with ctx would race the final write against the final IPC.
+	stop := startMetricsWithTraffic(context.WithoutCancel(ctx), path, "awg", role, in.Load, out.Load)
 	defer stop()
 	forwarder, err := awgForwarder(cfg.AWG)
 	if err != nil {
@@ -59,7 +64,7 @@ func runAWGTunnel(cfg *config.Config, ctx context.Context, path string) {
 	}
 	for ctx.Err() == nil {
 		baseIn, baseOut := in.Load(), out.Load()
-		err := amneziawg.RunManaged(ctx, amneziawg.Config(cfg.AWG), io.Discard, func(s amneziawg.RuntimeStats) {
+		err := runManagedAWG(ctx, amneziawg.Config(cfg.AWG), io.Discard, func(s amneziawg.RuntimeStats) {
 			in.Store(baseIn + s.BytesIn)
 			out.Store(baseOut + s.BytesOut)
 			up.Store(s.Connected())

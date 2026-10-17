@@ -213,6 +213,39 @@ func TestSingCarriersTransferAuthenticatedBytesAndRejectOtherTargets(t *testing.
 				bad.Close()
 				t.Fatal("helper escaped its fixed target")
 			}
+			for _, fault := range []string{"password", "trust"} {
+				badCfg := c
+				if fault == "password" {
+					badCfg.Sing.Password = "a-different-invalid-helper-password"
+				} else {
+					badCfg.Sing.CAFile = ""
+				}
+				badHelper, err := StartSingClient(ctx, &badCfg, log)
+				if err != nil {
+					t.Fatal(err)
+				}
+				badDialer, err := proxy.SOCKS5("tcp", badHelper.addr, nil, proxy.Direct)
+				if err != nil {
+					badHelper.Close()
+					t.Fatal(err)
+				}
+				attempt, stop := context.WithTimeout(ctx, 2*time.Second)
+				v, err := badDialer.(proxy.ContextDialer).DialContext(attempt, "tcp", c.RemoteAddr)
+				if err == nil {
+					v.SetDeadline(time.Now().Add(time.Second))
+					_, err = v.Write([]byte{42})
+					if err == nil {
+						var reply [1]byte
+						_, err = io.ReadFull(v, reply[:])
+					}
+					v.Close()
+				}
+				stop()
+				badHelper.Close()
+				if err == nil {
+					t.Fatalf("%s mismatch still carried authenticated bytes", fault)
+				}
+			}
 			// Native UDP uses the same protocol without a reliable stream wrapper.
 			if config.SingDatagram(protocol) {
 				udp, err := net.ListenPacket("udp", "127.0.0.1:0")
@@ -261,6 +294,38 @@ func TestSingCarriersTransferAuthenticatedBytesAndRejectOtherTargets(t *testing.
 					if !bytes.Equal(b, p[:n]) {
 						t.Fatal("datagram corruption or boundary loss")
 					}
+				}
+				// Recreate the helper on the same reserved SOCKS endpoint. The
+				// existing PacketConn must notice the lost TCP association and
+				// reconnect without replacing the L3 carrier or buffering traffic.
+				body, err := os.ReadFile(filepath.Join(ch.dir, "helper.json"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				addr := ch.addr
+				ch.Close()
+				replacement, err := startManaged(ctx, bin, "sing-client", body, addr, os.Environ(), log, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer replacement.Close()
+				recovered := false
+				for until := time.Now().Add(12 * time.Second); time.Now().Before(until); {
+					pc.SetDeadline(time.Now().Add(500 * time.Millisecond))
+					payload := []byte("after helper restart")
+					_, err = pc.WriteTo(payload, udp.LocalAddr())
+					if err != nil {
+						t.Fatal(err)
+					}
+					var got [64]byte
+					n, _, err := pc.ReadFrom(got[:])
+					if err == nil && bytes.Equal(got[:n], payload) {
+						recovered = true
+						break
+					}
+				}
+				if !recovered {
+					t.Fatal("native datagram association did not recover after helper restart")
 				}
 			}
 		})
