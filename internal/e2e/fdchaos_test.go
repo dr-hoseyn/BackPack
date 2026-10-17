@@ -3,6 +3,11 @@
 package e2e
 
 import (
+	"bufio"
+	"context"
+	"fmt"
+	"io"
+	"net"
 	"os"
 	"os/exec"
 	"strings"
@@ -46,18 +51,69 @@ func TestATunnelSurvivesRunningOutOfFileDescriptors(t *testing.T) {
 		t.Skip("re-runs this binary as a child process — skipped under -short")
 	}
 
-	cmd := exec.Command(os.Args[0],
+	// Keep the real service and the incoming caller outside the starved
+	// process. A local Dial under EMFILE fails before it ever reaches Accept,
+	// which used to leave the tunnel's recovery almost entirely unexercised.
+	backend := startEchoBackend(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, os.Args[0],
 		"-test.run=^TestATunnelSurvivesRunningOutOfFileDescriptors$",
 		"-test.v", "-test.timeout=4m")
-	cmd.Env = append(os.Environ(), fdChaosEnv+"=1")
-	out, err := cmd.CombinedOutput()
+	cmd.Env = append(os.Environ(), fdChaosEnv+"=1", "BACKPACK_FD_CHAOS_BACKEND="+backend.addr)
+	input, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer input.Close()
+	reader, writer := io.Pipe()
+	cmd.Stdout, cmd.Stderr = writer, writer
+	ready := make(chan string, 1)
+	output := make(chan string, 1)
+	go func() {
+		var out strings.Builder
+		scanner := bufio.NewScanner(reader)
+		for scanner.Scan() {
+			line := scanner.Text()
+			fmt.Fprintln(&out, line)
+			if addr, ok := strings.CutPrefix(line, fdChaosMarker+": "); ok {
+				ready <- addr
+			}
+		}
+		output <- out.String()
+	}()
+	if err := cmd.Start(); err != nil {
+		writer.Close()
+		reader.Close()
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { err := cmd.Wait(); writer.Close(); done <- err }()
+	select {
+	case addr := <-ready:
+		// TCP's backlog may accept the handshake even while Accept cannot
+		// allocate a socket. The request must remain bounded, then the child
+		// releases its descriptors and proves actual payload recovery.
+		c, dialErr := net.DialTimeout("tcp", addr, 3*time.Second)
+		if dialErr == nil {
+			_ = c.SetDeadline(time.Now().Add(3 * time.Second))
+			_, _ = c.Write([]byte("outside caller while descriptors are exhausted"))
+			var reply [1]byte
+			_, _ = c.Read(reply[:])
+			c.Close()
+		}
+		_, _ = fmt.Fprintln(input, "release")
+		err = <-done
+	case err = <-done:
+	}
+	out := <-output
 	if err != nil {
 		t.Fatalf("the tunnel did not survive running out of file descriptors:\n%s", out)
 	}
 	// "PASS" alone is not proof: a child whose -test.run matched nothing prints
 	// it too, and the whole test would then be a very elaborate no-op. The
 	// marker is a line only the child's own body can print.
-	if !strings.Contains(string(out), fdChaosMarker) {
+	if !strings.Contains(out, fdChaosMarker) {
 		t.Fatalf("the child did not run the test — it printed:\n%s", out)
 	}
 }
@@ -84,36 +140,27 @@ func fdChaosChild(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = unix.Setrlimit(unix.RLIMIT_NOFILE, &was) })
 
-	backend := startEchoBackend(t)
+	backend := &echoBackend{addr: os.Getenv("BACKPACK_FD_CHAOS_BACKEND")}
+	if backend.addr == "" {
+		t.Fatal("the parent did not supply an independent backend")
+	}
 	tun := startTunnel(t, "tcp", backend, tunnelOptions{})
 	if err := tun.roundTrip(randomPayload(t, 4096)); err != nil {
 		t.Fatalf("the tunnel did not work before the descriptors ran out: %v", err)
 	}
 
 	held := exhaustFDs(t)
-	t.Logf("%s: %d", fdChaosMarker, len(held))
+	defer releaseFDs(held)
+	t.Logf("holding %d descriptors", len(held))
 	if len(held) == 0 {
 		t.Fatal("could not exhaust the descriptors, so nothing was tested")
 	}
 
-	// A caller arriving now must be told no. What must not happen is a
-	// connection that is accepted and then never answered, because the caller
-	// waits on that for as long as its own timeout allows and reports the
-	// tunnel as slow rather than as full.
-	start := time.Now()
-	err := tun.roundTrip([]byte("is anyone there"))
-	if err == nil {
-		// Being served anyway is a perfectly good outcome — it means the
-		// forwarded connection came out of something already open.
-		t.Log("the tunnel served a request with no descriptors left, from what it already had")
-	} else if waited := time.Since(start); waited > 20*time.Second {
-		t.Fatalf("a request with no descriptors left took %s to fail: %v", waited, err)
+	fmt.Printf("%s: %s\n", fdChaosMarker, tun.Entry)
+	var command string
+	if _, err := fmt.Fscanln(os.Stdin, &command); err != nil || command != "release" {
+		t.Fatalf("the outside caller did not finish its starvation probe: %v", err)
 	}
-
-	// Give it a moment to do whatever a starved accept loop does. If it spins,
-	// this is where the CPU goes; if it dies, the child exits non-zero and the
-	// parent prints the output.
-	time.Sleep(2 * time.Second)
 
 	releaseFDs(held)
 

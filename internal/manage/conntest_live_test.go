@@ -163,6 +163,17 @@ func TestConnTestIranSide(t *testing.T) {
 // only IPv6, and a 1400-byte MTU proves the measurement uses IPv6's headers and
 // DF option rather than merely accepting a literal in a setup form.
 func TestTheConnectionTestAcrossAnIPv6OnlyPath(t *testing.T) {
+	testConnectionTestAcrossIPv6(t, "")
+}
+
+// Keep a repeated, focused check of the four-stream KCP speed measurement.
+// A clean IPv6 path previously passed every echo but timed out on upload.
+func TestTheKCPConnectionTestAcrossAnIPv6OnlyPath(t *testing.T) {
+	testConnectionTestAcrossIPv6(t, "reverse/kcp")
+}
+
+func testConnectionTestAcrossIPv6(t *testing.T, only string) {
+	t.Helper()
 	if os.Getenv("BP_L3_LIVE") == "" {
 		t.Skip("set BP_L3_LIVE=1 for namespace integration")
 	}
@@ -184,7 +195,7 @@ func TestTheConnectionTestAcrossAnIPv6OnlyPath(t *testing.T) {
 	cmd := exec.CommandContext(ctx, "unshare", args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
-	cmd.Env = append(os.Environ(), "BIN="+bin, "TESTBIN="+self, "W="+w, "SOAK=3", "CT_IPV6=1", "PATHMTU=1400", "ONLY=", "FILTER=")
+	cmd.Env = append(os.Environ(), "BIN="+bin, "TESTBIN="+self, "W="+w, "SOAK=3", "CT_IPV6=1", "PATHMTU=1400", "ONLY="+only, "FILTER=")
 	out, err := cmd.CombinedOutput()
 	if err != nil || !strings.Contains(string(out), "RESULT DONE") {
 		t.Fatalf("IPv6 path: %v\n%s", err, out)
@@ -197,7 +208,11 @@ func TestTheConnectionTestAcrossAnIPv6OnlyPath(t *testing.T) {
 	if err := json.Unmarshal(raw, &rows); err != nil {
 		t.Fatal(err)
 	}
-	if len(rows) != len(connTestReverse)+len(ctDirectPlans(""))+2 {
+	wantRows := len(connTestReverse) + len(ctDirectPlans("")) + 2
+	if only != "" {
+		wantRows = 1
+	}
+	if len(rows) != wantRows {
 		t.Fatalf("missing IPv6 results: %+v", rows)
 	}
 	for _, r := range rows {
@@ -211,6 +226,13 @@ func TestTheConnectionTestAcrossAnIPv6OnlyPath(t *testing.T) {
 		} else if r.Status != ctOK {
 			t.Errorf("supported IPv6 path failed: %+v", r)
 		}
+	}
+	if only != "" {
+		if rows[0].Kind != "reverse" || rows[0].Transport != "kcp" || rows[0].Mbps <= 0 || rows[0].UploadMbps <= 0 {
+			t.Errorf("KCP must carry verified traffic in both directions: %+v", rows[0])
+		}
+		t.Log(string(out))
+		return
 	}
 	seenSNI := map[string]bool{}
 	wantSNI := ""
