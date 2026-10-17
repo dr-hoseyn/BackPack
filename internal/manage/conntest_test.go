@@ -317,6 +317,9 @@ func TestAConnectionTestOverLoopbackPassesEveryReverseTransport(t *testing.T) {
 			if r.Transport == "reality" {
 				want = "tcp-ok"
 			}
+			if config.SingProtocol(r.Transport) {
+				want = "not-applicable"
+			}
 			if r.HTTPSProbe != want || r.TestPort < 1 {
 				t.Errorf("%s lost its independent HTTPS diagnostics: %+v", r.Transport, r)
 			}

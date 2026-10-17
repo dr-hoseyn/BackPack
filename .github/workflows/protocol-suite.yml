@@ -70,6 +70,28 @@ jobs:
               | tee "$RUNNER_TEMP/managed-awg-$scenario.out"
             grep -q '^RESULT OK' "$RUNNER_TEMP/managed-awg-$scenario.out"
           done
+      - name: Native Connection Test coordinator over real IPv4 and IPv6 paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo install -D -m 755 "$BP_SINGBOX_BINARY" /usr/local/lib/backpack/helpers/sing-box/v1.14.2-amd64/sing-box
+          go test -c -o "$RUNNER_TEMP/protocol-conntest.test" ./internal/manage
+          for protocol in hysteria2 tuic; do
+            for ipv6 in 0 1; do
+              work="$RUNNER_TEMP/native-conntest-$protocol-$ipv6"
+              sudo env BIN="$RUNNER_TEMP/backpack-protocols" TESTBIN="$RUNNER_TEMP/protocol-conntest.test" \
+                W="$work" SOAK=3 ONLY="direct/$protocol" CT_IPV6="$ipv6" PATHMTU=1400 LD_LIBRARY_PATH="$LD_LIBRARY_PATH" \
+                timeout -k 5s 6m unshare --net --mount --fork -- bash internal/manage/testdata/conntestlive.sh \
+                | tee "$work.out"
+              grep -q '^RESULT DONE' "$work.out"
+              sudo python3 - "$work/iran.json" "$protocol" <<'PY'
+          import json, sys
+          rows = json.load(open(sys.argv[1]))
+          selected = [r for r in rows if r['k'] == 'direct' and r['t'] == sys.argv[2]]
+          assert len(selected) == 1 and selected[0]['s'] == 'ok', rows
+          PY
+            done
+          done
       - name: Regression tests and race detector
         run: go test ./... -race -count=1 -timeout 15m
       - name: Vet
