@@ -30,6 +30,12 @@ func configureSing(n *TunnelSpec, old TunnelSpec, protocol, public, host string)
 			client.ShadowsocksKey = managedSecret("SS2022 Base64 Key (From Iran)", client.ShadowsocksKey, "")
 		}
 		client.CAFile = tui.PromptDefault("Private CA File (Empty = System Trust)", client.CAFile)
+		if config.SingDatagram(protocol) {
+			client.NativeUDP = tui.Confirm("Use Native Reverse UDP (Must Match Iran)", client.NativeUDP)
+		}
+		if !client.NativeUDP {
+			client.UDPMaxFlows, client.UDPBandwidthMbps = 0, 0
+		}
 		n.SingClient = client
 		return true
 	}

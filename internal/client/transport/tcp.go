@@ -308,11 +308,18 @@ func (c *TcpTransport) tunnelDialer() {
 	}
 
 	// Increment active connections counter
+	if c.config.Outbound != nil && c.config.Outbound.PoolObserver != nil {
+		c.config.Outbound.PoolObserver.Idle(rawConn)
+		defer c.config.Outbound.PoolObserver.Active(rawConn)
+	}
 	atomic.AddInt32(&c.poolConnections, 1)
 	ready()
 
 	// Attempt to receive the remote address from the tunnel server
 	remoteAddr, transport, err := utils.ReceiveBinaryTransportString(tcpConn)
+	if c.config.Outbound != nil && c.config.Outbound.PoolObserver != nil {
+		c.config.Outbound.PoolObserver.Active(rawConn)
+	}
 
 	// Decrement active connections after successful or failed connection
 	atomic.AddInt32(&c.poolConnections, -1)
@@ -321,6 +328,14 @@ func (c *TcpTransport) tunnelDialer() {
 		c.logger.Debugf("failed to receive port from tunnel connection %s: %v", tcpConn.RemoteAddr().String(), err)
 		tcpConn.Close()
 		return
+	}
+	if c.config.Outbound != nil && c.config.Outbound.PoolObserver != nil {
+		// A retired idle connection must not consume a forwarded user. Confirm
+		// ownership before the server starts relaying application bytes.
+		if _, err := tcpConn.Write([]byte{utils.ManagedPathAssignmentAck}); err != nil {
+			tcpConn.Close()
+			return
+		}
 	}
 
 	// A forwarded UDP flow says so in the target address, on this transport as

@@ -21,11 +21,13 @@ import (
 
 // Snapshot is one reading of a tunnel's counters.
 type Snapshot struct {
-	Name      string    `json:"name"`
-	Transport string    `json:"transport"`
-	Role      string    `json:"role"`
-	Taken     time.Time `json:"taken"`
-	Uptime    string    `json:"uptime"`
+	NativeUDP    *NativeUDPStats    `json:"native_udp,omitempty"`
+	ManagedPaths *ManagedPathsStats `json:"managed_paths,omitempty"`
+	Name         string             `json:"name"`
+	Transport    string             `json:"transport"`
+	Role         string             `json:"role"`
+	Taken        time.Time          `json:"taken"`
+	Uptime       string             `json:"uptime"`
 
 	// Traffic over the tunnel itself, as the transport sees it.
 	BytesIn  uint64 `json:"bytes_in"`
@@ -317,13 +319,15 @@ func (c *Collector) Total() uint64 {
 // Snapshot reads the current counters without writing anything.
 func (c *Collector) Snapshot() Snapshot {
 	s := Snapshot{
-		Name:      c.name,
-		Transport: c.transport,
-		Role:      c.role,
-		Taken:     time.Now(),
-		Uptime:    time.Since(c.started).Round(time.Second).String(),
-		Peer:      currentPeer(),
-		Connected: connected.Load(),
+		NativeUDP:    nativeUDPSnapshot(),
+		ManagedPaths: managedPathsSnapshot(),
+		Name:         c.name,
+		Transport:    c.transport,
+		Role:         c.role,
+		Taken:        time.Now(),
+		Uptime:       time.Since(c.started).Round(time.Second).String(),
+		Peer:         currentPeer(),
+		Connected:    connected.Load(),
 	}
 	// The persisted baseline plus what has been carried since this collector
 	// took over from it.

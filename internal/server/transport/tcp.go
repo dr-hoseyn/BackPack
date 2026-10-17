@@ -2,11 +2,13 @@ package transport
 
 import (
 	"context"
+	"io"
 	"net"
 	"time"
 
 	"github.com/backpack/backpack/internal/controlwire"
 	"github.com/backpack/backpack/internal/metrics"
+	"github.com/backpack/backpack/internal/pathprobe"
 	"github.com/backpack/backpack/internal/tunnel/naive"
 	"github.com/backpack/backpack/internal/utils"
 	"github.com/backpack/backpack/internal/utils/handlers"
@@ -51,6 +53,8 @@ type TcpTransport struct {
 }
 
 type TcpConfig struct {
+	PathProbe     bool
+	MPTCP         bool
 	BindAddr      string
 	Token         string
 	SnifferLog    string
@@ -227,6 +231,7 @@ func (s *TcpTransport) control(g *tcpGen, ctx context.Context, lost func()) cont
 // tunnelPort is this generation's tunnel port; see tcpTunnelPort.
 func (s *TcpTransport) tunnelPort(g *tcpGen) tcpTunnelPort {
 	return tcpTunnelPort{
+		mptcp:     s.config.MPTCP,
 		ctx:       g.ctx,
 		addr:      s.config.BindAddr,
 		rcvBuf:    s.config.SO_RCVBUF,
@@ -273,7 +278,7 @@ func (s *TcpTransport) admitTunnelConn(g *tcpGen, raw net.Conn) {
 	// so this branch stays exactly as it was, and is reachable only once a
 	// legacy control channel has been established (which is what leaves the
 	// nonce empty).
-	if s.controlChannel.IsSet() && s.poolNonce.Get() == "" {
+	if s.controlChannel.IsSet() && s.poolNonce.Get() == "" && !s.config.PathProbe {
 		// Read the peer address once: checking "is it set" and then asking for
 		// the address separately leaves a window where the control channel is
 		// cleared in between and the address comes back nil. Comparing through
@@ -295,6 +300,10 @@ func (s *TcpTransport) admitTunnelConn(g *tcpGen, raw net.Conn) {
 	}
 
 	switch {
+	case ann.signal == utils.SG_PathProbe && s.config.PathProbe:
+		if err := pathprobe.Serve(conn, s.config.Token, ann.payload); err != nil {
+			s.logger.Debugf("managed path probe ended: %v", err)
+		}
 	case isControlSignal(ann.signal):
 		s.admitControlChannel(g, conn, ann)
 
@@ -389,6 +398,9 @@ func (s *TcpTransport) deliverTunnelConn(g *tcpGen, conn net.Conn, nonce string)
 		if !s.validPoolIdentity(conn, nonce) {
 			return false
 		}
+		if s.config.PathProbe {
+			conn = watchIdlePool(g.ctx, conn)
+		}
 		select {
 		case g.tunnelChannel <- conn:
 			return true
@@ -425,7 +437,26 @@ func (s *TcpTransport) handleLoop(g *tcpGen) {
 				ctx: g.ctx, local: localConn, tunnel: g.tunnelChannel,
 				limits: s.limits, log: s.logger,
 				announce: func(c net.Conn, addr string) error {
-					return utils.SendBinaryTransportStringWithin(c, addr, utils.SG_TCP, pairingWait(localConn.timeCreated))
+					if pooled, ok := c.(*idlePoolConn); ok && !pooled.claim() {
+						return net.ErrClosed
+					}
+					if err := utils.SendBinaryTransportStringWithin(c, addr, utils.SG_TCP, pairingWait(localConn.timeCreated)); err != nil {
+						return err
+					}
+					if s.config.PathProbe {
+						if err := c.SetReadDeadline(time.Now().Add(pairingWait(localConn.timeCreated))); err != nil {
+							return err
+						}
+						defer c.SetReadDeadline(time.Time{})
+						var ack [1]byte
+						if _, err := io.ReadFull(c, ack[:]); err != nil {
+							return err
+						}
+						if ack[0] != utils.ManagedPathAssignmentAck {
+							return net.ErrClosed
+						}
+					}
+					return nil
 				},
 				request: requestAlways(g.reqNewConnChan, s.logger),
 				discard: func(c net.Conn) { c.Close() },

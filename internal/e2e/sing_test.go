@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -39,8 +40,9 @@ func TestSingReverseEnginesCarryConcurrentTCPUDPAndDirectionalEOF(t *testing.T) 
 		t.Fatal(err)
 	}
 	name := cover.Certificate().DNSNames[0]
-	for _, protocol := range []string{"hysteria2", "anytls", "shadowtls", "tuic"} {
-		t.Run(protocol, func(t *testing.T) {
+	for _, variant := range []string{"hysteria2", "anytls", "shadowtls", "tuic", "hysteria2-native", "tuic-native"} {
+		t.Run(variant, func(t *testing.T) {
+			protocol := strings.TrimSuffix(variant, "-native")
 			backend := startEchoBackend(t)
 			udpBackend := startUDPEcho(t)
 			eof, err := net.Listen("tcp", "127.0.0.1:0")
@@ -71,6 +73,7 @@ func TestSingReverseEnginesCarryConcurrentTCPUDPAndDirectionalEOF(t *testing.T) 
 			s.AcceptUDP = &on
 			s.Sing = config.SingServerConfig{Binary: bin, Protocol: protocol, Listen: fmt.Sprintf("127.0.0.1:%d", public), ServerName: name, Password: "separate-helper-account-secret", Certificate: cert, Key: key}
 			c.Sing = config.SingClientConfig{Binary: bin, Protocol: protocol, Server: s.Sing.Listen, ServerName: name, Password: s.Sing.Password, CAFile: cert}
+			s.Sing.NativeUDP, c.Sing.NativeUDP = strings.HasSuffix(variant, "-native"), strings.HasSuffix(variant, "-native")
 			if protocol == "tuic" {
 				s.Sing.UUID = "12345678-1234-4234-8234-123456789abc"
 				c.Sing.UUID = s.Sing.UUID
@@ -130,6 +133,20 @@ func TestSingReverseEnginesCarryConcurrentTCPUDPAndDirectionalEOF(t *testing.T) 
 			n, err := u.Read(b[:])
 			if err != nil || !bytes.Equal(b[:n], request) {
 				t.Fatalf("forwarded UDP: %v", err)
+			}
+			if s.Sing.NativeUDP {
+				for _, size := range []int{1, 1200, 8192, 59000} {
+					payload := randomPayload(t, size)
+					u.SetDeadline(time.Now().Add(5 * time.Second))
+					if _, err := u.Write(payload); err != nil {
+						t.Fatal(err)
+					}
+					got := make([]byte, 65535)
+					n, err := u.Read(got)
+					if err != nil || !bytes.Equal(got[:n], payload) {
+						t.Fatalf("native datagram boundary (%d bytes): %v", size, err)
+					}
+				}
 			}
 			tun.Stop()
 			waitPortFree(t, public, 3*time.Second)

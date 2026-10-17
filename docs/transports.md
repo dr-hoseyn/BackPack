@@ -12,9 +12,10 @@ renewal remains external, and valid file replacements reload the tunnel without
 a TOML edit. Invalid or incomplete replacements keep the current generation.
 The terminal's Reverse setup and Edit → Transport menus offer an HTTPS family
 with Naive / HTTP2, XHTTP / TLS and REALITY / Vision. The wizard collects helper
-settings on each machine; these remain outside automatic transport selection.
+settings on each machine. The explicit managed adaptive-path profile can
+keep multiple carriers warm and select using verified transfers.
 Each side owns its helper under the tunnel context; TCP forwarding
-and one endpoint are currently supported.
+and independent helper endpoints are supported.
 
 The normal installer selects `BP_HELPERS=naive,xray` by default on Linux glibc
 amd64/arm64, installing both helper families. Set `BP_HELPERS=` explicitly to
@@ -31,8 +32,13 @@ An independent [experimental AmneziaWG engine](amneziawg.md) is available throug
 For paths that carry only short HTTPS exchanges, an experimental IP-only fixed
 TCP relay is available through `backpack short-https`. It retains stream offsets
 across fresh HTTPS requests rather than relying on one persistent connection.
-It has lower throughput and is separate from these managed helpers and their
-menus. See [Experimental Short HTTPS](short-https.md) for paired setup and limits.
+It also integrates with managed Reverse setup, pairing, services and ACME.
+See [Short HTTPS](short-https.md) for paired setup and limits.
+
+[Managed adaptive paths](managed-paths.md) select verified carriers for new
+connections while retaining active forwards. [MPTCP](mptcp.md) is an opt-in
+Linux facility for native TCP/stealth/tcpmux. Direct L3 also offers explicit
+[MASQUE HTTP/2 Capsule fallback](masque.md) when UDP cannot get through.
 
 Use a build containing these changes on both machines. From its source checkout,
 `BP_BUILD_FROM_SOURCE=1 BP_HELPERS=naive,xray bash install.sh` builds that checkout
@@ -43,9 +49,10 @@ These optional Linux helpers carry the existing **TCP reverse engine**. Keep
 `transport = "tcp"` and use the same literal loopback `server.bind_addr` and
 `client.remote_addr` on both machines. The Iran helper's public listener must
 use a different port. The outside client initiates the encrypted connection
-toward Iran. Only TCP forwarding with one endpoint is supported; UDP forwarding,
-transport/address fallbacks, other outbound proxies, Direct and L3 are refused.
-Choose one helper per tunnel. The terminal wizard configures it, and Edit →
+toward Iran. Naive/Xray/Short support TCP forwarding; sing-box modes also offer UDP,
+including opt-in native Hysteria2/TUIC UDP. Inline helpers exclude
+transport/address fallbacks, other outbound proxies, Direct and L3.
+Choose one inline helper or the explicit managed-path profile. The terminal wizard configures it, and Edit →
 HTTPS Settings changes the public endpoint, internal port and credentials in
 one restart. Ordinary edits preserve it. Iran exports a Setup Link carrying
 the peer credentials, public endpoint and private-certificate trust for
@@ -62,9 +69,8 @@ Setup Link. For manual setup, copy only the public PEM to Kharej and enter
 that file as the CA file. REALITY generates its identity on Iran and copies the matching public settings
 in the Setup Link. Its wizard tests suggested TLS 1.3/H2 cover endpoints and
 fills SNI automatically; custom endpoints remain editable and are tested
-before saving. See [the REALITY setup guide](reality-setup.md). UDP forwarding, proxy
-and routing bindings, address and transport fallbacks are excluded from this
-wizard because these wrappers cannot carry them. The helper binaries must be
+before saving. See [the REALITY setup guide](reality-setup.md). Proxy/routing overrides and old address/transport fallback chains are
+excluded from managed profiles. UDP support depends on the selected carrier. The helper binaries must be
 installed on both machines; the wizard suggests their pinned installer paths.
 
 The engine owns each helper, stores generated configuration with owner-only

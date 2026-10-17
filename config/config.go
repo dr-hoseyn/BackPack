@@ -275,6 +275,13 @@ type PckConfig struct {
 
 // ServerConfig represents the configuration for the server.
 type ServerConfig struct {
+	// Paths keeps 2..8 independent managed public carriers alive for one Reverse engine.
+	Paths []ManagedServerPath `toml:"paths"`
+	// Short selects the in-process managed Short HTTPS wrapper for TCP Reverse.
+	Short ShortServerConfig `toml:"short"`
+	// MPTCP requests Multipath TCP on native tcp/stealth/tcpmux tunnel sockets.
+	// Unsupported kernels and peers fall back to TCP; host routing is unchanged.
+	MPTCP bool `toml:"mptcp"`
 	// Naive optionally wraps the loopback TCP reverse listener in HTTP/2 with a tunnel-owned sing-box helper; experimental and disabled when empty.
 	Naive NaiveServerConfig `toml:"naive"`
 	// Xray optionally wraps the loopback reverse TCP listener in XHTTP/TLS or RAW/REALITY using a tunnel-owned official helper.
@@ -460,6 +467,14 @@ func (s ServerConfig) ForwardsUDP() bool {
 
 // ClientConfig represents the configuration for the client.
 type ClientConfig struct {
+	// Paths keeps paired managed carriers warm and selects verified healthy paths.
+	Paths []ManagedClientPath `toml:"paths"`
+	// PathPolicy tunes verified probing, hysteresis and failover for Paths only.
+	PathPolicy PathPolicy `toml:"path_policy"`
+	// Short selects bounded HTTPS requests for this TCP Reverse tunnel.
+	Short ShortClientConfig `toml:"short"`
+	// MPTCP requests Multipath TCP on native tcp/stealth/tcpmux tunnel sockets.
+	MPTCP bool `toml:"mptcp"`
 	// Naive optionally reaches the loopback reverse target through a tunnel-owned official Chromium Naive helper; experimental and disabled when empty.
 	Naive NaiveClientConfig `toml:"naive"`
 	// Xray optionally reaches the loopback reverse target through a restricted tunnel-owned XHTTP/TLS or RAW/REALITY helper.

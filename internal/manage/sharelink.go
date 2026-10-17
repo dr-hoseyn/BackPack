@@ -151,19 +151,21 @@ type ShareLink struct {
 
 	// Managed HTTPS links carry peer credentials, never executable paths or
 	// server private keys. The public TLS bundle is needed for private CAs.
-	InnerPort       string `json:"hi,omitempty"`
-	HelperUser      string `json:"hu,omitempty"`
-	HelperPassword  string `json:"hp,omitempty"`
-	HelperUUID      string `json:"hid,omitempty"`
-	HelperSNI       string `json:"hn,omitempty"`
-	HelperPath      string `json:"hpa,omitempty"`
-	HelperHost      string `json:"hh,omitempty"`
-	HelperPublicKey string `json:"hk,omitempty"`
-	HelperShortID   string `json:"hsid,omitempty"`
-	HelperCA        string `json:"hca,omitempty"`
-	HelperObfs      string `json:"hob,omitempty"`
-	HelperSSKey     string `json:"hss,omitempty"`
-	AWGPeer         string `json:"awgp,omitempty"`
+	InnerPort       string   `json:"hi,omitempty"`
+	HelperUser      string   `json:"hu,omitempty"`
+	HelperPassword  string   `json:"hp,omitempty"`
+	HelperUUID      string   `json:"hid,omitempty"`
+	HelperSNI       string   `json:"hn,omitempty"`
+	HelperPath      string   `json:"hpa,omitempty"`
+	HelperHost      string   `json:"hh,omitempty"`
+	HelperPublicKey string   `json:"hk,omitempty"`
+	HelperShortID   string   `json:"hsid,omitempty"`
+	HelperCA        string   `json:"hca,omitempty"`
+	HelperObfs      string   `json:"hob,omitempty"`
+	HelperSSKey     string   `json:"hss,omitempty"`
+	HelperNativeUDP bool     `json:"hnu,omitempty"`
+	PathLinks       []string `json:"mpl,omitempty"`
+	AWGPeer         string   `json:"awgp,omitempty"`
 }
 
 // Encode renders a link as the string an operator copies.
@@ -431,7 +433,7 @@ func MirrorForPeer(l ShareLink) PeerForm {
 			f.Sing.Target, f.Sing.ServerName = l.SingTarget, l.SingServerName
 			f.Sing.Binary = managedHelperPath("sing-box")
 		}
-		if l.Tr == "masque" {
+		if l.Tr == "masque" || l.Tr == "masque-h2" {
 			f.Masque.Target, f.Masque.ServerName = l.MasqueTarget, l.MasqueServerName
 			paired = append(paired, "masque.target", "masque.serverName")
 		}
@@ -622,7 +624,7 @@ func shareLinkOf(name, host string, cfg config.Config) (string, error) {
 		if config.SingDatagram(l.Tr) {
 			l.SingTarget, l.SingServerName = cfg.L3.SingL3Config.TargetAddr(), cfg.L3.SingL3Config.ServerName
 		}
-		if l.Tr == "masque" {
+		if l.Tr == "masque" || l.Tr == "masque-h2" {
 			l.MasqueTarget = cfg.L3.MasqueConfig.TargetAddr()
 			l.MasqueServerName = cfg.L3.MasqueConfig.ServerName
 		}
@@ -676,14 +678,22 @@ func shareLinkOf(name, host string, cfg config.Config) (string, error) {
 	if l.Tok == "" {
 		return "", fmt.Errorf("%q has no token to hand over", name)
 	}
+	if len(cfg.Server.Paths) != 0 {
+		return managedPathsLink(l, cfg.Server)
+	}
 	if cfg.Server.Managed() {
 		l.InnerPort = l.Port
 		var cert string
 
-		if cfg.Server.Sing.Enabled() {
+		if cfg.Server.Short.Enabled() {
+			x := cfg.Server.Short
+			l.Tr, l.Port, l.HelperSNI = "short-https", addrPort(x.Listen), x.ServerName
+			cert = x.Certificate
+		} else if cfg.Server.Sing.Enabled() {
 			x := cfg.Server.Sing
 			l.Tr, l.Port, l.HelperPassword, l.HelperSNI = x.Protocol, addrPort(x.Listen), x.Password, x.ServerName
 			l.HelperUUID, l.HelperObfs, l.HelperSSKey = x.UUID, x.ObfsPassword, x.ShadowsocksKey
+			l.HelperNativeUDP = x.NativeUDP
 			cert = x.Certificate
 		} else if cfg.Server.Naive.Enabled() {
 			x := cfg.Server.Naive
@@ -775,6 +785,9 @@ func managedLinkCAPath(body string) string {
 
 // Called only after confirmation, before saving or updating the tunnel.
 func prepareManagedLink(s TunnelSpec, link ShareLink) error {
+	if link.Tr == "managed-paths" {
+		return prepareManagedPaths(s, link)
+	}
 	if !managedTransport(link.Tr) {
 		return nil
 	}
@@ -788,6 +801,7 @@ func prepareManagedLink(s TunnelSpec, link ShareLink) error {
 			return err
 		}
 		withoutCA := s
+		withoutCA.ShortClient.CAFile = ""
 		withoutCA.NaiveClient.CAFile, withoutCA.XrayClient.CAFile, withoutCA.SingClient.CAFile = "", "", ""
 		if err := validateManagedSpec(withoutCA); err != nil {
 			return err
@@ -805,10 +819,19 @@ func managedClientFromLink(s *TunnelSpec, link ShareLink, host string) {
 	s.FallbackAddrs, s.FallbackTransports = nil, nil
 	s.FallbackDwell = 0
 	public := net.JoinHostPort(host, link.Port)
+	if link.Tr == "managed-paths" {
+		managedPathsClientFromLink(s, link, host)
+		return
+	}
 
-	if config.SingProtocol(link.Tr) {
+	if link.Tr == "short-https" {
+		s.ShortClient = config.ShortClientConfig{Server: public, ServerName: link.HelperSNI, CAFile: managedLinkCAPath(link.HelperCA)}
+		s.ConnectionPool = 8
+		s.AggressivePool = false
+	} else if config.SingProtocol(link.Tr) {
 		s.SingClient = config.SingClientConfig{Binary: managedHelperPath("sing-box"), Protocol: link.Tr, Server: public, ServerName: link.HelperSNI,
 			Password: link.HelperPassword, UUID: link.HelperUUID, ObfsPassword: link.HelperObfs, ShadowsocksKey: link.HelperSSKey, CAFile: managedLinkCAPath(link.HelperCA)}
+		s.SingClient.NativeUDP = link.HelperNativeUDP
 	} else if link.Tr == "naive" {
 		s.NaiveClient = config.NaiveClientConfig{Binary: managedHelperPath("naive"), Server: public,
 			Username: link.HelperUser, Password: link.HelperPassword, CAFile: managedLinkCAPath(link.HelperCA)}

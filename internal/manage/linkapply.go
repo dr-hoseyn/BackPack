@@ -194,10 +194,53 @@ func updateReverseFromLink(link ShareLink, o LinkApplyOptions, existing string) 
 	s.MuxVersion = paired.MuxVersion
 	s.KCPDataShards, s.KCPParityShards = paired.KCPDataShards, paired.KCPParityShards
 	previousXray := s.XrayClient
+	previousSing, previousNaive := s.SingClient, s.NaiveClient
+	previousPool, previousAggressive := s.ConnectionPool, s.AggressivePool
+	previousShort := s.ShortClient.Enabled()
+	previousPaths, previousPolicy := s.ClientPaths, s.PathPolicy
 	clearManagedTransport(&s)
 	s.NaiveClient, s.XrayClient, s.SingClient = paired.NaiveClient, paired.XrayClient, paired.SingClient
 	if managedTransport(link.Tr) {
 		managedClientFromLink(&s, link, host)
+		if s.XrayClient.Enabled() && s.XrayClient.Mode == previousXray.Mode {
+			s.XrayClient.Binary = previousXray.Binary
+		}
+		if s.NaiveClient.Enabled() && previousNaive.Enabled() {
+			s.NaiveClient.Binary = previousNaive.Binary
+		}
+		if s.SingClient.Enabled() && s.SingClient.Protocol == previousSing.Protocol {
+			s.SingClient.Binary = previousSing.Binary
+			if s.SingClient.NativeUDP {
+				s.SingClient.UDPMaxFlows, s.SingClient.UDPBandwidthMbps = previousSing.UDPMaxFlows, previousSing.UDPBandwidthMbps
+			}
+		}
+		if link.Tr == "short-https" && previousShort || link.Tr == "managed-paths" && len(previousPaths) != 0 {
+			s.ConnectionPool, s.AggressivePool = previousPool, previousAggressive
+		}
+		if link.Tr == "managed-paths" {
+			s.PathPolicy = previousPolicy
+			for i := range s.ClientPaths {
+				for _, old := range previousPaths {
+					if s.ClientPaths[i].Name == old.Name {
+						p := &s.ClientPaths[i]
+						if p.Xray.Enabled() && p.Xray.Mode == old.Xray.Mode {
+							p.Xray.Binary = old.Xray.Binary
+							p.Xray.CopyXHTTPOptions(old.Xray)
+						}
+						if p.Sing.Enabled() && p.Sing.Protocol == old.Sing.Protocol {
+							p.Sing.Binary = old.Sing.Binary
+							if p.Sing.NativeUDP {
+								p.Sing.UDPMaxFlows = old.Sing.UDPMaxFlows
+								p.Sing.UDPBandwidthMbps = old.Sing.UDPBandwidthMbps
+							}
+						}
+						if p.Naive.Enabled() && old.Naive.Enabled() {
+							p.Naive.Binary = old.Naive.Binary
+						}
+					}
+				}
+			}
+		}
 		s.XrayClient.CopyXHTTPOptions(previousXray)
 		s.Proxy, s.LocalAddr, s.Interface, s.EdgeIP = "", "", "", ""
 		s.SOMark, s.LoadBalance = 0, false
@@ -257,7 +300,7 @@ func applyDirectLink(link ShareLink, o LinkApplyOptions) (LinkApplied, error) {
 			return LinkApplied{}, fmt.Errorf("native sing-box carrier requires --sing-cert and --sing-key on Kharej, or Setup from a link in the terminal")
 		}
 	}
-	if link.Tr == "masque" {
+	if link.Tr == "masque" || link.Tr == "masque-h2" {
 		form.Masque.CertFile, form.Masque.KeyFile = o.MasqueCert, o.MasqueKey
 		if form.Masque.CertFile == "" || form.Masque.KeyFile == "" {
 			return LinkApplied{}, fmt.Errorf("MASQUE needs the TLS files on Kharej: add --masque-cert /path/fullchain.pem --masque-key /path/privkey.pem, or use Setup from a link in the menu")

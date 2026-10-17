@@ -10,6 +10,7 @@ import (
 
 	"github.com/backpack/backpack/internal/client/transport"
 	"github.com/backpack/backpack/internal/debugserver"
+	"github.com/backpack/backpack/internal/tunnel/adaptive"
 	"github.com/backpack/backpack/internal/tunnel/chain"
 	"github.com/backpack/backpack/internal/tunnel/naive"
 	"github.com/backpack/backpack/internal/utils/handlers"
@@ -95,8 +96,37 @@ func (c *Client) Start() {
 		c.logger.Errorf("ignoring the configured outbound settings and dialling directly: %v", err)
 		outbound = nil
 	}
-	if c.config.Managed() {
+	if len(c.config.Paths) != 0 {
+		paths, err := adaptive.StartClient(c.ctx, c.config, c.logger)
+		if err != nil {
+			c.logger.Errorf("managed paths could not start: %v", err)
+			return
+		}
+		defer paths.Close()
+		proxy, err := network.ParseProxy(paths.ProxyURL())
+		if err != nil {
+			c.logger.Error("invalid managed paths proxy")
+			return
+		}
+		outbound = &network.Outbound{Proxy: proxy, PoolObserver: paths}
+		if c.config.NativeSing().NativeUDP {
+			pc, peer, err := paths.PacketConn()
+			if err != nil {
+				c.logger.Errorf("native managed paths could not start: %v", err)
+				return
+			}
+			closeNative, err := c.startNativePacket(pc, peer)
+			if err != nil {
+				c.logger.Errorf("native managed paths could not start: %v", err)
+				return
+			}
+			defer closeNative()
+		}
+	} else if c.config.Managed() {
 		helper, err := naive.StartWithRetry(c.ctx, c.logger, func() (*naive.Helper, error) {
+			if c.config.Short.Enabled() {
+				return naive.StartShortClient(c.ctx, c.config, c.logger)
+			}
 			if c.config.Sing.Enabled() {
 				return naive.StartSingClient(c.ctx, c.config, c.logger)
 			}
@@ -109,6 +139,9 @@ func (c *Client) Start() {
 			return
 		}
 		defer helper.Close()
+		if c.config.Sing.NativeUDP {
+			defer c.startNativeUDP(helper.ProxyURL())()
+		}
 		proxy, err := network.ParseProxy(helper.ProxyURL())
 		if err != nil {
 			c.logger.Error("invalid managed transport proxy")
@@ -162,6 +195,7 @@ func buildOutbound(cfg *config.ClientConfig) (*network.Outbound, error) {
 		return nil, err
 	}
 	out := &network.Outbound{
+		MPTCP:     cfg.MPTCP,
 		Proxy:     proxy,
 		LocalAddr: cfg.LocalAddr,
 		Interface: cfg.Interface,

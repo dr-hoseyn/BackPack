@@ -18,6 +18,7 @@ import (
 // its own. The two transports had a copy each; what differs between them —
 // what admitting a connection means — is admit.
 type tcpTunnelPort struct {
+	mptcp     bool
 	ctx       context.Context
 	addr      string
 	rcvBuf    int
@@ -51,7 +52,7 @@ func (p tcpTunnelPort) serve() {
 	// previous instance still shutting down, or the port in TIME_WAIT. Both
 	// clear on their own. See bindfail.go.
 	listener, ok := bindTunnelPort(p.ctx, p.log, p.addr, func() (net.Listener, error) {
-		return network.ListenWithBuffers("tcp", p.addr, p.rcvBuf, p.sndBuf, p.mss, p.keepAlive, !p.nodelay)
+		return network.ListenWithBuffers("tcp", p.addr, p.rcvBuf, p.sndBuf, p.mss, p.keepAlive, !p.nodelay, p.mptcp)
 	})
 	if !ok {
 		return
@@ -92,6 +93,9 @@ func (p tcpTunnelPort) accept(listener net.Listener) {
 			continue
 		}
 		p.tune(tcpConn)
+		if p.mptcp {
+			p.log.Debugf("tunnel socket to %s: %s", tcpConn.RemoteAddr(), network.MPTCPStatus(tcpConn))
+		}
 
 		// Held until admit has judged the connection: admit returns once it
 		// has filed it or refused it, and what serves it afterwards runs

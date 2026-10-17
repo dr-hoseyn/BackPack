@@ -7,13 +7,14 @@ From this source checkout: `BP_BUILD_FROM_SOURCE=1 BP_HELPERS=naive,xray bash in
 
 | Protocol | Outer traffic | Reverse forwarding | Native datagram L3 |
 |---|---|---|---|
-| Hysteria2 | QUIC/UDP, optional Salamander | TCP and opt-in UDP in reliable streams | Yes, Salamander and adaptive BBR |
+| Hysteria2 | QUIC/UDP, optional Salamander | TCP; stream UDP or opt-in native UDP | Yes, Salamander and adaptive BBR |
 | AnyTLS | TLS/TCP with padding and connection reuse | TCP and opt-in UDP in reliable streams | No |
 | ShadowTLS v3 + SS2022 | Verified TLS cover, encrypted inner TCP | TCP and opt-in UDP in reliable streams | No |
-| TUIC v5 | QUIC/UDP with BBR | TCP and opt-in UDP in reliable streams | Yes, native UDP relay |
+| TUIC v5 | QUIC/UDP with BBR | TCP; stream UDP or opt-in native UDP | Yes, native UDP relay |
 
 For native game/voice datagrams choose **Direct → Hysteria2 / TUIC**. Reverse
-UDP uses the existing length-prefixed reliable stream format. AnyTLS and
+UDP defaults to the existing length-prefixed reliable stream format. The new
+`native_udp` option below enables actual datagrams for Hysteria2/TUIC. AnyTLS and
 ShadowTLS are reliable streams and cannot be L3 carriers. None of these modes
 implies compatibility with an HTTP reverse proxy or CDN. Hysteria2/TUIC need a
 usable UDP path; Salamander cannot restore a completely blocked IP or UDP path.
@@ -86,11 +87,59 @@ obfs_password = "REPLACE-WITH-THE-SAME-SALAMANDER-PASSWORD"
 
 TLS verification is always enabled. Renewal is external: valid certificate/key
 or CA replacements reload the tunnel; invalid replacements retain the running
-generation. Helpers receive embedded validated material. One managed helper
-family is allowed per tunnel. Internal transport stays `tcp`; other outbound
+generation. Helpers receive embedded validated material. One inline managed helper
+family is allowed per tunnel; [managed paths](managed-paths.md) explicitly
+configures multiple independent helpers. Internal transport stays `tcp`; other outbound
 proxies, routing bindings and endpoint/transport fallbacks are rejected rather
 than silently bypassed. Helpers can reach only the exact private loopback IP
 and port. Local listener readiness is not authenticated tunnel health.
+
+## Native UDP in Reverse mode
+
+Requires this next-protocols build on both machines. For Hysteria2 or TUIC,
+set `accept_udp = true` in `[server]` and **`native_udp = true` in both
+`[server.sing]` and `[client.sing]`**. The wizard offers this explicitly and
+Setup Links carry the paired flag. Leave it false to retain stream UDP.
+The private Reverse address is shared by TCP and a UDP broker; both must be free
+on the same literal loopback address/port. Forwarded UDP ports retain the
+ordinary `server.ports` mappings, including independent flows and ranges.
+No TUN or new firewall rules are installed.
+
+The Internet path uses sing-box's native QUIC datagrams through a local SOCKS5
+UDP association. A separate Noise NNpsk0 handshake derives directional AEAD keys
+from the Reverse token. Counter replay protection is committed only after
+successful authentication. Periodic key rotation, bounded pending handshakes,
+authenticated keepalives, a hard session lifetime and previous-key overlap
+bound recovery state. Probes use domain-separated request/response MACs and
+cannot replace a live Noise association. Keep machine clocks correct: session
+ordering uses authenticated timestamps and refuses older handshakes.
+
+Packets retain their boundaries and are never retransmitted by this Reverse
+UDP layer. Outage packets and over-limit packets are dropped; recovery does
+not replay them. Application flows can still time out during recovery.
+The association message budget is 60,000 bytes; application datagrams must also
+fit the flow ID and target metadata inside that budget.
+Messages larger than 1,000 bytes use independently authenticated fragments.
+At most 64 incomplete messages are retained, each for at most three seconds.
+Fragments can arrive out of order; a missing fragment drops only its message
+and never holds later datagrams. There are no fragment acknowledgements or
+retries. Large datagrams have a higher chance of loss when a path drops packets.
+
+Optional local settings in each sing table:
+
+```toml
+native_udp = true
+udp_max_flows = 128       # default 128, maximum 4096
+udp_bandwidth_mbps = 20   # 0 = unlimited; excess datagrams are dropped
+```
+
+Flow state expires after 60 idle seconds and each flow has a four-packet setup
+queue. Limits are local; all native paths in one process must use identical
+local limits. Existing stream-wide `max_connections` or `bandwidth_mbps` on Iran
+are rejected with native UDP: use the explicit UDP limits rather than assuming
+the stream limiter covers these sockets. Metrics distinguish association
+health, active flows, sent/received/dropped datagrams and byte totals. Ordinary
+tunnel byte counters include native UDP for traffic accounting.
 
 ## Native Hysteria2 / TUIC for L3
 
@@ -150,7 +199,9 @@ The independent managed AWG engine is documented in [AmneziaWG](amneziawg.md).
 را با لینک جفت‌شده ساخت. گواهی TLS همیشه بررسی می‌شود؛ لینک و فایل تنظیمات
 حاوی اطلاعات خصوصی‌اند. کلید خصوصی گواهی سرور در لینک منتقل نمی‌شود.
 
-UDP در حالت Reverse داخل جریان مطمئن حمل می‌شود. برای دیتاگرام بومی از
+UDP در Reverse به‌صورت پیش‌فرض داخل جریان مطمئن است. در نسخهٔ جدید، با
+`native_udp = true` در هر دو سر Hysteria2/TUIC دیتاگرام بومی فعال می‌شود؛
+بستهٔ ازدست‌رفته تکرار نمی‌شود. برای حالت L3 از
 Direct → UDP → Hysteria2 یا TUIC استفاده کن؛ این حالت به TUN و دسترسی مدیریت
 شبکه نیاز دارد. AnyTLS و ShadowTLS حامل L3 نیستند. ساخت جفت و تنظیم گواهی از
 ترمینال انجام می‌شود و پنل، مدیریت و وضعیت تونل نصب‌شده را ارائه می‌کند.

@@ -222,6 +222,9 @@ func warnIgnoredProxyProtocol(cfg *config.Config) {
 // it and keeps what is running. See reload.go.
 func validateConfig(cfg *config.Config) error {
 	for _, check := range []func(*config.Config) error{
+		checkMPTCP,
+		checkManagedPaths,
+		naive.ValidateShort,
 		checkNaive,
 		checkXray,
 		checkSing,

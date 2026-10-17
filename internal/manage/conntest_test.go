@@ -272,6 +272,7 @@ func TestAConnectionTestOverLoopbackPassesEveryReverseTransport(t *testing.T) {
 		production.NaiveClient.CAFile = testPeer.NaiveClient.CAFile
 		production.XrayClient.CAFile = testPeer.XrayClient.CAFile
 		production.SingClient.CAFile = testPeer.SingClient.CAFile
+		production.ShortClient.CAFile = testPeer.ShortClient.CAFile
 		// An isolated fixture changes only the local executable path; Setup
 		// Links deliberately use the installed helper path on their own host.
 		if os.Getenv("BP_CONNTEST_HELPERS_ROOT") != "" {
@@ -279,7 +280,7 @@ func TestAConnectionTestOverLoopbackPassesEveryReverseTransport(t *testing.T) {
 			production.XrayClient.Binary = testPeer.XrayClient.Binary
 			production.SingClient.Binary = testPeer.SingClient.Binary
 		}
-		if production.NaiveClient != testPeer.NaiveClient || production.XrayClient != testPeer.XrayClient || production.SingClient != testPeer.SingClient || production.RemoteAddr != testPeer.RemoteAddr || production.Token != testPeer.Token {
+		if production.ShortClient != testPeer.ShortClient || production.NaiveClient != testPeer.NaiveClient || production.XrayClient != testPeer.XrayClient || production.SingClient != testPeer.SingClient || production.RemoteAddr != testPeer.RemoteAddr || production.Token != testPeer.Token {
 			t.Fatalf("%s production Setup Link differs from the tested helper peer", c.tr)
 		}
 		if err := validateManagedSpec(production); err != nil {

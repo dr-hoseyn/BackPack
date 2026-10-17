@@ -270,12 +270,35 @@ func managedPathChecks(g string, t core.Tunnel) []Check {
 	if err == nil && time.Since(snap.Taken) <= time.Minute {
 		pool = snap.Pool
 	}
-	return []Check{
+	out := []Check{
 		managedPoolCheck(g, pool),
 		{Group: g, Name: "Path MTU", Level: CheckInfo,
 			Detail: "managed HTTPS path; the inner loopback MTU does not describe the carrier",
 			Fix:    "verify large transfers through the forwarded entry port"},
 	}
+	if err == nil && time.Since(snap.Taken) <= time.Minute {
+		out = append(out, verifiedManagedChecks(g, snap)...)
+	}
+	return out
+}
+
+func verifiedManagedChecks(g string, snap metrics.Snapshot) []Check {
+	var out []Check
+	if paths := snap.ManagedPaths; paths != nil {
+		c := Check{Group: g, Name: "Verified carrier", Level: CheckOK, Detail: "new TCP connections use " + paths.Active}
+		if paths.Active == "" {
+			c.Level, c.Detail, c.Fix = CheckWarn, "no carrier currently passes authenticated transfer probes", "inspect per-path metrics, public endpoints and paired trust; local helper readiness is insufficient"
+		}
+		out = append(out, c)
+	}
+	if udp := snap.NativeUDP; udp != nil {
+		c := Check{Group: g, Name: "Native UDP association", Level: CheckOK, Detail: fmt.Sprintf("authenticated; %d flows, %d dropped datagrams", udp.Flows, udp.Dropped)}
+		if !udp.Connected || snap.ManagedPaths != nil && snap.ManagedPaths.NativeUDPActive == "" {
+			c.Level, c.Detail, c.Fix = CheckWarn, "native datagrams have no recent authenticated association", "inspect native path metrics and UDP reachability; TCP control health does not establish UDP health"
+		}
+		out = append(out, c)
+	}
+	return out
 }
 
 func managedPoolCheck(g string, pool *metrics.PoolStats) Check {

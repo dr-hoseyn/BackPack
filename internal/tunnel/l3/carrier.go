@@ -20,8 +20,8 @@ import (
 // run over plain UDP today and over the forged-source and raw-TCP carriers
 // next, without the engine learning anything about them.
 //
-// Only datagram carriers may appear here. See the package doc for why a
-// reliable carrier is not merely a poor fit but actively harmful.
+// Carriers preserve packet boundaries. Native datagrams are preferred; the
+// explicit masque-h2 fallback accepts reliable delivery's loss/HOL penalty.
 
 // DatagramCarrier is a net.PacketConn that can also say what it costs.
 type DatagramCarrier interface {
@@ -142,8 +142,8 @@ func sizeUDPBuffers(conn *net.UDPConn, sockBuf int) {
 // reason it does.
 const defaultSockBuf = 4 << 20
 
-// Carrier names accepted in a configuration. A reliable transport — tcp, ws,
-// kcp — is deliberately absent and can never be added: see the package doc.
+// Carrier names accepted in a configuration. General reverse stream transports
+// are absent. MASQUE/H2 is a separate, explicit Capsule fallback.
 const (
 	CarrierUDP   = "udp"
 	CarrierPck   = "pck"
@@ -155,6 +155,8 @@ const (
 	CarrierQuic = "quic"
 	// CarrierMasque carries UDP payloads in real HTTP/3 CONNECT-UDP requests.
 	CarrierMasque = "masque"
+	// CarrierMasqueH2 is an explicit reliable HTTPS fallback for UDP-blocked paths.
+	CarrierMasqueH2 = "masque-h2"
 	// CarrierSNI is pck with a fake TLS ClientHello at the start of the flow,
 	// so a box that classifies by server name lets the rest through. See
 	// carrier_sni.go.
@@ -171,7 +173,7 @@ func KnownCarrier(name string) bool { return knownCarrier(name) }
 // refused before anything is created rather than after.
 func knownCarrier(name string) bool {
 	switch name {
-	case CarrierUDP, CarrierPck, CarrierXdi, CarrierSpoof, CarrierQuic, CarrierSNI, CarrierMasque, "hysteria2", "tuic":
+	case CarrierUDP, CarrierPck, CarrierXdi, CarrierSpoof, CarrierQuic, CarrierSNI, CarrierMasque, CarrierMasqueH2, "hysteria2", "tuic":
 		return true
 	}
 	return false
@@ -221,6 +223,8 @@ func openBareCarrier(ctx context.Context, cfg Config) (DatagramCarrier, net.Addr
 		return openQuicContext(ctx, cfg)
 	case CarrierMasque:
 		return openMasque(ctx, cfg)
+	case CarrierMasqueH2:
+		return openMasqueH2(ctx, cfg)
 	case "hysteria2", "tuic":
 		return openSingCarrier(ctx, cfg)
 	case CarrierSNI:
