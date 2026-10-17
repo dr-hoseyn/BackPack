@@ -158,6 +158,24 @@ func TestConnectionTestLiveRowsDoNotDuplicateOnSmallOrResizedTerminals(t *testin
 			if !strings.Contains(screen.text(), "SPEED") || !strings.Contains(screen.text(), "Showing") {
 				t.Fatalf("small screen hid the active test or truncation notice:\n%s", screen.text())
 			}
+			// Shrinking below the header height and restoring the same width
+			// must repaint everything, even when no live rows fit meanwhile.
+			w, h = 50, 1
+			screen.resize(w, h)
+			b.draw()
+			screen.feed(output.String())
+			output.Reset()
+			w, h = 50, 14
+			screen.resize(w, h)
+			draw()
+			w, h = 0, 0
+			b.draw()
+			screen.feed("\x1b[H\x1b[2J") // a minimized client lost its viewport
+			w, h = 50, 14
+			draw()
+			if !strings.Contains(screen.text(), "SPEED") {
+				t.Fatal("minimized terminal did not recover")
+			}
 		})
 	}
 }

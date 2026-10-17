@@ -235,6 +235,7 @@ type ctBoard struct {
 	done          chan struct{}
 	size          func() (int, int)
 	width, height int
+	reset         bool // a zero-sized/minimized terminal invalidated cursor positions
 }
 
 // newCTBoard starts a board under title. On a terminal it redraws changed
@@ -369,19 +370,18 @@ func (b *ctBoard) draw() {
 		width, height = b.size()
 	}
 	if width <= 0 || height <= 0 {
+		b.reset = true
 		return
 	}
 	lines := b.lines(width, height)
-	if len(lines) == 0 {
-		return
-	}
 	var w strings.Builder
-	if b.width != 0 && (b.width != width || b.height != height) {
+	if b.reset || b.width != 0 && (b.width != width || b.height != height) {
 		// A resize may already have pushed old rows into scrollback. Start at
 		// a known viewport origin rather than addressing those stale positions.
 		w.WriteString("\033[H\033[2J")
 		b.shown = nil
 	}
+	b.reset = false
 	b.width, b.height = width, height
 	if len(b.shown) != len(lines) {
 		// First draw, or the row count changed: the region is written out.
@@ -419,7 +419,7 @@ func (b *ctBoard) finish(results []ConnTestResult, best ConnTestBest) {
 		if b.size != nil {
 			width, height = b.size()
 		}
-		if width != b.width || height != b.height {
+		if b.reset || width != b.width || height != b.height {
 			w.WriteString("\033[H\033[2J")
 		} else {
 			fmt.Fprintf(&w, "\033[%dF\033[J", len(b.shown))
