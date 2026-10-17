@@ -66,7 +66,7 @@ func TestTheConnectionTestAcrossARealPath(t *testing.T) {
 			}
 			// Every reverse transport, every direct carrier, and IP spoofing
 			// both ways.
-			if len(results) != len(connTestReverse)+len(connTestDirect)+2 {
+			if len(results) != len(connTestReverse)+len(ctDirectPlans(""))+2 {
 				t.Fatalf("%d results\n%s", len(results), out)
 			}
 			if !strings.Contains(string(out), "Works Steadily:") {
@@ -115,7 +115,7 @@ func TestConnTestIranSide(t *testing.T) {
 			connTestDirect = []string{tr}
 		}
 	}
-	s, link, err := StartConnTestIran(ConnTestOptions{Host: os.Getenv("CT_HOST"), Direct: true, SNIDomain: "www.example.com",
+	s, link, err := StartConnTestIran(ConnTestOptions{Host: os.Getenv("CT_HOST"), Direct: true,
 		SpoofSrc: "10.10.10.10", Preset: os.Getenv("CT_PRESET")})
 	if err != nil {
 		t.Fatal(err)
@@ -143,6 +143,8 @@ func TestConnTestIranSide(t *testing.T) {
 	}
 	raw, _ := json.Marshal(results)
 	_ = os.WriteFile(filepath.Join(w, "iran.json"), raw, 0o600)
+	bestRaw, _ := json.Marshal(s.Best())
+	_ = os.WriteFile(filepath.Join(w, "iran-best.json"), bestRaw, 0o600)
 	t.Log("\n" + ConnTestTable(results))
 	if os.Getenv("CT_IPV6") == "1" {
 		best := s.Best()
@@ -195,7 +197,7 @@ func TestTheConnectionTestAcrossAnIPv6OnlyPath(t *testing.T) {
 	if err := json.Unmarshal(raw, &rows); err != nil {
 		t.Fatal(err)
 	}
-	if len(rows) != len(connTestReverse)+len(connTestDirect)+2 {
+	if len(rows) != len(connTestReverse)+len(ctDirectPlans(""))+2 {
 		t.Fatalf("missing IPv6 results: %+v", rows)
 	}
 	for _, r := range rows {
@@ -209,6 +211,26 @@ func TestTheConnectionTestAcrossAnIPv6OnlyPath(t *testing.T) {
 		} else if r.Status != ctOK {
 			t.Errorf("supported IPv6 path failed: %+v", r)
 		}
+	}
+	seenSNI := map[string]bool{}
+	wantSNI := ""
+	var fastestSNI float64
+	for _, r := range rows {
+		if r.Kind != "direct" || r.Transport != "sni" {
+			continue
+		}
+		if seenSNI[r.SNIDomain] || !ctSNIVariantKey(r.CaseID) || r.CaseID != "sni@"+r.SNIDomain {
+			t.Errorf("ambiguous SNI result: %+v", r)
+		}
+		seenSNI[r.SNIDomain] = true
+		if r.Status == ctOK && (wantSNI == "" || r.Mbps > fastestSNI) {
+			wantSNI, fastestSNI = r.SNIDomain, r.Mbps
+		}
+	}
+	var best ConnTestBest
+	bestRaw, err := os.ReadFile(filepath.Join(w, "iran-best.json"))
+	if err != nil || json.Unmarshal(bestRaw, &best) != nil || len(seenSNI) != len(connTestSNIDomains) || best.SNIDomain != wantSNI {
+		t.Errorf("IPv6 SNI recommendation: got %+v, expected %s; candidates %v", best, wantSNI, seenSNI)
 	}
 	if t.Failed() {
 		logs, _ := filepath.Glob(filepath.Join(w, "iran-*.log"))

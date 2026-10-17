@@ -85,7 +85,7 @@ func ctRow(r ConnTestResult) string {
 	if r.Status == ctTesting {
 		done = r.Tried
 	}
-	return fmt.Sprintf(ctRowFormat, ctEmoji(r.Status), ctKind(r.Kind), ctName(r.Transport),
+	return fmt.Sprintf(ctRowFormat, ctEmoji(r.Status), ctKind(r.Kind), ctResultName(r),
 		ctStatusLabel(r), fmt.Sprintf("%d/%d", done, total), ctBar(float64(done)/float64(total)))
 }
 
@@ -141,7 +141,7 @@ func ConnTestTable(results []ConnTestResult) string {
 			if r.UploadMbps > 0 {
 				up = fmt.Sprintf("%.1f", r.UploadMbps)
 			}
-			fmt.Fprintf(&b, "    %-18s %8s %12s %12s\n", ctName(r.Transport), rtt, down, up)
+			fmt.Fprintf(&b, "    %-18s %8s %12s %12s\n", ctResultName(r), rtt, down, up)
 		}
 		b.WriteByte('\n')
 	}
@@ -157,12 +157,13 @@ func ConnTestTable(results []ConnTestResult) string {
 	var notes []string
 	for _, r := range results {
 		if r.Detail != "" && r.Status != ctOK {
-			notes = append(notes, fmt.Sprintf("%s %s %s: %s", ctEmoji(r.Status), ctKind(r.Kind), ctName(r.Transport), r.Detail))
+			notes = append(notes, fmt.Sprintf("%s %s %s: %s", ctEmoji(r.Status), ctKind(r.Kind), ctResultName(r), r.Detail))
 		}
 	}
 	if len(notes) > 0 {
 		b.WriteString("\nNotes:\n\n" + strings.Join(notes, "\n") + "\n")
 	}
+	ctSNINotes(&b, results)
 	ctHTTPSNotes(&b, results)
 	return b.String()
 }
@@ -227,11 +228,14 @@ type ctBoard struct {
 	title string
 	tty   bool
 
-	mu    sync.Mutex
-	rows  []ConnTestResult
-	shown []string // what each line of the drawn region reads now
-	stop  chan struct{}
-	done  chan struct{}
+	mu            sync.Mutex
+	rows          []ConnTestResult
+	shown         []string // what each line of the drawn region reads now
+	stop          chan struct{}
+	done          chan struct{}
+	size          func() (int, int)
+	width, height int
+	reset         bool // a zero-sized/minimized terminal invalidated cursor positions
 }
 
 // newCTBoard starts a board under title. On a terminal it redraws changed
@@ -250,7 +254,8 @@ func ctIsTerminal(w io.Writer) bool {
 		return false
 	}
 	st, err := f.Stat()
-	return err == nil && st.Mode()&os.ModeCharDevice != 0
+	width, height := ctTerminalSize(w)
+	return err == nil && st.Mode()&os.ModeCharDevice != 0 && width > 0 && height > 0
 }
 
 // set records one tunnel's state.
@@ -287,33 +292,104 @@ func (b *ctBoard) loop() {
 }
 
 // lines is the live region: title, rule, header, one line per tunnel, rule.
-func (b *ctBoard) lines() []string {
+func (b *ctBoard) lines(width, height int) []string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if len(b.rows) == 0 {
 		return nil
 	}
 	out := []string{"CONNECTION TEST — " + b.title, ctRule(), "", ctHeader, ""}
-	for _, r := range b.rows {
+	rows := b.rows
+	// Keep the whole live region inside the viewport, including the cursor
+	// below it. Cursor-up cannot reach a row that has scrolled off the screen.
+	limit := len(rows)
+	if height > 0 && len(rows)+7 >= height {
+		limit = max(0, height-9)
+	}
+	if len(rows) > limit {
+		rows = append([]ConnTestResult(nil), rows...)
+		sort.SliceStable(rows, func(i, j int) bool {
+			priority := func(r ConnTestResult) int {
+				if r.Phase == "speed" {
+					return 0
+				}
+				if r.Phase == "speed-queued" {
+					return 1
+				}
+				if r.Status == ctTesting {
+					return 2
+				}
+				return 3
+			}
+			return priority(rows[i]) < priority(rows[j])
+		})
+		rows = rows[:limit]
+	}
+	for _, r := range rows {
 		out = append(out, ctRow(r))
 	}
-	return append(out, "", ctRule())
+	if len(rows) < len(b.rows) {
+		out = append(out, fmt.Sprintf("Showing %d/%d; active tests first. Full results at finish.", len(rows), len(b.rows)))
+	}
+	out = append(out, "", ctRule())
+	if height > 0 && len(out) >= height {
+		out = out[:max(0, height-1)]
+	}
+	for i := range out {
+		out[i] = ctClipLine(out[i], width-1)
+	}
+	return out
+}
+
+// Live lines contain ASCII, the progress glyphs and the four status emoji.
+// Reserve the final column so neither wrapping nor delayed autowrap can move
+// the cursor down an extra row during an in-place update.
+func ctClipLine(line string, columns int) string {
+	if columns <= 0 {
+		return ""
+	}
+	used := 0
+	for i, r := range line {
+		width := 1
+		switch r {
+		case '🟢', '🟡', '🔴', '⚪':
+			width = 2
+		}
+		if used+width > columns {
+			return line[:i]
+		}
+		used += width
+	}
+	return line
 }
 
 // draw rewrites the lines that changed since the last draw, and nothing else.
 func (b *ctBoard) draw() {
-	lines := b.lines()
-	if len(lines) == 0 {
+	width, height := ctTerminalSize(b.out)
+	if b.size != nil {
+		width, height = b.size()
+	}
+	if width <= 0 || height <= 0 {
+		b.reset = true
 		return
 	}
+	lines := b.lines(width, height)
 	var w strings.Builder
+	if b.reset || b.width != 0 && (b.width != width || b.height != height) {
+		// A resize may already have pushed old rows into scrollback. Start at
+		// a known viewport origin rather than addressing those stale positions.
+		w.WriteString("\033[H\033[2J")
+		b.shown = nil
+	}
+	b.reset = false
+	b.width, b.height = width, height
 	if len(b.shown) != len(lines) {
 		// First draw, or the row count changed: the region is written out.
 		if n := len(b.shown); n > 0 {
 			fmt.Fprintf(&w, "\033[%dF\033[J", n)
 		}
 		for _, l := range lines {
-			w.WriteString(l + "\n")
+			w.WriteString(ctThemeLine(l) + "\n")
 		}
 	} else {
 		// The cursor sits under the region; each changed line is reached from
@@ -323,7 +399,7 @@ func (b *ctBoard) draw() {
 				continue
 			}
 			up := len(lines) - i
-			fmt.Fprintf(&w, "\033[%dF\033[2K%s\033[%dE", up, l, up)
+			fmt.Fprintf(&w, "\033[%dF\033[2K%s\033[%dE", up, ctThemeLine(l), up)
 		}
 	}
 	b.shown = lines
@@ -339,11 +415,22 @@ func (b *ctBoard) finish(results []ConnTestResult, best ConnTestBest) {
 	<-b.done
 	var w strings.Builder
 	if b.tty && len(b.shown) > 0 {
-		fmt.Fprintf(&w, "\033[%dF\033[J", len(b.shown))
+		width, height := ctTerminalSize(b.out)
+		if b.size != nil {
+			width, height = b.size()
+		}
+		if b.reset || width != b.width || height != b.height {
+			w.WriteString("\033[H\033[2J")
+		} else {
+			fmt.Fprintf(&w, "\033[%dF\033[J", len(b.shown))
+		}
 	}
-	w.WriteString("CONNECTION TEST — " + b.title + "\n" + ctRule() + "\n\n")
-	w.WriteString(ConnTestTable(results))
-	w.WriteString("\n" + ConnTestBestTable(best))
+	text := "CONNECTION TEST — " + b.title + "\n" + ctRule() + "\n\n" +
+		ConnTestTable(results) + "\n" + ConnTestBestTable(best)
+	if b.tty {
+		text = ctThemeText(text)
+	}
+	w.WriteString(text)
 	_, _ = io.WriteString(b.out, w.String())
 }
 

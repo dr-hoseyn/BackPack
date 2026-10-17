@@ -2,6 +2,17 @@
 
 All notable changes to Backpack are documented here.
 
+## Unreleased
+
+- Compare three independent Direct SNI candidates in Connection Test, retain
+  each domain's verdict and recommend the fastest steady candidate per IP path.
+- Keep live terminal updates inside the viewport, avoid wrapped rows and
+  recover after resizing so stale rows do not appear as duplicate protocols.
+- Apply Backpack's red/white/gray theme to live and final terminal test tables.
+- Show effective protocol names for managed Naive/XHTTP/REALITY wrappers and
+  direct carriers in management/status views, keeping engine transport values
+  separate from display labels.
+
 ## v1.9.3 — 2026-10-17 (dr-hoseyn fork)
 
 - Run reverse PCK and direct PCK/SNI/xDi over IPv6. Use IPv6 TCP checksums,

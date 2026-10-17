@@ -21,7 +21,7 @@ func ConnTestJoinWait() time.Duration { return connTestJoinWait }
 // reaching zero with rows still filling.
 func ConnTestRunTime() time.Duration {
 	return connTestConnectWait + time.Duration(connTestSoak)*time.Second + 45*time.Second +
-		ConnTestSpeedTime(len(connTestReverse)-1+len(connTestDirect))
+		ConnTestSpeedTime(len(connTestReverse)-1+len(ctDirectPlans("")))
 }
 
 // ConnTestSpeedTime estimates the serial speed phase for healthy tunnels.

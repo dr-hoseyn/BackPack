@@ -55,11 +55,17 @@ func StatusLive() {
 
 // printStatusTable prints a formatted table of tunnel states.
 func printStatusTable(tunnels []Tunnel) {
-	header := fmt.Sprintf("%-16s %-8s %-8s %-8s %s", "NAME", "ROLE", "TRANSP", "STATE", "PORTS / REMOTE")
+	labels := make([]string, len(tunnels))
+	width := len("TRANSPORT")
+	for i, tunnel := range tunnels {
+		labels[i] = TunnelTransportLabel(tunnel)
+		width = max(width, len(labels[i]))
+	}
+	header := fmt.Sprintf("%-16s %-8s %-*s %-8s %s", "NAME", "ROLE", width, "TRANSPORT", "STATE", "PORTS / REMOTE")
 	fmt.Println(tui.Bold + header + tui.Reset)
 	fmt.Println(strings.Repeat("─", 72))
 
-	for _, t := range tunnels {
+	for i, t := range tunnels {
 		plainState, color := "stopped", tui.Red
 		if IsActive(t.Service) {
 			plainState, color = "running", tui.Bold+tui.White
@@ -73,8 +79,8 @@ func printStatusTable(tunnels []Tunnel) {
 		if HoldsPorts(t) && len(t.Ports) > 0 {
 			detail = strings.Join(t.Ports, ",")
 		}
-		fmt.Printf("%-16s %-8s %-8s %s %s\n",
-			truncate(t.Name, 16), t.Role, t.Transport, state, detail)
+		fmt.Printf("%-16s %-8s %-*s %s %s\n",
+			truncate(t.Name, 16), t.Role, width, labels[i], state, detail)
 	}
 }
 

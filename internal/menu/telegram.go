@@ -215,7 +215,7 @@ func configureTelegram(cfg telegram.Config) {
 		for _, t := range tunnels {
 			opts = append(opts, tui.Option{
 				Title: "Always " + t.Name,
-				Desc:  fmt.Sprintf("%s %s — pinned; the bot goes quiet if it drops", t.Role, t.Transport),
+				Desc:  fmt.Sprintf("%s %s — pinned; the bot goes quiet if it drops", t.Role, manage.TunnelTransportLabel(t)),
 			})
 		}
 		opts = append(opts, tui.Option{

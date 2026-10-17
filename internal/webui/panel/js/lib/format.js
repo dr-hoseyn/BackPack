@@ -45,6 +45,7 @@ export function ago(unixSeconds) {
 /* "reverse wss", "direct pck" — what the card says under the name. */
 export function kindLabel(t) {
   const dir = t.direction === 'direct' ? 'direct' : 'reverse';
+  if (t.transportLabel) return dir === 'direct' ? t.transportLabel : dir + ' ' + t.transportLabel;
   return dir + ' ' + (t.carrier || t.transport || '');
 }
 

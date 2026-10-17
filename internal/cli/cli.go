@@ -139,13 +139,14 @@ func runTunnel(args []string) Result {
 // tunnelView is one tunnel as this package reports it. A named type rather than
 // a map so the JSON shape is something a script can rely on across versions.
 type tunnelView struct {
-	Name      string   `json:"name"`
-	Role      string   `json:"role"`
-	Transport string   `json:"transport"`
-	Addr      string   `json:"addr"`
-	Ports     []string `json:"ports,omitempty"`
-	State     string   `json:"state"`
-	Detail    string   `json:"detail,omitempty"`
+	TransportLabel string   `json:"transportLabel,omitempty"`
+	Name           string   `json:"name"`
+	Role           string   `json:"role"`
+	Transport      string   `json:"transport"`
+	Addr           string   `json:"addr"`
+	Ports          []string `json:"ports,omitempty"`
+	State          string   `json:"state"`
+	Detail         string   `json:"detail,omitempty"`
 
 	// Traffic is what the tunnel has actually carried, when the engine has
 	// written a snapshot recently enough to mean anything.
@@ -196,8 +197,9 @@ type trafficView struct {
 func viewOf(t manage.Tunnel, h manage.Health) tunnelView {
 	v := tunnelView{
 		Name: t.Name, Role: t.Role, Transport: t.Transport, Addr: t.Addr,
-		Ports: manage.VisiblePorts(t.Ports, manage.TunnelToken(t.Name)),
-		State: h.State, Detail: h.Detail,
+		TransportLabel: manage.TunnelTransportLabel(t),
+		Ports:          manage.VisiblePorts(t.Ports, manage.TunnelToken(t.Name)),
+		State:          h.State, Detail: h.Detail,
 	}
 	attachTraffic(&v, t.Name)
 	attachUptime(&v, t.Name)
@@ -273,7 +275,7 @@ func tunnelList(asJSON bool) Result {
 	}
 	var b strings.Builder
 	for _, v := range views {
-		fmt.Fprintf(&b, "%-20s %-7s %-9s %-24s %s\n", v.Name, v.Role, v.Transport, v.Addr, v.State)
+		fmt.Fprintf(&b, "%-20s %-7s %-22s %-24s %s\n", v.Name, v.Role, v.TransportLabel, v.Addr, v.State)
 	}
 	return ok(b.String())
 }
@@ -291,7 +293,7 @@ func tunnelStatus(name string, asJSON bool) Result {
 	} else {
 		var b strings.Builder
 		fmt.Fprintf(&b, "name      %s\nrole      %s\ntransport %s\naddress   %s\nstate     %s\n",
-			v.Name, v.Role, v.Transport, v.Addr, v.State)
+			v.Name, v.Role, v.TransportLabel, v.Addr, v.State)
 		if v.Detail != "" {
 			fmt.Fprintf(&b, "detail    %s\n", v.Detail)
 		}

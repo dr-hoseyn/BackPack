@@ -100,11 +100,27 @@ func FileLocations() {
 
 // transportLabel returns a friendly "TCP — plain & fast" style label.
 func transportLabel(value string) string {
+	if carrier, ok := strings.CutPrefix(value, "l3/"); ok {
+		for _, entry := range DirectCarriers() {
+			if entry["value"] == carrier {
+				return "Direct " + entry["label"]
+			}
+		}
+		return "Direct " + strings.ToUpper(carrier)
+	}
+	if transport, ok := strings.CutPrefix(value, "direct/"); ok {
+		return "Direct " + transportLabel(transport)
+	}
 	for _, g := range cliTransportGroups() {
 		for _, e := range g.entries {
 			if e.value == value {
 				return e.label
 			}
+		}
+	}
+	for _, entry := range DirectCarriers() {
+		if entry["value"] == value {
+			return entry["label"]
 		}
 	}
 	return strings.ToUpper(value)
