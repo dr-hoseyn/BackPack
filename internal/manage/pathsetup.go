@@ -63,6 +63,11 @@ func configureManagedPaths(n *TunnelSpec, old TunnelSpec, public, host string, p
 	if n.Role == "client" {
 		n.PathPolicy = old.PathPolicy
 		n.ConnectionPool = 8
+		for _, p := range n.ClientPaths {
+			if p.Short.Enabled() {
+				n.AggressivePool = false
+			}
+		}
 		if tui.Confirm("Tune Verified Path Probing And Failover", false) {
 			p := &n.PathPolicy
 			p.ProbeInterval = tui.PromptInt("Probe Interval Seconds (0 = 5)", p.ProbeInterval)

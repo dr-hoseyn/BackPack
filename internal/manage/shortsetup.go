@@ -13,6 +13,7 @@ func configureShort(n *TunnelSpec, old TunnelSpec, public, host string) bool {
 		x.CAFile = tui.PromptDefault("Private CA File (Blank = System Trust)", x.CAFile)
 		n.ShortClient = x
 		n.ConnectionPool = 8
+		n.AggressivePool = false
 		return true
 	}
 	x := old.ShortServer

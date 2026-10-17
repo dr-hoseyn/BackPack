@@ -22,6 +22,8 @@ application must reconnect. There is a narrow destination-assignment boundary
 while a pooled connection becomes active, so this is not an atomic migration
 protocol. If every candidate fails verification, new connections fail closed
 until one recovers. No unverified direct connection is substituted.
+After a hard outage, pool refill and control-channel recovery can outlast the
+selection decision; applications should retry failed connection attempts.
 
 Native UDP selection is separate and includes only Hysteria2/TUIC paths with
 `native_udp = true`. Each candidate must also pass an authenticated datagram

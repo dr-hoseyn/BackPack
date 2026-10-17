@@ -69,6 +69,9 @@ func Validate(c *config.Config) error {
 	if n < 2 || n > 8 {
 		return errors.New("managed paths require 2..8 independent carriers")
 	}
+	if s != 0 && len(c.Server.Token) < 16 || cl != 0 && len(c.Client.Token) < 16 {
+		return errors.New("managed paths require a random reverse token of at least 16 bytes")
+	}
 	names := map[string]bool{}
 	name := func(v string) error {
 		if !pathName.MatchString(v) || names[v] {

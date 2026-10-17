@@ -827,6 +827,7 @@ func managedClientFromLink(s *TunnelSpec, link ShareLink, host string) {
 	if link.Tr == "short-https" {
 		s.ShortClient = config.ShortClientConfig{Server: public, ServerName: link.HelperSNI, CAFile: managedLinkCAPath(link.HelperCA)}
 		s.ConnectionPool = 8
+		s.AggressivePool = false
 	} else if config.SingProtocol(link.Tr) {
 		s.SingClient = config.SingClientConfig{Binary: managedHelperPath("sing-box"), Protocol: link.Tr, Server: public, ServerName: link.HelperSNI,
 			Password: link.HelperPassword, UUID: link.HelperUUID, ObfsPassword: link.HelperObfs, ShadowsocksKey: link.HelperSSKey, CAFile: managedLinkCAPath(link.HelperCA)}

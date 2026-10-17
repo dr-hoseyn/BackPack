@@ -75,6 +75,8 @@ TCP forwarding and directional EOF without an external helper, and can join
 another outbound proxy or MPTCP. Connection Test includes a managed Short HTTPS
 case with temporary verified certificates. Start with a modest pool: control,
 idle pool, active forwards and probes all consume the bounded logical sessions.
+The fixed pool is limited to 32 and aggressive pool expansion is rejected to
+reserve session capacity for control, probes and application connections.
 
 ## Trying it without changing an existing tunnel
 

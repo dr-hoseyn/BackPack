@@ -119,6 +119,11 @@ func managedPathsClientFromLink(s *TunnelSpec, l ShareLink, host string) {
 		s.ClientPaths = append(s.ClientPaths, config.ManagedClientPath{Name: p.Name, Naive: child.NaiveClient, Xray: child.XrayClient, Sing: child.SingClient, Short: child.ShortClient})
 	}
 	s.ConnectionPool = 8
+	for _, p := range s.ClientPaths {
+		if p.Short.Enabled() {
+			s.AggressivePool = false
+		}
+	}
 }
 
 func prepareManagedPaths(s TunnelSpec, l ShareLink) error {

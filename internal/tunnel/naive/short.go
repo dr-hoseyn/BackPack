@@ -51,8 +51,8 @@ func ValidateShort(c *config.Config) error {
 		if outer == inner {
 			return errors.New("Short HTTPS public and internal ports must differ")
 		}
-		if v.Token == "" {
-			return errors.New("Short HTTPS requires the reverse token")
+		if len(v.Token) < 16 {
+			return errors.New("Short HTTPS requires a random reverse token of at least 16 bytes")
 		}
 		x := v.Short
 		if x.ACMEDomain != "" {
@@ -68,8 +68,11 @@ func ValidateShort(c *config.Config) error {
 		return err
 	}
 	v := c.Client
-	if v.Token == "" {
-		return errors.New("Short HTTPS requires the reverse token")
+	if v.ConnectionPool > 32 || v.AggressivePool {
+		return errors.New("Short HTTPS requires a fixed connection_pool of at most 32 to reserve bounded relay sessions for active forwards and control")
+	}
+	if len(v.Token) < 16 {
+		return errors.New("Short HTTPS requires a random reverse token of at least 16 bytes")
 	}
 	if v.Short.ServerName != "" && net.ParseIP(v.Short.ServerName) == nil && !xrayDNSName(v.Short.ServerName) {
 		return errors.New("Short HTTPS server_name must be a verified hostname or IP")

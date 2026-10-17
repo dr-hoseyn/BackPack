@@ -86,4 +86,4 @@ jobs:
           echo "BP_SINGBOX_BINARY=$RUNNER_TEMP/sing-box-1.14.2-linux-amd64/sing-box" >> "$GITHUB_ENV"
           echo "LD_LIBRARY_PATH=$RUNNER_TEMP/sing-box-1.14.2-linux-amd64" >> "$GITHUB_ENV"
       - name: Real helper reverse TCP, stream/native UDP and directional EOF
-        run: go test ./internal/e2e -run '^TestSingReverse' -race -count=1 -v -timeout 8m
+        run: go test ./internal/e2e -run '^(TestSingReverse|TestAdaptiveNativeUDP)' -race -count=1 -v -timeout 8m

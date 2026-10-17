@@ -144,6 +144,12 @@ func TestAdaptiveManagedPathsPreserveActiveForwardsAndRecoverNewConnectionsAfter
 	a.delay.Store(0)
 	b.blocked.Store(true)
 	waitSelectedPath(t, "first", 25*time.Second)
+	// With a failed carrier, its outstanding pool and control operations can
+	// still be unwinding after the selector withdraws it. Require bounded
+	// verified recovery, without claiming zero interruption at that boundary.
+	if err := tun.waitReady(20 * time.Second); err != nil {
+		t.Fatal(err)
+	}
 	if err := tun.roundTrip([]byte("new forward after failure recovery")); err != nil {
 		t.Fatal(err)
 	}
