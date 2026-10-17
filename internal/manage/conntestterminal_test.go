@@ -179,3 +179,21 @@ func TestConnectionTestLiveRowsDoNotDuplicateOnSmallOrResizedTerminals(t *testin
 		})
 	}
 }
+
+func TestConnectionTestLiveTableFitsNamesLossAndProgressInEightyColumns(t *testing.T) {
+	var output bytes.Buffer
+	b := &ctBoard{out: &output, tty: true, title: "192.0.2.1", size: func() (int, int) { return 80, 24 }}
+	b.rows = []ConnTestResult{
+		{Kind: "reverse", Transport: "hysteria2", Status: ctOK, Tried: 60, OK: 60, Total: 60},
+		{Kind: "reverse", Transport: "shadowtls", Status: ctUnstable, Tried: 60, OK: 52, Total: 60},
+	}
+	b.draw()
+	screen := &ctTestScreen{}
+	screen.resize(80, 24)
+	screen.feed(output.String())
+	for _, want := range []string{"Hysteria2 / Salamander", "ShadowTLS v3 / SS2022", "LOSS", "0.0%", "13.3%", "100%", "87%"} {
+		if !strings.Contains(screen.text(), want) {
+			t.Fatalf("%q hidden in an 80-column terminal:\n%s", want, screen.text())
+		}
+	}
+}

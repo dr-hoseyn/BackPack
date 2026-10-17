@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 )
 
 // The Connection Test's table, drawn while the test runs.
@@ -35,6 +36,18 @@ var ctTransportNames = map[string]string{
 	"masque": "MASQUE / HTTP3", "naive": "Naive / HTTP2", "xhttp": "XHTTP / TLS", "reality": "REALITY / Vision",
 	ctSpoofToKharej: "Iran→Kharej", ctSpoofToIran: "Kharej→Iran",
 }
+
+// Keep every table aligned with the longest protocol label. fmt's string
+// widths are minimums, so the old 16/18-column fields let longer names push
+// status, RTT and speed into neighbouring columns. Labels use single-cell
+// runes; count runes as fmt does, including the spoofing direction arrows.
+var ctNameWidth = func() int {
+	width := 18
+	for _, name := range ctTransportNames {
+		width = max(width, utf8.RuneCountInString(name))
+	}
+	return width
+}()
 
 func ctName(tr string) string {
 	if n, ok := ctTransportNames[tr]; ok {
@@ -72,9 +85,9 @@ func ctEmoji(status string) string {
 }
 
 // Every emoji here takes two columns; the rest of the RESULT column is spaces.
-const ctRowFormat = "%s       %-9s %-16s %-11s %-8s %s"
+const ctRowFormat = "%s       %-9s %-*s %-8s %-6s %6s %s"
 
-var ctHeader = fmt.Sprintf("%-8s %-9s %-16s %-11s %-8s %s", "RESULT", "KIND", "NAME", "STATUS", "ECHOES", "TESTING")
+var ctHeader = fmt.Sprintf("%-8s %-9s %-*s %-8s %-6s %6s %s", "RESULT", "KIND", ctNameWidth, "NAME", "STATUS", "ECHOES", "LOSS", "PROGRESS")
 
 // ctRow is one tunnel's line. While it runs, ECHOES and the bar are the echoes
 // sent; once it has a verdict, the echoes that came back.
@@ -87,8 +100,20 @@ func ctRow(r ConnTestResult) string {
 	if r.Status == ctTesting {
 		done = r.Tried
 	}
-	return fmt.Sprintf(ctRowFormat, ctEmoji(r.Status), ctKind(r.Kind), ctResultName(r),
-		ctStatusLabel(r), fmt.Sprintf("%d/%d", done, total), ctBar(float64(done)/float64(total)))
+	return fmt.Sprintf(ctRowFormat, ctEmoji(r.Status), ctKind(r.Kind), ctNameWidth, ctResultName(r),
+		ctStatusLabel(r), fmt.Sprintf("%d/%d", done, total), ctLossLabel(r), ctBar(float64(done)/float64(total)))
+}
+
+// This is failed application-level echo attempts, the same sample used by
+// the recommendations, not raw network packet loss: reliable transports can
+// recover packets below the echo layer. Unsent attempts and pending replies
+// must not be presented as loss.
+func ctLossLabel(r ConnTestResult) string {
+	if r.Status == ctTesting || r.Status == ctSkipped || r.Tried <= 0 {
+		return "-"
+	}
+	lost := r.Tried - max(0, min(r.OK, r.Tried))
+	return fmt.Sprintf("%.1f%%", float64(lost)*100/float64(r.Tried))
 }
 
 func ctStatusLabel(r ConnTestResult) string {
@@ -101,12 +126,56 @@ func ctStatusLabel(r ConnTestResult) string {
 	return strings.ToUpper(r.Status)
 }
 
-func ctRule() string { return strings.Repeat("─", 60) }
+func ctRule() string { return strings.Repeat("─", utf8.RuneCountInString(ctHeader)) }
+
+// A short overview keeps skipped prerequisites distinct from failed tests.
+// Reuse it above both tables so live progress and the final verdict agree.
+func ctSummary(rows []ConnTestResult) string {
+	counts := map[string]int{}
+	for _, r := range rows {
+		counts[r.Status]++
+	}
+	parts := []string{}
+	for _, group := range []struct{ status, label string }{
+		{ctOK, "steady"}, {ctUnstable, "unstable"}, {ctDown, "down"},
+		{ctTesting, "testing"}, {ctSkipped, "skipped"},
+	} {
+		if n := counts[group.status]; n > 0 {
+			parts = append(parts, fmt.Sprintf("%d %s", n, group.label))
+		}
+	}
+	if len(parts) == 0 {
+		return "Summary: no results yet"
+	}
+	return "Summary: " + strings.Join(parts, " / ")
+}
+
+// Diagnostics get their own indented lines instead of wrapping underneath
+// the protocol name at the left edge of the terminal. Do not split a token:
+// paths and hostnames must remain copyable.
+func ctWriteNote(out io.Writer, text string) {
+	const indent = "      "
+	line := indent
+	for _, word := range strings.Fields(text) {
+		if line != indent && utf8.RuneCountInString(line)+1+utf8.RuneCountInString(word) > utf8.RuneCountInString(ctHeader) {
+			fmt.Fprintln(out, line)
+			line = indent
+		}
+		if line != indent {
+			line += " "
+		}
+		line += word
+	}
+	if line != indent {
+		fmt.Fprintln(out, line)
+	}
+}
 
 // ConnTestTable is the verdict as text: the grouped table and the tunnels
 // that carried everything.
 func ConnTestTable(results []ConnTestResult) string {
 	var b strings.Builder
+	b.WriteString(ctSummary(results) + "\n\n")
 	b.WriteString(ctHeader + "\n")
 	for _, group := range ctGroups(results) {
 		b.WriteString("\n")
@@ -128,7 +197,7 @@ func ConnTestTable(results []ConnTestResult) string {
 		}
 		sort.SliceStable(rows, func(i, j int) bool { return rows[i].Mbps > rows[j].Mbps })
 		fmt.Fprintf(&b, "  %s\n", ctKind(kind))
-		fmt.Fprintf(&b, "    %-18s %8s %12s %12s\n", "Transport", "RTT", "Down Mbps", "Up Mbps")
+		fmt.Fprintf(&b, "    %-*s %8s %12s %12s %6s\n", ctNameWidth, "Transport", "RTT", "Down Mbps", "Up Mbps", "Loss")
 		for _, r := range rows {
 			steady++
 			rtt, down, up := "-", "-", "-"
@@ -143,27 +212,31 @@ func ConnTestTable(results []ConnTestResult) string {
 			if r.UploadMbps > 0 {
 				up = fmt.Sprintf("%.1f", r.UploadMbps)
 			}
-			fmt.Fprintf(&b, "    %-18s %8s %12s %12s\n", ctResultName(r), rtt, down, up)
+			fmt.Fprintf(&b, "    %-*s %8s %12s %12s %6s\n", ctNameWidth, ctResultName(r), rtt, down, up, ctLossLabel(r))
 		}
 		b.WriteByte('\n')
 	}
 	if steady > 0 {
 		b.WriteString("  Speed uses 4 parallel TCP streams per direction; '-' = not measured.\n")
 	}
+	b.WriteString("  Loss = failed echo/probe attempts / attempts made.\n" +
+		"  '-' = pending or not measured. Retransmissions can hide network packet loss.\n")
 	if steady == 0 {
 		b.WriteString("Nothing carried traffic steadily between these two servers. See the\n" +
 			"statuses and notes for setup errors, interruption or path failures.\n")
 	}
 	// Why, where the table alone cannot say: a spoofing check that failed, and
 	// anything that was not run.
-	var notes []string
+	notes := false
 	for _, r := range results {
 		if r.Detail != "" && r.Status != ctOK {
-			notes = append(notes, fmt.Sprintf("%s %s %s: %s", ctEmoji(r.Status), ctKind(r.Kind), ctResultName(r), r.Detail))
+			if !notes {
+				b.WriteString("\nNotes:\n")
+				notes = true
+			}
+			fmt.Fprintf(&b, "\n  %s %s %s\n", ctEmoji(r.Status), ctKind(r.Kind), ctResultName(r))
+			ctWriteNote(&b, r.Detail)
 		}
-	}
-	if len(notes) > 0 {
-		b.WriteString("\nNotes:\n\n" + strings.Join(notes, "\n") + "\n")
 	}
 	ctSNINotes(&b, results)
 	ctHTTPSNotes(&b, results)
@@ -180,7 +253,8 @@ func ctHTTPSNotes(out io.Writer, results []ConnTestResult) {
 			fmt.Fprint(out, "\nHTTPS path checks (separate connections):\n\n")
 			shown = true
 		}
-		fmt.Fprintf(out, "  %-16s :%-5d %s\n", ctName(r.Transport), r.TestPort, ctHTTPSProbeLabel(r.HTTPSProbe))
+		fmt.Fprintf(out, "  %-*s :%d\n", ctNameWidth, ctName(r.Transport), r.TestPort)
+		ctWriteNote(out, ctHTTPSProbeLabel(r.HTTPSProbe))
 	}
 	if shown {
 		fmt.Fprintln(out, "  Tunnel status above requires real authenticated, sustained traffic.")
@@ -300,7 +374,7 @@ func (b *ctBoard) lines(width, height int) []string {
 	if len(b.rows) == 0 {
 		return nil
 	}
-	out := []string{"CONNECTION TEST — " + b.title, ctRule(), "", ctHeader, ""}
+	out := []string{"CONNECTION TEST — " + b.title, ctRule(), ctSummary(b.rows), ctHeader, ""}
 	rows := b.rows
 	// Keep the whole live region inside the viewport, including the cursor
 	// below it. Cursor-up cannot reach a row that has scrolled off the screen.

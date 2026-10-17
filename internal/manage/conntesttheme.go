@@ -13,13 +13,15 @@ func ctThemeLine(line string) string {
 	color := tui.White
 	switch {
 	case strings.HasPrefix(text, "CONNECTION TEST"), text == "Works Steadily:", text == "BEST SETTINGS", text == "RECOMMENDED BY USE",
-		text == "Notes:", text == "Direct SNI domains:", text == "HTTPS path checks:":
+		text == "Notes:", text == "Direct SNI domains:", strings.HasPrefix(text, "HTTPS path checks"):
 		color = tui.Bold + tui.Red
 	case text == "Reverse", text == "Direct", text == "Spoof":
 		color = tui.Bold + tui.White
 	case text == "", strings.Trim(text, "─") == "", strings.HasPrefix(text, "RESULT"),
 		strings.HasPrefix(text, "SETTING"), strings.HasPrefix(text, "Transport") && strings.Contains(text, "RTT"),
-		strings.HasPrefix(text, "Speed uses"), strings.HasPrefix(text, "Showing"), strings.HasPrefix(text, "⚪"):
+		strings.HasPrefix(text, "Speed uses"), strings.HasPrefix(text, "Showing"), strings.HasPrefix(text, "⚪"),
+		strings.HasPrefix(text, "Summary:"), strings.HasPrefix(text, "Loss ="), strings.HasPrefix(text, "'-' ="),
+		strings.HasPrefix(line, "      "):
 		color = tui.Gray
 	case strings.HasPrefix(text, "🔴"):
 		color = tui.Red
