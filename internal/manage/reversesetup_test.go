@@ -21,6 +21,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/backpack/backpack/config"
+	"github.com/backpack/backpack/internal/testport"
 	"github.com/backpack/backpack/internal/tui"
 )
 
@@ -78,12 +79,10 @@ func TestManagedHTTPSWizardProducesValidRoleConfigurations(t *testing.T) {
 	}
 	id := "6bf7a33e-7833-4e72-9219-506585657345"
 	port := func() string {
-		ln, err := net.Listen("tcp", "127.0.0.1:0")
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer ln.Close()
-		return addrPort(ln.Addr().String())
+		// Closing a :0 listener allows the kernel to hand the same number
+		// straight back for outer or entry. The wizard then correctly rejects
+		// its supposedly valid fixture as overlapping forwarded ports.
+		return fmt.Sprint(testport.Free(t))
 	}
 	for _, role := range []string{"server", "client"} {
 		for _, chosen := range []string{"naive", "xhttp", "reality"} {
