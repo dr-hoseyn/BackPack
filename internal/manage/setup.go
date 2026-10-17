@@ -294,6 +294,10 @@ func setupManagedCarrierWithProbe(s *TunnelSpec, chosen, public, host string, pr
 		if !configureSing(&n, *s, chosen, public, host) {
 			return false
 		}
+		if n.Role == "server" {
+			tui.Info("UDP forwarding in Reverse uses reliable streams. Direct Hysteria2/TUIC carries native datagrams.")
+			n.AcceptUDP = tui.Confirm("Also Carry UDP On Forwarded Ports", s.AcceptUDP)
+		}
 	} else if chosen == "reality" {
 		if !configureReality(&n, *s, public, probe) {
 			return false

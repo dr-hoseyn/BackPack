@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"strconv"
@@ -81,6 +82,9 @@ func awgFromLink(l ShareLink) (config.AWGConfig, error) {
 	d.DisallowUnknownFields()
 	if err := d.Decode(&c); err != nil {
 		return c, fmt.Errorf("invalid AmneziaWG peer configuration")
+	}
+	if err := d.Decode(new(any)); err != io.EOF {
+		return config.AWGConfig{}, fmt.Errorf("unexpected trailing AmneziaWG configuration")
 	}
 	if c.PresharedKey != l.Tok || c.Endpoint != net.JoinHostPort(l.Host, l.Port) || c.ListenPort != 0 || c.PeerSetupKey != "" || len(c.Ports) != 0 {
 		return config.AWGConfig{}, fmt.Errorf("AmneziaWG link metadata does not match its peer identity")

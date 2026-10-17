@@ -32,6 +32,11 @@ import (
 // observable can settle it, which callers should read as "leave it alone"
 // rather than "it is broken".
 func directHealthy(t core.Tunnel, pairs [][2]string) (healthy, known bool) {
+	if t.Transport == "awg" {
+		if connected, known := engineSaysConnected(t.Name); known {
+			return connected, true
+		}
+	}
 	if t.Transport == "awg" || strings.HasPrefix(t.Transport, "l3/") {
 		// Every layer-3 carrier is a datagram or raw socket: udp holds an
 		// unconnected socket, and pck, xdi and spoof do not go through the

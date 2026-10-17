@@ -65,7 +65,7 @@ type L3Config struct {
 	MasqueConfig
 
 	// SingL3Config configures native Hysteria2/TUIC datagrams; unused for other carriers.
-	SingL3Config
+	SingL3Config `json:"sing,omitempty"`
 
 	// Encap is always GRE now: four bytes, or eight with gre_key. "ipip" is
 	// still accepted and read as GRE, so a file written when there was a choice

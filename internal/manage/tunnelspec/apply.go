@@ -110,7 +110,7 @@ func waitTunnelActive(name string, body []byte) bool {
 	if _, err := toml.Decode(string(body), &cfg); err != nil {
 		return false
 	}
-	managed := cfg.Server.Managed() || cfg.Client.Managed()
+	managed := cfg.Server.Managed() || cfg.Client.Managed() || config.SingDatagram(cfg.L3.Carrier)
 	timeout := 10 * time.Second
 	if managed {
 		// Preflight and listener readiness each have a ten-second bound.

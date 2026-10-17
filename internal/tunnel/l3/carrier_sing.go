@@ -22,6 +22,29 @@ type singCarrier struct {
 	helper *naive.Helper
 	once   sync.Once
 	name   string
+	peer   net.Addr
+	target net.Addr
+	local  net.Addr
+}
+
+func (c *singCarrier) LocalAddr() net.Addr {
+	if c.local != nil {
+		return c.local
+	}
+	return c.PacketConn.LocalAddr()
+}
+func (c *singCarrier) ReadFrom(p []byte) (int, net.Addr, error) {
+	n, a, err := c.PacketConn.ReadFrom(p)
+	if c.peer != nil && err == nil {
+		a = c.peer
+	}
+	return n, a, err
+}
+func (c *singCarrier) WriteTo(p []byte, a net.Addr) (int, error) {
+	if c.peer != nil {
+		a = c.target
+	}
+	return c.PacketConn.WriteTo(p, a)
 }
 
 func (c *singCarrier) Overhead() int       { return singCarrierOverhead }
@@ -76,7 +99,8 @@ func openSingCarrier(ctx context.Context, cfg Config) (DatagramCarrier, net.Addr
 			backend.Close()
 			return nil, nil, err
 		}
-		return &singCarrier{PacketConn: backend, helper: helper, name: cfg.Carrier}, nil, nil
+		local, _ := net.ResolveUDPAddr("udp", cfg.Addr)
+		return &singCarrier{PacketConn: backend, helper: helper, name: cfg.Carrier, local: local}, nil, nil
 	}
 	x := config.SingClientConfig{Binary: cfg.Sing.Binary, Protocol: cfg.Carrier, Server: cfg.Addr, ServerName: cfg.Sing.ServerName, Password: pw, UUID: id, ObfsPassword: obfs, CAFile: cfg.Sing.CAFile}
 	helper, err := naive.StartSingProxy(ctx, x, cfg.Sing.TargetAddr(), "udp", log)
@@ -90,11 +114,14 @@ func openSingCarrier(ctx context.Context, cfg Config) (DatagramCarrier, net.Addr
 		helper.Close()
 		return nil, nil, err
 	}
-	peer, err := net.ResolveUDPAddr("udp", cfg.Sing.TargetAddr())
+	resolveCtx, cancel := context.WithTimeout(ctx, carrierResolveTimeout)
+	peer, _, err := resolveDatagramEndpoint(resolveCtx, cfg.Addr)
+	cancel()
 	if err != nil {
 		packet.Close()
 		helper.Close()
 		return nil, nil, err
 	}
-	return &singCarrier{PacketConn: packet, helper: helper, name: cfg.Carrier}, peer, nil
+	target, _ := net.ResolveUDPAddr("udp", cfg.Sing.TargetAddr())
+	return &singCarrier{PacketConn: packet, helper: helper, name: cfg.Carrier, peer: peer, target: target}, peer, nil
 }

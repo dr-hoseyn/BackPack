@@ -780,7 +780,7 @@ func prepareManagedLink(s TunnelSpec, link ShareLink) error {
 	}
 	inner, _ := strconv.Atoi(link.InnerPort)
 	outer, _ := strconv.Atoi(link.Port)
-	if link.Kind != "reverse" || link.From != "iran" || !validPort(link.InnerPort) || !validPort(link.Port) || inner == outer || link.AcceptUDP || len(link.Fallbacks) != 0 || len(link.Hosts) != 0 {
+	if link.Kind != "reverse" || link.From != "iran" || !validPort(link.InnerPort) || !validPort(link.Port) || inner == outer || link.AcceptUDP && !config.SingProtocol(link.Tr) || len(link.Fallbacks) != 0 || len(link.Hosts) != 0 {
 		return fmt.Errorf("invalid managed HTTPS setup link; generate a new link on Iran")
 	}
 	if link.HelperCA != "" {

@@ -176,7 +176,8 @@ func (c *SOCKSPacketConn) Close() error {
 }
 
 func (c *SOCKSPacketConn) WriteTo(p []byte, dest net.Addr) (int, error) {
-	if dest == nil || dest.String() != c.target.String() {
+	a, ok := dest.(*net.UDPAddr)
+	if !ok || a.Port != c.target.Port || a.Zone != c.target.Zone || !a.IP.Equal(c.target.IP) {
 		return 0, errors.New("SOCKS UDP target is fixed")
 	}
 	if len(p)+len(c.header) > len(c.tx) {
