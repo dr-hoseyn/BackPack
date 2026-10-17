@@ -14,7 +14,7 @@ import (
 // can be modified and re-saved without losing settings.
 func LoadServer(name string) (Spec, error) {
 	var cfg config.Config
-	if _, err := toml.DecodeFile(app.ConfigPath(name), &cfg); err != nil {
+	if _, err := toml.DecodeFile(configPath(name), &cfg); err != nil {
 		return Spec{}, err
 	}
 	sc := cfg.Server
@@ -81,7 +81,7 @@ func LoadServer(name string) (Spec, error) {
 // can be modified and re-saved without losing settings.
 func loadClient(name string) (Spec, error) {
 	var cfg config.Config
-	if _, err := toml.DecodeFile(app.ConfigPath(name), &cfg); err != nil {
+	if _, err := toml.DecodeFile(configPath(name), &cfg); err != nil {
 		return Spec{}, err
 	}
 	cc := cfg.Client
@@ -151,7 +151,7 @@ func Load(name string) (Spec, error) {
 	if err := core.CheckName(name); err != nil {
 		return Spec{}, err
 	}
-	if !core.FileExists(app.ConfigPath(name)) {
+	if !core.FileExists(configPath(name)) {
 		return Spec{}, fmt.Errorf("no such tunnel %q", name)
 	}
 	if s, err := LoadServer(name); err == nil {

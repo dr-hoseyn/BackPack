@@ -21,7 +21,7 @@ func Apply(s Spec) error {
 	if err := s.validateHelpers(); err != nil {
 		return err
 	}
-	path := app.ConfigPath(s.Name)
+	path := configPath(s.Name)
 	service := app.ServiceName(s.Name)
 
 	prev, err := os.ReadFile(path)
@@ -69,7 +69,7 @@ func Apply(s Spec) error {
 func ApplyBody(name, body, note string) error { return applyRaw(name, []byte(body), note) }
 
 func applyRaw(name string, cfg []byte, note string) error {
-	path := app.ConfigPath(name)
+	path := configPath(name)
 	service := app.ServiceName(name)
 
 	prev, err := os.ReadFile(path)
