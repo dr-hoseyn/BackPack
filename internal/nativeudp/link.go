@@ -65,6 +65,8 @@ type Link struct {
 	active                  *keys
 	previous                *keys
 	pending                 map[[16]byte]*keys
+	assemblies              map[fragmentKey]*assembly
+	messageSeq              atomic.Uint64
 	attempt                 *attempt
 	highStamp               uint64
 	lastStamp               uint64
@@ -83,6 +85,7 @@ func NewLink(parent context.Context, pc net.PacketConn, peer net.Addr, token str
 	}
 	ctx, cancel := context.WithCancel(parent)
 	l := &Link{ctx: ctx, cancel: cancel, pc: pc, peer: peer, dial: peer != nil, psk: sha256.Sum256([]byte("backpack reverse native UDP psk v1\x00" + token)), pending: map[[16]byte]*keys{}, in: make(chan []byte, 128)}
+	l.assemblies = make(map[fragmentKey]*assembly)
 	l.wg.Add(2)
 	l.probeKey = sha256.Sum256([]byte("backpack native UDP path proof v1\x00" + token))
 	go l.read()
@@ -145,6 +148,12 @@ func (l *Link) maintain() {
 	for {
 		now := time.Now()
 		l.mu.Lock()
+		for id, a := range l.assemblies {
+			if now.Sub(a.created) > assemblyLife {
+				delete(l.assemblies, id)
+				l.dropped.Add(1)
+			}
+		}
 		for id, k := range l.pending {
 			if now.Sub(k.created) > 5*time.Second {
 				delete(l.pending, id)
@@ -228,7 +237,7 @@ func (l *Link) Write(b []byte) error {
 	if len(b) > maxPayload {
 		return errors.New("native UDP payload too large")
 	}
-	if err := l.send(append([]byte{2}, b...)); err != nil {
+	if err := l.sendMessage(b); err != nil {
 		l.dropped.Add(1)
 		return err
 	}
@@ -343,6 +352,8 @@ func (l *Link) read() {
 					case 1:
 					case 2:
 						message = payload[1:]
+					case 3:
+						message = l.assemble(id, payload)
 					}
 				}
 			}

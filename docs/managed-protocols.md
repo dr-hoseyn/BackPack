@@ -119,6 +119,11 @@ UDP layer. Outage packets and over-limit packets are dropped; recovery does
 not replay them. Application flows can still time out during recovery.
 The association message budget is 60,000 bytes; application datagrams must also
 fit the flow ID and target metadata inside that budget.
+Messages larger than 1,000 bytes use independently authenticated fragments.
+At most 64 incomplete messages are retained, each for at most three seconds.
+Fragments can arrive out of order; a missing fragment drops only its message
+and never holds later datagrams. There are no fragment acknowledgements or
+retries. Large datagrams have a higher chance of loss when a path drops packets.
 
 Optional local settings in each sing table:
 

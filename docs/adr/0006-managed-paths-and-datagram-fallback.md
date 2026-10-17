@@ -37,6 +37,9 @@ associations, with bounded per-flow NAT, replay filtering after AEAD validation,
 periodic rekey and explicit drop counters. UDP eligibility is separate from TCP
 and never substitutes a reliable stream. New wire signals are appended; legacy
 configuration and compatibility checks retain their original paths.
+Authenticated native fragments stay below helper datagram limits; reassembly
+has a fixed count, size and lifetime. Missing fragments drop one message without
+retransmission or head-of-line waiting.
 
 Short HTTPS uses the existing managed lifecycle and validated static TLS reload,
 or autocert's TLS-ALPN renewal with a persistent private domain cache. Real ACME

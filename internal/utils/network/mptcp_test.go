@@ -12,7 +12,9 @@ import (
 )
 
 func TestMPTCPRequestStillTransfersToATCPOnlyPeer(t *testing.T) {
-	l, err := net.Listen("tcp", "127.0.0.1:0")
+	var plain net.ListenConfig
+	plain.SetMultipathTCP(false)
+	l, err := plain.Listen(t.Context(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,6 +37,9 @@ func TestMPTCPRequestStillTransfersToATCPOnlyPeer(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer c.Close()
+	if on, err := c.MultipathTCP(); err != nil || on {
+		t.Fatalf("TCP-only peer did not retain ordinary fallback: %v %v", on, err)
+	}
 	c.SetDeadline(time.Now().Add(3 * time.Second))
 	if _, err := c.Write([]byte("verified fallback")); err != nil {
 		t.Fatal(err)

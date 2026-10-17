@@ -11,14 +11,21 @@ import (
 
 type recordedConn struct {
 	net.PacketConn
-	mu     sync.Mutex
-	packet []byte
-	drop   bool
+	mu      sync.Mutex
+	packet  []byte
+	drop    bool
+	hold    bool
+	packets [][]byte
 }
 
 func (c *recordedConn) WriteTo(b []byte, a net.Addr) (int, error) {
 	c.mu.Lock()
 	if len(b) > 100 && b[0] == 3 {
+		if c.hold {
+			c.packets = append(c.packets, append([]byte(nil), b...))
+			c.mu.Unlock()
+			return len(b), nil
+		}
 		c.packet = append(c.packet[:0], b...)
 		if c.drop {
 			c.drop = false
