@@ -246,7 +246,7 @@ jobs:
           python3 - "$RUNNER_TEMP/masque-ct-ipv4/iran.json" <<'PY'
           import json, sys
           rows = json.load(open(sys.argv[1]))
-          masque = [r for r in rows if r['k'] == 'direct' and r['tr'] == 'masque']
+          masque = [r for r in rows if r['k'] == 'direct' and r['t'] == 'masque']
           assert len(masque) == 1 and masque[0]['s'] == 'ok', rows
           PY
 
