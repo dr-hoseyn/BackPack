@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-func TestMasqueHTTP2TunnelCarriesVerifiedIPOverNoiseAndReconnects(t *testing.T) {
+func TestMasqueHTTP2TunnelCarriesVerifiedIPOverNoise(t *testing.T) {
 	masqueCfg := masqueTestConfig(t)
 	dialDev, listenDev := newFakeDevice(1400), newFakeDevice(1400)
 	ctx, cancel := context.WithCancel(t.Context())

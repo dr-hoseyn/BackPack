@@ -24,12 +24,15 @@ jobs:
           sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
           go test ./config ./cmd ./internal/utils/network ./internal/masqueh2 ./internal/nativeudp ./internal/pathprobe ./internal/tunnel/adaptive ./internal/tunnel/l3 ./internal/manage/tunnelspec ./internal/shorthttps ./internal/tunnel/naive -race -count=1 -timeout 10m
       - name: Adaptive paths preserve active streams and recover new connections
+        if: success() || failure()
         run: go test ./internal/e2e -run '^TestAdaptiveManagedPaths' -race -count=1 -v -timeout 4m
       - name: Verify vet and build
+        if: success() || failure()
         run: |
           go vet ./...
           go build ./...
       - name: MPTCP multiple subflows and primary-path outage
+        if: success() || failure()
         run: |
           set -euo pipefail
           sudo apt-get update -qq
@@ -38,6 +41,7 @@ jobs:
           sudo env TESTBIN="$RUNNER_TEMP/network.test" W="$RUNNER_TEMP/mptcp-live" timeout -k 5s 60s \
             unshare --net --mount --fork bash internal/e2e/testdata/mptcp-live.sh
       - name: Real MASQUE HTTP2 TUN, restart and loss
+        if: success() || failure()
         run: |
           set -euo pipefail
           sudo apt-get update -qq

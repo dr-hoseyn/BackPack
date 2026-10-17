@@ -33,14 +33,24 @@ func configureManagedPaths(n *TunnelSpec, old TunnelSpec, public, host string, p
 	}
 	n.AcceptUDP = false
 	for i := range count {
-		name := tui.PromptDefault("Path Identity (Same On Both Machines)", "path"+strconv.Itoa(i+1))
+		previousName, previousEndpoint, previousExport := "path"+strconv.Itoa(i+1), public, ""
+		one := *n
+		clearManagedTransport(&one)
+		if n.Role == "server" && i < len(old.ServerPaths) {
+			p := old.ServerPaths[i]
+			previousName, previousEndpoint, previousExport = p.Name, pathServerEndpoint(p), p.Endpoint
+			one.NaiveServer, one.XrayServer, one.SingServer, one.ShortServer = p.Naive, p.Xray, p.Sing, p.Short
+		} else if n.Role == "client" && i < len(old.ClientPaths) {
+			p := old.ClientPaths[i]
+			previousName, previousEndpoint = p.Name, pathClientEndpoint(p)
+			one.NaiveClient, one.XrayClient, one.SingClient, one.ShortClient = p.Naive, p.Xray, p.Sing, p.Short
+		}
+		name := tui.PromptDefault("Path Identity (Same On Both Machines)", previousName)
 		choice := tui.ChooseOpt(fmt.Sprintf("Carrier For %s", name), options)
 		if choice < 0 || choice >= len(protocols) {
 			return false
 		}
-		endpoint := tui.PromptDefault("Public Listener On Iran / Public Endpoint On Kharej (Host:Port)", public)
-		one := *n
-		clearManagedTransport(&one)
+		endpoint := tui.PromptDefault("Public Listener On Iran / Public Endpoint On Kharej (Host:Port)", previousEndpoint)
 		if len(one.Name) > 30 {
 			one.Name = one.Name[:30]
 		}
@@ -53,7 +63,7 @@ func configureManagedPaths(n *TunnelSpec, old TunnelSpec, public, host string, p
 			return false
 		}
 		if n.Role == "server" {
-			export := tui.PromptDefault("Public Host:Port For Pairing (Empty Uses Shared Public Host)", "")
+			export := tui.PromptDefault("Public Host:Port For Pairing (Empty Uses Shared Public Host)", previousExport)
 			n.ServerPaths = append(n.ServerPaths, config.ManagedServerPath{Name: name, Endpoint: export, Naive: one.NaiveServer, Xray: one.XrayServer, Sing: one.SingServer, Short: one.ShortServer})
 			n.AcceptUDP = n.AcceptUDP || one.AcceptUDP
 		} else {

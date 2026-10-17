@@ -117,8 +117,8 @@ ordering uses authenticated timestamps and refuses older handshakes.
 Packets retain their boundaries and are never retransmitted by this Reverse
 UDP layer. Outage packets and over-limit packets are dropped; recovery does
 not replay them. Application flows can still time out during recovery.
-The application payload limit is 60,000 bytes to leave room for association
-and helper headers.
+The association message budget is 60,000 bytes; application datagrams must also
+fit the flow ID and target metadata inside that budget.
 
 Optional local settings in each sing table:
 

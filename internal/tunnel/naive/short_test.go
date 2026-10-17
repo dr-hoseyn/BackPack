@@ -160,4 +160,15 @@ func TestShortManagedRelayRejectsMixedEnginesAndAnUnusableACMERenewalConfig(t *t
 	if err := ValidateShort(&config.Config{Server: s}); err != nil {
 		t.Fatal("valid ACME config rejected:", err)
 	}
+	for _, change := range []func(*config.ClientConfig){
+		func(v *config.ClientConfig) { v.Token = "backpack" },
+		func(v *config.ClientConfig) { v.ConnectionPool = 64 },
+		func(v *config.ClientConfig) { v.AggressivePool = true },
+	} {
+		v := c
+		change(&v)
+		if ValidateShort(&config.Config{Client: v}) == nil {
+			t.Fatal("unsafe Short client capacity or credentials accepted")
+		}
+	}
 }

@@ -303,7 +303,7 @@ func setupManagedCarrierWithProbe(s *TunnelSpec, chosen, public, host string, pr
 			internal = addrPort(n.RemoteAddr)
 		}
 	}
-	tui.Info("TCP Forwarding Only. Set The Same Internal Port And Security Token On Both Sides.")
+	tui.Info("Set The Same Private TCP Reverse Target And Security Token On Both Sides. UDP Support Depends On The Carrier.")
 	if chosen == "reality" && n.Role == "server" && !wasManaged {
 		internal = realityInternalPort(public, n.Ports)
 	}
@@ -313,6 +313,7 @@ func setupManagedCarrierWithProbe(s *TunnelSpec, chosen, public, host string, pr
 		return false
 	}
 	n.Transport = "tcp"
+	n.MPTCP = false
 	n.AcceptUDP, n.SimpleAuth, n.LoadBalance, n.HealthFailover = false, false, false, false
 	n.FallbackAddrs, n.FallbackTransports = nil, nil
 	n.FallbackDwell, n.SOMark = 0, 0
@@ -337,10 +338,17 @@ func setupManagedCarrierWithProbe(s *TunnelSpec, chosen, public, host string, pr
 			return false
 		}
 		if n.Role == "server" {
-			tui.Info("UDP forwarding in Reverse uses reliable streams. Direct Hysteria2/TUIC carries native datagrams.")
 			n.AcceptUDP = tui.Confirm("Also Carry UDP On Forwarded Ports", s.AcceptUDP)
 			if n.AcceptUDP && config.SingDatagram(chosen) {
 				n.SingServer.NativeUDP = tui.Confirm("Use Native Datagrams For Reverse UDP (Matching Build Required On Kharej)", s.SingServer.NativeUDP)
+			} else {
+				n.SingServer.NativeUDP = false
+			}
+			if n.SingServer.NativeUDP {
+				tui.Info("Reverse UDP Uses Native Datagrams. Pair native_udp On Kharej; Outage Packets Are Dropped.")
+			} else {
+				n.SingServer.UDPMaxFlows, n.SingServer.UDPBandwidthMbps = 0, 0
+				tui.Info("Native Reverse UDP Is Disabled. Any Enabled UDP Forwarding Uses Reliable Streams.")
 			}
 		}
 	} else if chosen == "reality" {

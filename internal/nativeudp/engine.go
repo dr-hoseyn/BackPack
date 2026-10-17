@@ -6,13 +6,13 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"github.com/backpack/backpack/internal/metrics"
 	"net"
 	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/backpack/backpack/internal/metrics"
 	"github.com/backpack/backpack/internal/tunnel/portmap"
 	"golang.org/x/time/rate"
 )

@@ -112,6 +112,18 @@ func presetLabel(value string) string {
 // the single place where the numbers behind Balance/Turbo/Aggressive live, so
 // the CLI, the edit screen and the benchmark all agree on what a preset means.
 func ApplyPreset(s *Spec, preset string) {
+	defer func() {
+		short := s.ShortClient.Enabled()
+		for _, p := range s.ClientPaths {
+			short = short || p.Short.Enabled()
+		}
+		if short {
+			// Short HTTPS has a bounded relay session table. A performance
+			// preset cannot enable aggressive pool growth beyond that budget.
+			s.AggressivePool = false
+			s.ConnectionPool = min(s.ConnectionPool, 32)
+		}
+	}()
 	if !ValidPreset(preset) {
 		preset = PresetTurbo
 	}
