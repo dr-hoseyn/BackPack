@@ -104,6 +104,17 @@ func TestConnectionTestInteractiveChoiceAccountsForJitterAndUpload(t *testing.T)
 	}
 }
 
+func TestConnectionTestDownloadTiesDoNotTreatUnknownLatencyAsZero(t *testing.T) {
+	rows, cases := ctPurposeFixture()
+	rows = rows[:2]
+	rows[1].Mbps, rows[1].UploadMbps = rows[0].Mbps, rows[0].UploadMbps
+	cases[0] = nil
+	choices := ctPurposeRecommendations(rows, cases[:2])
+	if len(choices) != 3 || choices[0].Transport != "direct sni" {
+		t.Fatalf("unknown latency beat measured traffic: %+v", choices)
+	}
+}
+
 func TestConnectionTestSuiteKeepsEachPurposeOnItsOwnIPPath(t *testing.T) {
 	rows, cases := ctPurposeFixture()
 	v4 := ctPurposeRecommendations(rows[:1], cases[:1])

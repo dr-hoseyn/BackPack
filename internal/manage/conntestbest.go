@@ -309,7 +309,7 @@ func ConnTestBestTable(b ConnTestBest) string {
 	s.WriteString("BEST SETTINGS\n" + ctRule() + "\n\n")
 	s.WriteString(ConnTestRecommendationsTable(b.Recommendations))
 	if len(b.Recommendations) > 0 {
-		s.WriteString("Settings below apply to the fastest download choice.\n\n")
+		s.WriteString("Settings below apply to the Transport row.\n\n")
 	}
 	row("SETTING", "VALUE", "MEASURED")
 	s.WriteString("\n")

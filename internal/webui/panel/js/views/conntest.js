@@ -192,7 +192,7 @@ function bestPane(v) {
   return `<div class="ct-l-in ct-best">
     <div class="ct-best-head">
       <span class="ct-medal">${ICON.medal}</span>
-      <div><span class="badge">Fastest download on this path</span><b class="tr">${esc(b.tr)}</b></div>
+      <div><span class="badge">${b.mb > 0 ? 'Fastest download on this path' : 'Steady traffic on this path'}</span><b class="tr">${esc(b.tr)}</b></div>
     </div>
     ${purposeRecommendations(b.recommendations)}
     <div class="ct-bgrid">
@@ -212,7 +212,7 @@ function bestPane(v) {
       ${cell('Heartbeat', b.hb, 's')}
       ${b.fd ? cell('FEC', `${b.fd}+${b.fp}`) : ''}
     </div>
-    <div class="tl-note">Build it from <b>Tunnels → Add tunnel</b>. The settings below the recommendations apply to the fastest download choice. The suggested preset is the one this path's
+    <div class="tl-note">Build it from <b>Tunnels → Add tunnel</b>. The tuning values below the recommendations apply to the transport shown above. The suggested preset is the one this path's
       speed and round trip call for; the test itself ran on ${esc(title(v.preset))}.</div>
     ${foot}</div>`;
 }
@@ -451,7 +451,7 @@ export function connTestView(ctx) {
       $('#ctPaths',view).innerHTML = fresh || !paths.length ? '' : `<div class="tl-seg">${paths.map((p,i) =>
         `<button type="button" data-route="${i}" class="${i === at ? 'on' : ''}" aria-pressed="${i === at}"><b>${esc(p.family)} · ${esc(p.host)}</b><small>${esc(p.state)}${p.best?.tr ? ` · ${esc(p.best.tr)} · ${(p.best.mb || 0).toFixed(2)} ↓ / ${(p.best.upload_mb || 0).toFixed(2)} ↑ Mb/s · ${p.best.rt || 0} ms` : ''}</small></button>`).join('')}</div>
         ${ACTIVE.includes(st) ? '<button type="button" class="tl-btn" id="ctStopPaths">Stop all IP paths</button>' : ''}
-        ${v.best?.tr ? `<p class="tl-meta">Fastest download: ${esc(v.best.family)} · ${esc(v.best.host)} · ${esc(v.best.tr)}</p>` : ''}
+        ${v.best?.tr ? `<p class="tl-meta">${v.best.mb > 0 ? 'Fastest download' : 'Steady traffic'}: ${esc(v.best.family)} · ${esc(v.best.host)} · ${esc(v.best.tr)}</p>` : ''}
         ${purposeRecommendations(v.best?.recommendations, true)}`;
     }
     const p = !fresh && !['idle','starting'].includes(st) ? paths[at] : null;

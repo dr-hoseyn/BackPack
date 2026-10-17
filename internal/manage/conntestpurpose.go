@@ -130,6 +130,11 @@ func ctPurposeBetter(a, b ConnTestRecommendation, purpose string) bool {
 			return x > y
 		}
 	}
+	// Missing echo timing is unknown, not an instantaneous round trip. This
+	// also matters for download ties when reading an older or partial verdict.
+	if (a.Samples >= 2) != (b.Samples >= 2) {
+		return a.Samples >= 2
+	}
 	if a.RTTms != b.RTTms {
 		return a.RTTms < b.RTTms
 	}
