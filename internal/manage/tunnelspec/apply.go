@@ -2,10 +2,10 @@ package tunnelspec
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -19,87 +19,64 @@ import (
 // it actually came back up. If it does not, the previous config is put back and
 // the tunnel restarted with it, so a bad edit (a port already in use, a wrong
 // address) can never leave the user with a dead tunnel and a lost config.
-func Apply(s Spec) error {
-	// Helper refusals happen before any mutation; do not enter rollback and
-	// replace the current file for an edit that was never written.
+func Apply(s Spec) error { return ApplyReviewed(s, "") }
+
+// ApplyReviewed also refuses to overwrite a configuration changed since review.
+func ApplyReviewed(s Spec, revision string) error {
 	if err := s.validateHelpers(); err != nil {
 		return err
 	}
-	path := app.ConfigPath(s.Name)
-	service := app.ServiceName(s.Name)
-
-	prev, err := os.ReadFile(path)
-	if err != nil {
-		return fmt.Errorf("could not read the current config: %w", err)
-	}
-	wasActive := core.IsActive(service)
-
-	if _, err := s.Save(); err != nil {
-		// Save failed — put the original file back untouched.
-		_ = app.WriteFileAtomic(path, prev, app.TunnelConfigMode)
-		return err
-	}
-	// Save alone won't reload an already-running unit — restart explicitly.
-	if err := core.RestartService(service); err != nil {
-		Revert(path, prev, service, wasActive)
-		return fmt.Errorf("the tunnel failed to restart with the new settings — reverted: %w", err)
-	}
-
-	// The unit can report "activating" for a moment; give it a chance, then
-	// confirm it is really running.
-	if !waitTunnelActive(s.Name, []byte(s.Render())) {
-		detail := LastLogLine(service)
-		Revert(path, prev, service, wasActive)
-		if detail != "" {
-			return fmt.Errorf("the tunnel did not come up with the new settings — reverted. Reason: %s", detail)
+	return applyWith(s.Name, []byte(s.Render()), "tunnel edit", revision, func() error {
+		if err := core.WriteUnit(s.Name); err != nil {
+			return err
 		}
-		return fmt.Errorf("the tunnel did not come up with the new settings — reverted to the previous config")
-	}
-	// Filed only now. A change that was reverted above replaced nothing, and
-	// recording it would put the configuration that is still running into the
-	// list of ones to go back to. See confhist.go.
-	RecordChange(s.Name, prev, "")
-	return nil
+		return core.DaemonReload()
+	})
 }
 
-// applyRaw writes a configuration verbatim and restarts the tunnel on it,
-// with the same revert-if-it-will-not-start guarantee Apply gives.
-//
-// Verbatim is the point: restoring by re-rendering a spec would silently drop
-// any key the current spec cannot hold, which is the trap DirectSpec's own
-// comment warns about. What was kept is what goes back.
-// ApplyBody is applyRaw for a caller that has rendered the configuration
-// itself: written verbatim, restarted, put back if it does not come up.
 func ApplyBody(name, body, note string) error { return applyRaw(name, []byte(body), note) }
 
-func applyRaw(name string, cfg []byte, note string) error {
-	path := app.ConfigPath(name)
-	service := app.ServiceName(name)
+func ApplyBodyReviewed(name, body, note, revision string) error {
+	return applyWith(name, []byte(body), note, revision, nil)
+}
 
-	prev, err := os.ReadFile(path)
-	if err != nil {
-		return fmt.Errorf("could not read the current config: %w", err)
-	}
-	wasActive := core.IsActive(service)
+func applyRaw(name string, body []byte, note string) error {
+	return applyWith(name, body, note, "", nil)
+}
 
-	if err := app.WriteFileAtomic(path, cfg, app.TunnelConfigMode); err != nil {
-		_ = app.WriteFileAtomic(path, prev, app.TunnelConfigMode)
+var editLocks sync.Map
+
+func applyWith(name string, body []byte, note, revision string, prepare func() error) error {
+	if err := core.CheckName(name); err != nil {
 		return err
 	}
-	if err := core.RestartService(service); err != nil {
-		Revert(path, prev, service, wasActive)
-		return fmt.Errorf("the tunnel failed to restart on that configuration — reverted: %w", err)
+	lock, _ := editLocks.LoadOrStore(name, &sync.Mutex{})
+	mu := lock.(*sync.Mutex)
+	mu.Lock()
+	defer mu.Unlock()
+	path, service := app.ConfigPath(name), app.ServiceName(name)
+	tx := editTransaction{
+		read:    func() ([]byte, error) { return os.ReadFile(path) },
+		write:   func(b []byte) error { return app.WriteFileAtomic(path, b, app.TunnelConfigMode) },
+		prepare: prepare,
+		active:  func() bool { return core.IsActive(service) },
+		restart: func() error { return core.RestartService(service) },
+		stop:    func() error { return core.StopService(service) },
+		ready:   func(b []byte) bool { return waitTunnelActive(name, b) },
+		record:  func(b []byte, note string) { RecordChange(name, b, note) },
 	}
-	if !waitTunnelActive(name, cfg) {
-		detail := LastLogLine(service)
-		Revert(path, prev, service, wasActive)
-		if detail != "" {
-			return fmt.Errorf("the tunnel did not come up on that configuration — reverted. Reason: %s", detail)
-		}
-		return fmt.Errorf("the tunnel did not come up on that configuration — reverted")
+	return tx.apply(body, note, revision)
+}
+
+func PreviewBody(name, body string) (EditPreview, error) {
+	if err := core.CheckName(name); err != nil {
+		return EditPreview{}, err
 	}
-	RecordChange(name, prev, note)
-	return nil
+	before, err := os.ReadFile(app.ConfigPath(name))
+	if err != nil {
+		return EditPreview{}, err
+	}
+	return PreviewChange(before, []byte(body))
 }
 
 // Type=simple becomes active before the engine starts its helper. Managed

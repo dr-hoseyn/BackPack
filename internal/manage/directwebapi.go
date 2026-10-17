@@ -6,7 +6,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/BurntSushi/toml"
 	"github.com/backpack/backpack/config"
@@ -327,36 +326,9 @@ func ApplyDirectTunnel(n NewDirectTunnel) (service string, active bool, created 
 		return service, IsActive(service), true, nil
 	}
 
-	// Replacing a running tunnel, so the same protection an edit gets on this
-	// machine applies: keep the old file, and put it back if the new one does
-	// not come up. On a node this is the difference between a bad push being an
-	// error message and a bad push being a server that has to be fixed by hand.
-	prev, err := os.ReadFile(path)
-	if err != nil {
-		return service, false, false, fmt.Errorf("could not read the current config: %w", err)
-	}
-	wasActive := IsActive(service)
-
-	if err := writeDirectConfig(name, body); err != nil {
-		_ = app.WriteFileAtomic(path, prev, app.TunnelConfigMode)
+	if err := tunnelspec.ApplyBody(name, body, "managed direct edit"); err != nil {
 		return service, IsActive(service), false, err
 	}
-	if err := RestartService(service); err != nil {
-		revertSpec(path, prev, service, wasActive)
-		return service, IsActive(service), false,
-			fmt.Errorf("the tunnel failed to restart with the new settings — reverted: %w", err)
-	}
-	if !WaitServiceActive(service, 10*time.Second) {
-		detail := lastLogLine(service)
-		revertSpec(path, prev, service, wasActive)
-		if detail != "" {
-			return service, IsActive(service), false,
-				fmt.Errorf("the tunnel did not come up with the new settings — reverted. Reason: %s", detail)
-		}
-		return service, IsActive(service), false,
-			fmt.Errorf("the tunnel did not come up with the new settings — reverted to the previous config")
-	}
-	recordConfigChange(name, prev, "")
 	return service, IsActive(service), false, nil
 }
 
@@ -710,43 +682,53 @@ func directSettingsFrom(name string, l config.L3Config) DirectSettings {
 // pointers are for: a zero that means "set this to zero" and a zero that means
 // "the form did not ask" are otherwise the same value.
 func EditDirectSettings(name string, e DirectEdit) error {
-	cfg, err := LoadTunnelConfig(name)
+	body, err := directEditBody(name, e)
 	if err != nil {
 		return err
+	}
+	return tunnelspec.ApplyBody(name, body, "direct settings edit")
+}
+func directEditBody(name string, e DirectEdit) (string, error) {
+	cfg, err := LoadTunnelConfig(name)
+	if err != nil {
+		return "", err
 	}
 
 	if cfg.AWG.Enabled() {
 		c, err := applyAWGEdit(cfg.AWG, e)
 		if err != nil {
-			return err
+			return "", err
 		}
 		body, err := awgBody(c)
 		if err != nil {
-			return err
+			return "", err
 		}
-		return tunnelspec.ApplyBody(name, body, "panel edit")
+		return body, nil
 	}
 	raw, err := os.ReadFile(app.ConfigPath(name))
 	if err != nil {
-		return err
+		return "", err
 	}
 	var document map[string]any
 	if _, err := toml.Decode(string(raw), &document); err != nil {
-		return err
+		return "", err
 	}
 
 	if cfg.Direct.Enabled() {
 		d := cfg.Direct
 		if e.MTU != nil || e.AutoMTU != nil || e.Paths != nil || e.FEC != nil || e.Spoof != nil || e.Stealth != nil {
-			return fmt.Errorf("layer-3 settings cannot be applied to a layer-4 tunnel")
+			return "", fmt.Errorf("layer-3 settings cannot be applied to a layer-4 tunnel")
 		}
 		if d.ResolvedRole() != "edge" && (e.Ports != nil || e.AcceptUDP != nil || e.Sessions != nil || e.MSS != nil || e.Addr != nil || e.Preset != nil || e.MaxConnections != nil || e.BandwidthMbps != nil) {
-			return fmt.Errorf("these settings belong to the Iran side")
+			return "", fmt.Errorf("these settings belong to the Iran side")
 		}
 		if e.Ports != nil {
 			d.Ports = parsePorts(*e.Ports)
+			if err := (forwardPortEditor{defaultHost: "127.0.0.1"}).validate(d.Ports); err != nil {
+				return "", err
+			}
 			if err := validatePortSpecs(d.Ports); err != nil {
-				return err
+				return "", err
 			}
 		}
 		if e.AcceptUDP != nil {
@@ -778,41 +760,46 @@ func EditDirectSettings(name string, e DirectEdit) error {
 		}
 		engine := direct.ConfigFromTable(d)
 		if err := engine.Validate(); err != nil {
-			return err
+			return "", err
 		}
 		document["direct"] = d
 	} else if cfg.L3.Enabled() {
 		if e.Sessions != nil || e.MSS != nil || e.Addr != nil {
-			return fmt.Errorf("layer-4 settings cannot be applied to a layer-3 tunnel")
+			return "", fmt.Errorf("layer-4 settings cannot be applied to a layer-3 tunnel")
 		}
 		l, err := applyDirectEdit(cfg.L3, e)
 		if err != nil {
-			return err
+			return "", err
+		}
+		if e.Ports != nil {
+			if err := (forwardPortEditor{defaultHost: hostOnly(l.PeerIP), allowEmpty: true}).validate(l.Ports); err != nil {
+				return "", err
+			}
 		}
 		if e.Preset != nil && *e.Preset != cfg.L3.Preset {
 			spec := directSpecFrom(name, l)
 			findL3Preset(strings.ToLower(strings.TrimSpace(*e.Preset))).apply(&spec)
 			if _, err := toml.Decode(spec.Render(), &cfg); err != nil {
-				return err
+				return "", err
 			}
 			l = cfg.L3
 		}
 		engine, err := l3.ConfigFromTable(l)
 		if err != nil {
-			return err
+			return "", err
 		}
 		if err := engine.Validate(); err != nil {
-			return err
+			return "", err
 		}
 		document["l3"] = l
 	} else {
-		return fmt.Errorf("%q is not a direct tunnel", name)
+		return "", fmt.Errorf("%q is not a direct tunnel", name)
 	}
 	var body strings.Builder
 	if err := toml.NewEncoder(&body).Encode(document); err != nil {
-		return err
+		return "", err
 	}
-	return tunnelspec.ApplyBody(name, body.String(), "panel edit")
+	return body.String(), nil
 }
 
 // applyDirectEdit folds the form into a config.

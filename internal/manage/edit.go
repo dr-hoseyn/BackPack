@@ -20,7 +20,7 @@ import (
 //   - ports — the full new forwarded-ports list (server tunnels only); the
 //     hidden bot-relay mapping, if present, is preserved automatically.
 //     A non-nil empty slice explicitly removes all visible forwarded ports.
-func EditTunnel(name, host, tunnelPort string, ports []string) error {
+func EditTunnel(name, host, tunnelPort string, ports []string, apply ...func(TunnelSpec) error) error {
 	s, err := LoadSpec(name)
 	if err != nil {
 		return err
@@ -100,7 +100,7 @@ func EditTunnel(name, host, tunnelPort string, ports []string) error {
 	if !changed {
 		return fmt.Errorf("nothing to change")
 	}
-	return applySpec(s)
+	return applySpecUsing(s, apply)
 }
 
 // SetFallbackAddrs replaces the list of backup server addresses on a client
@@ -110,7 +110,7 @@ func EditTunnel(name, host, tunnelPort string, ports []string) error {
 // filtered, a port gets blocked, or when you want to fail over to a CDN edge.
 //
 // Passing an empty list clears the fallbacks.
-func SetFallbackAddrs(name string, addrs []string) error {
+func SetFallbackAddrs(name string, addrs []string, apply ...func(TunnelSpec) error) error {
 	s, err := LoadSpec(name)
 	if err != nil {
 		return err
@@ -158,7 +158,7 @@ func SetFallbackAddrs(name string, addrs []string) error {
 	}
 
 	s.FallbackAddrs = clean
-	return applySpec(s)
+	return applySpecUsing(s, apply)
 }
 
 // ChangeTransport switches an existing tunnel to a different carrier (tcp,
@@ -168,7 +168,7 @@ func SetFallbackAddrs(name string, addrs []string) error {
 // it doesn't have one yet. The change is verified and auto-reverted on failure.
 //
 // Both ends must use the same transport, so the peer has to be switched too.
-func ChangeTransport(name, transport string) error {
+func ChangeTransport(name, transport string, apply ...func(TunnelSpec) error) error {
 	transport = strings.ToLower(strings.TrimSpace(transport))
 	s, err := LoadSpec(name)
 	if err != nil {
@@ -180,7 +180,7 @@ func ChangeTransport(name, transport string) error {
 	if err := switchTransport(&s, transport); err != nil {
 		return err
 	}
-	return applySpec(s)
+	return applySpecUsing(s, apply)
 }
 
 // switchTransport moves a spec onto a different carrier, filling in whatever
@@ -225,7 +225,7 @@ func switchTransport(s *TunnelSpec, transport string) error {
 
 // SetLoadBalance turns load balancing across the configured server addresses
 // on or off for a client tunnel.
-func SetLoadBalance(name string, on bool) error {
+func SetLoadBalance(name string, on bool, apply ...func(TunnelSpec) error) error {
 	s, err := LoadSpec(name)
 	if err != nil {
 		return err
@@ -246,12 +246,12 @@ func SetLoadBalance(name string, on bool) error {
 	if on {
 		s.HealthFailover = false
 	}
-	return applySpec(s)
+	return applySpecUsing(s, apply)
 }
 
 // SetProxyProtocol turns the real-client-IP header on or off for a server
 // tunnel.
-func SetProxyProtocol(name string, on bool) error {
+func SetProxyProtocol(name string, on bool, apply ...func(TunnelSpec) error) error {
 	s, err := LoadSpec(name)
 	if err != nil {
 		return err
@@ -266,11 +266,11 @@ func SetProxyProtocol(name string, on bool) error {
 		return fmt.Errorf("it is already %s", map[bool]string{true: "on", false: "off"}[on])
 	}
 	s.ProxyProtocol = on
-	return applySpec(s)
+	return applySpecUsing(s, apply)
 }
 
 // SetLimits applies per-tunnel caps. Zero means unlimited for either value.
-func SetLimits(name string, maxConns, bandwidthMbps int) error {
+func SetLimits(name string, maxConns, bandwidthMbps int, apply ...func(TunnelSpec) error) error {
 	s, err := LoadSpec(name)
 	if err != nil {
 		return err
@@ -283,7 +283,7 @@ func SetLimits(name string, maxConns, bandwidthMbps int) error {
 	}
 	s.MaxConnections = maxConns
 	s.BandwidthMbps = bandwidthMbps
-	return applySpec(s)
+	return applySpecUsing(s, apply)
 }
 
 // mssLabel renders an MSS clamp the way the menus and the panel read it.
@@ -297,7 +297,7 @@ func mssLabel(mss int) string {
 // SetAcceptUDP turns UDP forwarding on the exposed ports on or off. It is a
 // server-side setting — the forwarded ports live there — and off is the default
 // a plain web or proxy tunnel should keep. See config.ServerConfig.ForwardsUDP.
-func SetAcceptUDP(name string, on bool) error {
+func SetAcceptUDP(name string, on bool, apply ...func(TunnelSpec) error) error {
 	s, err := LoadSpec(name)
 	if err != nil {
 		return err
@@ -309,7 +309,7 @@ func SetAcceptUDP(name string, on bool) error {
 		return fmt.Errorf("UDP forwarding is already %s", map[bool]string{true: "on", false: "off"}[on])
 	}
 	s.AcceptUDP = on
-	return applySpec(s)
+	return applySpecUsing(s, apply)
 }
 
 // SetMSS clamps the largest TCP payload the tunnel puts in one packet. Zero —
@@ -325,7 +325,7 @@ func SetAcceptUDP(name string, on bool) error {
 //
 // No preset sets it, and a preset change leaves it alone: it describes the path
 // the tunnel crosses, not how hard the tunnel is being pushed.
-func SetMSS(name string, mss int) error {
+func SetMSS(name string, mss int, apply ...func(TunnelSpec) error) error {
 	s, err := LoadSpec(name)
 	if err != nil {
 		return err
@@ -340,7 +340,7 @@ func SetMSS(name string, mss int) error {
 		return fmt.Errorf("the MSS clamp is already %s", mssLabel(mss))
 	}
 	s.MSS = mss
-	return applySpec(s)
+	return applySpecUsing(s, apply)
 }
 
 // pckFlagSummary renders the flag cycle for the Edit header.
@@ -357,7 +357,7 @@ func pckFlagSummary(flags []string) string {
 // It is a one-sided setting: each end decides only what its own packets look
 // like, so the two need not match and changing it here does not strand the
 // peer. That is the whole reason it is safe to offer as a live edit.
-func SetPckFlags(name string, flags []string) error {
+func SetPckFlags(name string, flags []string, apply ...func(TunnelSpec) error) error {
 	s, err := LoadSpec(name)
 	if err != nil {
 		return err
@@ -375,13 +375,13 @@ func SetPckFlags(name string, flags []string) error {
 		return err
 	}
 	s.PckFlags = clean
-	return applySpec(s)
+	return applySpecUsing(s, apply)
 }
 
 // ChangePreset re-applies a whole performance profile to an existing tunnel.
 // Every tuning field is rewritten from the preset; the identity of the tunnel
 // (name, token, ports, addresses, certificates) is untouched.
-func ChangePreset(name, preset string) error {
+func ChangePreset(name, preset string, apply ...func(TunnelSpec) error) error {
 	if !validPreset(preset) {
 		return fmt.Errorf("unknown preset %q", preset)
 	}
@@ -394,7 +394,7 @@ func ChangePreset(name, preset string) error {
 			presetLabel(preset), s.Transport)
 	}
 	ApplyPreset(&s, preset)
-	return applySpec(s)
+	return applySpecUsing(s, apply)
 }
 
 // SetCertificate switches a TLS tunnel between its self-signed certificate and
@@ -403,7 +403,7 @@ func ChangePreset(name, preset string) error {
 // The self-signed pair is left on disk either way. It costs nothing to keep,
 // and it means switching back is instant rather than requiring regeneration —
 // which matters when the reason for switching back is that ACME just failed.
-func SetCertificate(name, domain, email string) error {
+func SetCertificate(name, domain, email string, apply ...func(TunnelSpec) error) error {
 	s, err := LoadSpec(name)
 	if err != nil {
 		return err
@@ -428,5 +428,5 @@ func SetCertificate(name, domain, email string) error {
 		}
 		s.TLSCert, s.TLSKey = cert, key
 	}
-	return applySpec(s)
+	return applySpecUsing(s, apply)
 }

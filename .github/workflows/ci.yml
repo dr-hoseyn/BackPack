@@ -14,6 +14,25 @@ permissions:
   contents: read
 
 jobs:
+  safe-edits:
+    name: Safe tunnel edit regressions
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Verify shared transaction, history and startup recovery
+        run: |
+          sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
+          go test -race ./internal/manage/tunnelspec -count=1 -timeout 2m
+      - name: Verify editor integration, previews and history UI
+        run: go test -race ./internal/manage ./internal/webui -run '^(TestSafe|TestForwardPort|TestEdit|TestLayer3Editor|TestTheConfigHistory|TestAMoment)' -count=1 -timeout 2m
+      - name: Verify panel wiring and mapping editor
+        run: node --test internal/webui/paneltest/*.test.js
+
   forwarded-ports:
     name: Forwarded port menu regressions
     runs-on: ubuntu-latest

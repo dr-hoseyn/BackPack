@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/backpack/backpack/internal/manage"
+	"github.com/backpack/backpack/internal/manage/tunnelspec"
 )
 
 // A tunnel's configuration history, from the panel.
@@ -54,8 +55,9 @@ func (s *server) handleConfRestore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var input struct {
-		Name string          `json:"name"`
-		At   json.RawMessage `json:"at"`
+		Name     string          `json:"name"`
+		At       json.RawMessage `json:"at"`
+		Revision string          `json:"revision"`
 	}
 	if err := decodeJSON(w, r, &input); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
@@ -77,9 +79,35 @@ func (s *server) handleConfRestore(w http.ResponseWriter, r *http.Request) {
 
 	// RestoreConfigFrom reverts the tunnel if the restored configuration will
 	// not come up, so a failure here has already left the tunnel as it was.
-	if err := manage.RestoreConfigFrom(req.Name, time.Unix(0, req.At)); err != nil {
+	if err := manage.RestoreConfigFrom(req.Name, time.Unix(0, req.At), input.Revision); err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
 	writeJSON(w, map[string]any{"ok": true})
+}
+
+func (s *server) handleConfPreview(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST only", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Name string `json:"name"`
+		At   string `json:"at"`
+	}
+	if err := decodeJSON(w, r, &req); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	at, err := strconv.ParseInt(req.At, 10, 64)
+	if err != nil || at == 0 {
+		http.Error(w, "invalid moment", http.StatusBadRequest)
+		return
+	}
+	preview, err := tunnelspec.PreviewConfigFrom(req.Name, time.Unix(0, at))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, preview)
 }

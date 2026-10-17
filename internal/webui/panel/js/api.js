@@ -81,6 +81,7 @@ export const restartAll = () =>
 export const tunnelSettings = name =>
   get('/api/tunnel/settings?name=' + encodeURIComponent(name));
 export const tunnelEdit  = payload => post('/api/tunnel/edit', payload);
+export const tunnelPreview = payload => post('/api/tunnel/preview', payload);
 export const tunnelOptions = () => get('/api/tunnel/options');
 
 /* ---- Handing a tunnel's paired settings to the other server --------------- */
@@ -188,7 +189,8 @@ export const history = (name, days) =>
 /* ---- CLI: per-tunnel → Undo a change ------------------------------------- */
 export const confHistory = name =>
   get('/api/confhist?name=' + encodeURIComponent(name));
-export const confRestore = (name, at) => post('/api/confhist/restore', { name, at });
+export const confRestore = (name, at, revision) => post('/api/confhist/restore', { name, at, revision });
+export const confPreview = (name, at) => post('/api/confhist/preview', { name, at });
 
 /* ---- CLI: 4 Backup & Restore --------------------------------------------- */
 /* A download is a navigation rather than a fetch, so it does not go through

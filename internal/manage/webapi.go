@@ -571,7 +571,8 @@ func specFromNew(n NewTunnel) (TunnelSpec, error) {
 type TunnelEdit struct {
 	ServerAddr string    `json:"serverAddr"` // client only
 	TunnelPort string    `json:"tunnelPort"`
-	Ports      string    `json:"ports"` // server only, comma-separated
+	Ports      string    `json:"ports"`      // server only, comma-separated
+	ClearPorts bool      `json:"clearPorts"` // explicit removal; blank ports alone remains a no-op
 	Transport  string    `json:"transport"`
 	Preset     string    `json:"preset"`
 	Tune       *FineTune `json:"tune"`
@@ -602,9 +603,16 @@ type TunnelEdit struct {
 // A failure here reverts to the config the tunnel had before, as every other
 // edit does.
 func EditTunnelSettings(name string, e TunnelEdit) error {
-	s, err := LoadSpec(name)
+	s, err := tunnelEditSpec(name, e)
 	if err != nil {
 		return err
+	}
+	return applySpec(s)
+}
+func tunnelEditSpec(name string, e TunnelEdit) (TunnelSpec, error) {
+	s, err := LoadSpec(name)
+	if err != nil {
+		return TunnelSpec{}, err
 	}
 	// What the form was filled with, so only what the operator changed on it
 	// is applied. See changedFrom.
@@ -629,14 +637,14 @@ func EditTunnelSettings(name string, e TunnelEdit) error {
 	} {
 		c, err := step(&s)
 		if err != nil {
-			return err
+			return TunnelSpec{}, err
 		}
 		changed = changed || c
 	}
 	if !changed {
-		return fmt.Errorf("nothing to change")
+		return TunnelSpec{}, fmt.Errorf("nothing to change")
 	}
-	return applySpec(s)
+	return s, nil
 }
 
 // Each edit step below applies one part of a TunnelEdit to the spec and
@@ -788,11 +796,14 @@ func (e TunnelEdit) editServerAddr(s *TunnelSpec) (bool, error) {
 // mapping the operator never sees.
 func (e TunnelEdit) editPorts(s *TunnelSpec) (bool, error) {
 	raw := strings.TrimSpace(e.Ports)
-	if raw == "" {
+	if raw == "" && !e.ClearPorts {
 		return false, nil
 	}
 	if s.Role != "server" {
 		return false, fmt.Errorf("forwarded ports exist only on server tunnels")
+	}
+	if e.ClearPorts && raw != "" {
+		return false, fmt.Errorf("clearPorts cannot be combined with nonempty ports")
 	}
 	var clean []string
 	for _, p := range parsePorts(raw) {
@@ -800,10 +811,22 @@ func (e TunnelEdit) editPorts(s *TunnelSpec) (bool, error) {
 			clean = append(clean, p)
 		}
 	}
-	if len(clean) == 0 {
+	if len(clean) == 0 && !e.ClearPorts {
 		return false, fmt.Errorf("at least one forwarded port is required")
 	}
 	if err := validatePortSpecs(clean); err != nil {
+		return false, err
+	}
+	editor := forwardPortEditor{defaultHost: "127.0.0.1", reverse: true, allowEmpty: e.ClearPorts}
+	if s.BindAddr != "" {
+		editor.reserved = append(editor.reserved, s.BindAddr+"=1")
+	}
+	for _, p := range s.Ports {
+		if isBotRelayPort(p, s.Token) {
+			editor.reserved = append(editor.reserved, p)
+		}
+	}
+	if err := editor.validate(clean); err != nil {
 		return false, err
 	}
 	// Keep the hidden Telegram/SOCKS relay mapping the operator never sees.

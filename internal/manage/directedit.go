@@ -3,6 +3,7 @@ package manage
 import (
 	"fmt"
 	"net"
+	"os"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -15,8 +16,12 @@ import (
 // This preserves carrier settings that the older CLI renderer cannot hold.
 func saveForwardedPorts(name string, ports []string) {
 	raw := strings.Join(ports, ",")
-	if err := EditDirectSettings(name, DirectEdit{Ports: &raw}); err != nil {
-		tui.Error("Failed: " + err.Error())
+	body, err := directEditBody(name, DirectEdit{Ports: &raw})
+	if err == nil {
+		err = reviewBody(name, body)
+	}
+	if err != nil {
+		editError(err)
 	} else {
 		tui.Success("Forwarded Ports Saved — Restarted.")
 	}
@@ -83,11 +88,15 @@ func editDirectPorts(t Tunnel, cfg config.Config) bool {
 	fmt.Println()
 
 	if !iran {
+		if len(ConfigHistory(t.Name)) > 0 && tui.ChooseOpt("History", []tui.Option{{Title: "Undo A Change", Desc: "preview and restore an earlier configuration"}}) == 0 {
+			editConfigHistory(t.Name)
+			return true
+		}
 		tui.PressEnter()
 		return false
 	}
 
-	switch tui.ChooseOpt("Edit", []tui.Option{
+	options := []tui.Option{
 		{Title: "Forwarded Ports", Desc: ""},
 		{Title: "UDP Forwarding", Desc: "now " + onOff(d.AcceptUDP)},
 		{Title: "Limits", Desc: "now " + limitsLabel(d.MaxConnections, d.BandwidthMbps)},
@@ -95,9 +104,16 @@ func editDirectPorts(t Tunnel, cfg config.Config) bool {
 		{Title: "TCP MSS Clamp", Desc: "now " + directMSSLabel(d.MSS)},
 		{Title: "Show Token", Desc: ""},
 		{Title: "Kharej Address", Desc: "now " + d.Addr},
-	}) {
+	}
+	options = append(options, tui.Option{Title: "Undo A Change", Desc: "preview and restore an earlier configuration"})
+	chosen := tui.ChooseOpt("Edit", options)
+	if chosen == len(options)-1 {
+		editConfigHistory(t.Name)
+		return true
+	}
+	switch chosen {
 	case 0:
-		ports, changed := (forwardPortEditor{defaultHost: "127.0.0.1"}).edit(d.Ports)
+		ports, changed := (forwardPortEditor{defaultHost: "127.0.0.1", reviewNext: true}).edit(d.Ports)
 		if !changed {
 			return true
 		}
@@ -212,7 +228,12 @@ func editL3Ports(t Tunnel, cfg config.Config) bool {
 			Desc: "now " + orDefault(l.SpoofPeerIP, "not set")})
 	}
 
+	options = append(options, tui.Option{Title: "Undo A Change", Desc: "preview and restore an earlier configuration"})
 	chosen := tui.ChooseOpt("Edit", options)
+	if chosen == len(options)-1 {
+		editConfigHistory(t.Name)
+		return true
+	}
 	if chosen >= 0 && chosen == peer {
 		if iran {
 			addr, ok := askPeerAddress("Kharej", l.Addr)
@@ -239,7 +260,7 @@ func editL3Ports(t Tunnel, cfg config.Config) bool {
 
 	switch choice {
 	case 0:
-		ports, changed := (forwardPortEditor{defaultHost: hostOnly(l.PeerIP), allowEmpty: true}).edit(l.Ports)
+		ports, changed := (forwardPortEditor{defaultHost: hostOnly(l.PeerIP), allowEmpty: true, reviewNext: true}).edit(l.Ports)
 		if !changed {
 			return true
 		}
@@ -311,37 +332,30 @@ func mssClampLabel(clamp, mtu int) string {
 const mssClampOffLabel = -1
 
 // saveDirect writes a changed [direct] config back and restarts the tunnel.
-func saveDirect(t Tunnel, d config.DirectConfig) {
-	side := sideIran
-	if d.ResolvedRole() == "origin" {
-		side = sideKharej
-	}
-	spec := directSpec{
-		Name: t.Name, Side: side,
-		Transport: orDefault(d.Transport, "tcp"),
-		Addr:      d.Addr, Token: d.Token,
-		Ports: d.Ports, AcceptUDP: d.AcceptUDP,
-		MaxConnections: d.MaxConnections, BandwidthMbps: d.BandwidthMbps,
-		Sessions:     d.Sessions,
-		Preset:       d.Preset,
-		MuxFrameSize: d.MaxFrameSize, MuxReceiveBuffer: d.MaxReceiveBuffer,
-		MuxStreamBuffer: d.MaxStreamBuffer, Keepalive: d.Keepalive,
-		Nodelay:    d.Nodelay,
-		ServerName: d.ServerName,
-		ACMEDomain: d.ACMEDomain, ACMEEmail: d.ACMEEmail,
-		// Never asked for here, and kept so that changing a port does not
-		// delete a certificate or a hand-set timeout.
-		TLSCertFile: d.TLSCertFile, TLSKeyFile: d.TLSKeyFile,
-		MuxVersion:  d.MuxVersion,
-		DialTimeout: d.DialTimeout, RetryInterval: d.RetryInterval,
-		MSS: d.MSS,
-	}
-	applyEdit(t, spec.Render())
-}
+func saveDirect(t Tunnel, d config.DirectConfig) { saveDirectTable(t, "direct", d) }
 
-// saveL3 writes a changed [l3] config back and restarts the tunnel.
-func saveL3(t Tunnel, l config.L3Config) {
-	applyEdit(t, l3SpecOf(t, l).Render())
+func saveL3(t Tunnel, l config.L3Config) { saveDirectTable(t, "l3", l) }
+
+// Change one table while retaining all current carrier and auxiliary tables.
+func saveDirectTable(t Tunnel, table string, value any) {
+	raw, err := os.ReadFile(app.ConfigPath(t.Name))
+	var document map[string]any
+	if err == nil {
+		_, err = toml.Decode(string(raw), &document)
+	}
+	if err != nil {
+		editError(err)
+		tui.PressEnter()
+		return
+	}
+	document[table] = value
+	var body strings.Builder
+	if err := toml.NewEncoder(&body).Encode(document); err != nil {
+		editError(err)
+		tui.PressEnter()
+		return
+	}
+	applyEdit(t, body.String())
 }
 
 // l3SpecOf rebuilds the wizard's view of an existing layer-3 config, so an
@@ -389,24 +403,16 @@ func validateRendered(body string) error {
 // not decode would leave a tunnel that cannot start and an operator with no
 // idea why, and the cost of checking is one parse of a file we just built.
 func applyEdit(t Tunnel, body string) {
-	var check config.Config
-	if _, err := toml.Decode(body, &check); err != nil {
-		tui.Error("The edit does not parse: " + err.Error())
+	if err := validateRendered(body); err != nil {
+		editError(err)
 		tui.PressEnter()
 		return
 	}
-	if err := app.WriteFileAtomic(app.ConfigPath(t.Name), []byte(body), app.TunnelConfigMode); err != nil {
-		tui.Error("Cannot write the config: " + err.Error())
-		tui.PressEnter()
-		return
+	if err := reviewBody(t.Name, body); err != nil {
+		editError(err)
+	} else {
+		tui.Success("Saved — Restarted.")
 	}
-	if err := RestartService(t.Service); err != nil {
-		tui.Error("Saved, but the restart failed: " + err.Error())
-		tui.Warn("Log: journalctl -u " + t.Service + " -n 50")
-		tui.PressEnter()
-		return
-	}
-	tui.Success("Saved — Restarted.")
 	tui.PressEnter()
 }
 
