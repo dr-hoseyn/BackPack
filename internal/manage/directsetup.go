@@ -153,9 +153,12 @@ func setupL3(side directSide) {
 
 		// Ports over a layer-3 tunnel are optional: without them it is a
 		// plain private network (TUN) and routes whatever it is given.
+		editor := forwardPortEditor{defaultHost: hostOnly(cfg.PeerIP), allowEmpty: true}
+		editor.setupHelp()
 		if raw := tui.Prompt("Forwarded Ports (Blank For TUN): "); strings.TrimSpace(raw) != "" {
-			cfg.Ports = parsePorts(raw)
-			if err := validatePortSpecs(cfg.Ports); err != nil {
+			var err error
+			cfg.Ports, err = editor.setupPorts(raw)
+			if err != nil {
 				tui.Error(err.Error())
 				tui.PressEnter()
 				return

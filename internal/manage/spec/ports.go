@@ -50,7 +50,7 @@ func ValidPortSpec(spec string) bool {
 	}
 	// "ip:port=addr" — a full local address is only valid in mapping form.
 	if h, p, err := net.SplitHostPort(local); err == nil && h != "" {
-		return len(parts) == 2 && ValidPort(p)
+		return len(parts) == 2 && ValidPortSpec(p)
 	}
 	// Port range "N-M".
 	if strings.Contains(local, "-") {

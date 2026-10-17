@@ -113,6 +113,7 @@ func TestAPortSpecIsWhatTheEngineWillAccept(t *testing.T) {
 	for _, good := range []string{
 		"443", "443=2096", "443=127.0.0.1:2096", "10000-10009", "10000-10009=20000-20009",
 		"127.0.0.1:443=2096", "[2a01:4f8::1]:443=127.0.0.1:2053",
+		"127.0.0.1:10000-10009=2096", "[::1]:10000-10009=20000-20009",
 	} {
 		if !ValidPortSpec(good) {
 			t.Errorf("%q is a valid mapping and was refused", good)

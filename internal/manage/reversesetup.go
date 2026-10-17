@@ -101,7 +101,14 @@ func SetupServer() {
 
 	// A bare 443 is Iran's 443 to the kharej's own 127.0.0.1:443. Elsewhere:
 	// 443=127.0.0.1:2096; several backends: 443=127.0.0.1:2096|127.0.0.1:2097.
-	s.Ports = parsePorts(tui.Prompt("Forwarded Ports (e.g. 443, 8080=127.0.0.1:2096): "))
+	editor := forwardPortEditor{defaultHost: "127.0.0.1", reverse: true, reserved: []string{s.BindAddr + "=1"}}
+	editor.setupHelp()
+	s.Ports, err = editor.setupPorts(tui.Prompt("Forwarded Ports (e.g. 443, 8080=127.0.0.1:2096): "))
+	if err != nil {
+		tui.Error(err.Error())
+		tui.PressEnter()
+		return
+	}
 	if len(s.Ports) == 0 {
 		tui.Error("No valid ports.")
 		tui.PressEnter()
