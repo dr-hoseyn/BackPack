@@ -222,7 +222,7 @@ func TestConnectionTestBestSettingsWrapWithinTheTable(t *testing.T) {
 		}
 	}
 	plain := strings.Join(strings.Fields(table), " ")
-	for _, want := range []string{"Reverse Hysteria2 / Salamander", "1245.3 Mbps", "4 streams, verified receiver bytes", "measured by Direct Hysteria2 / Salamander (Auto MTU does this)"} {
+	for _, want := range []string{"Reverse Hysteria2 / Salamander", "1245.3 Mbps", "4 streams; verified bytes", "measured by Direct Hysteria2 / Salamander (Auto MTU does this)"} {
 		if !strings.Contains(plain, want) {
 			t.Fatalf("wrapped settings lost %q:\n%s", want, table)
 		}

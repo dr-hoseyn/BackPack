@@ -316,13 +316,13 @@ func ConnTestBestTable(b ConnTestBest) string {
 	row("SETTING", "VALUE", "MEASURED")
 	s.WriteString("\n")
 
-	link := fmt.Sprintf("%dms ±%dms, %.1f%% loss", b.RTTms, b.JitterMs, b.LossPct)
+	link := fmt.Sprintf("%d±%dms, %.1f%% loss", b.RTTms, b.JitterMs, b.LossPct)
 	if b.Transport != "" {
 		kind, tr, _ := strings.Cut(b.Transport, " ")
 		row("Transport", ctKind(kind)+" "+ctName(tr), fmt.Sprintf("%.1f Mbps, %s", b.Mbps, link))
 		if b.UploadMbps > 0 {
-			row("Download", fmt.Sprintf("%.1f Mbps", b.Mbps), "4 streams, verified receiver bytes")
-			row("Upload", fmt.Sprintf("%.1f Mbps", b.UploadMbps), "4 streams, verified receiver bytes")
+			row("Download", fmt.Sprintf("%.1f Mbps", b.Mbps), "4 streams; verified bytes")
+			row("Upload", fmt.Sprintf("%.1f Mbps", b.UploadMbps), "4 streams; verified bytes")
 		}
 	} else {
 		row("Transport", "-", "nothing carried traffic steadily")
@@ -331,7 +331,7 @@ func ConnTestBestTable(b ConnTestBest) string {
 		row("Direct SNI", b.SNIDomain, "best steady SNI candidate")
 	}
 	if b.BDPKB > 0 {
-		row("Preset", titleWord(b.Preset), fmt.Sprintf("%d KB in flight (speed × round trip)", b.BDPKB))
+		row("Preset", titleWord(b.Preset), fmt.Sprintf("%d KB in flight; speed × RTT", b.BDPKB))
 	} else {
 		row("Preset", titleWord(b.Preset), "the default")
 	}
@@ -344,7 +344,7 @@ func ConnTestBestTable(b ConnTestBest) string {
 		row("Path MTU", strconv.Itoa(b.PathMTU), "largest unfragmented packet")
 	}
 	if b.MSS > 0 {
-		row("TCP MSS Clamp", strconv.Itoa(b.MSS), "path MTU below 1500 (reverse tunnels)")
+		row("TCP MSS Clamp", strconv.Itoa(b.MSS), "reverse path MTU below 1500")
 	} else {
 		row("TCP MSS Clamp", "0 (Auto)", "not needed")
 	}

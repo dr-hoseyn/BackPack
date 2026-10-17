@@ -382,6 +382,7 @@ func (b *ctBoard) lines(width, height int) []string {
 	out := []string{"CONNECTION TEST — " + b.title, ctRule(), ctSummary(b.rows), ctHeader, ""}
 	compact := width-1 < utf8.RuneCountInString(ctHeader)
 	if compact {
+		out[2] = strings.NewReplacer("steady", "OK", "skipped", "skip").Replace(out[2])
 		out[3] = fmt.Sprintf("   K %-*s %-8s %6s", ctNameWidth, "NAME", "STATUS", "LOSS")
 	}
 	rows := b.rows
