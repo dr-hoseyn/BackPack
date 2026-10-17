@@ -4,6 +4,14 @@ All notable changes to Backpack are documented here.
 
 ## Unreleased
 
+- Keep Connection Test upload from losing its measurement budget to download
+  connection setup; both directions now have bounded setup and sampling time,
+  and pending speed dials stop with the measurement context.
+- Exercise descriptor exhaustion with an independent caller and backend, so
+  a dead echo fixture cannot masquerade as a tunnel recovery failure. Repeat
+  the Linux recovery check under race and coverage instrumentation and verify
+  KCP download/upload across a 1400-byte IPv6-only path.
+
 - Compare three independent Direct SNI candidates in Connection Test, retain
   each domain's verdict and recommend the fastest steady candidate per IP path.
 - Keep live terminal updates inside the viewport, avoid wrapped rows and

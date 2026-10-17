@@ -16,16 +16,24 @@ import (
 )
 
 const (
-	ctSpeedMagic    = "BP-SPEED/1\n"
-	ctSpeedAck      = "BP-SPEED/1 OK\n"
-	ctSpeedStreams  = 4
-	ctSpeedBlock    = 32 << 10
-	ctSpeedWarmup   = 2 * time.Second
-	ctSpeedMinimum  = 2 * time.Second
-	ctSpeedMaximum  = 4 * time.Second
-	ctSpeedInterval = 500 * time.Millisecond
-	// Includes concurrent connection setup, both directions and cleanup.
-	ctSpeedBudget = 20 * time.Second
+	ctSpeedMagic         = "BP-SPEED/1\n"
+	ctSpeedAck           = "BP-SPEED/1 OK\n"
+	ctSpeedStreams       = 4
+	ctSpeedBlock         = 32 << 10
+	ctSpeedWarmup        = 2 * time.Second
+	ctSpeedMinimum       = 2 * time.Second
+	ctSpeedMaximum       = 4 * time.Second
+	ctSpeedInterval      = 500 * time.Millisecond
+	ctSpeedDialWait      = 3 * time.Second
+	ctSpeedHandshakeWait = 3 * time.Second
+	ctSpeedIOGrace       = 2 * time.Second
+	// Each direction may spend a dial budget, a protocol handshake, then
+	// warmup and sampling. A shared 20s deadline could expire on upload even
+	// when both directions stayed within their individual limits (especially
+	// KCP over a delayed path). Keep the whole test bounded without charging
+	// upload for the time download needed to establish its four streams.
+	ctSpeedDirectionBudget = ctSpeedDialWait + ctSpeedHandshakeWait + ctSpeedWarmup + ctSpeedMaximum + ctSpeedIOGrace
+	ctSpeedBudget          = 2 * ctSpeedDirectionBudget
 )
 
 type ctSpeedResult struct {
@@ -35,7 +43,7 @@ type ctSpeedResult struct {
 
 // ctSpeed measures one tunnel at a time. Streams share the same sampling
 // window; warmup bytes, socket buffers and echo traffic are never counted.
-func ctSpeed(ctx context.Context, dial func() (net.Conn, error)) (ctSpeedResult, error) {
+func ctSpeed(ctx context.Context, dial func(context.Context) (net.Conn, error)) (ctSpeedResult, error) {
 	var r ctSpeedResult
 	ctx, cancel := context.WithTimeout(ctx, ctSpeedBudget)
 	defer cancel()
@@ -51,8 +59,8 @@ func ctSpeed(ctx context.Context, dial func() (net.Conn, error)) (ctSpeedResult,
 	return r, nil
 }
 
-func ctSpeedDirection(parent context.Context, dial func() (net.Conn, error), direction byte) (float64, bool, error) {
-	ctx, cancel := context.WithCancel(parent)
+func ctSpeedDirection(parent context.Context, dial func(context.Context) (net.Conn, error), direction byte) (float64, bool, error) {
+	ctx, cancel := context.WithTimeout(parent, ctSpeedDirectionBudget)
 	var wg sync.WaitGroup
 	defer func() { cancel(); wg.Wait() }()
 	var received atomic.Uint64
@@ -65,7 +73,7 @@ func ctSpeedDirection(parent context.Context, dial func() (net.Conn, error), dir
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			c, err := dial()
+			c, err := dial(ctx)
 			if err != nil {
 				ready <- err
 				return
@@ -73,7 +81,7 @@ func ctSpeedDirection(parent context.Context, dial func() (net.Conn, error), dir
 			defer c.Close()
 			stop := context.AfterFunc(ctx, func() { c.Close() })
 			defer stop()
-			_ = c.SetDeadline(time.Now().Add(3 * time.Second))
+			_ = c.SetDeadline(time.Now().Add(ctSpeedHandshakeWait))
 			payload := make([]byte, ctSpeedBlock)
 			if _, err = rand.Read(payload); err == nil {
 				_, err = io.Copy(c, bytes.NewReader(append([]byte(ctSpeedMagic+string(direction)), payload...)))
@@ -94,7 +102,7 @@ func ctSpeedDirection(parent context.Context, dial func() (net.Conn, error), dir
 			case <-ctx.Done():
 				return
 			}
-			_ = c.SetDeadline(time.Now().Add(ctSpeedWarmup + ctSpeedMaximum + 2*time.Second))
+			_ = c.SetDeadline(time.Now().Add(ctSpeedWarmup + ctSpeedMaximum + ctSpeedIOGrace))
 			if _, err = c.Write([]byte{1}); err != nil {
 				failures <- err
 				return
@@ -268,7 +276,7 @@ func ctServeSpeedOrEcho(c net.Conn) {
 	if _, err := io.ReadFull(c, start[:]); err != nil || start[0] != 1 {
 		return
 	}
-	_ = c.SetDeadline(time.Now().Add(ctSpeedWarmup + ctSpeedMaximum + 2*time.Second))
+	_ = c.SetDeadline(time.Now().Add(ctSpeedWarmup + ctSpeedMaximum + ctSpeedIOGrace))
 	if direction[0] == 'D' {
 		_ = ctSpeedSend(c, payload)
 		return
