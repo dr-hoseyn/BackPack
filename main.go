@@ -9,6 +9,7 @@ import (
 	"syscall"
 
 	"github.com/backpack/backpack/cmd"
+	"github.com/backpack/backpack/internal/amneziawg"
 	"github.com/backpack/backpack/internal/app"
 	"github.com/backpack/backpack/internal/cli"
 	"github.com/backpack/backpack/internal/localproxy"
@@ -32,10 +33,14 @@ var logger = utils.NewLogger("info")
 //   - Menu mode:    `backpack`  (no arguments)
 //     Opens the interactive management CLI on the VPS.
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "short-https" {
+	if len(os.Args) > 1 && (os.Args[1] == "short-https" || os.Args[1] == "awg") {
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
-		if err := shorthttps.Run(ctx, os.Args[2:], os.Stdout); err != nil {
+		run := shorthttps.Run
+		if os.Args[1] == "awg" {
+			run = amneziawg.Run
+		}
+		if err := run(ctx, os.Args[2:], os.Stdout); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}

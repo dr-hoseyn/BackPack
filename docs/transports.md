@@ -19,6 +19,9 @@ On supported musl systems the default is Xray only. Existing helper directories
 are retained. No helper is started by the installer. Xray transport settings
 require a Backpack build that implements the managed Xray wrapper.
 
+An independent [experimental AmneziaWG engine](amneziawg.md) is available through
+`backpack awg`; it uses its own L3 protocol and is separate from these transports.
+
 ## Managed HTTPS carriers
 
 For paths that carry only short HTTPS exchanges, an experimental IP-only fixed
@@ -180,7 +183,9 @@ the HTTP host and must match on both sides; empty uses `server_name`. A CDN must
 support the selected XHTTP requests, response streaming, timeouts and origin
 TLS configuration. CDN deployment is route/provider dependent and has not been
 validated by the local integration tests. This first wrapper does not expose
-H3, split download settings, raw JSON overrides, or a website frontend.
+H3, raw JSON overrides, or a website frontend. Optional separate verified
+HTTP/2 download settings and bounded connection controls are described in
+[Advanced XHTTP](xhttp-advanced.md).
 
 ### RAW / REALITY / Vision
 

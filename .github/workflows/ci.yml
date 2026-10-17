@@ -14,6 +14,42 @@ permissions:
   contents: read
 
 jobs:
+  xhttp-awg:
+    name: XHTTP split download and AmneziaWG real TUN
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Prepare private configuration fixtures
+        run: sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
+      - name: Verify configuration, encrypted packets and negative authentication
+        run: go test ./internal/amneziawg ./internal/tunnel/naive ./config ./cmd ./internal/manage/tunnelspec -race -count=1 -timeout 4m
+      - name: Install verified Xray and exercise independent TLS download
+        run: |
+          sudo env "PATH=$PATH" BP_HELPERS=xray BP_BUILD_FROM_SOURCE=1 bash ./install.sh
+          BP_XRAY_BINARY=/usr/local/lib/backpack/helpers/xray/v26.3.27-amd64/xray \
+            go test ./internal/tunnel/naive -run '^TestXHTTPSplitDownloadWithPinnedHelper$' -race -count=1 -v -timeout 2m
+      - name: AmneziaWG over IPv4 and IPv6, restart and loss
+        run: |
+          set -eu
+          go build -o "$RUNNER_TEMP/backpack-awg" .
+          for scenario in ipv4 ipv6 restart loss; do
+            extra=()
+            case "$scenario" in
+              ipv6) extra+=(IPV6=1) ;;
+              restart) extra+=(RESTART=1) ;;
+              loss) extra+=("NETEM=delay 20ms loss 1%") ;;
+            esac
+            sudo env BIN="$RUNNER_TEMP/backpack-awg" W="$RUNNER_TEMP/awg-$scenario" "${extra[@]}" \
+              timeout -k 5s 5m unshare --net --mount --fork -- \
+              bash internal/amneziawg/testdata/live.sh | tee "$RUNNER_TEMP/awg-$scenario.out"
+            grep -q '^RESULT OK' "$RUNNER_TEMP/awg-$scenario.out"
+          done
+
   masque:
     name: MASQUE and installation readiness
     runs-on: ubuntu-latest

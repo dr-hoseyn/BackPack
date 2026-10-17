@@ -371,6 +371,9 @@ func ValidateXrayClient(c *config.ClientConfig) error {
 	if err := xrayIdentity(x.Binary, x.Mode, x.UUID, x.ServerName); err != nil {
 		return err
 	}
+	if err := validateXHTTPOptions(x); err != nil {
+		return err
+	}
 	if x.Mode == "reality" {
 		if x.Path != "" || x.Host != "" || x.CAFile != "" {
 			return errors.New("REALITY does not accept XHTTP path, host or TLS ca_file")
@@ -510,26 +513,15 @@ func XrayClientJSON(c *config.ClientConfig, socksAddr string) ([]byte, error) {
 			"serverName": x.ServerName, "fingerprint": "chrome", "password": x.PublicKey, "shortId": x.ShortID,
 		}}
 	} else {
-		tlsConfig := map[string]any{"serverName": x.ServerName, "alpn": []string{"h2"}, "allowInsecure": false}
-		if x.CAFile != "" {
-			certificate, err := os.ReadFile(x.CAFile)
-			if err != nil {
-				return nil, err
-			}
-			if !x509.NewCertPool().AppendCertsFromPEM(certificate) {
-				return nil, errors.New("client.xray.ca_file contains no PEM certificates")
-			}
-			tlsConfig["certificates"] = []any{map[string]any{"certificate": []string{string(certificate)}, "usage": "verify"}}
+		tlsConfig, err := xhttpTLS(x.ServerName, x.CAFile)
+		if err != nil {
+			return nil, err
 		}
-		httpHost := x.Host
-		if httpHost == "" {
-			httpHost = x.ServerName
+		settings, err := xhttpSettings(x, false)
+		if err != nil {
+			return nil, err
 		}
-		// The pinned helper's packet upload writer reads buffer lengths after
-		// passing ownership to a concurrent consumer. Streaming uploads avoid
-		// that short-write race and the per-packet POST batching delay.
-		stream = map[string]any{"network": "xhttp", "security": "tls", "tlsSettings": tlsConfig,
-			"xhttpSettings": map[string]any{"path": x.Path, "host": httpHost, "mode": "stream-up"}}
+		stream = map[string]any{"network": "xhttp", "security": "tls", "tlsSettings": tlsConfig, "xhttpSettings": settings}
 	}
 	routing, err := xrayRouting("local", c.RemoteAddr, "carrier")
 	if err != nil {

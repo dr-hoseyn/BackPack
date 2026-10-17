@@ -4,6 +4,7 @@ go 1.26.9
 
 require (
 	github.com/BurntSushi/toml v1.6.0
+	github.com/amnezia-vpn/amneziawg-go/v3 v3.1.20260828
 	github.com/cilium/ebpf v0.22.0
 	github.com/flynn/noise v1.1.0
 	github.com/gorilla/websocket v1.5.3
