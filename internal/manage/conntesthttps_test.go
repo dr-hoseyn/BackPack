@@ -43,13 +43,15 @@ func TestHTTPSPreflightVerifiesTrustHostnameAndHTTP2(t *testing.T) {
 				t.Fatalf("IP trust probe: %s", got)
 			}
 		}
-		short := config.ShortClientConfig{Server: x.Server, ServerName: x.ServerName, CAFile: ca}
-		if got := ctProbeHTTPS(context.Background(), TunnelSpec{ShortClient: short}); got != "tls-ok" {
-			t.Fatalf("verified HTTP/1.1 preflight: %s", got)
-		}
-		short.ServerName = "wrong.backpack.invalid"
-		if got := ctProbeHTTPS(context.Background(), TunnelSpec{ShortClient: short}); got != "tls-failed" {
-			t.Fatalf("Short hostname verification bypassed: %s", got)
+		if !h2 {
+			short := config.ShortClientConfig{Server: x.Server, ServerName: x.ServerName, CAFile: ca}
+			if got := ctProbeHTTPS(context.Background(), TunnelSpec{ShortClient: short}); got != "tls-ok" {
+				t.Fatalf("verified HTTP/1.1 preflight: %s", got)
+			}
+			short.ServerName = "wrong.backpack.invalid"
+			if got := ctProbeHTTPS(context.Background(), TunnelSpec{ShortClient: short}); got != "tls-failed" {
+				t.Fatalf("Short hostname verification bypassed: %s", got)
+			}
 		}
 		x.ServerName = "wrong.backpack.invalid"
 		if got := ctProbeHTTPS(context.Background(), TunnelSpec{XrayClient: x}); got != "tls-failed" {
@@ -113,7 +115,7 @@ func TestHTTPSProbeCoordinatorAuthenticatesBoundsAndFreezesReports(t *testing.T)
 			t.Fatalf("invalid report accepted: %s", request)
 		}
 	}
-	for _, report := range []string{"xhttp:tls-ok", "naive:tls-failed", "reality:tcp-ok", "hysteria2:not-applicable", "anytls:not-applicable", "shadowtls:not-applicable", "tuic:not-applicable"} {
+	for _, report := range []string{"xhttp:tls-ok", "short-https:tls-ok", "naive:tls-failed", "reality:tcp-ok", "hysteria2:not-applicable", "anytls:not-applicable", "shadowtls:not-applicable", "tuic:not-applicable"} {
 		if c.answer("https-probe secret "+report, "127.0.0.1") != "ok" {
 			t.Fatalf("valid report rejected: %s", report)
 		}
