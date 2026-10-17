@@ -12,4 +12,3 @@ export function mappingValue(original, source, target) {
   if (source === original.source && target === original.target) return original.raw;
   return `${source}=${target}`;
 }
-
