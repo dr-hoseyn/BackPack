@@ -92,11 +92,8 @@ jobs:
           PY
             done
           done
-      - name: Regression tests and race detector
-        run: go test ./... -race -count=1 -timeout 15m
-      - name: Vet
-        run: go vet ./...
-      - name: Static analysis
-        run: go run honnef.co/go/tools/cmd/staticcheck@latest ./...
-      - name: Reachable vulnerability audit
-        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+      # CI owns the complete test/race/coverage, vet and audit gates. Here the
+      # intentionally partial helper installation must exercise real sing
+      # peers while correctly reporting the absent optional Naive client.
+      - name: Connection Test with only the sing-box helper installed
+        run: go test ./internal/manage -run '^(TestAConnectionTestOverLoopbackPassesEveryReverseTransport|TestHTTPSProbeCoordinatorAuthenticatesBoundsAndFreezesReports)$' -race -count=1 -v -timeout 4m

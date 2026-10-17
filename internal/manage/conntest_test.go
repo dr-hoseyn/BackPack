@@ -236,6 +236,18 @@ func TestAConnectionTestOverLoopbackPassesEveryReverseTransport(t *testing.T) {
 		if !managedTransport(c.tr) || c.skip != "" {
 			continue
 		}
+		// Naive's listener uses sing-box, while its client is a separate
+		// optional executable. A sing-only host can test the four new modes;
+		// its actual Kharej run reports Naive as skipped. The all-helper gate
+		// remains strict and requires the production peer comparison below.
+		if c.tr == "naive" {
+			if _, err := connTestHelperBinary("naive"); err != nil {
+				if os.Getenv("BP_CONNTEST_HELPERS") == "1" {
+					t.Fatal(err)
+				}
+				continue
+			}
+		}
 		var cfg config.Config
 		if _, err := toml.DecodeFile(filepath.Join(iran.dir, c.name+".toml"), &cfg); err != nil {
 			t.Fatal(err)
