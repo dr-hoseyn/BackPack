@@ -59,6 +59,26 @@ type XrayClientConfig struct {
 	PublicKey string `toml:"public_key"`
 	// ShortID is the shared 16-character hexadecimal REALITY identifier.
 	ShortID string `toml:"short_id"`
+	// XHTTP-only client tuning. Zero values retain the pinned helper's defaults.
+	// Maximum simultaneous XHTTP requests, 0 uses the pinned default; cannot be combined with max_connections.
+	MaxConcurrency int `toml:"max_concurrency,omitempty"`
+	// Maximum XHTTP connections, 0 uses the pinned default; cannot be combined with max_concurrency.
+	MaxConnections int `toml:"max_connections,omitempty"`
+	// Requests per XHTTP connection before renewal, 0 retains the pinned default.
+	MaxRequests int `toml:"max_requests,omitempty"`
+	// XHTTP connection reuse lifetime in seconds, 0 retains the pinned default.
+	MaxReuseSeconds int `toml:"max_reuse_seconds,omitempty"`
+	// DownloadServer selects an independent verified HTTP/2 download endpoint.
+	// It must reach the same XHTTP server/session, possibly through another CDN.
+	DownloadServer string `toml:"download_server,omitempty"`
+	// Explicit verified DNS identity of the separate download endpoint.
+	DownloadServerName string `toml:"download_server_name,omitempty"`
+	// Optional download HTTP Host; empty uses download_server_name.
+	DownloadHost string `toml:"download_host,omitempty"`
+	// Download HTTP path; empty uses the upload path. Both must reach the same session handler.
+	DownloadPath string `toml:"download_path,omitempty"`
+	// Optional separate download PEM trust anchor; empty uses system roots.
+	DownloadCAFile string `toml:"download_ca_file,omitempty"`
 }
 
 func (x XrayClientConfig) Enabled() bool { return x != (XrayClientConfig{}) }
@@ -93,3 +113,15 @@ type XrayServerConfig struct {
 }
 
 func (x XrayServerConfig) Enabled() bool { return x != (XrayServerConfig{}) }
+
+// CopyXHTTPOptions preserves local-only connection tuning across a peer-owned
+// setup-link update or a visit to HTTPS Settings. Other modes inherit none.
+func (x *XrayClientConfig) CopyXHTTPOptions(from XrayClientConfig) {
+	if x.Mode != "xhttp" || from.Mode != "xhttp" {
+		return
+	}
+	x.MaxConcurrency, x.MaxConnections = from.MaxConcurrency, from.MaxConnections
+	x.MaxRequests, x.MaxReuseSeconds = from.MaxRequests, from.MaxReuseSeconds
+	x.DownloadServer, x.DownloadServerName = from.DownloadServer, from.DownloadServerName
+	x.DownloadHost, x.DownloadPath, x.DownloadCAFile = from.DownloadHost, from.DownloadPath, from.DownloadCAFile
+}

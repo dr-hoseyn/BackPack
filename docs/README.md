@@ -45,6 +45,9 @@ Reference pages: what each part of Backpack **is**, and every setting it has.
 - [Per-tunnel limits](limits.md)
 - [TCP MSS clamp](mss-clamp.md)
 
+- [Advanced XHTTP](xhttp-advanced.md) — separate verified download and connection limits
+- [Experimental AmneziaWG](amneziawg.md) — independent point-to-point L3 prototype
+
 ### Monitoring
 - [Web panel](web-panel.md)
 - [The web panel, screen by screen](web-panel-screens.md) â€” every screen, its

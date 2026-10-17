@@ -188,10 +188,12 @@ func updateReverseFromLink(link ShareLink, o LinkApplyOptions, existing string) 
 	s.MSS, s.SimpleAuth = paired.MSS, paired.SimpleAuth
 	s.MuxVersion = paired.MuxVersion
 	s.KCPDataShards, s.KCPParityShards = paired.KCPDataShards, paired.KCPParityShards
+	previousXray := s.XrayClient
 	clearManagedTransport(&s)
 	s.NaiveClient, s.XrayClient = paired.NaiveClient, paired.XrayClient
 	if managedTransport(link.Tr) {
 		managedClientFromLink(&s, link, host)
+		s.XrayClient.CopyXHTTPOptions(previousXray)
 		s.Proxy, s.LocalAddr, s.Interface, s.EdgeIP = "", "", "", ""
 		s.SOMark, s.LoadBalance = 0, false
 	}

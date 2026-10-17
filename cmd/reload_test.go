@@ -469,3 +469,31 @@ func TestWaitForPortsBudgetsEachBindingSeparately(t *testing.T) {
 		t.Fatalf("two bindings took %v, want roughly one settle timeout", elapsed)
 	}
 }
+
+func TestXHTTPDownloadTrustIsIncludedInReloadIdentity(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "download.pem")
+	if err := os.WriteFile(path, []byte("first trust bundle"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	c := config.Config{Client: config.ClientConfig{Xray: config.XrayClientConfig{DownloadCAFile: path}}}
+	before, err := helperTLSIdentity(&c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("next trust bundle"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	after, err := helperTLSIdentity(&c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if before == after {
+		t.Fatal("download trust change did not trigger identity change")
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := helperTLSIdentity(&c); err == nil {
+		t.Fatal("missing download trust silently accepted")
+	}
+}

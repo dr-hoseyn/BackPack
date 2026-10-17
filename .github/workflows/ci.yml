@@ -14,6 +14,44 @@ permissions:
   contents: read
 
 jobs:
+  xhttp-awg:
+    name: XHTTP split download and AmneziaWG real TUN
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Prepare private configuration fixtures
+        run: sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
+      - name: Verify configuration, encrypted packets and negative authentication
+        run: go test ./internal/amneziawg ./internal/tunnel/naive ./config ./cmd ./internal/manage/tunnelspec -race -count=1 -timeout 4m
+      - name: Exercise existing and advanced HTTPS menu flows
+        run: go test ./internal/manage -run '^(TestManagedHTTPS|TestXHTTPAdvanced)' -race -count=1 -timeout 1m
+      - name: Install verified Xray and exercise independent TLS download
+        run: |
+          sudo env "PATH=$PATH" BP_HELPERS=xray BP_BUILD_FROM_SOURCE=1 bash ./install.sh
+          BP_XRAY_BINARY=/usr/local/lib/backpack/helpers/xray/v26.3.27-amd64/xray \
+            go test ./internal/tunnel/naive -run '^TestXHTTPSplitDownloadWithPinnedHelper$' -race -count=1 -v -timeout 2m
+      - name: AmneziaWG over IPv4 and IPv6, restart and loss
+        run: |
+          set -eu
+          go build -o "$RUNNER_TEMP/backpack-awg" .
+          for scenario in ipv4 ipv6 restart loss; do
+            extra=()
+            case "$scenario" in
+              ipv6) extra+=(IPV6=1) ;;
+              restart) extra+=(RESTART=1) ;;
+              loss) extra+=("NETEM=delay 20ms loss 1%") ;;
+            esac
+            sudo env BIN="$RUNNER_TEMP/backpack-awg" W="$RUNNER_TEMP/awg-$scenario" "${extra[@]}" \
+              timeout -k 5s 5m unshare --net --mount --fork -- \
+              bash internal/amneziawg/testdata/live.sh | tee "$RUNNER_TEMP/awg-$scenario.out"
+            grep -q '^RESULT OK' "$RUNNER_TEMP/awg-$scenario.out"
+          done
+
   masque:
     name: MASQUE and installation readiness
     runs-on: ubuntu-latest
@@ -65,9 +103,27 @@ jobs:
             grep -q '^RESULT OK' "$RUNNER_TEMP/masque-$scenario.out"
           done
 
+  # Keep the existing required-check name while all three complete suites run
+  # independently. A matrix failure must fail this gate, never cancel coverage.
   test:
     name: Build and test
+    needs: test-suites
+    if: always()
     runs-on: ubuntu-latest
+    steps:
+      - name: Require every regression suite
+        env:
+          RESULT: ${{ needs.test-suites.result }}
+        run: test "$RESULT" = success
+
+  test-suites:
+    name: Regression (${{ matrix.mode }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [test, race, coverage]
     steps:
       - uses: actions/checkout@v7
 
@@ -92,6 +148,7 @@ jobs:
           node-version: '22'
 
       - name: Verify formatting
+        if: matrix.mode == 'test'
         run: |
           unformatted="$(gofmt -l . || true)"
           if [ -n "$unformatted" ]; then
@@ -101,19 +158,23 @@ jobs:
           fi
 
       - name: Vet
+        if: matrix.mode == 'test'
         run: go vet ./...
 
       - name: Test
+        if: matrix.mode == 'test'
         # The e2e tests bind loopback ports and wait on real handshakes, so
         # they need more than the default 10 minute budget on a shared runner.
         run: go test ./... -timeout 20m
 
       - name: Test with the race detector
+        if: matrix.mode == 'race'
         # Enforced. The transports are heavily concurrent and a data race there
         # corrupts traffic rather than crashing loudly, so this must stay clean.
         run: go test ./... -race -timeout 20m
 
       - name: Coverage
+        if: matrix.mode == 'coverage'
         # Measured with -coverpkg, which is the only way this number means
         # anything here.
         #
@@ -140,6 +201,7 @@ jobs:
           }'
 
       - name: Per-package coverage floors
+        if: matrix.mode == 'coverage'
         # A whole-project number hides a package falling off a cliff while
         # another one rises. These are the packages where a drop means something
         # specific, each with the reason it is on the list.

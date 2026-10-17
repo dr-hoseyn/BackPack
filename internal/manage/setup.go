@@ -329,9 +329,11 @@ func setupManagedCarrierWithProbe(s *TunnelSpec, chosen, public, host string, pr
 			n.XrayServer = x
 		} else {
 			x := config.XrayClientConfig{Server: public, Mode: chosen, UUID: id, ServerName: serverName, Path: path}
+			x.CopyXHTTPOptions(s.XrayClient)
 			x.Binary = tui.PromptDefault("Xray Binary", defaultString(s.XrayClient.Binary, managedHelperPath("xray")))
 			x.Host = tui.PromptDefault("HTTP Host (Optional; From Iran)", s.XrayClient.Host)
 			x.CAFile = tui.PromptDefault("CA File (Required For A Private Certificate; Empty For Public TLS)", s.XrayClient.CAFile)
+			configureXHTTPOptions(&x)
 			n.XrayClient = x
 		}
 	}

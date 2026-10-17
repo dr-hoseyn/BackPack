@@ -441,6 +441,11 @@ func tunnelChecksFor(t core.Tunnel, pairs [][2]string) []Check {
 			out = append(out, Check{Group: g, Name: "Reachability", Level: CheckInfo,
 				Detail: "managed Xray " + spec.XrayClient.Mode + " via " + spec.XrayClient.Server + "; remote_addr is the loopback target on Iran",
 				Fix:    "use the live engine state and verified traffic through the forwarded entry port"})
+			if endpoint := spec.XrayClient.DownloadServer; endpoint != "" {
+				out = append(out, Check{Group: g, Name: "XHTTP download endpoint", Level: CheckInfo,
+					Detail: endpoint + "; independently verified as " + spec.XrayClient.DownloadServerName,
+					Fix:    "verify upload and download endpoints both reach the same XHTTP session handler"})
+			}
 		case isDatagram(spec.Transport):
 			// There is no connect step to test on UDP: a silent port and a
 			// working one look identical from outside. Say so plainly

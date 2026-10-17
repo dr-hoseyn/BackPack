@@ -60,3 +60,8 @@ patterniha (https://github.com/patterniha/SNI-Spoofing) and implemented in Rust
 by therealaleph (https://github.com/therealaleph/sni-spoofing-rust, MIT). The Go
 code here is original; the fake ClientHello it sends follows the shape that
 implementation established.
+
+The experimental AmneziaWG engine links github.com/amnezia-vpn/amneziawg-go/v3,
+pinned to v3.1.20260828, under its MIT license. Copyright and the complete
+license are retained in third_party/amneziawg-LICENSE.txt. Upstream source:
+https://github.com/amnezia-vpn/amneziawg-go/tree/v3.1.20260828

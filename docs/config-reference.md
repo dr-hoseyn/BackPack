@@ -60,7 +60,16 @@ them both ends have to agree on. This says what exists.
 |---|---|---|
 | `binary` | `string` | Binary is the absolute path to official Xray; the managed contract is tested with v26.3.27. |
 | `ca_file` | `string` | CAFile optionally adds a PEM trust anchor for XHTTP; normal TLS verification remains enabled. |
+| `download_ca_file` | `string` | Optional separate download PEM trust anchor; empty uses system roots. |
+| `download_host` | `string` | Optional download HTTP Host; empty uses download_server_name. |
+| `download_path` | `string` | Download HTTP path; empty uses the upload path. Both must reach the same session handler. |
+| `download_server` | `string` | DownloadServer selects an independent verified HTTP/2 download endpoint. It must reach the same XHTTP server/session, possibly through another CDN. |
+| `download_server_name` | `string` | Explicit verified DNS identity of the separate download endpoint. |
 | `host` | `string` | Host optionally overrides the XHTTP HTTP host; empty uses server_name. |
+| `max_concurrency` | `int` | XHTTP-only client tuning. Zero values retain the pinned helper's defaults. Maximum simultaneous XHTTP requests, 0 uses the pinned default; cannot be combined with max_connections. |
+| `max_connections` | `int` | Maximum XHTTP connections, 0 uses the pinned default; cannot be combined with max_concurrency. |
+| `max_requests` | `int` | Requests per XHTTP connection before renewal, 0 retains the pinned default. |
+| `max_reuse_seconds` | `int` | XHTTP connection reuse lifetime in seconds, 0 retains the pinned default. |
 | `mode` | `string` | Mode selects xhttp (verified TLS/HTTP2) or reality (RAW, REALITY and Vision). |
 | `path` | `string` | Path is an explicit non-root private XHTTP path shared by both helpers; unused by REALITY. |
 | `public_key` | `string` | PublicKey is the server's 32-byte unpadded base64url X25519 public key for REALITY. |

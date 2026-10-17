@@ -108,7 +108,7 @@ func TestManagedHTTPSWizardProducesValidRoleConfigurations(t *testing.T) {
 					if role == "server" {
 						input = append(input, "1", cert, key)
 					} else {
-						input = append(input, cert)
+						input = append(input, cert, "n")
 					}
 				} else {
 					if role == "server" {
@@ -194,7 +194,7 @@ func TestManagedHTTPSClientWizardCanBeCancelledBeforeSaving(t *testing.T) {
 	}
 	binary, cert, _ := managedWizardFixture(t)
 	name := "https-menu-cancel-" + randomToken(10)
-	input := []string{"4", "2", "2", "127.0.0.1", "8443", name, "shared-token", "3080", "6bf7a33e-7833-4e72-9219-506585657345", "localhost", "/private-path", binary, "", cert, "1", "n", "n"}
+	input := []string{"4", "2", "2", "127.0.0.1", "8443", name, "shared-token", "3080", "6bf7a33e-7833-4e72-9219-506585657345", "localhost", "/private-path", binary, "", cert, "n", "1", "n", "n"}
 	restore := tui.SetInput(strings.NewReader(strings.Join(input, "\n") + "\n"))
 	defer restore()
 	out := capture(t, SetupClient)
@@ -523,5 +523,37 @@ func TestAFineTuneDrawerCrossesTheWireWithOnlyItsAnswers(t *testing.T) {
 	// A drawer built with no marks still means every field, as before.
 	if full, _ := json.Marshal(FineTune{}); !strings.Contains(string(full), `"heartbeat"`) {
 		t.Errorf("an unmarked drawer lost its fields on the wire: %s", full)
+	}
+}
+
+func TestXHTTPAdvancedWizardPreservesAndClearsLocalOptions(t *testing.T) {
+	binary, cert, _ := managedWizardFixture(t)
+	x := config.XrayClientConfig{Binary: binary, Mode: "xhttp", Server: "127.0.0.1:8443", UUID: "6bf7a33e-7833-4e72-9219-506585657345", ServerName: "localhost", Path: "/private-path", CAFile: cert}
+	answer := func(lines ...string) {
+		restore := tui.SetInput(strings.NewReader(strings.Join(lines, "\n") + "\n"))
+		defer restore()
+		capture(t, func() { configureXHTTPOptions(&x) })
+	}
+	answer("y", "0", "2", "800", "1800", "y", "download.example:443", "localhost", "localhost", "/private-path", cert)
+	spec := TunnelSpec{Role: "client", Transport: "tcp", RemoteAddr: "127.0.0.1:3080", XrayClient: x}
+	if err := validateManagedSpec(spec); err != nil {
+		t.Fatal(err)
+	}
+	if x.MaxConnections != 2 || x.MaxRequests != 800 || x.DownloadServer != "download.example:443" || x.DownloadCAFile != cert {
+		t.Fatal("wizard lost advanced XHTTP choices")
+	}
+	before := x
+	answer("n")
+	if x != before {
+		t.Fatal("declining advanced edit discarded local settings")
+	}
+	answer("y", "0", "0", "0", "0", "n")
+	if x.DownloadServer != "" || x.DownloadCAFile != "" || x.MaxConnections != 0 {
+		t.Fatal("cannot clear advanced settings")
+	}
+	answer("y", "2", "2", "0", "0", "n")
+	spec.XrayClient = x
+	if validateManagedSpec(spec) == nil {
+		t.Fatal("conflicting connection limits accepted")
 	}
 }

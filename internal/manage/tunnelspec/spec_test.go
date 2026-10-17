@@ -211,6 +211,8 @@ func TestXrayLoadEditPreservesSettingsAndRejectsBypass(t *testing.T) {
 					s.XrayClient = config.XrayClientConfig{Binary: binary, Server: "example.org:62002", Mode: mode, UUID: "12345678-1234-4234-8234-123456789abc", ServerName: "example.org"}
 					if mode == "xhttp" {
 						s.XrayClient.Path, s.XrayClient.CAFile = "/private-route", certificate
+						s.XrayClient.DownloadServer, s.XrayClient.DownloadServerName, s.XrayClient.DownloadCAFile = "download.example.org:443", "example.org", certificate
+						s.XrayClient.MaxConnections, s.XrayClient.MaxRequests = 3, 900
 					} else {
 						s.XrayClient.PublicKey = base64.RawURLEncoding.EncodeToString(private.PublicKey().Bytes())
 						s.XrayClient.ShortID = "abcdef0123456789"
