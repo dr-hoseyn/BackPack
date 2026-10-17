@@ -29,26 +29,27 @@ import (
 
 // ConnTestBest is the recommendation table's content.
 type ConnTestBest struct {
-	SNIDomain  string  `json:"sni,omitempty"` // fastest steady Direct SNI candidate, independently of the overall winner
-	Host       string  `json:"host,omitempty"`
-	Family     string  `json:"family,omitempty"`
-	Transport  string  `json:"tr,omitempty"` // "direct pck"
-	Mbps       float64 `json:"mb,omitempty"`
-	UploadMbps float64 `json:"upload_mb,omitempty"`
-	RTTms      int     `json:"rt,omitempty"`
-	JitterMs   int     `json:"ji,omitempty"`
-	WorstMs    int     `json:"wo,omitempty"`
-	LossPct    float64 `json:"lo,omitempty"`
-	Preset     string  `json:"pr,omitempty"`
-	BDPKB      int     `json:"bd,omitempty"`
-	PathMTU    int     `json:"pm,omitempty"` // 0: not measured
-	MSS        int     `json:"ms,omitempty"` // 0: automatic
-	DirectMTU  int     `json:"dm,omitempty"` // measured by the best direct tunnel; 0: none
-	DirectBy   string  `json:"db,omitempty"`
-	KeepAlive  int     `json:"ka,omitempty"`
-	Heartbeat  int     `json:"hb,omitempty"`
-	FECData    int     `json:"fd,omitempty"`
-	FECParity  int     `json:"fp,omitempty"`
+	Recommendations []ConnTestRecommendation `json:"recommendations,omitempty"`
+	SNIDomain       string                   `json:"sni,omitempty"` // fastest steady Direct SNI candidate, independently of the overall winner
+	Host            string                   `json:"host,omitempty"`
+	Family          string                   `json:"family,omitempty"`
+	Transport       string                   `json:"tr,omitempty"` // "direct pck"
+	Mbps            float64                  `json:"mb,omitempty"`
+	UploadMbps      float64                  `json:"upload_mb,omitempty"`
+	RTTms           int                      `json:"rt,omitempty"`
+	JitterMs        int                      `json:"ji,omitempty"`
+	WorstMs         int                      `json:"wo,omitempty"`
+	LossPct         float64                  `json:"lo,omitempty"`
+	Preset          string                   `json:"pr,omitempty"`
+	BDPKB           int                      `json:"bd,omitempty"`
+	PathMTU         int                      `json:"pm,omitempty"` // 0: not measured
+	MSS             int                      `json:"ms,omitempty"` // 0: automatic
+	DirectMTU       int                      `json:"dm,omitempty"` // measured by the best direct tunnel; 0: none
+	DirectBy        string                   `json:"db,omitempty"`
+	KeepAlive       int                      `json:"ka,omitempty"`
+	Heartbeat       int                      `json:"hb,omitempty"`
+	FECData         int                      `json:"fd,omitempty"`
+	FECParity       int                      `json:"fp,omitempty"`
 }
 
 // The path-MTU probe's bounds: 576 is what every IPv4 path must carry, 1500 an
@@ -154,6 +155,7 @@ var ctDirectMTURe = regexp.MustCompile(`the path carries (\d+) bytes`)
 // ctComputeBest turns the test into the recommendation.
 func ctComputeBest(results []ConnTestResult, cases []*connTestCase, pmtu int, logDir string) ConnTestBest {
 	var b ConnTestBest
+	b.Recommendations = ctPurposeRecommendations(results, cases)
 	b.PathMTU = pmtu
 	bestSNI := -1
 	for i, r := range results {
@@ -305,6 +307,10 @@ func ConnTestBestTable(b ConnTestBest) string {
 		fmt.Fprintf(&s, "%-15s %-26s %s\n", setting, value, measured)
 	}
 	s.WriteString("BEST SETTINGS\n" + ctRule() + "\n\n")
+	s.WriteString(ConnTestRecommendationsTable(b.Recommendations))
+	if len(b.Recommendations) > 0 {
+		s.WriteString("Settings below apply to the Transport row.\n\n")
+	}
 	row("SETTING", "VALUE", "MEASURED")
 	s.WriteString("\n")
 

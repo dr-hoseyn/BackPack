@@ -29,6 +29,23 @@ long form. For *how to set a tunnel up*, use the
 | 10 | **Exit** | |
 
 Connection Test includes **Naive / HTTP2**, **XHTTP / TLS** and **REALITY / Vision**.
+
+Finished tests show separate recommendations for **Download**, **Games / calls**
+and **Stability**, in the terminal and web panel, per IP path and across the
+completed IPv4/IPv6 paths. Download ranks verified download throughput, then
+upload. Games/calls ranks echo loss, then round trip plus twice the measured
+jitter; it is an echo-based comparison, not an application or gaming benchmark.
+Stability ranks echo loss, speed-sample convergence, jitter and worst round trip.
+These choices retain their own IP path and Direct SNI domain. They do not change
+any tunnel automatically. The existing preset/MTU/timer settings still describe
+the fastest-download choice. A short successful sample does not prove long-term
+uptime; repeat measurements on the actual route. Unknown measurements are not
+treated as zero latency or proof of speed stability. Both peers should be updated
+to show these new recommendations; older verdicts retain the original table.
+
+پیشنهادهای دانلود، بازی و تماس، و پایداری جدا هستند و هرکدام آدرس و SNI خودشان
+را دارند. معیار بازی، تأخیر و نوسان اکو است؛ پایداری این نمونه به معنی تضمین
+پایداری چندساعته نیست. تنظیمات پیشنهادی قبلی برای گزینهٔ سریع‌تر در دانلود است.
 The normal installer includes the pinned helpers on Linux glibc amd64/arm64
 (`BP_HELPERS=naive,xray`); run it on both servers before testing.
 A missing helper is shown as **SKIPPED** with its reason.

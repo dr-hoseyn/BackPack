@@ -288,15 +288,21 @@ func (s *ConnTestSuite) stopPeers() {
 // checks. A route with a fast handshake and failed transfers cannot win.
 func ConnTestSuiteBest(paths []ConnTestPath) ConnTestBest {
 	var best ConnTestBest
+	var candidates []ConnTestRecommendation
 	for _, p := range paths {
 		b := p.Best
 		if p.State != "done" || b.Transport == "" {
 			continue
 		}
+		for _, choice := range b.Recommendations {
+			choice.Host, choice.Family = p.Host, p.Family
+			candidates = append(candidates, choice)
+		}
 		if best.Transport == "" || b.Mbps > best.Mbps || (b.Mbps == best.Mbps && b.RTTms < best.RTTms) {
 			best = b
 		}
 	}
+	best.Recommendations = ctChoosePurposes(candidates)
 	return best
 }
 

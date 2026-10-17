@@ -20,6 +20,11 @@ All notable changes to Backpack are documented here.
 - Show effective protocol names for managed Naive/XHTTP/REALITY wrappers and
   direct carriers in management/status views, keeping engine transport values
   separate from display labels.
+- Recommend separate Connection Test choices for download, games/calls and
+  observed stability, keeping each choice's IP family, server and SNI domain
+  visible in both the terminal and panel. Compare verified throughput, echo
+  latency/jitter/loss and speed convergence without recommending failed or
+  incomplete tests or claiming long-term uptime from a short sample.
 
 ## v1.9.3 — 2026-10-17 (dr-hoseyn fork)
 

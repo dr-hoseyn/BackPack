@@ -267,6 +267,9 @@ body[data-accent] .panel .ct-steps li.on .n{background:var(--ac);border-color:va
 .panel .ct-bc span{display:block;font-size:10px;font-weight:620;letter-spacing:.06em;text-transform:uppercase;color:var(--dim)}
 .panel .ct-bc b{display:block;font-size:15px;font-weight:650;margin-top:3px;font-variant-numeric:tabular-nums}
 .panel .ct-bc b em{font-style:normal;font-size:11px;color:var(--mu);font-weight:560;margin-left:3px}
+.panel .ct-purposes{grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr))}
+.panel .ct-purposes .ct-bc{min-width:0}
+.panel .ct-purposes small{display:block;font-size:11px;line-height:1.6;color:var(--mu);overflow-wrap:anywhere;margin-top:4px}
 .panel .ct-best .tl-note{margin-top:0}
 
 /* ================= Terminal ================= */
