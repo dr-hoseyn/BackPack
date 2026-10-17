@@ -66,6 +66,7 @@ func cliTransportGroups() []transportGroup {
 	return append(append([]transportGroup(nil), transportGroups...), transportGroup{
 		"HTTPS", "encrypted reverse TCP — Linux, matching versions on both sides", []transportEntry{
 			{"Naive / HTTP2", "HTTPS proxy — certificate or a private trust file", "naive"},
+			{"Short HTTPS", "bounded fresh HTTPS requests — TCP only, lower throughput", "short-https"},
 			{"XHTTP / TLS", "HTTP/2 streaming — certificate or a private trust file", "xhttp"},
 			{"REALITY / Vision", "TLS cover endpoint — no local certificate required", "reality"},
 			{"Hysteria2 / Salamander", "QUIC with optional obfuscation — requires UDP", "hysteria2"},
@@ -77,10 +78,13 @@ func cliTransportGroups() []transportGroup {
 }
 
 func managedTransport(value string) bool {
-	return value == "naive" || value == "xhttp" || value == "reality" || config.SingProtocol(value)
+	return value == "short-https" || value == "naive" || value == "xhttp" || value == "reality" || config.SingProtocol(value)
 }
 
 func selectedTransport(s TunnelSpec) string {
+	if s.ShortServer.Enabled() || s.ShortClient.Enabled() {
+		return "short-https"
+	}
 	if s.SingServer.Enabled() {
 		return s.SingServer.Protocol
 	}
@@ -100,6 +104,12 @@ func selectedTransport(s TunnelSpec) string {
 }
 
 func managedEndpoint(s TunnelSpec) string {
+	if s.Role == "server" && s.ShortServer.Enabled() {
+		return s.ShortServer.Listen
+	}
+	if s.Role == "client" && s.ShortClient.Enabled() {
+		return s.ShortClient.Server
+	}
 	if s.Role == "server" && s.SingServer.Enabled() {
 		return s.SingServer.Listen
 	}
@@ -125,6 +135,7 @@ func managedEndpoint(s TunnelSpec) string {
 }
 
 func clearManagedTransport(s *TunnelSpec) {
+	s.ShortServer, s.ShortClient = config.ShortServerConfig{}, config.ShortClientConfig{}
 	s.SingServer, s.SingClient = config.SingServerConfig{}, config.SingClientConfig{}
 	s.NaiveServer, s.NaiveClient = config.NaiveServerConfig{}, config.NaiveClientConfig{}
 	s.XrayServer, s.XrayClient = config.XrayServerConfig{}, config.XrayClientConfig{}
@@ -216,6 +227,9 @@ func validateManagedSpec(s TunnelSpec) error {
 	if _, err := toml.Decode(s.Render(), &c); err != nil {
 		return err
 	}
+	if err := naive.ValidateShort(&c); err != nil {
+		return err
+	}
 	if err := naive.Validate(&c); err != nil {
 		return err
 	}
@@ -290,13 +304,20 @@ func setupManagedCarrierWithProbe(s *TunnelSpec, chosen, public, host string, pr
 		n.RemoteAddr = net.JoinHostPort("127.0.0.1", internal)
 	}
 	clearManagedTransport(&n)
-	if config.SingProtocol(chosen) {
+	if chosen == "short-https" {
+		if !configureShort(&n, *s, public, host) {
+			return false
+		}
+	} else if config.SingProtocol(chosen) {
 		if !configureSing(&n, *s, chosen, public, host) {
 			return false
 		}
 		if n.Role == "server" {
 			tui.Info("UDP forwarding in Reverse uses reliable streams. Direct Hysteria2/TUIC carries native datagrams.")
 			n.AcceptUDP = tui.Confirm("Also Carry UDP On Forwarded Ports", s.AcceptUDP)
+			if n.AcceptUDP && config.SingDatagram(chosen) {
+				n.SingServer.NativeUDP = tui.Confirm("Use Native Datagrams For Reverse UDP (Matching Build Required On Kharej)", s.SingServer.NativeUDP)
+			}
 		}
 	} else if chosen == "reality" {
 		if !configureReality(&n, *s, public, probe) {

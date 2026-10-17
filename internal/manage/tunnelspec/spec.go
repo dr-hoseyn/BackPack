@@ -22,6 +22,8 @@ type Spec struct {
 	// Preserve experimental helper settings across ordinary tunnel edits.
 	// They include credentials and must not enter generic JSON responses.
 	SingServer  config.SingServerConfig  `json:"-"`
+	ShortServer config.ShortServerConfig `json:"-"`
+	ShortClient config.ShortClientConfig `json:"-"`
 	SingClient  config.SingClientConfig  `json:"-"`
 	NaiveServer config.NaiveServerConfig `json:"-"`
 	NaiveClient config.NaiveClientConfig `json:"-"`
@@ -423,6 +425,13 @@ func (s Spec) Render() string {
 }
 
 func (s Spec) writeHelpers(b *strings.Builder) {
+	if s.Role == "server" && s.ShortServer.Enabled() {
+		b.WriteString("\n[server.short]\n")
+		_ = toml.NewEncoder(b).Encode(s.ShortServer)
+	} else if s.Role == "client" && s.ShortClient.Enabled() {
+		b.WriteString("\n[client.short]\n")
+		_ = toml.NewEncoder(b).Encode(s.ShortClient)
+	}
 	if s.Role == "server" && s.SingServer.Enabled() {
 		b.WriteString("\n[server.sing]\n")
 		_ = toml.NewEncoder(b).Encode(s.SingServer)
@@ -479,6 +488,15 @@ func (s Spec) validateNaive() error {
 }
 
 func (s Spec) validateHelpers() error {
+	if s.ShortServer.Enabled() || s.ShortClient.Enabled() {
+		var cfg config.Config
+		if _, err := toml.Decode(s.Render(), &cfg); err != nil {
+			return err
+		}
+		if err := naive.ValidateShort(&cfg); err != nil {
+			return err
+		}
+	}
 	if s.SingServer.Enabled() || s.SingClient.Enabled() {
 		if (s.Role != "server" || !s.SingServer.Enabled() || s.SingClient.Enabled()) && (s.Role != "client" || !s.SingClient.Enabled() || s.SingServer.Enabled()) {
 			return fmt.Errorf("sing-box settings do not match tunnel role")

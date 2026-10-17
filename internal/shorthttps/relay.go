@@ -354,9 +354,12 @@ func NewClient(endpoint, token, ca string) (*Client, error) {
 	if err != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
 		return nil, errors.New("endpoint must be an HTTPS origin without credentials, path or query")
 	}
-	roots := x509.NewCertPool()
-	if !roots.AppendCertsFromPEM([]byte(ca)) {
-		return nil, errors.New("invalid private CA")
+	var roots *x509.CertPool
+	if ca != "" {
+		roots = x509.NewCertPool()
+		if !roots.AppendCertsFromPEM([]byte(ca)) {
+			return nil, errors.New("invalid private CA")
+		}
 	}
 	// No environment proxy, no HTTP2 connection sharing. A new TLS connection
 	// per request is the mechanism; small classical ECDHE handshakes keep the
@@ -439,7 +442,7 @@ func (c *Client) Forward(parent context.Context, local net.Conn) (resultErr erro
 	}()
 	defer func() {
 		if resultErr != nil {
-			if tcp, ok := local.(*net.TCPConn); ok {
+			if tcp, ok := local.(interface{ SetLinger(int) error }); ok {
 				_ = tcp.SetLinger(0)
 			}
 		}
@@ -498,7 +501,7 @@ func (c *Client) Forward(parent context.Context, local net.Conn) (resultErr erro
 		}
 		if p.EOF && !downloadEOF {
 			downloadEOF = true
-			if tcp, ok := local.(*net.TCPConn); ok {
+			if tcp, ok := local.(interface{ CloseWrite() error }); ok {
 				if err := tcp.CloseWrite(); err != nil {
 					return err
 				}

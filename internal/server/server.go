@@ -2,10 +2,12 @@ package server
 
 import (
 	"context"
+	"net"
 	"time"
 
 	"github.com/backpack/backpack/config"
 	"github.com/backpack/backpack/internal/debugserver"
+	"github.com/backpack/backpack/internal/nativeudp"
 	"github.com/backpack/backpack/internal/server/transport"
 	"github.com/backpack/backpack/internal/tunnel/chain"
 	"github.com/backpack/backpack/internal/tunnel/naive"
@@ -49,6 +51,9 @@ func NewServer(cfg *config.ServerConfig, parentCtx context.Context) *Server {
 func (s *Server) Start() {
 	if s.config.Managed() {
 		helper, err := naive.StartWithRetry(s.ctx, s.logger, func() (*naive.Helper, error) {
+			if s.config.Short.Enabled() {
+				return naive.StartShortServer(s.ctx, s.config, s.logger)
+			}
 			if s.config.Sing.Enabled() {
 				return naive.StartSingServer(s.ctx, s.config, s.logger)
 			}
@@ -61,6 +66,20 @@ func (s *Server) Start() {
 			return
 		}
 		defer helper.Close()
+	}
+	if s.config.Sing.NativeUDP {
+		pc, err := net.ListenPacket("udp", s.config.BindAddr)
+		if err != nil {
+			s.logger.Errorf("native reverse UDP target could not bind: %v", err)
+			return
+		}
+		e, err := nativeudp.StartServer(s.ctx, pc, s.config.Token, s.config.Ports, s.config.Sing.UDPMaxFlows, s.config.Sing.UDPBandwidthMbps)
+		if err != nil {
+			pc.Close()
+			s.logger.Errorf("native reverse UDP could not start: %v", err)
+			return
+		}
+		defer e.Close()
 	}
 	// Profiling endpoint, off unless explicitly enabled in the config.
 	//
@@ -173,7 +192,7 @@ func (s *Server) startTransport(ctx context.Context, tr config.TransportType) ru
 			Sniffer:        s.config.Sniffer,
 			WebPort:        s.config.WebPort,
 			SnifferLog:     s.config.SnifferLog,
-			AcceptUDP:      s.config.ForwardsUDP(),
+			AcceptUDP:      s.config.ForwardsUDP() && !s.config.Sing.NativeUDP,
 			MSS:            s.config.MSS,
 			SO_RCVBUF:      s.config.SO_RCVBUF,
 			SO_SNDBUF:      s.config.SO_SNDBUF,

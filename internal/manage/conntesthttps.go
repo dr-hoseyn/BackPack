@@ -19,7 +19,7 @@ import (
 func ctProbeHTTPS(parent context.Context, spec TunnelSpec) string {
 	ctx, cancel := context.WithTimeout(parent, 5*time.Second)
 	defer cancel()
-	if spec.SingClient.Enabled() {
+	if spec.ShortClient.Enabled() || spec.SingClient.Enabled() {
 		return "not-applicable" // these protocols are not standalone HTTPS/H2 services
 	}
 	endpoint, serverName, caFile := spec.XrayClient.Server, spec.XrayClient.ServerName, spec.XrayClient.CAFile
@@ -78,7 +78,7 @@ func ctValidHTTPSProbe(tr, probe string) bool {
 	}
 	switch probe {
 	case "not-applicable":
-		return config.SingProtocol(tr)
+		return tr == "short-https" || config.SingProtocol(tr)
 	case "tcp-failed":
 		return !config.SingProtocol(tr)
 	case "tcp-ok":

@@ -97,6 +97,9 @@ func (c *Client) Start() {
 	}
 	if c.config.Managed() {
 		helper, err := naive.StartWithRetry(c.ctx, c.logger, func() (*naive.Helper, error) {
+			if c.config.Short.Enabled() {
+				return naive.StartShortClient(c.ctx, c.config, c.logger)
+			}
 			if c.config.Sing.Enabled() {
 				return naive.StartSingClient(c.ctx, c.config, c.logger)
 			}
@@ -109,6 +112,9 @@ func (c *Client) Start() {
 			return
 		}
 		defer helper.Close()
+		if c.config.Sing.NativeUDP {
+			defer c.startNativeUDP(helper.ProxyURL())()
+		}
 		proxy, err := network.ParseProxy(helper.ProxyURL())
 		if err != nil {
 			c.logger.Error("invalid managed transport proxy")

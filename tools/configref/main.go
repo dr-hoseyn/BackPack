@@ -162,6 +162,10 @@ func sectionOf(name string) string {
 		return "[awg.obfuscation]"
 	case "SingClientConfig":
 		return "[client.sing]"
+	case "ShortClientConfig":
+		return "[client.short]"
+	case "ShortServerConfig":
+		return "[server.short]"
 	case "SingServerConfig":
 		return "[server.sing]"
 	case "NaiveClientConfig":

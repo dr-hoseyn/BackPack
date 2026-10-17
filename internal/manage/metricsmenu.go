@@ -65,6 +65,10 @@ func printSnapshot(t Tunnel, s metrics.Snapshot) {
 		sysstat.HumanBytes(s.BytesIn), sysstat.HumanBytes(s.BytesOut)))
 
 	if s.KCP == nil {
+		if n := s.NativeUDP; n != nil {
+			tui.Info(fmt.Sprintf("  Native UDP    : connected=%t, %d flows", n.Connected, n.Flows))
+			tui.Info(fmt.Sprintf("  Datagrams     : %d in, %d out, %d dropped", n.Received, n.Sent, n.Dropped))
+		}
 		fmt.Println()
 		return
 	}

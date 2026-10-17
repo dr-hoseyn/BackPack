@@ -275,6 +275,8 @@ type PckConfig struct {
 
 // ServerConfig represents the configuration for the server.
 type ServerConfig struct {
+	// Short selects the in-process managed Short HTTPS wrapper for TCP Reverse.
+	Short ShortServerConfig `toml:"short"`
 	// MPTCP requests Multipath TCP on native tcp/stealth/tcpmux tunnel sockets.
 	// Unsupported kernels and peers fall back to TCP; host routing is unchanged.
 	MPTCP bool `toml:"mptcp"`
@@ -463,6 +465,8 @@ func (s ServerConfig) ForwardsUDP() bool {
 
 // ClientConfig represents the configuration for the client.
 type ClientConfig struct {
+	// Short selects bounded HTTPS requests for this TCP Reverse tunnel.
+	Short ShortClientConfig `toml:"short"`
 	// MPTCP requests Multipath TCP on native tcp/stealth/tcpmux tunnel sockets.
 	MPTCP bool `toml:"mptcp"`
 	// Naive optionally reaches the loopback reverse target through a tunnel-owned official Chromium Naive helper; experimental and disabled when empty.

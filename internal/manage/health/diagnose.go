@@ -434,6 +434,8 @@ func tunnelChecksFor(t core.Tunnel, pairs [][2]string) []Check {
 		case host == "" || port == "":
 			// Nothing to probe.
 
+		case spec.ShortClient.Enabled():
+			out = append(out, Check{Group: g, Name: "Reachability", Level: CheckInfo, Detail: "managed Short HTTPS via " + spec.ShortClient.Server + "; the loopback target is on Iran", Fix: "verify traffic through the forwarded port and check certificate renewal"})
 		case spec.SingClient.Enabled():
 			out = append(out, Check{Group: g, Name: "Reachability", Level: CheckInfo, Detail: "managed " + spec.SingClient.Protocol + " via " + spec.SingClient.Server + "; the loopback target is on Iran", Fix: "verify real traffic through the forwarded port; local listener readiness is not tunnel health"})
 		case spec.NaiveClient.Enabled():
@@ -471,7 +473,7 @@ func tunnelChecksFor(t core.Tunnel, pairs [][2]string) []Check {
 	// full-sized packet. Only worth measuring on a tunnel that is up; on one
 	// that is not, the checks above already say why. See diagnose_path.go.
 	if h.State == "online" {
-		if spec.NaiveServer.Enabled() || spec.NaiveClient.Enabled() || spec.XrayServer.Enabled() || spec.XrayClient.Enabled() || spec.SingServer.Enabled() || spec.SingClient.Enabled() {
+		if spec.ShortServer.Enabled() || spec.ShortClient.Enabled() || spec.NaiveServer.Enabled() || spec.NaiveClient.Enabled() || spec.XrayServer.Enabled() || spec.XrayClient.Enabled() || spec.SingServer.Enabled() || spec.SingClient.Enabled() {
 			out = append(out, managedPathChecks(g, t)...)
 		} else {
 			out = append(out, pathChecks(g, t)...)
@@ -484,6 +486,9 @@ func tunnelChecksFor(t core.Tunnel, pairs [][2]string) []Check {
 	}
 	if t.Role == "server" && spec.NaiveServer.Enabled() {
 		out = append(out, certCheck(g, spec.NaiveServer.Certificate))
+	}
+	if t.Role == "server" && spec.ShortServer.Enabled() && spec.ShortServer.Certificate != "" {
+		out = append(out, certCheck(g, spec.ShortServer.Certificate))
 	}
 	if t.Role == "server" && spec.XrayServer.Enabled() && spec.XrayServer.Mode == "xhttp" {
 		out = append(out, certCheck(g, spec.XrayServer.Certificate))

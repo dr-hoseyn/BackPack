@@ -73,7 +73,7 @@ const connTestKind = "test"
 // the direct ones when the operator names a source to forge (see
 // ConnTestOptions.SpoofSrc); pck, on either side, needs root on both servers.
 var (
-	connTestReverse = []string{"tcp", "tcpmux", "stealth", "pck", "ws", "wss", "wsmux", "wssmux", "kcp", "quic", "udp", "naive", "xhttp", "reality", "hysteria2", "anytls", "shadowtls", "tuic"}
+	connTestReverse = []string{"tcp", "tcpmux", "stealth", "pck", "ws", "wss", "wsmux", "wssmux", "kcp", "quic", "udp", "naive", "short-https", "xhttp", "reality", "hysteria2", "anytls", "shadowtls", "tuic"}
 	connTestDirect  = []string{"udp", "quic", "pck", "xdi", "sni", "masque", "masque-h2", "hysteria2", "tuic"}
 )
 
@@ -788,10 +788,14 @@ func (s *ConnTestIran) startManagedCase(c *connTestCase, used map[int]bool, o Co
 	if c.tr == "naive" || config.SingProtocol(c.tr) {
 		tool = "sing-box"
 	}
-	binary, err := connTestHelperBinary(tool)
-	if err != nil {
-		c.skip = err.Error()
-		return
+	var binary string
+	var err error
+	if c.tr != "short-https" {
+		binary, err = connTestHelperBinary(tool)
+		if err != nil {
+			c.skip = err.Error()
+			return
+		}
 	}
 	coverHost := ""
 	coverTarget := strings.TrimSpace(o.RealityTarget)
@@ -878,6 +882,8 @@ func (s *ConnTestIran) startManagedCase(c *connTestCase, used map[int]bool, o Co
 	}
 
 	switch c.tr {
+	case "short-https":
+		spec.ShortServer = config.ShortServerConfig{Listen: public, ServerName: s.link.Host, Certificate: cert, Key: key}
 	case "hysteria2", "anytls", "tuic", "shadowtls":
 		spec.SingServer = config.SingServerConfig{Binary: binary, Listen: public, Protocol: c.tr, ServerName: settings.ServerName, Password: token, Certificate: cert, Key: key}
 		if c.tr == "tuic" {
@@ -940,9 +946,13 @@ func ctManagedClient(ctx context.Context, link ConnTestLink, c ShareLink, dir st
 	if c.Tr == "naive" {
 		tool = "naive"
 	}
-	binary, err := connTestHelperBinary(tool)
-	if err != nil {
-		return TunnelSpec{}, err
+	var binary string
+	var err error
+	if c.Tr != "short-https" {
+		binary, err = connTestHelperBinary(tool)
+		if err != nil {
+			return TunnelSpec{}, err
+		}
 	}
 	reply, err := ctAskContext(ctx, link.Host, link.Coord, "carrier "+link.Tok+" "+c.Tr)
 	if err != nil || !strings.HasPrefix(reply, "carrier ") {
@@ -988,7 +998,9 @@ func ctManagedClient(ctx context.Context, link ConnTestLink, c ShareLink, dir st
 			}
 		}
 	}
-	if config.SingProtocol(c.Tr) {
+	if c.Tr == "short-https" {
+		spec.ShortClient.CAFile = ca
+	} else if config.SingProtocol(c.Tr) {
 		spec.SingClient.Binary, spec.SingClient.CAFile = binary, ca
 	} else if c.Tr == "naive" {
 		spec.NaiveClient.Binary, spec.NaiveClient.CAFile = binary, ca

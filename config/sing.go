@@ -3,6 +3,12 @@ package config
 // SingClientConfig carries the reverse engine through a restricted sing-box
 // helper. The helper is a carrier, never a general-purpose proxy.
 type SingClientConfig struct {
+	// NativeUDP carries reverse forwarded UDP as native datagrams (Hysteria2/TUIC only); paired.
+	NativeUDP bool `toml:"native_udp,omitempty"`
+	// UDPMaxFlows caps native associations on this machine; 0 uses 128, maximum 4096.
+	UDPMaxFlows int `toml:"udp_max_flows,omitempty"`
+	// UDPBandwidthMbps caps native UDP separately, dropping excess packets; 0 is unlimited.
+	UDPBandwidthMbps int `toml:"udp_bandwidth_mbps,omitempty"`
 	// Binary is the absolute path to the pinned sing-box executable.
 	Binary string `toml:"binary"`
 	// Protocol is hysteria2, anytls, shadowtls (v3 with SS2022), or tuic (v5).
@@ -28,6 +34,12 @@ func (s SingClientConfig) Enabled() bool { return s != (SingClientConfig{}) }
 // SingServerConfig owns one public helper and only permits the paired local
 // reverse target. ShadowTLS delegates to an SS2022 inbound inside the helper.
 type SingServerConfig struct {
+	// NativeUDP selects native reverse UDP rather than reliable stream forwarding; paired.
+	NativeUDP bool `toml:"native_udp,omitempty"`
+	// UDPMaxFlows caps native forwarded flows; 0 uses 128, maximum 4096.
+	UDPMaxFlows int `toml:"udp_max_flows,omitempty"`
+	// UDPBandwidthMbps caps native UDP in Mbit/s; 0 is unlimited.
+	UDPBandwidthMbps int `toml:"udp_bandwidth_mbps,omitempty"`
 	// Binary is the absolute path to the pinned sing-box executable.
 	Binary string `toml:"binary"`
 	// Protocol is hysteria2, anytls, shadowtls, or tuic.
@@ -67,8 +79,8 @@ func SingProtocol(s string) bool {
 func SingDatagram(s string) bool { return s == "hysteria2" || s == "tuic" }
 
 func (c ClientConfig) Managed() bool {
-	return c.Naive.Enabled() || c.Xray.Enabled() || c.Sing.Enabled()
+	return c.Short.Enabled() || c.Naive.Enabled() || c.Xray.Enabled() || c.Sing.Enabled()
 }
 func (c ServerConfig) Managed() bool {
-	return c.Naive.Enabled() || c.Xray.Enabled() || c.Sing.Enabled()
+	return c.Short.Enabled() || c.Naive.Enabled() || c.Xray.Enabled() || c.Sing.Enabled()
 }

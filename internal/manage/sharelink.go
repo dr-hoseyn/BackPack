@@ -163,6 +163,7 @@ type ShareLink struct {
 	HelperCA        string `json:"hca,omitempty"`
 	HelperObfs      string `json:"hob,omitempty"`
 	HelperSSKey     string `json:"hss,omitempty"`
+	HelperNativeUDP bool   `json:"hnu,omitempty"`
 	AWGPeer         string `json:"awgp,omitempty"`
 }
 
@@ -680,10 +681,15 @@ func shareLinkOf(name, host string, cfg config.Config) (string, error) {
 		l.InnerPort = l.Port
 		var cert string
 
-		if cfg.Server.Sing.Enabled() {
+		if cfg.Server.Short.Enabled() {
+			x := cfg.Server.Short
+			l.Tr, l.Port, l.HelperSNI = "short-https", addrPort(x.Listen), x.ServerName
+			cert = x.Certificate
+		} else if cfg.Server.Sing.Enabled() {
 			x := cfg.Server.Sing
 			l.Tr, l.Port, l.HelperPassword, l.HelperSNI = x.Protocol, addrPort(x.Listen), x.Password, x.ServerName
 			l.HelperUUID, l.HelperObfs, l.HelperSSKey = x.UUID, x.ObfsPassword, x.ShadowsocksKey
+			l.HelperNativeUDP = x.NativeUDP
 			cert = x.Certificate
 		} else if cfg.Server.Naive.Enabled() {
 			x := cfg.Server.Naive
@@ -788,6 +794,7 @@ func prepareManagedLink(s TunnelSpec, link ShareLink) error {
 			return err
 		}
 		withoutCA := s
+		withoutCA.ShortClient.CAFile = ""
 		withoutCA.NaiveClient.CAFile, withoutCA.XrayClient.CAFile, withoutCA.SingClient.CAFile = "", "", ""
 		if err := validateManagedSpec(withoutCA); err != nil {
 			return err
@@ -806,9 +813,13 @@ func managedClientFromLink(s *TunnelSpec, link ShareLink, host string) {
 	s.FallbackDwell = 0
 	public := net.JoinHostPort(host, link.Port)
 
-	if config.SingProtocol(link.Tr) {
+	if link.Tr == "short-https" {
+		s.ShortClient = config.ShortClientConfig{Server: public, CAFile: managedLinkCAPath(link.HelperCA)}
+		s.ConnectionPool = 8
+	} else if config.SingProtocol(link.Tr) {
 		s.SingClient = config.SingClientConfig{Binary: managedHelperPath("sing-box"), Protocol: link.Tr, Server: public, ServerName: link.HelperSNI,
 			Password: link.HelperPassword, UUID: link.HelperUUID, ObfsPassword: link.HelperObfs, ShadowsocksKey: link.HelperSSKey, CAFile: managedLinkCAPath(link.HelperCA)}
+		s.SingClient.NativeUDP = link.HelperNativeUDP
 	} else if link.Tr == "naive" {
 		s.NaiveClient = config.NaiveClientConfig{Binary: managedHelperPath("naive"), Server: public,
 			Username: link.HelperUser, Password: link.HelperPassword, CAFile: managedLinkCAPath(link.HelperCA)}
