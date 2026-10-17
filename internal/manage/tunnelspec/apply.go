@@ -55,6 +55,11 @@ func applyWith(name string, body []byte, note, revision string, prepare func() e
 	mu.Lock()
 	defer mu.Unlock()
 	path, service := app.ConfigPath(name), app.ServiceName(name)
+	unlock, err := lockConfigFile(path + ".edit.lock")
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	tx := editTransaction{
 		read:  func() ([]byte, error) { return os.ReadFile(path) },
 		write: func(b []byte) error { return app.WriteFileAtomic(path, b, app.TunnelConfigMode) },

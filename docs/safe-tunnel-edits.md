@@ -13,6 +13,8 @@ require at least one mapping.
 
 If another editor changes the config after the review, applying is refused.
 Reopen the form and review the latest settings before trying again.
+Linux file locks also prevent the panel and a separate CLI process from
+applying or rolling back changes to the same tunnel at the same time.
 
 ## Applying changes
 
