@@ -74,7 +74,7 @@ const connTestKind = "test"
 // ConnTestOptions.SpoofSrc); pck, on either side, needs root on both servers.
 var (
 	connTestReverse = []string{"tcp", "tcpmux", "stealth", "pck", "ws", "wss", "wsmux", "wssmux", "kcp", "quic", "udp", "naive", "xhttp", "reality", "hysteria2", "anytls", "shadowtls", "tuic"}
-	connTestDirect  = []string{"udp", "quic", "pck", "xdi", "sni", "masque", "hysteria2", "tuic"}
+	connTestDirect  = []string{"udp", "quic", "pck", "xdi", "sni", "masque", "masque-h2", "hysteria2", "tuic"}
 )
 
 // connTestNeedsRoot is a reverse transport that builds its own packets.
@@ -1046,9 +1046,12 @@ func (s *ConnTestIran) Run(ctx context.Context, progress func(int, ConnTestResul
 			}
 			c.l3.Sing = cfg
 		}
-		if c.tr == "masque" {
+		if c.tr == "masque" || c.tr == "masque-h2" {
 			s.coord.mu.Lock()
 			raw := s.coord.masqueSettings
+			if c.tr == "masque-h2" {
+				raw = s.coord.masqueH2Settings
+			}
 			s.coord.mu.Unlock()
 			cfg, err := ctMasqueClient(raw, s.dir, c.name)
 			if err != nil {
@@ -1721,25 +1724,26 @@ func ctLastLine(path string) string {
 //	hello <token>   → ok          the kharej is in; its address is noted
 //	result <token>  → wait | done <verdict>
 type ctCoordinator struct {
-	tok            string
-	tcp            net.Listener
-	udp            net.PacketConn
-	mu             sync.Mutex
-	peer           string
-	verdict        string
-	config         string            // the answer to "config"; see ctConfig
-	carriers       map[string]string // public helper settings, fetched one small packet at a time
-	httpsProbes    map[string]string // bounded preflight codes; frozen when Kharej joins
-	skipped        map[string]bool   // managed cases unavailable on kharej
-	masqueSettings string            // public certificate/target announced before the peer joins
-	directPorts    map[string]string // direct listener ports selected on Kharej
-	live           func() []ConnTestResult
-	joined         chan struct{}
-	fetched        chan struct{}
-	joinOne        sync.Once
-	fetchOn        sync.Once
-	sockets        ctEchoes
-	slots          chan struct{}
+	tok              string
+	tcp              net.Listener
+	udp              net.PacketConn
+	mu               sync.Mutex
+	peer             string
+	verdict          string
+	config           string            // the answer to "config"; see ctConfig
+	carriers         map[string]string // public helper settings, fetched one small packet at a time
+	httpsProbes      map[string]string // bounded preflight codes; frozen when Kharej joins
+	skipped          map[string]bool   // managed cases unavailable on kharej
+	masqueSettings   string            // public certificate/target announced before the peer joins
+	masqueH2Settings string            // separate trust/target for the TCP fallback
+	directPorts      map[string]string // direct listener ports selected on Kharej
+	live             func() []ConnTestResult
+	joined           chan struct{}
+	fetched          chan struct{}
+	joinOne          sync.Once
+	fetchOn          sync.Once
+	sockets          ctEchoes
+	slots            chan struct{}
 	// spoofArrived is the kharej's count of the Iran server's forged probes.
 	spoofArrived chan int
 	spoofOnce    sync.Once
@@ -1857,16 +1861,20 @@ func (c *ctCoordinator) answer(line, from string) string {
 	if f[0] == "sing-cert" && len(f) == 3 {
 		return ctAcceptSingIdentity(c, f[2])
 	}
-	if f[0] == "masque-cert" && len(f) == 3 {
+	if (f[0] == "masque-cert" || f[0] == "masque-h2-cert") && len(f) == 3 {
 		if _, err := ctDecodeMasqueSettings(f[2]); err != nil {
 			return ""
 		}
 		c.mu.Lock()
 		defer c.mu.Unlock()
-		if c.peer != "" || c.masqueSettings != "" && c.masqueSettings != f[2] {
+		settings := &c.masqueSettings
+		if f[0] == "masque-h2-cert" {
+			settings = &c.masqueH2Settings
+		}
+		if c.peer != "" || *settings != "" && *settings != f[2] {
 			return ""
 		}
-		c.masqueSettings = f[2]
+		*settings = f[2]
 		return "ok"
 	}
 	if f[0] == "https-probe" && len(f) == 3 {
@@ -2001,7 +2009,7 @@ func (c *ctCoordinator) directPort(tr, fallback string) string {
 }
 
 func ctPortCarrier(tr string) bool {
-	return tr == "udp" || tr == "quic" || tr == "pck" || tr == "sni" || tr == "masque" || ctSNIVariantKey(tr)
+	return tr == "udp" || tr == "quic" || tr == "pck" || tr == "sni" || tr == "masque" || tr == "masque-h2" || ctSNIVariantKey(tr)
 }
 
 func ctSkippableCase(value string) bool {
@@ -2238,9 +2246,9 @@ func runConnTestKharejLink(ctx context.Context, link ConnTestLink, out io.Writer
 				}
 				n.Sing = native
 			}
-			if c.Tr == "masque" {
+			if c.Tr == "masque" || c.Tr == "masque-h2" {
 				var err error
-				n.Masque, err = ctMasqueListener(ctx, link, dir, name, usedDirectPorts)
+				n.Masque, err = ctMasqueListener(ctx, link, dir, name, usedDirectPorts, c.Tr)
 				if err != nil {
 					local[c.Kind+"/"+key] = err.Error()
 					continue

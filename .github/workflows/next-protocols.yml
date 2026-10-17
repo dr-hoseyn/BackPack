@@ -1,0 +1,45 @@
+name: Next protocol regression tests
+on:
+  push:
+    branches: [codex/next-protocols]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: next-protocols-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  networking:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Config and network regression tests with race detection
+        run: go test ./config ./cmd ./internal/utils/network ./internal/masqueh2 ./internal/tunnel/l3 ./internal/manage ./internal/manage/tunnelspec ./internal/shorthttps -race -count=1 -timeout 15m
+      - name: Verify vet and build
+        run: |
+          go vet ./...
+          go build ./...
+      - name: Real MASQUE HTTP2 TUN, restart and loss
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq iproute2 netcat-openbsd bc
+          go build -o "$RUNNER_TEMP/backpack-next" .
+          for scenario in ipv4 ipv6 restart loss; do
+            extra=()
+            case "$scenario" in
+              ipv6) extra+=(IPV6=1) ;;
+              restart) extra+=(RESTART=1) ;;
+              loss) extra+=("NETEM=delay 20ms loss 1%") ;;
+            esac
+            sudo env BIN="$RUNNER_TEMP/backpack-next" W="$RUNNER_TEMP/masque-h2-$scenario" "${extra[@]}" \
+              timeout -k 5s 6m unshare --net --mount --fork -- bash internal/e2e/testdata/l3live.sh masque-h2 1 \
+              | tee "$RUNNER_TEMP/masque-h2-$scenario.out"
+            grep -q '^RESULT OK' "$RUNNER_TEMP/masque-h2-$scenario.out"
+          done

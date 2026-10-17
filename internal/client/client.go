@@ -162,6 +162,7 @@ func buildOutbound(cfg *config.ClientConfig) (*network.Outbound, error) {
 		return nil, err
 	}
 	out := &network.Outbound{
+		MPTCP:     cfg.MPTCP,
 		Proxy:     proxy,
 		LocalAddr: cfg.LocalAddr,
 		Interface: cfg.Interface,

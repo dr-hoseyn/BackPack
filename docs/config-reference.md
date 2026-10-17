@@ -150,6 +150,7 @@ them both ends have to agree on. This says what exists.
 | `local_addr` | `string` | LocalAddr binds the connections that reach the server to a chosen source address, which on a machine with more than one uplink is what decides which of them the tunnel leaves by. An address on its own is enough; the port is the kernel's to pick. Needs no privilege. |
 | `log_format` | `string` | LogFormat is "" for human-readable output or "json" for machine parsing. |
 | `log_level` | `string` | LogLevel is one of trace, debug, info, warn, error or fatal. info is the default; trace on a busy tunnel writes a line per connection. |
+| `mptcp` | `bool` | MPTCP requests Multipath TCP on native tcp/stealth/tcpmux tunnel sockets. |
 | `mss` | `int` | MSS clamps the TCP maximum segment size on the tunnel's connections. Set it when the path cannot carry full-sized packets: that failure looks like a tunnel that connects and then stalls on the first real transfer. See docs/mss-clamp.md. |
 | `mux_framesize` | `int` | MaxFrameSize caps one smux frame, in bytes. Filled from a preset. |
 | `mux_recievebuffer` | `int` | MaxReceiveBuffer is the per-session receive window, in bytes. Filled from a preset. (The spelling is a typo that shipped; it cannot be corrected without breaking every existing config.) |
@@ -344,6 +345,7 @@ them both ends have to agree on. This says what exists.
 | `log_format` | `string` | LogFormat is "" for human-readable output or "json" for machine parsing. |
 | `log_level` | `string` | LogLevel is one of trace, debug, info, warn, error or fatal. info is the default; trace on a busy tunnel writes a line per connection. |
 | `max_connections` | `int` | MaxConnections caps simultaneous forwarded connections (0 = unlimited). |
+| `mptcp` | `bool` | MPTCP requests Multipath TCP on native tcp/stealth/tcpmux tunnel sockets. Unsupported kernels and peers fall back to TCP; host routing is unchanged. |
 | `mss` | `int` | MSS clamps the TCP maximum segment size on the tunnel's connections. Set it when the path cannot carry full-sized packets: that failure looks like a tunnel that connects and then stalls on the first real transfer. See docs/mss-clamp.md. |
 | `mux_con` | `int` | MuxCon is how many concurrent streams one multiplexed session may carry before the next connection waits. |
 | `mux_framesize` | `int` | MaxFrameSize caps one smux frame, in bytes. Filled from a preset. |

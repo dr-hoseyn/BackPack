@@ -45,6 +45,8 @@ import (
 // Outbound describes how a tunnel connection leaves this machine. A nil
 // *Outbound is the ordinary case: dial directly, and let the kernel route.
 type Outbound struct {
+	// MPTCP affects tunnel sockets only. Backend dials have no Outbound.
+	MPTCP bool
 	// Proxy routes the connection through a SOCKS5 or HTTP proxy.
 	Proxy *ProxyConfig
 	// LocalAddr is the source address to bind, as host or host:port. A bare
@@ -155,7 +157,7 @@ func (o *Outbound) proxy() *ProxyConfig {
 // IsSet reports whether anything at all is configured, so a caller can skip
 // building one.
 func (o *Outbound) IsSet() bool {
-	return o != nil && (o.Proxy != nil || o.LocalAddr != "" || o.Interface != "" || o.Mark != 0)
+	return o != nil && (o.MPTCP || o.Proxy != nil || o.LocalAddr != "" || o.Interface != "" || o.Mark != 0)
 }
 
 // String renders the binding for a log line.
@@ -164,6 +166,9 @@ func (o *Outbound) String() string {
 		return "direct"
 	}
 	var parts []string
+	if o.MPTCP {
+		parts = append(parts, "MPTCP requested (TCP fallback allowed)")
+	}
 	if o.Proxy != nil {
 		parts = append(parts, "via "+o.Proxy.String())
 	}

@@ -23,6 +23,7 @@ func LoadServer(name string) (Spec, error) {
 	}
 	return Spec{
 		Role:               "server",
+		MPTCP:              sc.MPTCP,
 		Name:               name,
 		Transport:          string(sc.Transport),
 		NaiveServer:        sc.Naive,
@@ -92,6 +93,7 @@ func loadClient(name string) (Spec, error) {
 	}
 	return Spec{
 		Role:               "client",
+		MPTCP:              cc.MPTCP,
 		Name:               name,
 		Transport:          string(cc.Transport),
 		NaiveClient:        cc.Naive,

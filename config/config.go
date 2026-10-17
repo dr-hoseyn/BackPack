@@ -275,6 +275,9 @@ type PckConfig struct {
 
 // ServerConfig represents the configuration for the server.
 type ServerConfig struct {
+	// MPTCP requests Multipath TCP on native tcp/stealth/tcpmux tunnel sockets.
+	// Unsupported kernels and peers fall back to TCP; host routing is unchanged.
+	MPTCP bool `toml:"mptcp"`
 	// Naive optionally wraps the loopback TCP reverse listener in HTTP/2 with a tunnel-owned sing-box helper; experimental and disabled when empty.
 	Naive NaiveServerConfig `toml:"naive"`
 	// Xray optionally wraps the loopback reverse TCP listener in XHTTP/TLS or RAW/REALITY using a tunnel-owned official helper.
@@ -460,6 +463,8 @@ func (s ServerConfig) ForwardsUDP() bool {
 
 // ClientConfig represents the configuration for the client.
 type ClientConfig struct {
+	// MPTCP requests Multipath TCP on native tcp/stealth/tcpmux tunnel sockets.
+	MPTCP bool `toml:"mptcp"`
 	// Naive optionally reaches the loopback reverse target through a tunnel-owned official Chromium Naive helper; experimental and disabled when empty.
 	Naive NaiveClientConfig `toml:"naive"`
 	// Xray optionally reaches the loopback reverse target through a restricted tunnel-owned XHTTP/TLS or RAW/REALITY helper.

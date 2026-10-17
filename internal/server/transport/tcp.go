@@ -51,6 +51,7 @@ type TcpTransport struct {
 }
 
 type TcpConfig struct {
+	MPTCP         bool
 	BindAddr      string
 	Token         string
 	SnifferLog    string
@@ -227,6 +228,7 @@ func (s *TcpTransport) control(g *tcpGen, ctx context.Context, lost func()) cont
 // tunnelPort is this generation's tunnel port; see tcpTunnelPort.
 func (s *TcpTransport) tunnelPort(g *tcpGen) tcpTunnelPort {
 	return tcpTunnelPort{
+		mptcp:     s.config.MPTCP,
 		ctx:       g.ctx,
 		addr:      s.config.BindAddr,
 		rcvBuf:    s.config.SO_RCVBUF,

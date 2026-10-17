@@ -14,6 +14,7 @@ import (
 
 // Spec is the full description of a tunnel used to render a TOML config.
 type Spec struct {
+	MPTCP     bool
 	Name      string
 	Role      string // "server" (Iran/edge that exposes ports) or "client" (kharej/origin)
 	Transport string // tcp, tcpmux, udp, kcp, ws, wss, wsmux, wssmux
@@ -174,6 +175,9 @@ func monitorBind(configured string) string {
 
 // writeTuning emits the throughput/latency knobs shared by server and client.
 func (s Spec) writeTuning(p func(string, ...any)) {
+	if s.MPTCP {
+		p("mptcp = true\n")
+	}
 	if s.SkipOptz {
 		p("skip_optz = true\n")
 	}

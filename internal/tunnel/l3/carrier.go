@@ -155,6 +155,8 @@ const (
 	CarrierQuic = "quic"
 	// CarrierMasque carries UDP payloads in real HTTP/3 CONNECT-UDP requests.
 	CarrierMasque = "masque"
+	// CarrierMasqueH2 is an explicit reliable HTTPS fallback for UDP-blocked paths.
+	CarrierMasqueH2 = "masque-h2"
 	// CarrierSNI is pck with a fake TLS ClientHello at the start of the flow,
 	// so a box that classifies by server name lets the rest through. See
 	// carrier_sni.go.
@@ -171,7 +173,7 @@ func KnownCarrier(name string) bool { return knownCarrier(name) }
 // refused before anything is created rather than after.
 func knownCarrier(name string) bool {
 	switch name {
-	case CarrierUDP, CarrierPck, CarrierXdi, CarrierSpoof, CarrierQuic, CarrierSNI, CarrierMasque, "hysteria2", "tuic":
+	case CarrierUDP, CarrierPck, CarrierXdi, CarrierSpoof, CarrierQuic, CarrierSNI, CarrierMasque, CarrierMasqueH2, "hysteria2", "tuic":
 		return true
 	}
 	return false
@@ -221,6 +223,8 @@ func openBareCarrier(ctx context.Context, cfg Config) (DatagramCarrier, net.Addr
 		return openQuicContext(ctx, cfg)
 	case CarrierMasque:
 		return openMasque(ctx, cfg)
+	case CarrierMasqueH2:
+		return openMasqueH2(ctx, cfg)
 	case "hysteria2", "tuic":
 		return openSingCarrier(ctx, cfg)
 	case CarrierSNI:

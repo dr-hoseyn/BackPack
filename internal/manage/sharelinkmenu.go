@@ -125,12 +125,12 @@ func setupFromLink() {
 		}
 		form.Sing = cfg.Sing
 	}
-	if form.Carrier == "masque" {
+	if form.Carrier == "masque" || form.Carrier == "masque-h2" {
 		side := sideIran
 		if form.Side == "kharej" {
 			side = sideKharej
 		}
-		cfg := l3Spec{Carrier: "masque", Masque: form.Masque}
+		cfg := l3Spec{Carrier: form.Carrier, Masque: form.Masque}
 		if !askL3CarrierExtras(&cfg, side) {
 			return
 		}

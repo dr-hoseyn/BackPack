@@ -162,6 +162,7 @@ func (s *Server) startTransport(ctx context.Context, tr config.TransportType) ru
 	switch tr {
 	case config.TCP, config.STEALTH:
 		tcpConfig := &transport.TcpConfig{
+			MPTCP:          s.config.MPTCP,
 			BindAddr:       s.config.BindAddr,
 			Nodelay:        s.config.Nodelay,
 			KeepAlive:      time.Duration(s.config.Keepalive) * time.Second,
@@ -258,6 +259,7 @@ func (s *Server) startTransport(ctx context.Context, tr config.TransportType) ru
 
 	case config.TCPMUX:
 		tcpMuxConfig := &transport.TcpMuxConfig{
+			MPTCP:            s.config.MPTCP,
 			AcceptUDP:        s.config.ForwardsUDP(),
 			BindAddr:         s.config.BindAddr,
 			Nodelay:          s.config.Nodelay,

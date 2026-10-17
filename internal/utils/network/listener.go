@@ -13,7 +13,7 @@ import (
 
 // ListenWithBuffers creates a TCP listener with specified SO_RCVBUF and SO_SNDBUF sizes.
 // It returns a net.Listener and an error if any.
-func ListenWithBuffers(network, address string, rcvBufSize, sndBufSize, mss int, keepAlivePeriod time.Duration, dis_nodelay bool) (net.Listener, error) {
+func ListenWithBuffers(network, address string, rcvBufSize, sndBufSize, mss int, keepAlivePeriod time.Duration, dis_nodelay bool, multipath ...bool) (net.Listener, error) {
 	// Options
 	listenerCfg := &net.ListenConfig{
 		Control: func(network, address string, s syscall.RawConn) error {
@@ -83,7 +83,8 @@ func ListenWithBuffers(network, address string, rcvBufSize, sndBufSize, mss int,
 		KeepAliveConfig: net.KeepAliveConfig{Enable: true, Interval: keepAlivePeriod, Count: 9, Idle: 0},
 	}
 
-	// Dial the TCP connection with a timeout
+	listenerCfg.SetMultipathTCP(len(multipath) != 0 && multipath[0])
+	// Bind with a timeout. Go falls back to TCP if MPTCP is unavailable.
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	listener, err := listenerCfg.Listen(ctx, network, address)

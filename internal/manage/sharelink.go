@@ -431,7 +431,7 @@ func MirrorForPeer(l ShareLink) PeerForm {
 			f.Sing.Target, f.Sing.ServerName = l.SingTarget, l.SingServerName
 			f.Sing.Binary = managedHelperPath("sing-box")
 		}
-		if l.Tr == "masque" {
+		if l.Tr == "masque" || l.Tr == "masque-h2" {
 			f.Masque.Target, f.Masque.ServerName = l.MasqueTarget, l.MasqueServerName
 			paired = append(paired, "masque.target", "masque.serverName")
 		}
@@ -622,7 +622,7 @@ func shareLinkOf(name, host string, cfg config.Config) (string, error) {
 		if config.SingDatagram(l.Tr) {
 			l.SingTarget, l.SingServerName = cfg.L3.SingL3Config.TargetAddr(), cfg.L3.SingL3Config.ServerName
 		}
-		if l.Tr == "masque" {
+		if l.Tr == "masque" || l.Tr == "masque-h2" {
 			l.MasqueTarget = cfg.L3.MasqueConfig.TargetAddr()
 			l.MasqueServerName = cfg.L3.MasqueConfig.ServerName
 		}

@@ -6,9 +6,29 @@ Datagrams. It carries the existing Noise/GRE tunnel, including routed IP and
 optional forwarded TCP/UDP ports. It uses pinned `masque-go v0.6.0` in the
 Backpack process, with no helper binary.
 
-This is the HTTP/3, UDP-based mode. HTTP/2 and Xray CONNECT-IP interoperability
-are **not implemented** by this carrier. UDP/QUIC must work on the route.
+The `masque` mode is HTTP/3 and UDP-based. The separate `masque-h2` mode
+implements HTTP/2 Extended CONNECT and RFC 9297 DATAGRAM Capsules over verified
+TLS/TCP. Xray CONNECT-IP interoperability is not implemented. UDP/QUIC must work
+on the route for HTTP/3.
 HTTPS framing does not guarantee that a network will allow it or make it faster.
+
+## HTTP/2 fallback
+
+Select **Direct → MASQUE (HTTP/2 fallback)**, or change `carrier` to
+`"masque-h2"` in both configurations below. The same certificate, CA, hostname
+and paired target settings apply. Open TCP rather than UDP on the public
+listener. Setup links carry the selected mode. Connection Test treats H2 and
+H3 as separate cases with independent trust material.
+
+H2 retains UDP packet boundaries but carries Capsules inside a reliable TCP
+stream. Packet loss can therefore block delivery of later packets and stack
+retransmission with an inner TCP connection. It is an explicit fallback for
+paths where UDP does not pass, rather than a latency-oriented datagram carrier.
+Intermediaries need HTTP/2 Extended CONNECT support; ordinary HTTPS/CDN support
+alone is insufficient. One authenticated CONNECT stream runs per TLS connection,
+with at most 16 connections, 8 KiB headers and bounded packet queues. Unknown
+Capsules are skipped without allocating their declared length. Authentication
+and TLS/CONNECT setup share a bounded deadline.
 
 ## Set up a pair
 
