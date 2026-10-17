@@ -43,6 +43,14 @@ func TestHTTPSPreflightVerifiesTrustHostnameAndHTTP2(t *testing.T) {
 				t.Fatalf("IP trust probe: %s", got)
 			}
 		}
+		short := config.ShortClientConfig{Server: x.Server, ServerName: x.ServerName, CAFile: ca}
+		if got := ctProbeHTTPS(context.Background(), TunnelSpec{ShortClient: short}); got != "tls-ok" {
+			t.Fatalf("verified HTTP/1.1 preflight: %s", got)
+		}
+		short.ServerName = "wrong.backpack.invalid"
+		if got := ctProbeHTTPS(context.Background(), TunnelSpec{ShortClient: short}); got != "tls-failed" {
+			t.Fatalf("Short hostname verification bypassed: %s", got)
+		}
 		x.ServerName = "wrong.backpack.invalid"
 		if got := ctProbeHTTPS(context.Background(), TunnelSpec{XrayClient: x}); got != "tls-failed" {
 			t.Fatalf("wrong hostname accepted: %s", got)
