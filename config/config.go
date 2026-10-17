@@ -279,6 +279,8 @@ type ServerConfig struct {
 	Naive NaiveServerConfig `toml:"naive"`
 	// Xray optionally wraps the loopback reverse TCP listener in XHTTP/TLS or RAW/REALITY using a tunnel-owned official helper.
 	Xray XrayServerConfig `toml:"xray"`
+	// Sing selects a restricted managed Hysteria2, AnyTLS, ShadowTLS or TUIC carrier.
+	Sing SingServerConfig `toml:"sing"`
 	// BindAddr is the address and port this server listens on for the
 	// control channel — "0.0.0.0:443" for every interface, or one address to pin
 	// it to a single local IP. The client's remote_addr must name the same port.
@@ -462,6 +464,8 @@ type ClientConfig struct {
 	Naive NaiveClientConfig `toml:"naive"`
 	// Xray optionally reaches the loopback reverse target through a restricted tunnel-owned XHTTP/TLS or RAW/REALITY helper.
 	Xray XrayClientConfig `toml:"xray"`
+	// Sing selects a restricted managed Hysteria2, AnyTLS, ShadowTLS or TUIC carrier.
+	Sing SingClientConfig `toml:"sing"`
 	// RemoteAddr is the server's address and port, as the client dials it. The
 	// port must match the server's bind_addr.
 	RemoteAddr string `toml:"remote_addr"`
@@ -628,6 +632,8 @@ type ClientConfig struct {
 
 // Config represents the complete configuration, including both server and client settings.
 type Config struct {
+	// AWG is the exclusive independent AmneziaWG engine, managed like other tunnels.
+	AWG AWGConfig `toml:"awg"`
 	// Server is the reverse tunnel's Iran end: it listens for the client and
 	// exposes the forwarded ports. Present only in a configuration that asks for
 	// one; the three engines are mutually exclusive.

@@ -3,8 +3,10 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"runtime"
 
 	"github.com/backpack/backpack/config"
+	"github.com/backpack/backpack/internal/amneziawg"
 	"github.com/backpack/backpack/internal/tunnel/l3"
 )
 
@@ -12,6 +14,20 @@ import (
 // built from it — the checks the engines themselves make before opening
 // anything, run early so a reload can refuse a file instead of dying on it.
 func checkEngine(cfg *config.Config) error {
+	if cfg.AWG.Enabled() {
+		if runtime.GOOS != "linux" {
+			return errors.New("the managed AmneziaWG engine requires Linux TUN and network administration privileges")
+		}
+		if cfg.L3.Enabled() || cfg.Direct.Enabled() || cfg.Server.BindAddr != "" || cfg.Client.RemoteAddr != "" || cfg.Server.Managed() || cfg.Client.Managed() {
+			return errors.New("[awg] must be the only engine in this configuration")
+		}
+		if err := amneziawg.Config(cfg.AWG).Validate(); err != nil {
+			return err
+		}
+		_, err := awgForwarder(cfg.AWG)
+		return err
+	}
+
 	switch {
 	case cfg.L3.Enabled():
 		tunnelCfg, err := l3ConfigOf(cfg)

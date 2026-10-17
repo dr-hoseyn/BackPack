@@ -39,6 +39,8 @@ func SetupIran() {
 		SetupServer()
 	case directionDirect:
 		setupDirectFor(sideIran)
+	case directionAWG:
+		setupAWG(sideIran)
 	}
 }
 
@@ -51,6 +53,8 @@ func SetupKharej() {
 		SetupClient()
 	case directionDirect:
 		setupDirectFor(sideKharej)
+	case directionAWG:
+		setupAWG(sideKharej)
 	}
 }
 
@@ -60,6 +64,7 @@ const (
 	directionCancelled tunnelDirection = iota
 	directionReverse
 	directionDirect
+	directionAWG
 )
 
 // askDirection is the one question that decides which engine builds the
@@ -80,11 +85,14 @@ func askDirection(machine string) tunnelDirection {
 			Title: "Direct",
 			Desc:  "Iran dials kharej — when inbound to Iran is blocked",
 		},
+		{Title: "AmneziaWG", Desc: "independent native IP tunnel — UDP, Linux and TUN required"},
 	}) {
 	case 0:
 		return directionReverse
 	case 1:
 		return directionDirect
+	case 2:
+		return directionAWG
 	}
 	return directionCancelled
 }

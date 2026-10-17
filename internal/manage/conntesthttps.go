@@ -9,6 +9,8 @@ import (
 	"os"
 	"strconv"
 	"time"
+
+	"github.com/backpack/backpack/config"
 )
 
 // This deliberately uses an ordinary TLS client on a separate connection.
@@ -17,6 +19,9 @@ import (
 func ctProbeHTTPS(parent context.Context, spec TunnelSpec) string {
 	ctx, cancel := context.WithTimeout(parent, 5*time.Second)
 	defer cancel()
+	if spec.SingClient.Enabled() {
+		return "not-applicable" // these protocols are not standalone HTTPS/H2 services
+	}
 	endpoint, serverName, caFile := spec.XrayClient.Server, spec.XrayClient.ServerName, spec.XrayClient.CAFile
 	if spec.NaiveClient.Enabled() {
 		endpoint, caFile = spec.NaiveClient.Server, spec.NaiveClient.CAFile
@@ -72,8 +77,10 @@ func ctValidHTTPSProbe(tr, probe string) bool {
 		return false
 	}
 	switch probe {
+	case "not-applicable":
+		return config.SingProtocol(tr)
 	case "tcp-failed":
-		return true
+		return !config.SingProtocol(tr)
 	case "tcp-ok":
 		return tr == "reality"
 	case "tls-ok", "tls-failed":
@@ -84,6 +91,8 @@ func ctValidHTTPSProbe(tr, probe string) bool {
 
 func ctHTTPSProbeLabel(probe string) string {
 	switch probe {
+	case "not-applicable":
+		return "standalone HTTPS probe does not apply; see authenticated tunnel traffic"
 	case "tcp-failed":
 		return "public TCP connection failed"
 	case "tcp-ok":

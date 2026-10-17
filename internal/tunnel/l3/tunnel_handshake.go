@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/backpack/backpack/config"
 	"net"
 	"time"
 )
@@ -215,6 +216,12 @@ func (t *Tunnel) drainReplies() {
 
 // resolvePeer refreshes the dialling side's notion of where the peer is.
 func (t *Tunnel) resolvePeer(ctx context.Context) error {
+	// Managed datagram helpers own DNS and their outer session. The carrier
+	// presents its fixed logical peer while translating packets to the private
+	// SOCKS UDP target; replacing that address would bypass the translation.
+	if config.SingDatagram(t.cfg.Carrier) {
+		return ctx.Err()
+	}
 	resolveCtx, cancel := context.WithTimeout(ctx, carrierResolveTimeout)
 	defer cancel()
 	addr, _, err := resolveDatagramEndpoint(resolveCtx, t.cfg.Addr)

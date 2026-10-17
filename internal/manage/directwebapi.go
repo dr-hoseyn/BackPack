@@ -106,6 +106,7 @@ type NewDirectTunnel struct {
 	// but the same one on both is one less thing to remember.
 	SNIDomain string              `json:"sniDomain"`
 	Masque    config.MasqueConfig `json:"masque"`
+	Sing      config.SingL3Config `json:"sing"`
 
 	// GREKey separates tunnels that share the same two servers. Both ends must
 	// match. Zero omits it.
@@ -136,6 +137,9 @@ func DirectCarriers() []map[string]string {
 			"desc": "a real QUIC session on UDP — indistinguishable from HTTP/3, and needs no root"},
 		{"value": "masque", "family": "https", "label": "MASQUE (HTTP/3)", "needsRoot": "",
 			"desc": "authenticated CONNECT-UDP over HTTPS; requires a TLS certificate on Kharej"},
+
+		{"value": "hysteria2", "family": "udp", "label": "Hysteria2 / Salamander", "needsRoot": "", "cliOnly": "1", "desc": "native datagrams through the managed sing-box helper; verified TLS"},
+		{"value": "tuic", "family": "udp", "label": "TUIC v5", "needsRoot": "", "cliOnly": "1", "desc": "native QUIC datagrams through the managed sing-box helper; verified TLS"},
 		// cliOnly keeps a carrier out of the panel without taking it away.
 		//
 		// These two are the ones whose answers depend on the route rather than
@@ -479,6 +483,7 @@ func (n NewDirectTunnel) spec() (l3Spec, error) {
 		Encap: "gre", GREKey: n.GREKey,
 		SNIDomain: strings.ToLower(strings.TrimSpace(n.SNIDomain)),
 		Masque:    n.Masque,
+		Sing:      n.Sing,
 		Addr:      addr, Token: token,
 		Iface: freeL3Iface(), LocalIP: local, PeerIP: peer,
 		MTU:            defaultL3MTU,
@@ -637,6 +642,16 @@ func DirectSettingsOf(name string) (DirectSettings, error) {
 	if err != nil {
 		return DirectSettings{}, err
 	}
+
+	if cfg.AWG.Enabled() {
+		c := cfg.AWG
+		side := "iran"
+		addr := fmt.Sprintf("UDP :%d", c.ListenPort)
+		if c.Endpoint != "" {
+			side, addr = "kharej", c.Endpoint
+		}
+		return DirectSettings{Name: name, Layer: 3, Side: side, Carrier: "awg", Addr: addr, Iface: c.Interface, LocalIP: c.Address, PeerIP: c.PeerAddress, MTU: c.MTU, Ports: strings.Join(c.Ports, ", "), AcceptUDP: c.AcceptUDP, HoldsPorts: true, MaxConnections: c.MaxConnections, BandwidthMbps: c.BandwidthMbps}, nil
+	}
 	if cfg.Direct.Enabled() {
 		d := cfg.Direct
 		return DirectSettings{Name: name, Layer: 4, Side: directRole(d.ResolvedRole()), Carrier: orDefault(d.Transport, "tcp"),
@@ -699,6 +714,18 @@ func EditDirectSettings(name string, e DirectEdit) error {
 	if err != nil {
 		return err
 	}
+
+	if cfg.AWG.Enabled() {
+		c, err := applyAWGEdit(cfg.AWG, e)
+		if err != nil {
+			return err
+		}
+		body, err := awgBody(c)
+		if err != nil {
+			return err
+		}
+		return tunnelspec.ApplyBody(name, body, "panel edit")
+	}
 	raw, err := os.ReadFile(app.ConfigPath(name))
 	if err != nil {
 		return err
@@ -707,6 +734,7 @@ func EditDirectSettings(name string, e DirectEdit) error {
 	if _, err := toml.Decode(string(raw), &document); err != nil {
 		return err
 	}
+
 	if cfg.Direct.Enabled() {
 		d := cfg.Direct
 		if e.MTU != nil || e.AutoMTU != nil || e.Paths != nil || e.FEC != nil || e.Spoof != nil || e.Stealth != nil {
@@ -893,6 +921,7 @@ func directSpecFrom(name string, l config.L3Config) l3Spec {
 		Encap:     orDefault(l.Encap, "gre"),
 		SNIDomain: l.SNIDomain,
 		Masque:    l.MasqueConfig,
+		Sing:      l.SingL3Config,
 		GREKey:    l.GREKey,
 		Addr:      l.Addr,
 		Token:     l.Token,

@@ -2,8 +2,10 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -198,6 +200,10 @@ func runEngine(cfg *config.Config, ctx context.Context, configPath string, apply
 	// that the reverse path is reached by exactly the configurations that
 	// always reached it: an [l3] table is the only way past this branch, and
 	// no configuration written before it existed has one.
+	if cfg.AWG.Enabled() {
+		runAWGTunnel(cfg, ctx, configPath)
+		return
+	}
 	if cfg.L3.Enabled() {
 		runL3Tunnel(cfg, ctx, configPath)
 		return
@@ -285,6 +291,15 @@ func loadConfig(configPath string) (*config.Config, error) {
 	var cfg config.Config
 	if _, err := toml.DecodeFile(configPath, &cfg); err != nil {
 		return &cfg, err
+	}
+	if cfg.AWG.Enabled() && runtime.GOOS != "windows" {
+		st, err := os.Stat(configPath)
+		if err != nil {
+			return &cfg, err
+		}
+		if !st.Mode().IsRegular() || st.Mode().Perm()&0077 != 0 {
+			return &cfg, fmt.Errorf("AmneziaWG configuration contains private keys; use a regular file with mode 0600")
+		}
 	}
 	return &cfg, nil
 }

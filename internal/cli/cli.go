@@ -501,6 +501,22 @@ func runLink(args []string) Result {
 	rest := args[1:]
 	for i := 0; i < len(rest); i++ {
 		switch a := rest[i]; {
+
+		case a == "--sing-binary" || a == "--sing-cert" || a == "--sing-key" || a == "--sing-ca":
+			if i+1 >= len(rest) {
+				return fail(CodeUsage, "%s requires a path", a)
+			}
+			i++
+			switch a {
+			case "--sing-binary":
+				o.SingBinary = rest[i]
+			case "--sing-cert":
+				o.SingCert = rest[i]
+			case "--sing-key":
+				o.SingKey = rest[i]
+			case "--sing-ca":
+				o.SingCA = rest[i]
+			}
 		case a == "--masque-cert" || a == "--masque-key":
 			if i+1 >= len(rest) {
 				return fail(CodeUsage, "%s needs a value\n", a)

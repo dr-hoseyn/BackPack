@@ -1,6 +1,7 @@
 package core
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -35,7 +36,14 @@ func List() []Tunnel {
 		}
 		name := strings.TrimSuffix(filepath.Base(path), ".toml")
 		t := Tunnel{Name: name, Service: app.ServiceName(name)}
+
 		switch {
+		case cfg.AWG.Enabled():
+			t.Role, t.Transport, t.Addr, t.Ports = "server", "awg", fmt.Sprintf("0.0.0.0:%d", cfg.AWG.ListenPort), cfg.AWG.Ports
+			if cfg.AWG.Endpoint != "" {
+				t.Role, t.Addr = "client", cfg.AWG.Endpoint
+			}
+
 		case cfg.Server.BindAddr != "":
 			t.Role = "server"
 			t.Transport = string(cfg.Server.Transport)

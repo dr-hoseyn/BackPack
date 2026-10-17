@@ -68,15 +68,25 @@ func cliTransportGroups() []transportGroup {
 			{"Naive / HTTP2", "HTTPS proxy — certificate or a private trust file", "naive"},
 			{"XHTTP / TLS", "HTTP/2 streaming — certificate or a private trust file", "xhttp"},
 			{"REALITY / Vision", "TLS cover endpoint — no local certificate required", "reality"},
+			{"Hysteria2 / Salamander", "QUIC with optional obfuscation — requires UDP", "hysteria2"},
+			{"AnyTLS", "TLS with padding and connection reuse — TCP", "anytls"},
+			{"ShadowTLS v3 / SS2022", "verified TLS cover and encrypted inner stream — TCP", "shadowtls"},
+			{"TUIC v5", "QUIC with BBR — requires UDP", "tuic"},
 		},
 	})
 }
 
 func managedTransport(value string) bool {
-	return value == "naive" || value == "xhttp" || value == "reality"
+	return value == "naive" || value == "xhttp" || value == "reality" || config.SingProtocol(value)
 }
 
 func selectedTransport(s TunnelSpec) string {
+	if s.SingServer.Enabled() {
+		return s.SingServer.Protocol
+	}
+	if s.SingClient.Enabled() {
+		return s.SingClient.Protocol
+	}
 	if s.NaiveServer.Enabled() || s.NaiveClient.Enabled() {
 		return "naive"
 	}
@@ -90,6 +100,12 @@ func selectedTransport(s TunnelSpec) string {
 }
 
 func managedEndpoint(s TunnelSpec) string {
+	if s.Role == "server" && s.SingServer.Enabled() {
+		return s.SingServer.Listen
+	}
+	if s.Role == "client" && s.SingClient.Enabled() {
+		return s.SingClient.Server
+	}
 	if s.Role == "server" {
 		if s.NaiveServer.Enabled() {
 			return s.NaiveServer.Listen
@@ -109,6 +125,7 @@ func managedEndpoint(s TunnelSpec) string {
 }
 
 func clearManagedTransport(s *TunnelSpec) {
+	s.SingServer, s.SingClient = config.SingServerConfig{}, config.SingClientConfig{}
 	s.NaiveServer, s.NaiveClient = config.NaiveServerConfig{}, config.NaiveClientConfig{}
 	s.XrayServer, s.XrayClient = config.XrayServerConfig{}, config.XrayClientConfig{}
 }
@@ -202,7 +219,10 @@ func validateManagedSpec(s TunnelSpec) error {
 	if err := naive.Validate(&c); err != nil {
 		return err
 	}
-	return naive.ValidateXray(&c)
+	if err := naive.ValidateXray(&c); err != nil {
+		return err
+	}
+	return naive.ValidateSing(&c)
 }
 
 func managedEndpointClash(s TunnelSpec) string {
@@ -270,7 +290,15 @@ func setupManagedCarrierWithProbe(s *TunnelSpec, chosen, public, host string, pr
 		n.RemoteAddr = net.JoinHostPort("127.0.0.1", internal)
 	}
 	clearManagedTransport(&n)
-	if chosen == "reality" {
+	if config.SingProtocol(chosen) {
+		if !configureSing(&n, *s, chosen, public, host) {
+			return false
+		}
+		if n.Role == "server" {
+			tui.Info("UDP forwarding in Reverse uses reliable streams. Direct Hysteria2/TUIC carries native datagrams.")
+			n.AcceptUDP = tui.Confirm("Also Carry UDP On Forwarded Ports", s.AcceptUDP)
+		}
+	} else if chosen == "reality" {
 		if !configureReality(&n, *s, public, probe) {
 			return false
 		}

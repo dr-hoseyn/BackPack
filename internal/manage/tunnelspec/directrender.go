@@ -150,6 +150,7 @@ type L3Spec struct {
 	Side    DirectSide
 	Carrier string
 	Masque  config.MasqueConfig
+	Sing    config.SingL3Config
 	// SNIDomain is the server name the "sni" carrier announces. Ignored by
 	// every other carrier, and empty means the engine's default.
 	SNIDomain      string
@@ -210,6 +211,15 @@ func (s L3Spec) Render() string {
 	writeKV(&b, "addr", quote(s.Addr))
 	writeKV(&b, "token", quote(s.Token))
 	writeKV(&b, "carrier", quote(s.Carrier))
+
+	if config.SingDatagram(s.Carrier) {
+		writeKV(&b, "sing_target", quote(s.Sing.TargetAddr()))
+		for _, item := range []struct{ key, value string }{{"sing_binary", s.Sing.Binary}, {"sing_server_name", s.Sing.ServerName}, {"sing_cert", s.Sing.CertFile}, {"sing_key", s.Sing.KeyFile}, {"sing_ca", s.Sing.CAFile}} {
+			if item.value != "" {
+				writeKV(&b, item.key, quote(item.value))
+			}
+		}
+	}
 	if s.Carrier == "masque" {
 		writeKV(&b, "masque_target", quote(s.Masque.TargetAddr()))
 		for _, kv := range [][2]string{
@@ -408,7 +418,7 @@ func DialsOut(t Tunnel) bool {
 // The management screens use it to route to the right editor: the reverse
 // editor reads [server] and [client], which these files do not have.
 func IsDirectKind(t Tunnel) bool {
-	return strings.HasPrefix(t.Transport, "direct/") || strings.HasPrefix(t.Transport, "l3/")
+	return t.Transport == "awg" || strings.HasPrefix(t.Transport, "direct/") || strings.HasPrefix(t.Transport, "l3/")
 }
 
 // How a tunnel describes itself on a card.
@@ -421,6 +431,9 @@ func IsDirectKind(t Tunnel) bool {
 // TunnelDirection reports whether a tunnel is dialled from Iran or waits for
 // kharej to dial in — "direct" or "reverse".
 func TunnelDirection(t Tunnel) string {
+	if t.Transport == "awg" {
+		return "reverse"
+	}
 	if IsDirectKind(t) {
 		return "direct"
 	}

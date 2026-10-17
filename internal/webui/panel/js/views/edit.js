@@ -381,6 +381,10 @@ const field = (name, label, hint = '') => `<div class="f"><label>${label}</label
 
 function directMarkup(set) {
   const ports = !!set.holdsPorts;
+  if (set.carrier === 'awg') return `<div class="pane" data-tab="Direct">` +
+    field('ports', 'Forwarded ports', 'Targets use the peer host route; backends must listen on the tunnel IP or wildcard.') +
+    sw('acceptUdp', 'Accept UDP', 'Native datagrams through AmneziaWG.') +
+    `<div class="two">${field('maxConnections', 'Max connections', '0 is no limit.')}${field('bandwidthMbps', 'Bandwidth (Mbit/s)', '0 is no limit.')}</div></div>`;
   if (set.layer === 4) return `<div class="pane" data-tab="Direct">` + (ports ?
     field("addr", "Kharej address", "Host and port.") + field("ports", "Forwarded ports") +
     sw("acceptUdp", "Accept UDP") +

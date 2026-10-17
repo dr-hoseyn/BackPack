@@ -30,20 +30,23 @@ proposal to run several tunnels in one process is trading it away.
 
 ---
 
-## Three engines
+## Four engines
 
 `cmd/cmd.go runEngine` chooses, in this order, and the order is load-bearing:
 
 ```
-        ┌─ [l3] table present?    ──yes──►  internal/tunnel/l3       layer 3
-config ─┼─ [direct] table present? ─yes──►  internal/tunnel/direct   layer 4, dials out
+        ┌─ [awg] enabled?         ──yes──►  internal/amneziawg      independent layer 3
+config ─┼─ [l3] table present?    ──yes──►  internal/tunnel/l3       layer 3
+        ├─ [direct] table present? ─yes──►  internal/tunnel/direct   layer 4, dials out
         └─ [server]/[client]      ────────►  internal/server + internal/client
                                              the reverse tunnel
 ```
 
-They share **no configuration key and no code**. A file that does not mention
+Each engine has its own configuration table and packet/session lifecycle;
+management, metrics and port forwarding are shared where applicable. A file that does not mention
 `[l3]` cannot reach the layer-3 engine; one that does never reaches the reverse
 tunnel. `L3Config.Enabled()` is one trimmed string, and it is the whole gate.
+`[awg]` explicitly rejects a mixed engine configuration.
 
 ### The reverse tunnel — `[server]` / `[client]`
 
@@ -56,6 +59,11 @@ channel plus a pool of data connections. Ten transports: `tcp`, `tcpmux`,
 - `internal/server/transport` / `internal/client/transport` — the transports
 - `internal/utils/handlers` — the forwarding itself: buffered relay, and kernel
   `splice` behind a flag
+
+Managed helpers wrap its private TCP connection: Naive, Xray, and the sing-box
+Hysteria2, AnyTLS, ShadowTLS v3 + SS2022 and TUIC modes. The reverse engine still
+owns authentication, pooling and forwarding. See [managed protocols](managed-protocols.md)
+for native datagram versus reliable reverse UDP behavior.
 
 #### Inside a reverse transport
 
@@ -87,12 +95,22 @@ needs no inbound port of its own. `internal/tunnel/direct`.
 ### The layer-3 tunnel — `[l3]`
 
 An interface on each host carrying whole IP packets. Noise NNpsk0, explicit
-nonces, a 2048-bit replay window (RFC 4303, as WireGuard uses). Six carriers
-underneath: `udp`, `quic`, `pck`, `sni`, `xdi`, `spoof`. `internal/tunnel/l3`.
+nonces, a 2048-bit replay window (RFC 4303, as WireGuard uses). Carriers include
+`udp`, `quic`, `pck`, `sni`, `xdi`, `spoof`, `masque`, `hysteria2` and `tuic`.
+`internal/tunnel/l3` owns the Noise session; the last two carriers supervise a
+restricted sing-box helper and use native UDP, including association recovery.
 
 A reliable carrier is deliberately not an option here — stacking retransmission
 under a reliable tunnel is actively harmful, not merely wasteful. The package
 doc explains why.
+
+### The independent AmneziaWG engine — `[awg]`
+
+`internal/amneziawg` owns its authenticated point-to-point IP protocol and
+exclusive TUN; it does not wrap the Noise engine. `cmd/awg.go` connects this
+runtime to normal config reload, sanitized metrics and L3 port forwarding.
+Only the peer host is routed. Managed setup pairs identities and installs the
+same per-tunnel service. See [AmneziaWG](amneziawg.md) for permissions and scope.
 
 ---
 

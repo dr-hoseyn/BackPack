@@ -16,6 +16,7 @@ them both ends have to agree on. This says what exists.
 
 | Key | Type | Description |
 |---|---|---|
+| `awg` | `AWGConfig` | AWG is the exclusive independent AmneziaWG engine, managed like other tunnels. |
 | `client` | `ClientConfig` | Client is the reverse tunnel's kharej end: it dials the server and delivers each connection to the service behind it. |
 | `direct` | `DirectConfig` | Direct is a direct layer-4 tunnel — the same forwarded ports, dialled the other way round. Present only in a configuration that asks for one, on the same terms as L3 above. See config/direct.go. |
 | `l3` | `L3Config` | L3 is a direct layer-3 tunnel, and is present only in a configuration that asks for one. It shares nothing with Server and Client: a file without an [l3] table leaves this zero, L3.Enabled() reads false, and the reverse tunnel runs exactly as it always has. See config/l3.go. |
@@ -44,6 +45,45 @@ them both ends have to agree on. This says what exists.
 | `pck_gateway_mac` | `string` | PckGatewayMAC is the next hop's hardware address, used when frames are injected at the link layer. Empty means read it from the kernel's neighbour table, which is where it already is. Set it only where that lookup is wrong — some virtualised networks answer ARP with an address the hypervisor then rewrites. |
 | `pck_interface` | `string` | PckInterface pins the carrier to a named egress device. Empty — the normal case — lets the route to the peer choose, which is right on every host with one uplink and on most with several. |
 
+## [awg.obfuscation]
+
+| Key | Type | Description |
+|---|---|---|
+| `content_padding` | `int` | ContentPadding bounds extra data padding to fit the outer MTU budget. |
+| `h1` | `string` | H1 is the disjoint initiation header range. |
+| `h2` | `string` | H2 is the disjoint response header range. |
+| `h3` | `string` | H3 is the disjoint cookie header range. |
+| `h4` | `string` | H4 is the disjoint data header range. |
+| `header_protection_key` | `string` | HeaderProtectionKey is a canonical base64 shared 32-byte header key. |
+| `junk_count` | `int` | JunkCount is the bounded number of junk packets before a handshake. |
+| `junk_max` | `int` | JunkMax is the maximum junk packet length. |
+| `junk_min` | `int` | JunkMin is the minimum junk packet length. |
+| `s1` | `int` | S1 is initiation packet padding. |
+| `s2` | `int` | S2 is response packet padding. |
+| `s3` | `int` | S3 is cookie packet padding. |
+| `s4` | `int` | S4 is data packet padding. |
+
+## [awg]
+
+| Key | Type | Description |
+|---|---|---|
+| `accept_udp` | `bool` | AcceptUDP also forwards UDP on the configured ports. |
+| `address` | `string` | Address is this endpoint's unicast host prefix (/32 or /128). |
+| `bandwidth_mbps` | `int` | BandwidthMbps limits forwarded traffic, independent of routed IP traffic. |
+| `endpoint` | `string` | Endpoint is the listener's literal public IP:UDP-port on the dialling side. |
+| `interface` | `string` | Interface is the new exclusive bpawg-prefixed TUN interface. |
+| `keepalive` | `int` | Keepalive is the persistent keepalive period in seconds (0..120). |
+| `listen_port` | `int` | ListenPort is the public UDP port (nonzero for a listener). |
+| `max_connections` | `int` | MaxConnections bounds forwarded connections (zero is unlimited). |
+| `mtu` | `int` | MTU is the TUN MTU, validated with the worst-case outer IPv6 overhead. |
+| `obfuscation` | `AWGObfuscation` | Obfuscation contains the paired protocol header and padding parameters. |
+| `peer_address` | `string` | PeerAddress is the peer's unicast host prefix; the only installed route. |
+| `peer_public_key` | `string` | PeerPublicKey is the paired endpoint's public X25519 identity. |
+| `peer_setup_key` | `string` | PeerSetupKey is the generated peer identity kept only by a pair's creator for regenerating its setup link. It never appears in generic API JSON. |
+| `ports` | `[]string` | Ports are optional mappings through the peer host route, including TCP. |
+| `preshared_key` | `string` | PresharedKey is the independent shared 32-byte PSK. |
+| `private_key` | `string` | PrivateKey is this machine's canonical base64 X25519 private identity. |
+
 ## [client.naive]
 
 | Key | Type | Description |
@@ -53,6 +93,20 @@ them both ends have to agree on. This says what exists.
 | `password` | `string` | Password is the HTTP/2 proxy secret; keep the tunnel configuration readable only by its owner. |
 | `server` | `string` | Server is the HTTP/2 proxy's host:port, reached from the outside client toward the Iran server. |
 | `username` | `string` | Username authenticates the HTTP/2 proxy independently of the reverse tunnel token. |
+
+## [client.sing]
+
+| Key | Type | Description |
+|---|---|---|
+| `binary` | `string` | Binary is the absolute path to the pinned sing-box executable. |
+| `ca_file` | `string` | CAFile optionally adds a private PEM trust anchor; TLS verification stays on. |
+| `obfs_password` | `string` | ObfsPassword enables Hysteria2 Salamander when nonempty; must match the server. |
+| `password` | `string` | Password authenticates this helper separately from the reverse token. |
+| `protocol` | `string` | Protocol is hysteria2, anytls, shadowtls (v3 with SS2022), or tuic (v5). |
+| `server` | `string` | Server is the public helper endpoint, as a hostname or IP and port. |
+| `server_name` | `string` | ServerName is the identity verified by TLS, including the cover for ShadowTLS. |
+| `shadowsocks_key` | `string` | ShadowsocksKey is a canonical base64 32-byte SS2022 key for ShadowTLS only. |
+| `uuid` | `string` | UUID identifies the TUIC account; unused for the other protocols. |
 
 ## [client.xray]
 
@@ -110,6 +164,7 @@ them both ends have to agree on. This says what exists.
 | `remote_addr` | `string` | RemoteAddr is the server's address and port, as the client dials it. The port must match the server's bind_addr. |
 | `retry_interval` | `int` | RetryInterval is how many seconds to wait before dialling again after a failed attempt. |
 | `simple_auth` | `bool` | SimpleAuth authorises a wss tunnel by the raw token instead of a proof bound to the TLS session. It exists for one deployment the binding otherwise makes impossible: a TLS-terminating reverse proxy — typically NGINX — in front of the tunnel, which holds a different TLS session from the client so a bound proof can never match. It is off by default because it hands the token to whoever terminates the TLS; turn it on only when a trusted proxy is doing so, and set it on both ends. |
+| `sing` | `SingClientConfig` | Sing selects a restricted managed Hysteria2, AnyTLS, ShadowTLS or TUIC carrier. |
 | `skip_optz` | `bool` | SkipOptz stops the engine applying its own socket and sysctl tuning at start, for a machine whose tuning is managed elsewhere. |
 | `sniffer` | `bool` | Sniffer records per-port traffic for the monitor page. Off by default: it costs a write per connection. |
 | `sniffer_log` | `string` | SnifferLog is where the per-port traffic record is written. |
@@ -182,6 +237,17 @@ them both ends have to agree on. This says what exists.
 | `token` | `string` | Token is the shared secret. It is the only credential: the handshake derives its pre-shared key from it, and a peer without it is answered with silence. |
 | `txqueuelen` | `int` | TxQueueLen is how many packets the kernel may hold for the interface while the tunnel drains it. Deeper is not better — a queue is latency, and a full one is the jitter. Zero takes the default. |
 
+## [l3] native sing-box datagrams
+
+| Key | Type | Description |
+|---|---|---|
+| `sing_binary` | `string` | Binary is the absolute pinned sing-box executable path on this machine. |
+| `sing_ca` | `string` | CAFile optionally trusts a private PEM CA on the dialling side only. |
+| `sing_cert` | `string` | CertFile is the PEM TLS chain on the listening side only. |
+| `sing_key` | `string` | KeyFile is the corresponding private key; never exported in a setup link. |
+| `sing_server_name` | `string` | ServerName is the certificate identity verified by the dialling side. |
+| `sing_target` | `string` | Target is the listener's fixed numeric loopback UDP target, paired on both ends. |
+
 ## [l3] — the MASQUE carrier
 
 | Key | Type | Description |
@@ -227,6 +293,22 @@ them both ends have to agree on. This says what exists.
 | `listen` | `string` | Listen is the public TCP host:port for HTTP/2, separate from the loopback server.bind_addr. |
 | `password` | `string` | Password is the proxy account's secret, separate from server.token. |
 | `username` | `string` | Username is the proxy account accepted from the official Naive client. |
+
+## [server.sing]
+
+| Key | Type | Description |
+|---|---|---|
+| `binary` | `string` | Binary is the absolute path to the pinned sing-box executable. |
+| `certificate` | `string` | Certificate is the verified PEM certificate chain; unused for ShadowTLS. |
+| `handshake` | `string` | Handshake is the explicit ShadowTLS cover endpoint; no wildcard SNI routing. |
+| `key` | `string` | Key is the PEM private key, which remains on this server. |
+| `listen` | `string` | Listen is the public helper bind address, separate from the reverse port. |
+| `obfs_password` | `string` | ObfsPassword enables Hysteria2 Salamander; empty keeps ordinary QUIC framing. |
+| `password` | `string` | Password is the helper account secret, independent of the reverse token. |
+| `protocol` | `string` | Protocol is hysteria2, anytls, shadowtls, or tuic. |
+| `server_name` | `string` | ServerName is the TLS identity, or the verified cover identity for ShadowTLS. |
+| `shadowsocks_key` | `string` | ShadowsocksKey is the base64 32-byte SS2022 key, required for ShadowTLS v3. |
+| `uuid` | `string` | UUID is the canonical TUIC v5 account identity. |
 
 ## [server.xray]
 
@@ -276,6 +358,7 @@ them both ends have to agree on. This says what exists.
 | `preset` | `string` | Preset records which performance profile the tuning values came from — balance, turbo or aggressive. A label: the engine reads the values, never this. Set by hand only if you want the menu to stop offering to change them. |
 | `proxy_protocol` | `bool` | ProxyProtocol prefixes each forwarded connection with a PROXY protocol header, so the service behind the tunnel sees the user's real address rather than the tunnel's. The service has to be configured to expect it. |
 | `simple_auth` | `bool` | SimpleAuth authorises a wss tunnel by the raw token instead of a proof bound to the TLS session. It exists for one deployment the binding otherwise makes impossible: a TLS-terminating reverse proxy — typically NGINX — in front of the tunnel, which holds a different TLS session from the client so a bound proof can never match. It is off by default because it hands the token to whoever terminates the TLS; turn it on only when a trusted proxy is doing so, and set it on both ends. |
+| `sing` | `SingServerConfig` | Sing selects a restricted managed Hysteria2, AnyTLS, ShadowTLS or TUIC carrier. |
 | `skip_optz` | `bool` | SkipOptz stops the engine applying its own socket and sysctl tuning at start. For a machine whose tuning is managed elsewhere. |
 | `sniffer` | `bool` | Sniffer records per-port traffic for the monitor page. Off by default: it costs a write per connection and the page is reachable over SSH only. |
 | `sniffer_log` | `string` | SnifferLog is where the per-port traffic record is written. |

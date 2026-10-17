@@ -50,6 +50,18 @@ fi
 TOKEN="l3-live-token-0123456789abcdef"
 extra_k=""; extra_i=""
 case "$CARRIER" in
+  hysteria2|tuic)
+    : "${BP_SINGBOX_BINARY:?native carriers need the pinned sing-box executable}"
+    openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
+      -keyout "$W/sing-key.pem" -out "$W/sing-cert.pem" -days 1 \
+      -subj /CN=localhost -addext subjectAltName=DNS:localhost >/dev/null 2>&1 || exit 1
+    extra_k="sing_binary = \"$BP_SINGBOX_BINARY\"
+sing_server_name = \"localhost\"
+sing_cert = \"$W/sing-cert.pem\"
+sing_key = \"$W/sing-key.pem\""
+    extra_i="sing_binary = \"$BP_SINGBOX_BINARY\"
+sing_server_name = \"localhost\"
+sing_ca = \"$W/sing-cert.pem\"" ;;
   pck|sni) extra_k='pck_interface = "vk"'; extra_i='pck_interface = "vi"' ;;
   masque)
     # The test owns a private CA and verifies the listener's veth address.

@@ -2,6 +2,7 @@ package manage
 
 import (
 	"fmt"
+	"github.com/backpack/backpack/config"
 	"net"
 	"strings"
 
@@ -84,6 +85,10 @@ func manageOne(t Tunnel) {
 		})
 		switch idx {
 		case 0:
+			if t.Transport == "awg" {
+				editAWG(t)
+				break
+			}
 			// The reverse editor reads [server] and [client], which a direct
 			// config does not have. Sending one there would show an empty
 			// screen and, worse, could write a reverse-shaped file over it.
@@ -456,10 +461,15 @@ func editManagedSettings(name string, spec TunnelSpec, chosen string) {
 	if ip := net.ParseIP(host); ip != nil && ip.IsUnspecified() {
 		host = ""
 	}
-	if spec.AcceptUDP || len(spec.FallbackAddrs) > 0 || len(spec.FallbackTransports) > 0 ||
+	if spec.AcceptUDP && !config.SingProtocol(chosen) || len(spec.FallbackAddrs) > 0 || len(spec.FallbackTransports) > 0 ||
 		spec.Proxy != "" || spec.Interface != "" || spec.LocalAddr != "" || spec.SOMark != 0 || spec.LoadBalance || spec.HealthFailover {
-		tui.Warn("This HTTPS Transport Supports TCP Only; UDP, Proxies, Routing Bindings And Fallbacks Will Be Disabled.")
-		if !tui.Confirm("Continue With TCP Forwarding Only", false) {
+		warning, question := "This HTTPS Transport Supports TCP Only; UDP, Proxies, Routing Bindings And Fallbacks Will Be Disabled.", "Continue With TCP Forwarding Only"
+		if config.SingProtocol(chosen) {
+			warning = "Managed carriers do not support additional proxies, routing overrides or fallbacks."
+			question = "Continue With This Managed Carrier"
+		}
+		tui.Warn(warning)
+		if !tui.Confirm(question, false) {
 			return
 		}
 	}

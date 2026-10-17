@@ -79,6 +79,8 @@ type ShareLink struct {
 	SNI              string `json:"sni,omitempty"` // direct, sni carrier only
 	MasqueTarget     string `json:"mat,omitempty"`
 	MasqueServerName string `json:"masn,omitempty"`
+	SingTarget       string `json:"sgt,omitempty"`
+	SingServerName   string `json:"sgn,omitempty"`
 	Port             string `json:"p"`           // the tunnel port
 	Host             string `json:"h,omitempty"` // the producing side's real address
 
@@ -159,6 +161,9 @@ type ShareLink struct {
 	HelperPublicKey string `json:"hk,omitempty"`
 	HelperShortID   string `json:"hsid,omitempty"`
 	HelperCA        string `json:"hca,omitempty"`
+	HelperObfs      string `json:"hob,omitempty"`
+	HelperSSKey     string `json:"hss,omitempty"`
+	AWGPeer         string `json:"awgp,omitempty"`
 }
 
 // Encode renders a link as the string an operator copies.
@@ -274,7 +279,7 @@ func checkShareLink(out ShareLink) error {
 		return fmt.Errorf("the setup link is missing the token or the transport — it was not made by this version")
 	}
 	switch out.Kind {
-	case "reverse", "direct":
+	case "reverse", "direct", "awg":
 	default:
 		return fmt.Errorf("the setup link does not say what kind of tunnel it is")
 	}
@@ -306,6 +311,7 @@ type PeerForm struct {
 	Carrier    string              `json:"carrier,omitempty"`   // direct
 	SNIDomain  string              `json:"sniDomain,omitempty"` // direct, sni carrier only
 	Masque     config.MasqueConfig `json:"masque,omitempty"`
+	Sing       config.SingL3Config `json:"sing,omitempty"`
 	Encap      string              `json:"encap,omitempty"`      // direct
 	ServerAddr string              `json:"serverAddr,omitempty"` // the address this side dials
 	TunnelPort string              `json:"tunnelPort,omitempty"`
@@ -356,7 +362,7 @@ type PeerForm struct {
 // and so needs the link's Host.
 func (l ShareLink) PeerNeedsAddress() bool {
 	side := l.PeerSide()
-	return (l.Kind == "reverse" && side == "kharej") || (l.Kind == "direct" && side == "iran")
+	return ((l.Kind == "reverse" || l.Kind == "awg") && side == "kharej") || (l.Kind == "direct" && side == "iran")
 }
 
 // NeedsServerAddr reports whether the side this form builds dials the other.
@@ -421,6 +427,10 @@ func MirrorForPeer(l ShareLink) PeerForm {
 		}
 	} else {
 		f.Carrier = l.Tr
+		if config.SingDatagram(l.Tr) {
+			f.Sing.Target, f.Sing.ServerName = l.SingTarget, l.SingServerName
+			f.Sing.Binary = managedHelperPath("sing-box")
+		}
 		if l.Tr == "masque" {
 			f.Masque.Target, f.Masque.ServerName = l.MasqueTarget, l.MasqueServerName
 			paired = append(paired, "masque.target", "masque.serverName")
@@ -591,11 +601,14 @@ func shareLinkWith(name, host string, cfg config.Config, x linkExtras) (string, 
 // shareLinkOf builds the link from a config in hand, which is how the direct
 // wizard shows it in its summary before the tunnel is written.
 func shareLinkOf(name, host string, cfg config.Config) (string, error) {
-	if cfg.Client.Naive.Enabled() || cfg.Client.Xray.Enabled() {
+	if cfg.Client.Managed() {
 		return "", fmt.Errorf("generate the managed HTTPS setup link on Iran; server private keys cannot be reconstructed from Kharej")
 	}
 	l := ShareLink{Name: name, Host: strings.TrimSpace(host)}
 
+	if cfg.AWG.Enabled() {
+		return awgLink(name, strings.TrimSpace(host), cfg.AWG)
+	}
 	switch {
 	case cfg.L3.Enabled():
 		l.Kind = "direct"
@@ -606,6 +619,9 @@ func shareLinkOf(name, host string, cfg config.Config) (string, error) {
 		l.Tok = cfg.L3.Token
 		l.Tr = orDefault(cfg.L3.Carrier, "udp")
 		l.SNI = cfg.L3.SNIDomain
+		if config.SingDatagram(l.Tr) {
+			l.SingTarget, l.SingServerName = cfg.L3.SingL3Config.TargetAddr(), cfg.L3.SingL3Config.ServerName
+		}
 		if l.Tr == "masque" {
 			l.MasqueTarget = cfg.L3.MasqueConfig.TargetAddr()
 			l.MasqueServerName = cfg.L3.MasqueConfig.ServerName
@@ -660,10 +676,16 @@ func shareLinkOf(name, host string, cfg config.Config) (string, error) {
 	if l.Tok == "" {
 		return "", fmt.Errorf("%q has no token to hand over", name)
 	}
-	if cfg.Server.Naive.Enabled() || cfg.Server.Xray.Enabled() {
+	if cfg.Server.Managed() {
 		l.InnerPort = l.Port
 		var cert string
-		if cfg.Server.Naive.Enabled() {
+
+		if cfg.Server.Sing.Enabled() {
+			x := cfg.Server.Sing
+			l.Tr, l.Port, l.HelperPassword, l.HelperSNI = x.Protocol, addrPort(x.Listen), x.Password, x.ServerName
+			l.HelperUUID, l.HelperObfs, l.HelperSSKey = x.UUID, x.ObfsPassword, x.ShadowsocksKey
+			cert = x.Certificate
+		} else if cfg.Server.Naive.Enabled() {
 			x := cfg.Server.Naive
 			l.Tr, l.Port, l.HelperUser, l.HelperPassword = "naive", addrPort(x.Listen), x.Username, x.Password
 			cert = x.Certificate
@@ -758,7 +780,7 @@ func prepareManagedLink(s TunnelSpec, link ShareLink) error {
 	}
 	inner, _ := strconv.Atoi(link.InnerPort)
 	outer, _ := strconv.Atoi(link.Port)
-	if link.Kind != "reverse" || link.From != "iran" || !validPort(link.InnerPort) || !validPort(link.Port) || inner == outer || link.AcceptUDP || len(link.Fallbacks) != 0 || len(link.Hosts) != 0 {
+	if link.Kind != "reverse" || link.From != "iran" || !validPort(link.InnerPort) || !validPort(link.Port) || inner == outer || link.AcceptUDP && !config.SingProtocol(link.Tr) || len(link.Fallbacks) != 0 || len(link.Hosts) != 0 {
 		return fmt.Errorf("invalid managed HTTPS setup link; generate a new link on Iran")
 	}
 	if link.HelperCA != "" {
@@ -766,7 +788,7 @@ func prepareManagedLink(s TunnelSpec, link ShareLink) error {
 			return err
 		}
 		withoutCA := s
-		withoutCA.NaiveClient.CAFile, withoutCA.XrayClient.CAFile = "", ""
+		withoutCA.NaiveClient.CAFile, withoutCA.XrayClient.CAFile, withoutCA.SingClient.CAFile = "", "", ""
 		if err := validateManagedSpec(withoutCA); err != nil {
 			return err
 		}
@@ -783,7 +805,11 @@ func managedClientFromLink(s *TunnelSpec, link ShareLink, host string) {
 	s.FallbackAddrs, s.FallbackTransports = nil, nil
 	s.FallbackDwell = 0
 	public := net.JoinHostPort(host, link.Port)
-	if link.Tr == "naive" {
+
+	if config.SingProtocol(link.Tr) {
+		s.SingClient = config.SingClientConfig{Binary: managedHelperPath("sing-box"), Protocol: link.Tr, Server: public, ServerName: link.HelperSNI,
+			Password: link.HelperPassword, UUID: link.HelperUUID, ObfsPassword: link.HelperObfs, ShadowsocksKey: link.HelperSSKey, CAFile: managedLinkCAPath(link.HelperCA)}
+	} else if link.Tr == "naive" {
 		s.NaiveClient = config.NaiveClientConfig{Binary: managedHelperPath("naive"), Server: public,
 			Username: link.HelperUser, Password: link.HelperPassword, CAFile: managedLinkCAPath(link.HelperCA)}
 	} else {

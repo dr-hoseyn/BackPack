@@ -1,5 +1,34 @@
 # Experimental AmneziaWG
 
+## Managed setup
+
+Use matching builds containing this feature on both machines; an older
+published binary cannot apply the new link. **Setup Iran → AmneziaWG** creates
+an independent pair, stores Iran's private TOML and installs a per-tunnel
+systemd service. **Setup Kharej → AmneziaWG** accepts the Setup Link, as does
+`backpack link apply 'backpack://…'`.
+
+The creator retains the generated peer identity in its private `peer_setup_key`
+so Manage → Setup Link can reproduce the peer configuration, just as `awg init`
+retains client.json. Only the receiving identity is exported; the creator's
+own private key never travels in that link. Treat both configs and links as
+private credentials, mode `0600`.
+
+The `[awg]` engine is mutually exclusive with the other engines. It preserves
+the exclusive TUN and peer-only route policy below. It does not install NAT,
+default routes, forwarding sysctls or firewall rules. The normal CLI and panel
+can start, stop, restart, delete and monitor it, and edit forwarded TCP/UDP ports
+and forwarding limits. The creator's Iran side listens and Kharej dials it.
+Backends must listen on their tunnel IP or wildcard, since only the peer host
+prefix is routed. Pair creation uses the terminal.
+
+Metrics contain the public endpoint, byte counters and state derived from a
+recent handshake, never raw device IPC or keys. Creating the interface alone
+does not mark it connected. Device failures retry under the tunnel context;
+systemd restarts a failed process. Normal config reload/rollback management
+applies. Pairing, endpoint, MTU and obfuscation edits require matching peer
+configuration. The standalone JSON commands below remain available.
+
 `backpack awg` is an opt-in **independent point-to-point L3 engine**, pinned to
 [amneziawg-go v3.1.20260828](https://github.com/amnezia-vpn/amneziawg-go/tree/v3.1.20260828).
 It carries IP using AmneziaWG's own authenticated protocol, rather than wrapping
@@ -69,10 +98,10 @@ availability verdict: test actual payload transfer in both directions. Normal
 WireGuard rekey behavior applies; after a peer loses its session state, recovery
 may wait for the next handshake. Existing application connections may time out.
 
-This first version does not provide the ordinary tunnel wizard, setup links,
-forwarded-port mappings, service installation, panel metrics, automatic restart,
-endpoint failover or general routed subnets. It is intentionally a standalone
-prototype, like `short-https`. It does not use ordinary `[l3]` configuration.
+The standalone JSON command does not install services or use `[l3]`
+configuration. Use managed setup above for menus, links, forwarding, services
+and metrics. General routed subnets and endpoint failover remain outside this
+bounded peer-only engine.
 Use `awg check` before `awg run`; it validates configuration without creating an
 interface, opening network sockets or modifying routes. `init` and `check` also
 work on platforms where running the engine is unsupported.
@@ -94,9 +123,10 @@ tests establish implementation behavior, not resistance to every censor.
 `backpack awg init` دو فایل خصوصی ساخته می‌شود؛ فقط `client.json` را به سمت
 اتصال‌گیرنده منتقل کن. هر دو سمت را با `awg check` بررسی و سپس با `awg run`
 اجرا کن. لینوکس، TUN، دسترسی مدیریت شبکه و UDP قابل استفاده لازم است.
-فقط رابط اختصاصی و مسیر تک‌آدرس همتا ساخته می‌شوند؛ منو، پنل، سرویس دائمی و
-فوروارد پورت معمول بک‌پک هنوز به این نمونه متصل نیستند. موفقیت را با انتقال
-واقعی داده بسنج؛ بالا آمدن رابط به معنی برقراری تونل نیست.
+برای نصب مدیریت‌شده از منوی AmneziaWG استفاده کن؛ لینک همتا، سرویس دائمی،
+فوروارد TCP/UDP و آمار اتصال به مدیریت معمول بک‌پک متصل‌اند. فقط رابط اختصاصی
+و مسیر تک‌آدرس همتا ساخته می‌شوند. موفقیت را با انتقال واقعی داده بسنج؛
+بالا آمدن رابط به معنی برقراری تونل نیست.
 
 </div>
 

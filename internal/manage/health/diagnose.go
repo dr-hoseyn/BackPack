@@ -433,6 +433,9 @@ func tunnelChecksFor(t core.Tunnel, pairs [][2]string) []Check {
 		switch {
 		case host == "" || port == "":
 			// Nothing to probe.
+
+		case spec.SingClient.Enabled():
+			out = append(out, Check{Group: g, Name: "Reachability", Level: CheckInfo, Detail: "managed " + spec.SingClient.Protocol + " via " + spec.SingClient.Server + "; the loopback target is on Iran", Fix: "verify real traffic through the forwarded port; local listener readiness is not tunnel health"})
 		case spec.NaiveClient.Enabled():
 			// remote_addr belongs to Iran behind CONNECT; a direct dial on
 			// this machine would inspect an unrelated local service.
@@ -468,7 +471,7 @@ func tunnelChecksFor(t core.Tunnel, pairs [][2]string) []Check {
 	// full-sized packet. Only worth measuring on a tunnel that is up; on one
 	// that is not, the checks above already say why. See diagnose_path.go.
 	if h.State == "online" {
-		if spec.NaiveServer.Enabled() || spec.NaiveClient.Enabled() || spec.XrayServer.Enabled() || spec.XrayClient.Enabled() {
+		if spec.NaiveServer.Enabled() || spec.NaiveClient.Enabled() || spec.XrayServer.Enabled() || spec.XrayClient.Enabled() || spec.SingServer.Enabled() || spec.SingClient.Enabled() {
 			out = append(out, managedPathChecks(g, t)...)
 		} else {
 			out = append(out, pathChecks(g, t)...)
@@ -484,6 +487,10 @@ func tunnelChecksFor(t core.Tunnel, pairs [][2]string) []Check {
 	}
 	if t.Role == "server" && spec.XrayServer.Enabled() && spec.XrayServer.Mode == "xhttp" {
 		out = append(out, certCheck(g, spec.XrayServer.Certificate))
+	}
+
+	if t.Role == "server" && spec.SingServer.Enabled() && spec.SingServer.Protocol != "shadowtls" {
+		out = append(out, certCheck(g, spec.SingServer.Certificate))
 	}
 
 	// Token sanity — a default/short token is a real security problem.
@@ -743,6 +750,15 @@ func directChecks(g string, t core.Tunnel) []Check {
 			Detail: "unreadable: " + err.Error(), Fix: "restore from a backup"})
 	}
 
+	if cfg.AWG.Enabled() {
+		out = append(out, Check{Group: g, Name: "Config", Level: CheckOK, Detail: "independent AmneziaWG engine; only the peer host route is installed"})
+		if ifaceExists(cfg.AWG.Interface) {
+			out = append(out, Check{Group: g, Name: "Interface", Level: CheckOK, Detail: cfg.AWG.Interface})
+		} else {
+			out = append(out, Check{Group: g, Name: "Interface", Level: CheckFail, Detail: "missing " + cfg.AWG.Interface, Fix: "check TUN access and the service log"})
+		}
+		return out
+	}
 	if cfg.L3.Enabled() {
 		l := cfg.L3
 		out = append(out, Check{Group: g, Name: "Config", Level: CheckOK,

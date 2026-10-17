@@ -73,10 +73,11 @@ func fileFingerprint(path string) (fingerprint, error) {
 // A renewed helper certificate is not a TOML edit. Compare contents so an
 // identical rewrite does not interrupt traffic, and validate a replacement
 // before stopping the current generation. No helper means no extra file reads.
-func helperTLSIdentity(cfg *config.Config) ([7][sha256.Size]byte, error) {
-	var identity [7][sha256.Size]byte
-	paths := [7]string{cfg.Server.Naive.Certificate, cfg.Server.Naive.Key, cfg.Client.Naive.CAFile, cfg.Server.Xray.Certificate, cfg.Server.Xray.Key, cfg.Client.Xray.CAFile, cfg.Client.Xray.DownloadCAFile}
-	for i, path := range paths {
+func helperTLSIdentity(cfg *config.Config) ([sha256.Size]byte, error) {
+	var identity [sha256.Size]byte
+	hash := sha256.New()
+	paths := [...]string{cfg.L3.SingL3Config.CertFile, cfg.L3.SingL3Config.KeyFile, cfg.L3.SingL3Config.CAFile, cfg.Server.Sing.Certificate, cfg.Server.Sing.Key, cfg.Client.Sing.CAFile, cfg.Server.Naive.Certificate, cfg.Server.Naive.Key, cfg.Client.Naive.CAFile, cfg.Server.Xray.Certificate, cfg.Server.Xray.Key, cfg.Client.Xray.CAFile, cfg.Client.Xray.DownloadCAFile}
+	for _, path := range paths {
 		if path == "" {
 			continue
 		}
@@ -84,8 +85,14 @@ func helperTLSIdentity(cfg *config.Config) ([7][sha256.Size]byte, error) {
 		if err != nil {
 			return identity, err
 		}
-		identity[i] = sha256.Sum256(body)
+		// Fixed-size content digests plus NUL-terminated filenames make the
+		// aggregate unambiguous without a parallel, fixed-capacity array.
+		sum := sha256.Sum256(body)
+		hash.Write([]byte(path))
+		hash.Write([]byte{0})
+		hash.Write(sum[:])
 	}
+	copy(identity[:], hash.Sum(nil))
 	return identity, nil
 }
 
@@ -127,7 +134,7 @@ func awaitConfigChange(ctx, gen context.Context, path string, current *config.Co
 	lastTLS, _ := helperTLSIdentity(current)
 	var lastComplaint struct {
 		config fingerprint
-		tls    [7][sha256.Size]byte
+		tls    [sha256.Size]byte
 	}
 
 	ticker := time.NewTicker(configPollInterval)
@@ -151,7 +158,7 @@ func awaitConfigChange(ctx, gen context.Context, path string, current *config.Co
 		last = fp
 		complaint := struct {
 			config fingerprint
-			tls    [7][sha256.Size]byte
+			tls    [sha256.Size]byte
 		}{fp, tlsIdentity}
 
 		next, err := loadConfig(path)
@@ -257,7 +264,17 @@ func bindingIsFree(binding listenerBinding) bool {
 // server that actually needs waiting for.
 func portsInUse(cfg *config.Config) []listenerBinding {
 	var bindings []listenerBinding
+	if cfg.AWG.Enabled() && cfg.AWG.ListenPort > 0 {
+		bindings = append(bindings, listenerBinding{network: "udp", address: net.JoinHostPort("0.0.0.0", itoa(cfg.AWG.ListenPort))})
+	}
 	if cfg.Server.BindAddr != "" {
+		if cfg.Server.Sing.Enabled() {
+			network := "tcp"
+			if config.SingDatagram(cfg.Server.Sing.Protocol) {
+				network = "udp"
+			}
+			bindings = append(bindings, listenerBinding{network: network, address: cfg.Server.Sing.Listen})
+		}
 		if cfg.Server.Naive.Enabled() {
 			bindings = append(bindings, listenerBinding{network: "tcp", address: cfg.Server.Naive.Listen})
 		}

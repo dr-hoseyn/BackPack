@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/backpack/backpack/config"
 	"github.com/backpack/backpack/internal/tui"
 )
 
@@ -93,7 +94,37 @@ func setupFromLink() {
 		return
 	}
 
+	if link.Kind == "awg" {
+		c, err := awgFromLink(link)
+		if err != nil {
+			tui.Error(err.Error())
+			tui.PressEnter()
+			return
+		}
+		name := tui.PromptDefault("Tunnel Name", peerName(link))
+		c.Interface = tui.PromptDefault("Exclusive Interface Name", c.Interface)
+		tui.Info("AmneziaWG peer " + c.Endpoint + " · " + c.Address + " ↔ " + c.PeerAddress)
+		if tui.Confirm("Create This Tunnel", true) {
+			if _, err := installAWG(name, c); err != nil {
+				tui.Error(err.Error())
+			}
+		}
+		tui.PressEnter()
+		return
+	}
 	form := MirrorForPeer(link)
+
+	if config.SingDatagram(form.Carrier) {
+		side := sideIran
+		if form.Side == "kharej" {
+			side = sideKharej
+		}
+		cfg := l3Spec{Carrier: form.Carrier, Sing: form.Sing}
+		if !askL3CarrierExtras(&cfg, side) {
+			return
+		}
+		form.Sing = cfg.Sing
+	}
 	if form.Carrier == "masque" {
 		side := sideIran
 		if form.Side == "kharej" {

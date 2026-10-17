@@ -208,16 +208,24 @@ func TestAConnectionTestOverLoopbackPassesEveryReverseTransport(t *testing.T) {
 		defer func() { connTestHelperBinary = previous }()
 	}
 	connTestSoak = 8
+	coverCert, coverKey, coverCA, err := ctCertificate(t.TempDir(), "cover", "localhost")
+	if err != nil {
+		t.Fatal(err)
+	}
+	coverIdentity, err := tls.LoadX509KeyPair(coverCert, coverKey)
+	if err != nil {
+		t.Fatal(err)
+	}
 	cover := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	cover.EnableHTTP2 = true
-	cover.TLS = &tls.Config{MinVersion: tls.VersionTLS13}
+	cover.TLS = &tls.Config{MinVersion: tls.VersionTLS13, Certificates: []tls.Certificate{coverIdentity}}
 	cover.StartTLS()
 	defer cover.Close()
 	_, coverPort, _ := net.SplitHostPort(cover.Listener.Addr().String())
 
-	iran, link, err := StartConnTestIran(ConnTestOptions{Host: host, RealityTarget: "localhost:" + coverPort})
+	iran, link, err := StartConnTestIran(ConnTestOptions{Host: host, RealityTarget: "localhost:" + coverPort, ShadowTLSCA: coverCA})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -227,6 +235,18 @@ func TestAConnectionTestOverLoopbackPassesEveryReverseTransport(t *testing.T) {
 	for _, c := range iran.cases {
 		if !managedTransport(c.tr) || c.skip != "" {
 			continue
+		}
+		// Naive's listener uses sing-box, while its client is a separate
+		// optional executable. A sing-only host can test the four new modes;
+		// its actual Kharej run reports Naive as skipped. The all-helper gate
+		// remains strict and requires the production peer comparison below.
+		if c.tr == "naive" {
+			if _, err := connTestHelperBinary("naive"); err != nil {
+				if os.Getenv("BP_CONNTEST_HELPERS") == "1" {
+					t.Fatal(err)
+				}
+				continue
+			}
 		}
 		var cfg config.Config
 		if _, err := toml.DecodeFile(filepath.Join(iran.dir, c.name+".toml"), &cfg); err != nil {
@@ -251,13 +271,15 @@ func TestAConnectionTestOverLoopbackPassesEveryReverseTransport(t *testing.T) {
 		// The test's trust file is disposable; persistent setup uses its hash.
 		production.NaiveClient.CAFile = testPeer.NaiveClient.CAFile
 		production.XrayClient.CAFile = testPeer.XrayClient.CAFile
+		production.SingClient.CAFile = testPeer.SingClient.CAFile
 		// An isolated fixture changes only the local executable path; Setup
 		// Links deliberately use the installed helper path on their own host.
 		if os.Getenv("BP_CONNTEST_HELPERS_ROOT") != "" {
 			production.NaiveClient.Binary = testPeer.NaiveClient.Binary
 			production.XrayClient.Binary = testPeer.XrayClient.Binary
+			production.SingClient.Binary = testPeer.SingClient.Binary
 		}
-		if production.NaiveClient != testPeer.NaiveClient || production.XrayClient != testPeer.XrayClient || production.RemoteAddr != testPeer.RemoteAddr || production.Token != testPeer.Token {
+		if production.NaiveClient != testPeer.NaiveClient || production.XrayClient != testPeer.XrayClient || production.SingClient != testPeer.SingClient || production.RemoteAddr != testPeer.RemoteAddr || production.Token != testPeer.Token {
 			t.Fatalf("%s production Setup Link differs from the tested helper peer", c.tr)
 		}
 		if err := validateManagedSpec(production); err != nil {
@@ -306,6 +328,9 @@ func TestAConnectionTestOverLoopbackPassesEveryReverseTransport(t *testing.T) {
 			want := "tls-ok"
 			if r.Transport == "reality" {
 				want = "tcp-ok"
+			}
+			if config.SingProtocol(r.Transport) {
+				want = "not-applicable"
 			}
 			if r.HTTPSProbe != want || r.TestPort < 1 {
 				t.Errorf("%s lost its independent HTTPS diagnostics: %+v", r.Transport, r)

@@ -224,6 +224,7 @@ func validateConfig(cfg *config.Config) error {
 	for _, check := range []func(*config.Config) error{
 		checkNaive,
 		checkXray,
+		checkSing,
 		checkOutbound,
 		checkXdi,
 		checkSpoof,
@@ -628,4 +629,14 @@ func warnUnusedStreamBuffer(cfg *config.Config) {
 	if cfg.Client.MaxStreamBuffer > 0 && cfg.Client.MuxVersion == 1 && cfg.Client.RemoteAddr != "" {
 		logger.Warn(unusedStreamBufferWarning)
 	}
+}
+
+func checkSing(cfg *config.Config) error {
+	if !cfg.Client.Sing.Enabled() && !cfg.Server.Sing.Enabled() {
+		return nil
+	}
+	if runtime.GOOS != "linux" {
+		return fmt.Errorf("managed sing-box carriers require Linux")
+	}
+	return naive.ValidateSing(cfg)
 }

@@ -73,8 +73,8 @@ const connTestKind = "test"
 // the direct ones when the operator names a source to forge (see
 // ConnTestOptions.SpoofSrc); pck, on either side, needs root on both servers.
 var (
-	connTestReverse = []string{"tcp", "tcpmux", "stealth", "pck", "ws", "wss", "wsmux", "wssmux", "kcp", "quic", "udp", "naive", "xhttp", "reality"}
-	connTestDirect  = []string{"udp", "quic", "pck", "xdi", "sni", "masque"}
+	connTestReverse = []string{"tcp", "tcpmux", "stealth", "pck", "ws", "wss", "wsmux", "wssmux", "kcp", "quic", "udp", "naive", "xhttp", "reality", "hysteria2", "anytls", "shadowtls", "tuic"}
+	connTestDirect  = []string{"udp", "quic", "pck", "xdi", "sni", "masque", "hysteria2", "tuic"}
 )
 
 // connTestNeedsRoot is a reverse transport that builds its own packets.
@@ -388,6 +388,9 @@ type ConnTestOptions struct {
 	// RealityTarget is an explicit reachable TLS 1.3/H2 hostname:port used
 	// for the REALITY cover handshake. Empty selects a verified endpoint automatically.
 	RealityTarget string
+	// ShadowTLSCA optionally supplies public PEM trust for an explicit private
+	// cover. Empty uses system trust; certificate verification is never disabled.
+	ShadowTLSCA string
 	// Direct includes the direct tunnels. They need root on both servers.
 	Direct bool
 	// Preset is balance, turbo or aggressive; empty is turbo, the wizards'
@@ -782,7 +785,7 @@ func ctFindRealityCover(ctx context.Context, targets []string, probe func(contex
 
 func (s *ConnTestIran) startManagedCase(c *connTestCase, used map[int]bool, o ConnTestOptions) {
 	tool := "xray"
-	if c.tr == "naive" {
+	if c.tr == "naive" || config.SingProtocol(c.tr) {
 		tool = "sing-box"
 	}
 	binary, err := connTestHelperBinary(tool)
@@ -792,6 +795,16 @@ func (s *ConnTestIran) startManagedCase(c *connTestCase, used map[int]bool, o Co
 	}
 	coverHost := ""
 	coverTarget := strings.TrimSpace(o.RealityTarget)
+	if c.tr == "shadowtls" {
+		if coverTarget == "" {
+			coverTarget = "www.microsoft.com:443"
+		}
+		coverHost, _, err = net.SplitHostPort(coverTarget)
+		if err != nil {
+			c.skip = "invalid ShadowTLS cover"
+			return
+		}
+	}
 	if c.tr == "reality" {
 		if coverTarget == "" {
 			ctx := o.Context
@@ -847,16 +860,37 @@ func (s *ConnTestIran) startManagedCase(c *connTestCase, used map[int]bool, o Co
 	}
 	c.link.Tr, c.link.Port, c.link.Name = c.tr, strconv.Itoa(port), c.name
 	settings := ctCarrierSettings{TargetPort: targetPort, ServerName: "conntest.backpack.invalid"}
+	if c.tr == "shadowtls" && o.ShadowTLSCA != "" {
+		if _, err := managedLinkCertificates(o.ShadowTLSCA); err != nil {
+			c.skip = "invalid ShadowTLS cover trust: " + err.Error()
+			return
+		}
+		settings.CA = o.ShadowTLSCA
+	}
 	public := net.JoinHostPort(ctBindHost(s.link.Host), strconv.Itoa(port))
 	var cert, key string
-	if c.tr != "reality" {
+	if c.tr != "reality" && c.tr != "shadowtls" {
 		cert, key, settings.CA, err = ctCertificate(s.dir, c.name, s.link.Host)
 		if err != nil {
 			c.skip = "creating the test certificate: " + err.Error()
 			return
 		}
 	}
+
 	switch c.tr {
+	case "hysteria2", "anytls", "tuic", "shadowtls":
+		spec.SingServer = config.SingServerConfig{Binary: binary, Listen: public, Protocol: c.tr, ServerName: settings.ServerName, Password: token, Certificate: cert, Key: key}
+		if c.tr == "tuic" {
+			spec.SingServer.UUID = ctUUID(token)
+		}
+		if c.tr == "hysteria2" {
+			spec.SingServer.ObfsPassword = token
+		}
+		if c.tr == "shadowtls" {
+			settings.ServerName = coverHost
+			spec.SingServer.ServerName, spec.SingServer.Handshake = coverHost, coverTarget
+			spec.SingServer.ShadowsocksKey = base64.StdEncoding.EncodeToString([]byte(token))
+		}
 	case "naive":
 		spec.NaiveServer = config.NaiveServerConfig{Binary: binary, Listen: public,
 			Username: "backpack", Password: token, Certificate: cert, Key: key}
@@ -900,6 +934,9 @@ func (s *ConnTestIran) startManagedCase(c *connTestCase, used map[int]bool, o Co
 
 func ctManagedClient(ctx context.Context, link ConnTestLink, c ShareLink, dir string) (TunnelSpec, error) {
 	tool := "xray"
+	if config.SingProtocol(c.Tr) {
+		tool = "sing-box"
+	}
 	if c.Tr == "naive" {
 		tool = "naive"
 	}
@@ -922,6 +959,15 @@ func ctManagedClient(ctx context.Context, link ConnTestLink, c ShareLink, dir st
 	paired.InnerPort = strconv.Itoa(settings.TargetPort)
 	paired.HelperUser, paired.HelperPassword = "backpack", c.Tok
 	paired.HelperUUID, paired.HelperSNI = ctUUID(c.Tok), settings.ServerName
+	if config.SingProtocol(c.Tr) && c.Tr != "tuic" {
+		paired.HelperUUID = ""
+	}
+	if c.Tr == "hysteria2" {
+		paired.HelperObfs = c.Tok
+	}
+	if c.Tr == "shadowtls" {
+		paired.HelperSSKey = base64.StdEncoding.EncodeToString([]byte(c.Tok))
+	}
 	paired.HelperPublicKey, paired.HelperShortID = settings.PublicKey, settings.ShortID
 	if c.Tr == "xhttp" {
 		paired.HelperPath = "/" + c.Tok
@@ -929,18 +975,22 @@ func ctManagedClient(ctx context.Context, link ConnTestLink, c ShareLink, dir st
 	spec := reverseClientFromLink(paired, link.Host)
 	var ca string
 	if c.Tr != "reality" {
-		if settings.CA == "" {
+		if settings.CA == "" && c.Tr != "shadowtls" {
 			return TunnelSpec{}, errors.New("the managed TLS test has no trust certificate")
 		}
-		if _, err := managedLinkCertificates(settings.CA); err != nil {
-			return TunnelSpec{}, err
-		}
-		ca = filepath.Join(dir, c.Tr+".crt")
-		if err := os.WriteFile(ca, []byte(settings.CA), 0600); err != nil {
-			return TunnelSpec{}, err
+		if settings.CA != "" {
+			if _, err := managedLinkCertificates(settings.CA); err != nil {
+				return TunnelSpec{}, err
+			}
+			ca = filepath.Join(dir, c.Tr+".crt")
+			if err := os.WriteFile(ca, []byte(settings.CA), 0600); err != nil {
+				return TunnelSpec{}, err
+			}
 		}
 	}
-	if c.Tr == "naive" {
+	if config.SingProtocol(c.Tr) {
+		spec.SingClient.Binary, spec.SingClient.CAFile = binary, ca
+	} else if c.Tr == "naive" {
 		spec.NaiveClient.Binary, spec.NaiveClient.CAFile = binary, ca
 	} else {
 		spec.XrayClient.Binary, spec.XrayClient.CAFile = binary, ca
@@ -984,6 +1034,18 @@ func (s *ConnTestIran) Run(ctx context.Context, progress func(int, ConnTestResul
 		_, port, _ := net.SplitHostPort(c.l3.Addr)
 		port = s.coord.directPort(c.caseKey(), port)
 		c.l3.Addr = net.JoinHostPort(kharej, port)
+
+		if config.SingDatagram(c.tr) {
+			s.coord.mu.Lock()
+			raw := s.coord.carriers["direct/"+c.tr]
+			s.coord.mu.Unlock()
+			cfg, err := ctSingClient(raw, s.dir, c.name)
+			if err != nil {
+				c.skip = "native helper identity unavailable: " + err.Error()
+				continue
+			}
+			c.l3.Sing = cfg
+		}
 		if c.tr == "masque" {
 			s.coord.mu.Lock()
 			raw := s.coord.masqueSettings
@@ -1792,6 +1854,9 @@ func (c *ctCoordinator) answer(line, from string) string {
 	if len(f) > 3 {
 		return ""
 	}
+	if f[0] == "sing-cert" && len(f) == 3 {
+		return ctAcceptSingIdentity(c, f[2])
+	}
 	if f[0] == "masque-cert" && len(f) == 3 {
 		if _, err := ctDecodeMasqueSettings(f[2]); err != nil {
 			return ""
@@ -2164,6 +2229,15 @@ func runConnTestKharejLink(ctx context.Context, link ConnTestLink, out io.Writer
 				form.TunnelPort = port
 			}
 			n := form.ToNewDirectTunnel()
+
+			if config.SingDatagram(c.Tr) {
+				native, err := ctSingListener(ctx, link, c.Tr, dir, name, usedDirectPorts)
+				if err != nil {
+					local[c.Kind+"/"+key] = err.Error()
+					continue
+				}
+				n.Sing = native
+			}
 			if c.Tr == "masque" {
 				var err error
 				n.Masque, err = ctMasqueListener(ctx, link, dir, name, usedDirectPorts)
