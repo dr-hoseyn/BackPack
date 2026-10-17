@@ -16,16 +16,19 @@ import (
 )
 
 const (
-	ctSpeedMagic         = "BP-SPEED/1\n"
-	ctSpeedAck           = "BP-SPEED/1 OK\n"
-	ctSpeedStreams       = 4
-	ctSpeedBlock         = 32 << 10
-	ctSpeedWarmup        = 2 * time.Second
-	ctSpeedMinimum       = 2 * time.Second
-	ctSpeedMaximum       = 4 * time.Second
-	ctSpeedInterval      = 500 * time.Millisecond
-	ctSpeedDialWait      = 3 * time.Second
-	ctSpeedHandshakeWait = 3 * time.Second
+	ctSpeedMagic    = "BP-SPEED/1\n"
+	ctSpeedAck      = "BP-SPEED/1 OK\n"
+	ctSpeedStreams  = 4
+	ctSpeedBlock    = 32 << 10
+	ctSpeedWarmup   = 2 * time.Second
+	ctSpeedMinimum  = 2 * time.Second
+	ctSpeedMaximum  = 4 * time.Second
+	ctSpeedInterval = 500 * time.Millisecond
+	ctSpeedDialWait = 3 * time.Second
+	// The verified 32 KiB handshake needs sixteen 2 KiB HTTPS exchanges on
+	// Short HTTPS. Fresh TCP/TLS/HTTP round trips on a 70 ms path exceed 3s
+	// before sampling can begin. Keep setup bounded and outside measurement.
+	ctSpeedHandshakeWait = 8 * time.Second
 	ctSpeedIOGrace       = 2 * time.Second
 	// Each direction may spend a dial budget, a protocol handshake, then
 	// warmup and sampling. A shared 20s deadline could expire on upload even

@@ -12,6 +12,7 @@ import (
 	"os"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/net/http2/hpack"
@@ -45,6 +46,7 @@ type Conn struct {
 	wake            chan struct{}
 	terminal        error
 	writes          map[*writeOperation]bool
+	dropped         atomic.Uint64
 }
 
 func newConn(ctx context.Context) *Conn {
@@ -86,6 +88,7 @@ func (c *Conn) session(conn net.Conn, server bool, headers []hpack.HeaderField, 
 		select {
 		case c.in <- pkt:
 		default:
+			c.dropped.Add(1)
 		} // A slow TUN drops packets instead of growing memory.
 	})
 	c.mu.Lock()
