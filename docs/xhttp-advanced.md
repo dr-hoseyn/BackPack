@@ -90,4 +90,4 @@ not certify a particular commercial CDN or filtering environment.
 
 ---
 
-*Last verified against Backpack v1.9.3.*
+*Last verified against Backpack v1.10.0.*

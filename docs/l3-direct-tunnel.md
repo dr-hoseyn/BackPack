@@ -720,4 +720,4 @@ obfuscated به `CAP_NET_RAW` هم نیاز دارند). **هیچ‌وقت حا�
 
 ---
 
-*Last verified against Backpack v1.9.3.*
+*Last verified against Backpack v1.10.0.*

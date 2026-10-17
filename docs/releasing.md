@@ -23,18 +23,14 @@ written down, so a release made in a hurry is the same release.
       `govulncheck`.
 - [ ] The compatibility job passed: the previous release talks to this one in
       both directions, over every reverse transport and under concurrent load.
-- [ ] The l3 carriers ran on a real TUN, on a machine that allows unprivileged
-      user namespaces (CI does not), with the previous release at one end:
-      ```
-      git worktree add --detach /tmp/prev <previous tag>
-      (cd /tmp/prev && go build -o /tmp/backpack-prev .)
-      BP_L3_LIVE=1 BACKPACK_PREV_BINARY=/tmp/backpack-prev \
-        go test ./internal/e2e -run TestL3CarriersOverARealTUN -count=1 -v
-      ```
-      Every carrier, a listener killed and restarted, a lossy path, and udp,
-      quic and pck across versions both ways. On Ubuntu this needs
-      `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0` first; it
-      resets on reboot.
+- [ ] The protocol suite passed native Hysteria2/TUIC and managed AmneziaWG
+      real TUN tests under IPv4/IPv6, restart and loss. The release workflow
+      additionally runs `.github/scripts/verify-release-l3.sh`: all existing
+      raw/datagram carriers, multipath, restart, flow rotation and loss, then
+      UDP/QUIC/PCK with the previous stable binary at each end. Root is confined
+      to fresh network/mount namespaces on the disposable runner; no global
+      user-namespace policy change is needed. Publication waits for CI, the
+      protocol suite and recovery regressions on the exact release commit.
 
 ## Tagging
 
@@ -151,4 +147,4 @@ during the incident.
 
 ---
 
-*Last verified against Backpack v1.9.3.*
+*Last verified against Backpack v1.10.0.*

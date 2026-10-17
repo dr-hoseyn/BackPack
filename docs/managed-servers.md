@@ -294,4 +294,4 @@ as before, until it is upgraded.
 
 ---
 
-*Last verified against Backpack v1.9.3.*
+*Last verified against Backpack v1.10.0.*

@@ -4,6 +4,26 @@ All notable changes to Backpack are documented here.
 
 ## Unreleased
 
+## v1.10.0 — 2026-10-17 (dr-hoseyn fork)
+
+- Add managed Hysteria2/Salamander, AnyTLS, ShadowTLS v3 with SS2022 and
+  TUIC v5 reverse tunnels, with verified TLS, restricted private targets,
+  paired Setup Links, preserved settings and supervised helper recovery.
+- Carry native Hysteria2 and TUIC datagrams in the Noise/TUN engine, including
+  UDP association recovery and IPv4/IPv6 Connection Test with temporary trust.
+  Reverse UDP remains an explicit reliable-stream option; AnyTLS and ShadowTLS
+  are stream modes, not native datagram carriers.
+- Integrate the independent AmneziaWG engine with private TOML configs, paired
+  setup, per-tunnel services, TCP/UDP forwarding, reload, panel management and
+  handshake-derived health/metrics. Keep exclusive TUN ownership and peer-only
+  routing; do not install NAT, default routes or firewall changes.
+- Expose advanced XHTTP controls and independently verified TLS download paths.
+- Add actual helper authentication and negative tests, concurrent TCP and
+  directional EOF checks, native datagram/restart tests, and disposable real
+  TUN validation under IPv4, IPv6, process restart and packet loss.
+- Document setup, credential handling and protocol limitations in English and
+  Persian. Both peers need v1.10.0 or later for the new paired modes.
+
 - Keep Connection Test upload from losing its measurement budget to download
   connection setup; both directions now have bounded setup and sampling time,
   and pending speed dials stop with the measurement context.

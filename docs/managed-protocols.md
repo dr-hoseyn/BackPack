@@ -1,7 +1,6 @@
 # Managed Hysteria2, AnyTLS, ShadowTLS and TUIC
 
-Use matching builds containing this feature on both machines. The published
-release may predate it. These modes use the installer-pinned official **sing-box
+Use **BackPack v1.10.0 or later on both machines**. These modes use the installer-pinned official **sing-box
 v1.14.2**, installed by default on supported Linux glibc amd64/arm64 machines.
 From this source checkout: `BP_BUILD_FROM_SOURCE=1 BP_HELPERS=naive,xray bash install.sh`.
 `BP_HELPERS=naive` also installs sing-box; no protocols are reimplemented here.
@@ -146,7 +145,7 @@ The independent managed AWG engine is documented in [AmneziaWG](amneziawg.md).
 
 ## خلاصهٔ فارسی
 
-هر دو سرور باید بیلد همین قابلیت و sing-box رسمی نسخهٔ 1.14.2 داشته باشند.
+هر دو سرور باید BackPack نسخهٔ v1.10.0 یا بالاتر و sing-box رسمی نسخهٔ 1.14.2 داشته باشند.
 از منوی Reverse → HTTPS می‌توان Hysteria2، AnyTLS، ShadowTLS v3 و TUIC v5
 را با لینک جفت‌شده ساخت. گواهی TLS همیشه بررسی می‌شود؛ لینک و فایل تنظیمات
 حاوی اطلاعات خصوصی‌اند. کلید خصوصی گواهی سرور در لینک منتقل نمی‌شود.
@@ -164,4 +163,4 @@ Direct → UDP → Hysteria2 یا TUIC استفاده کن؛ این حالت ب�
 
 ---
 
-*Last verified against Backpack v1.9.3 with the protocol-suite source changes, 2026-10-17.*
+*Last verified against Backpack v1.10.0, 2026-10-17.*

@@ -78,6 +78,15 @@ jobs:
       - name: Prepare configuration test fixtures
         run: sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
 
+      - name: Require the configured signing key
+        env:
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+        run: |
+          if [ -z "$RELEASE_SIGNING_KEY" ]; then
+            echo "RELEASE_SIGNING_KEY is required for releases accepted by the pinned updater."
+            exit 1
+          fi
+
       - name: Test before publishing
         # Nothing gets published that has not passed the suite. A broken
         # release is far more expensive to undo than a slow pipeline.
@@ -92,6 +101,26 @@ jobs:
           RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
           RELEASE_TAG: ${{ steps.tag.outputs.tag }}
         run: make release
+
+      - name: Require the detached checksum signature
+        run: test -s release/SHA256SUMS.sig
+
+      - name: Real L3 TUN compatibility with the previous stable release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          previous="$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq "[.[] | select(.draft == false and .prerelease == false and .tag_name != \"$TAG\")][0].tag_name")"
+          printf '%s' "$previous" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'
+          git fetch --depth 1 origin "refs/tags/$previous:refs/tags/$previous"
+          git worktree add --detach "$RUNNER_TEMP/previous-l3" "$previous"
+          (cd "$RUNNER_TEMP/previous-l3" && CGO_ENABLED=0 go build -o "$RUNNER_TEMP/backpack-previous-l3" .)
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq iproute2 netcat-openbsd bc tcpdump iptables
+          BIN="$PWD/dist/backpack-linux-amd64" PREV_BIN="$RUNNER_TEMP/backpack-previous-l3" \
+            bash .github/scripts/verify-release-l3.sh
 
       - name: Verify the tag matches the built version
         env:
@@ -133,20 +162,24 @@ jobs:
             echo "Backpack ${tag}" > RELEASE_NOTES.md
           fi
 
-      - name: Require successful CI for this commit
+      - name: Require every CI workflow for this commit
         timeout-minutes: 40
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -eu
           for attempt in $(seq 1 80); do
-            result="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$GITHUB_SHA&per_page=20" \
-              --jq '.workflow_runs | sort_by(.run_number) | last | [.status, .conclusion] | @tsv')"
-            case "$result" in
-              *success*) echo "CI passed for $GITHUB_SHA"; exit 0 ;;
-              completed*) echo "CI did not pass: $result"; exit 1 ;;
-            esac
-            echo "Waiting for CI: $result"
+            ready=true
+            for workflow in ci.yml protocol-suite.yml recovery-regressions.yml; do
+              result="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?head_sha=$GITHUB_SHA&per_page=20" \
+                --jq '.workflow_runs | sort_by(.run_number) | last | [.status, .conclusion] | @tsv')"
+              case "$result" in
+                *success*) echo "$workflow passed for $GITHUB_SHA" ;;
+                completed*) echo "$workflow did not pass: $result"; exit 1 ;;
+                *) ready=false; echo "Waiting for $workflow: $result" ;;
+              esac
+            done
+            if [ "$ready" = true ]; then exit 0; fi
             sleep 30
           done
           echo "CI did not complete before the release deadline."

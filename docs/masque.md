@@ -125,4 +125,4 @@ Noise و امکان فوروارد TCP و UDP. حالت HTTP/2 و اتصال م�
 
 ---
 
-*Last verified against Backpack v1.9.3.*
+*Last verified against Backpack v1.10.0.*

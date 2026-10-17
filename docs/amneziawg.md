@@ -2,8 +2,8 @@
 
 ## Managed setup
 
-Use matching builds containing this feature on both machines; an older
-published binary cannot apply the new link. **Setup Iran → AmneziaWG** creates
+Use **BackPack v1.10.0 or later on both machines**; an older
+binary cannot apply the new link. **Setup Iran → AmneziaWG** creates
 an independent pair, stores Iran's private TOML and installs a per-tunnel
 systemd service. **Setup Kharej → AmneziaWG** accepts the Setup Link, as does
 `backpack link apply 'backpack://…'`.
@@ -132,4 +132,4 @@ tests establish implementation behavior, not resistance to every censor.
 
 ---
 
-*Last verified against Backpack v1.9.3.*
+*Last verified against Backpack v1.10.0.*

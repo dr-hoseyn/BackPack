@@ -1,6 +1,6 @@
 # dr-hoseyn fork
 
-This fork combines upstream BackPack v1.9.0 with PRs [#104](https://github.com/AminMGMT/BackPack/pull/104), [#98](https://github.com/AminMGMT/BackPack/pull/98), and [#108](https://github.com/AminMGMT/BackPack/pull/108). Fork release **v1.9.3** installs and updates from `dr-hoseyn/BackPack`. Short HTTPS IP is experimental. The source also includes [advanced XHTTP settings](docs/xhttp-advanced.md) and an opt-in [AmneziaWG prototype](docs/amneziawg.md).
+This fork combines upstream BackPack v1.9.0 with PRs [#104](https://github.com/AminMGMT/BackPack/pull/104), [#98](https://github.com/AminMGMT/BackPack/pull/98), and [#108](https://github.com/AminMGMT/BackPack/pull/108). Fork release **v1.10.0** installs and updates from `dr-hoseyn/BackPack`. Short HTTPS IP is experimental. The source also includes [advanced XHTTP settings](docs/xhttp-advanced.md) and an opt-in [AmneziaWG prototype](docs/amneziawg.md).
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/dr-hoseyn/BackPack/main/install.sh)
@@ -8,7 +8,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/dr-hoseyn/BackPack/main/inst
 
 On Linux glibc amd64/arm64, the installer now includes the pinned NaiveProxy, sing-box and Xray helpers automatically. Set `BP_HELPERS=` explicitly to install BackPack alone.
 
-Source builds also offer [managed Hysteria2, AnyTLS, ShadowTLS v3 + SS2022 and TUIC v5](docs/managed-protocols.md), including native Hysteria2/TUIC datagrams, plus [managed AmneziaWG setup](docs/amneziawg.md). Both peers need matching builds containing these features; the published release may predate them.
+Version v1.10.0 adds [managed Hysteria2, AnyTLS, ShadowTLS v3 + SS2022 and TUIC v5](docs/managed-protocols.md), including native Hysteria2/TUIC datagrams, plus [managed AmneziaWG setup](docs/amneziawg.md). Upgrade both peers to v1.10.0 or later before using the new paired modes.
 
 
 <p align="center">

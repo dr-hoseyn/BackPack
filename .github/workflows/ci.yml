@@ -474,7 +474,9 @@ jobs:
         # A repository with no tag yet has nothing to compare against, which is a
         # reason to skip rather than to fail.
         run: |
-          tag="$(git describe --tags --abbrev=0 2>/dev/null || true)"
+          # A release tag may already point at HEAD. Compare against the
+          # previous release, not this commit's newly tagged copy of itself.
+          tag="$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || true)"
           if [ -z "$tag" ]; then
             echo "no previous tag to compare against; skipping"
             echo "binary=" >> "$GITHUB_OUTPUT"
