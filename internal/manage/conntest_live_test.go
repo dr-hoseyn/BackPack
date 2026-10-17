@@ -210,7 +210,9 @@ func testConnectionTestAcrossIPv6(t *testing.T, only string) {
 	}
 	wantRows := len(connTestReverse) + len(ctDirectPlans("")) + 2
 	if only != "" {
-		wantRows = 1
+		// The two IPv4-only spoof capability rows remain visible as skipped
+		// even when a single actual tunnel is selected.
+		wantRows = 3
 	}
 	if len(rows) != wantRows {
 		t.Fatalf("missing IPv6 results: %+v", rows)
