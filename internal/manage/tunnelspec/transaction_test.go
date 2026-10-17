@@ -132,3 +132,41 @@ func TestEditTransactionReportsAnUnrecoverableConfigWrite(t *testing.T) {
 		t.Fatalf("rollback failure misreported: %v", err)
 	}
 }
+
+func TestEditTransactionStopsBeforeWritingWhenPreparationFails(t *testing.T) {
+	before := []byte("[l3]\nmtu=1400\n")
+	after := []byte("[l3]\nmtu=1300\n")
+	failure := errors.New("configuration storage unavailable")
+	for _, stage := range []string{"read", "prepare"} {
+		t.Run(stage, func(t *testing.T) {
+			prepared := false
+			tx := editTransaction{
+				read: func() ([]byte, error) {
+					if stage == "read" {
+						return nil, failure
+					}
+					return before, nil
+				},
+				active: func() bool { return true },
+				prepare: func() error {
+					prepared = true
+					return failure
+				},
+				write: func([]byte) error {
+					t.Fatal("a failed prerequisite wrote the config")
+					return nil
+				},
+				restart: func() error {
+					t.Fatal("a failed prerequisite restarted the service")
+					return nil
+				},
+			}
+			if err := tx.apply(after, "", ""); !errors.Is(err, failure) {
+				t.Fatalf("prerequisite error was lost: %v", err)
+			}
+			if prepared != (stage == "prepare") {
+				t.Fatalf("prepare called after %s failure: %v", stage, prepared)
+			}
+		})
+	}
+}
