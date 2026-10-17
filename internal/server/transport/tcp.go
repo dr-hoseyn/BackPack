@@ -2,6 +2,7 @@ package transport
 
 import (
 	"context"
+	"io"
 	"net"
 	"time"
 
@@ -397,6 +398,9 @@ func (s *TcpTransport) deliverTunnelConn(g *tcpGen, conn net.Conn, nonce string)
 		if !s.validPoolIdentity(conn, nonce) {
 			return false
 		}
+		if s.config.PathProbe {
+			conn = watchIdlePool(g.ctx, conn)
+		}
 		select {
 		case g.tunnelChannel <- conn:
 			return true
@@ -433,7 +437,26 @@ func (s *TcpTransport) handleLoop(g *tcpGen) {
 				ctx: g.ctx, local: localConn, tunnel: g.tunnelChannel,
 				limits: s.limits, log: s.logger,
 				announce: func(c net.Conn, addr string) error {
-					return utils.SendBinaryTransportStringWithin(c, addr, utils.SG_TCP, pairingWait(localConn.timeCreated))
+					if pooled, ok := c.(*idlePoolConn); ok && !pooled.claim() {
+						return net.ErrClosed
+					}
+					if err := utils.SendBinaryTransportStringWithin(c, addr, utils.SG_TCP, pairingWait(localConn.timeCreated)); err != nil {
+						return err
+					}
+					if s.config.PathProbe {
+						if err := c.SetReadDeadline(time.Now().Add(pairingWait(localConn.timeCreated))); err != nil {
+							return err
+						}
+						defer c.SetReadDeadline(time.Time{})
+						var ack [1]byte
+						if _, err := io.ReadFull(c, ack[:]); err != nil {
+							return err
+						}
+						if ack[0] != utils.ManagedPathAssignmentAck {
+							return net.ErrClosed
+						}
+					}
+					return nil
 				},
 				request: requestAlways(g.reqNewConnChan, s.logger),
 				discard: func(c net.Conn) { c.Close() },

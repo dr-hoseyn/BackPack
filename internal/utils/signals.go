@@ -2,6 +2,10 @@ package utils
 
 import "github.com/gorilla/websocket"
 
+// ManagedPathAssignmentAck confirms that a pooled adaptive connection has
+// become active before the server releases application bytes onto it.
+const ManagedPathAssignmentAck byte = 0xa7
+
 const (
 	SG_HB     byte = iota // for heartbeat
 	SG_Chan               // for channel, req a new conn

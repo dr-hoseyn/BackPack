@@ -1,6 +1,8 @@
-# Experimental Short HTTPS
+# Short HTTPS
 
-Last verified against Backpack v1.10.0, 2026-10-11.
+Requires this next-protocols build on both machines for managed mode.
+
+*Last verified against Backpack v1.10.0 source plus next-protocols changes, 2026-10-18.*
 
 `backpack short-https` is an **experimental, standalone TCP port relay** for
 paths that allow short HTTPS exchanges but stop established connections after
@@ -13,8 +15,66 @@ It works with IP addresses and generated private IP certificates; no owned
 domain, external helper or outbound proxy is needed. Certificate verification
 remains enabled. The server permits only one configured literal loopback
 backend. The client exposes that fixed backend on its configured local port.
-This command does not install services or edit existing tunnel configurations,
-and is not part of the ordinary HTTPS menu or Connection Test matrix yet.
+The standalone command retains its disposable JSON workflow. Managed Reverse
+setup integrates the relay with ordinary tunnel services and paired settings.
+
+## Managed Reverse setup
+
+Choose **Reverse → HTTPS → Short HTTPS** on Iran. Configure a public HTTPS
+listener and a distinct literal loopback Reverse target. The wizard offers
+static PEM files, a generated private IP/hostname certificate, or ACME for an
+owned DNS name on TCP/443. The Setup Link carries the Reverse token, public
+endpoint, verified server name and public trust anchor. The private key stays
+on Iran. On Kharej choose the same protocol and paste the link.
+
+The normal per-tunnel systemd service owns the relay and Reverse engine.
+Ordinary edits preserve settings. Valid static certificate/key or public CA
+replacement triggers the existing validated generation reload; incomplete or
+invalid replacements keep the current generation. Reloads may interrupt flows.
+ACME uses TLS-ALPN-01 and `autocert.Manager` for issuance and automatic renewal.
+Its persistent private cache lives at
+`/etc/backpack/acme/short-https/<domain>`. DNS must point to Iran and TCP/443
+must reach this listener directly. Preserve the cache during ordinary restarts.
+Local tests validate configuration/lifecycle; production ACME issuance and
+renewal additionally require a reachable owned domain.
+
+```toml
+# Iran
+[server]
+bind_addr = "127.0.0.1:3080"
+transport = "tcp"
+token = "REPLACE-WITH-A-LONG-RANDOM-REVERSE-TOKEN"
+accept_udp = false
+ports = ["8080=127.0.0.1:8081"]
+
+[server.short]
+listen = "0.0.0.0:443"
+server_name = "iran.example.com"
+acme_domain = "iran.example.com"
+acme_email = "operator@example.com"
+# For static TLS, omit the two ACME keys and set certificate/key PEM paths.
+```
+
+```toml
+# Kharej
+[client]
+remote_addr = "127.0.0.1:3080"
+transport = "tcp"
+token = "REPLACE-WITH-THE-SAME-REVERSE-TOKEN"
+connection_pool = 8
+
+[client.short]
+server = "iran.example.com:443"
+server_name = "iran.example.com"
+# ca_file = "/etc/backpack/tls/iran-public-ca.pem" # private trust only
+```
+
+Only the exact paired loopback target is allowed. Managed Short HTTPS supports
+TCP forwarding and directional EOF without an external helper, and can join
+[managed adaptive paths](managed-paths.md). It cannot carry native UDP, TUN,
+another outbound proxy or MPTCP. Connection Test includes a managed Short HTTPS
+case with temporary verified certificates. Start with a modest pool: control,
+idle pool, active forwards and probes all consume the bounded logical sessions.
 
 ## Trying it without changing an existing tunnel
 
@@ -56,10 +116,10 @@ TLS/CPU overhead higher than ordinary persistent tunnels. There are at most
 64 logical streams and 64 KiB of buffered backend data per stream. Idle server
 sessions expire after 90 seconds; a client gives up after 15 seconds without a
 successful exchange. It cannot restore a backend TCP connection after process
-restart or session expiry. Only TCP is supported: no UDP, TUN, automatic
-failover, systemd integration or certificate renewal is implemented.
+restart or session expiry. The standalone relay supports TCP only. Managed
+services, renewal and adaptive path selection use the integration above.
 
-Generated certificates expire after seven days. Create a new paired test state
+Standalone `init` certificates expire after seven days. Create a new paired test state
 and transfer its new `client.json` when needed. Do not use this experimental
 command as an unattended permanent replacement for a working tunnel.
 
@@ -73,9 +133,9 @@ command as an unattended permanent replacement for a working tunnel.
 انتخاب کنید؛ فقط فایل `client.json` را به سرور دیگر منتقل کنید و پورت محلی
 آن را تنظیم کنید. گواهی خصوصی بررسی می‌شود و کلید خصوصی روی سرور مقصد می‌ماند.
 
-این گزینه هنوز در منوی HTTPS و Connection Test نیست؛ با دستور `short-https`
-اجرا می‌شود و تانل‌های قبلی را تغییر نمی‌دهد. سرعت آن کمتر است، UDP پشتیبانی
-نمی‌شود و گواهی آزمایشی هفت روز اعتبار دارد. این روش تضمین پنهان‌ماندن ندارد
-و برای جایگزینی دائمی تانل سالم آماده نیست.
+حالت مدیریت‌شده در منوی HTTPS و Connection Test قرار دارد و با سرویس تانل،
+لینک جفت‌سازی و گواهی ثابت یا ACME کار می‌کند. سرعت آن کمتر است و UDP را حمل
+نمی‌کند. گواهی هفت‌روزه مخصوص دستور آزمایشی مستقل است. عبور از فیلترینگ تضمین
+نمی‌شود و ظرفیت مسیر واقعی باید اندازه‌گیری شود.
 
 </div>

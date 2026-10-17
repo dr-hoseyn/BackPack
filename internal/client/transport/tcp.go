@@ -329,6 +329,14 @@ func (c *TcpTransport) tunnelDialer() {
 		tcpConn.Close()
 		return
 	}
+	if c.config.Outbound != nil && c.config.Outbound.PoolObserver != nil {
+		// A retired idle connection must not consume a forwarded user. Confirm
+		// ownership before the server starts relaying application bytes.
+		if _, err := tcpConn.Write([]byte{utils.ManagedPathAssignmentAck}); err != nil {
+			tcpConn.Close()
+			return
+		}
+	}
 
 	// A forwarded UDP flow says so in the target address, on this transport as
 	// on every other one, so there is one thing to recognise rather than a

@@ -36,8 +36,10 @@
 // path, and under loss they fight: the inner one gives up waiting while the
 // outer one is still resending, so throughput collapses instead of degrading.
 // This is the classic TCP-over-TCP meltdown, and it is why a layer-3 tunnel
-// may only ride on udp, quic datagrams, or the raw carriers — never on tcp,
-// ws, or kcp, all of which retransmit.
+// normally rides on UDP, QUIC datagrams, or raw carriers. The explicit
+// masque-h2 emergency fallback preserves packet boundaries using Capsules over
+// reliable TCP when UDP is blocked. It accepts this head-of-line penalty; it
+// must not be presented as a native datagram path or selected implicitly.
 //
 // # Relationship to the rest of the tree
 //

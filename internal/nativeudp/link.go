@@ -92,7 +92,7 @@ func NewLink(parent context.Context, pc net.PacketConn, peer net.Addr, token str
 
 func (l *Link) Stats() Stats {
 	l.mu.Lock()
-	up := l.active != nil && time.Since(l.lastRx) < 15*time.Second
+	up := l.active != nil && time.Since(l.active.created) < sessionLife && time.Since(l.lastRx) < 15*time.Second
 	l.mu.Unlock()
 	return Stats{up, l.sent.Load(), l.received.Load(), l.dropped.Load()}
 }

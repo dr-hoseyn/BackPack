@@ -20,8 +20,8 @@ import (
 // run over plain UDP today and over the forged-source and raw-TCP carriers
 // next, without the engine learning anything about them.
 //
-// Only datagram carriers may appear here. See the package doc for why a
-// reliable carrier is not merely a poor fit but actively harmful.
+// Carriers preserve packet boundaries. Native datagrams are preferred; the
+// explicit masque-h2 fallback accepts reliable delivery's loss/HOL penalty.
 
 // DatagramCarrier is a net.PacketConn that can also say what it costs.
 type DatagramCarrier interface {
@@ -142,8 +142,8 @@ func sizeUDPBuffers(conn *net.UDPConn, sockBuf int) {
 // reason it does.
 const defaultSockBuf = 4 << 20
 
-// Carrier names accepted in a configuration. A reliable transport — tcp, ws,
-// kcp — is deliberately absent and can never be added: see the package doc.
+// Carrier names accepted in a configuration. General reverse stream transports
+// are absent. MASQUE/H2 is a separate, explicit Capsule fallback.
 const (
 	CarrierUDP   = "udp"
 	CarrierPck   = "pck"
