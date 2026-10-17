@@ -270,15 +270,13 @@ func (c *ClientPaths) Active(conn *net.TCPConn) {
 }
 func (c *ClientPaths) retireIdle(selected int) {
 	c.mu.Lock()
-	var stale []net.Conn
+	defer c.mu.Unlock()
 	for _, p := range c.connections {
 		if p.idle && p.path != selected {
-			stale = append(stale, p.conn)
+			// Serialize closing against Active: an assignment cannot be
+			// acknowledged between our idle check and the actual close.
+			p.conn.Close()
 		}
-	}
-	c.mu.Unlock()
-	for _, conn := range stale {
-		conn.Close()
 	}
 }
 

@@ -134,6 +134,20 @@ func TestSingReverseEnginesCarryConcurrentTCPUDPAndDirectionalEOF(t *testing.T) 
 			if err != nil || !bytes.Equal(b[:n], request) {
 				t.Fatalf("forwarded UDP: %v", err)
 			}
+			if s.Sing.NativeUDP {
+				for _, size := range []int{1, 1200, 8192, 59000} {
+					payload := randomPayload(t, size)
+					u.SetDeadline(time.Now().Add(5 * time.Second))
+					if _, err := u.Write(payload); err != nil {
+						t.Fatal(err)
+					}
+					got := make([]byte, 65535)
+					n, err := u.Read(got)
+					if err != nil || !bytes.Equal(got[:n], payload) {
+						t.Fatalf("native datagram boundary (%d bytes): %v", size, err)
+					}
+				}
+			}
 			tun.Stop()
 			waitPortFree(t, public, 3*time.Second)
 		})
