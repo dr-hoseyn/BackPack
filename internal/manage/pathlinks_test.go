@@ -67,3 +67,17 @@ func TestManagedPathSetupLinkPairsAllEndpointsWithoutExportingPrivateFiles(t *te
 		t.Fatal("nested adaptive path link accepted")
 	}
 }
+
+func TestManagedPathWizardKeepsGeneratedPrivateMaterialDistinctForLongParentNames(t *testing.T) {
+	prefix := strings.Repeat("a", 35)
+	first, second := managedPathChildName(prefix+"-one", 1), managedPathChildName(prefix+"-two", 1)
+	if first == second || first == managedPathChildName(prefix+"-one", 2) {
+		t.Fatal("independent paths share a generated certificate identity")
+	}
+	if len(first+"-https") > 40 || len(second+"-https") > 40 {
+		t.Fatal("generated certificate name exceeds its budget")
+	}
+	if managedPathChildName(prefix+"-one", 1) != first {
+		t.Fatal("same path does not retain its generated certificate identity")
+	}
+}

@@ -1,6 +1,7 @@
 package manage
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"strconv"
 
@@ -51,10 +52,7 @@ func configureManagedPaths(n *TunnelSpec, old TunnelSpec, public, host string, p
 			return false
 		}
 		endpoint := tui.PromptDefault("Public Listener On Iran / Public Endpoint On Kharej (Host:Port)", previousEndpoint)
-		if len(one.Name) > 30 {
-			one.Name = one.Name[:30]
-		}
-		one.Name += "-p" + strconv.Itoa(i+1)
+		one.Name = managedPathChildName(one.Name, i+1)
 		if !setupManagedCarrierWithProbe(&one, protocols[choice], endpoint, host, probe) {
 			return false
 		}
@@ -90,4 +88,15 @@ func configureManagedPaths(n *TunnelSpec, old TunnelSpec, public, host string, p
 		}
 	}
 	return true
+}
+
+func managedPathChildName(parent string, index int) string {
+	if len(parent) > 30 {
+		// Keep long tunnel names distinct without exceeding the certificate
+		// helper's name budget. Truncation alone could overwrite another
+		// tunnel's generated private TLS material.
+		sum := sha256.Sum256([]byte(parent))
+		parent = fmt.Sprintf("%s-%x", parent[:15], sum[:6])
+	}
+	return parent + "-p" + strconv.Itoa(index)
 }
