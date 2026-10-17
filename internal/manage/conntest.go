@@ -388,6 +388,9 @@ type ConnTestOptions struct {
 	// RealityTarget is an explicit reachable TLS 1.3/H2 hostname:port used
 	// for the REALITY cover handshake. Empty selects a verified endpoint automatically.
 	RealityTarget string
+	// ShadowTLSCA optionally supplies public PEM trust for an explicit private
+	// cover. Empty uses system trust; certificate verification is never disabled.
+	ShadowTLSCA string
 	// Direct includes the direct tunnels. They need root on both servers.
 	Direct bool
 	// Preset is balance, turbo or aggressive; empty is turbo, the wizards'
@@ -857,6 +860,13 @@ func (s *ConnTestIran) startManagedCase(c *connTestCase, used map[int]bool, o Co
 	}
 	c.link.Tr, c.link.Port, c.link.Name = c.tr, strconv.Itoa(port), c.name
 	settings := ctCarrierSettings{TargetPort: targetPort, ServerName: "conntest.backpack.invalid"}
+	if c.tr == "shadowtls" && o.ShadowTLSCA != "" {
+		if _, err := managedLinkCertificates(o.ShadowTLSCA); err != nil {
+			c.skip = "invalid ShadowTLS cover trust: " + err.Error()
+			return
+		}
+		settings.CA = o.ShadowTLSCA
+	}
 	public := net.JoinHostPort(ctBindHost(s.link.Host), strconv.Itoa(port))
 	var cert, key string
 	if c.tr != "reality" && c.tr != "shadowtls" {
@@ -964,16 +974,18 @@ func ctManagedClient(ctx context.Context, link ConnTestLink, c ShareLink, dir st
 	}
 	spec := reverseClientFromLink(paired, link.Host)
 	var ca string
-	if c.Tr != "reality" && c.Tr != "shadowtls" {
-		if settings.CA == "" {
+	if c.Tr != "reality" {
+		if settings.CA == "" && c.Tr != "shadowtls" {
 			return TunnelSpec{}, errors.New("the managed TLS test has no trust certificate")
 		}
-		if _, err := managedLinkCertificates(settings.CA); err != nil {
-			return TunnelSpec{}, err
-		}
-		ca = filepath.Join(dir, c.Tr+".crt")
-		if err := os.WriteFile(ca, []byte(settings.CA), 0600); err != nil {
-			return TunnelSpec{}, err
+		if settings.CA != "" {
+			if _, err := managedLinkCertificates(settings.CA); err != nil {
+				return TunnelSpec{}, err
+			}
+			ca = filepath.Join(dir, c.Tr+".crt")
+			if err := os.WriteFile(ca, []byte(settings.CA), 0600); err != nil {
+				return TunnelSpec{}, err
+			}
 		}
 	}
 	if config.SingProtocol(c.Tr) {

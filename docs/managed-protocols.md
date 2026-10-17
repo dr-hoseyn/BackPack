@@ -141,3 +141,27 @@ peer restart. These establish implementation behavior; they do not establish
 performance or reachability on a particular ISP or Iran/outside route.
 
 The independent managed AWG engine is documented in [AmneziaWG](amneziawg.md).
+
+<div dir="rtl">
+
+## خلاصهٔ فارسی
+
+هر دو سرور باید بیلد همین قابلیت و sing-box رسمی نسخهٔ 1.14.2 داشته باشند.
+از منوی Reverse → HTTPS می‌توان Hysteria2، AnyTLS، ShadowTLS v3 و TUIC v5
+را با لینک جفت‌شده ساخت. گواهی TLS همیشه بررسی می‌شود؛ لینک و فایل تنظیمات
+حاوی اطلاعات خصوصی‌اند. کلید خصوصی گواهی سرور در لینک منتقل نمی‌شود.
+
+UDP در حالت Reverse داخل جریان مطمئن حمل می‌شود. برای دیتاگرام بومی از
+Direct → UDP → Hysteria2 یا TUIC استفاده کن؛ این حالت به TUN و دسترسی مدیریت
+شبکه نیاز دارد. AnyTLS و ShadowTLS حامل L3 نیستند. ساخت جفت و تنظیم گواهی از
+ترمینال انجام می‌شود و پنل، مدیریت و وضعیت تونل نصب‌شده را ارائه می‌کند.
+
+تست‌های خودکار انتقال واقعی، احراز هویت نامعتبر، IPv4/IPv6، افت بسته و
+راه‌اندازی مجدد را بررسی می‌کنند. این نتایج تضمین دسترسی یا سرعت روی مسیر
+واقعی اینترنت ایران نیستند؛ آن مسیر باید جداگانه آزمایش شود.
+
+</div>
+
+---
+
+*Last verified against Backpack v1.9.3 with the protocol-suite source changes, 2026-10-17.*
