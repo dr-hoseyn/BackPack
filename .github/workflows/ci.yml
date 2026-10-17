@@ -29,7 +29,7 @@ jobs:
           sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
           go test -race ./internal/manage/tunnelspec -count=1 -timeout 2m
       - name: Verify editor integration, previews and history UI
-        run: go test -race ./internal/manage ./internal/webui -run '^(TestSafe|TestForwardPort|TestEdit|TestLayer3Editor|TestTheConfigHistory|TestAMoment)' -count=1 -timeout 2m
+        run: go test -race ./internal/manage ./internal/webui -run '^(TestSafe|TestForwardPort|TestEdit|TestLayer3Editor|TestTheConfigHistory|TestAMoment|TestEveryPanelCallReachesAHandlerThatReadsWhatItSends|TestEveryDialogTitleEscapesItsVariables|TestTheConfirmDialogEscapesTheValuesItIsGiven)' -count=1 -timeout 2m
       - name: Verify panel wiring and mapping editor
         run: node --test internal/webui/paneltest/*.test.js
 
