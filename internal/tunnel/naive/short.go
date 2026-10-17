@@ -68,6 +68,12 @@ func ValidateShort(c *config.Config) error {
 		return err
 	}
 	v := c.Client
+	if v.Token == "" {
+		return errors.New("Short HTTPS requires the reverse token")
+	}
+	if v.Short.ServerName != "" && net.ParseIP(v.Short.ServerName) == nil && !xrayDNSName(v.Short.ServerName) {
+		return errors.New("Short HTTPS server_name must be a verified hostname or IP")
+	}
 	if v.RemoteAddr == "" || c.Server.BindAddr != "" || v.Transport != config.TCP || v.Proxy != "" || v.LocalAddr != "" || v.Interface != "" || v.SOMark != 0 || len(v.FallbackAddrs) != 0 || len(v.FallbackTransports) != 0 || v.LoadBalance || v.HealthFailover || v.MPTCP {
 		return errors.New("Short HTTPS requires TCP Reverse without another proxy, routing override or fallback")
 	}
@@ -93,7 +99,7 @@ func shortClient(v config.ClientConfig) (*shorthttps.Client, error) {
 			return nil, err
 		}
 	}
-	return shorthttps.NewClient("https://"+v.Short.Server, shortToken(v.Token), string(ca))
+	return shorthttps.NewClientWithServerName("https://"+v.Short.Server, shortToken(v.Token), string(ca), v.Short.ServerName)
 }
 
 func StartShortServer(parent context.Context, v *config.ServerConfig, log *logrus.Logger) (*Helper, error) {

@@ -22,7 +22,9 @@ jobs:
       - name: Config and network regression tests with race detection
         run: |
           sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
-          go test ./config ./cmd ./internal/utils/network ./internal/masqueh2 ./internal/nativeudp ./internal/tunnel/l3 ./internal/manage/tunnelspec ./internal/shorthttps ./internal/tunnel/naive -race -count=1 -timeout 10m
+          go test ./config ./cmd ./internal/utils/network ./internal/masqueh2 ./internal/nativeudp ./internal/pathprobe ./internal/tunnel/adaptive ./internal/tunnel/l3 ./internal/manage/tunnelspec ./internal/shorthttps ./internal/tunnel/naive -race -count=1 -timeout 10m
+      - name: Adaptive paths preserve active streams and recover new connections
+        run: go test ./internal/e2e -run '^TestAdaptiveManagedPaths' -race -count=1 -v -timeout 4m
       - name: Verify vet and build
         run: |
           go vet ./...

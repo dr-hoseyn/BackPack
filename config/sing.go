@@ -79,8 +79,8 @@ func SingProtocol(s string) bool {
 func SingDatagram(s string) bool { return s == "hysteria2" || s == "tuic" }
 
 func (c ClientConfig) Managed() bool {
-	return c.Short.Enabled() || c.Naive.Enabled() || c.Xray.Enabled() || c.Sing.Enabled()
+	return len(c.Paths) != 0 || c.Short.Enabled() || c.Naive.Enabled() || c.Xray.Enabled() || c.Sing.Enabled()
 }
 func (c ServerConfig) Managed() bool {
-	return c.Short.Enabled() || c.Naive.Enabled() || c.Xray.Enabled() || c.Sing.Enabled()
+	return len(c.Paths) != 0 || c.Short.Enabled() || c.Naive.Enabled() || c.Xray.Enabled() || c.Sing.Enabled()
 }

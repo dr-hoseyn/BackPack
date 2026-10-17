@@ -99,7 +99,9 @@ type TunnelInfo struct {
 	// sum of two already-formatted strings is not something the browser can do.
 	BytesTotal string `json:"bytesTotal,omitempty"`
 	// KCP link-quality counters; nil on every other transport.
-	KCP *metrics.KCPStats `json:"kcp,omitempty"`
+	KCP          *metrics.KCPStats          `json:"kcp,omitempty"`
+	NativeUDP    *metrics.NativeUDPStats    `json:"nativeUDP,omitempty"`
+	ManagedPaths *metrics.ManagedPathsStats `json:"managedPaths,omitempty"`
 	// KCPLossPercent is derived from the counters above: how much of the sent
 	// traffic needed resending — the honest answer to "is this link lossy?".
 	KCPLossPercent float64 `json:"kcpLossPercent,omitempty"`
@@ -472,6 +474,7 @@ func fillMetrics(info *TunnelInfo, snap metrics.Snapshot) {
 	info.TotalBytes = snap.BytesIn + snap.BytesOut
 	info.Rates = rates.sample(info.Name, snap)
 	info.Pool = snap.Pool
+	info.NativeUDP, info.ManagedPaths = snap.NativeUDP, snap.ManagedPaths
 	if snap.KCP != nil {
 		info.KCP = snap.KCP
 		info.KCPLossPercent = snap.KCP.LossPercent()

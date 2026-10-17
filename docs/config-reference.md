@@ -45,6 +45,27 @@ them both ends have to agree on. This says what exists.
 | `pck_gateway_mac` | `string` | PckGatewayMAC is the next hop's hardware address, used when frames are injected at the link layer. Empty means read it from the kernel's neighbour table, which is where it already is. Set it only where that lookup is wrong — some virtualised networks answer ARP with an address the hypervisor then rewrites. |
 | `pck_interface` | `string` | PckInterface pins the carrier to a named egress device. Empty — the normal case — lets the route to the peer choose, which is right on every host with one uplink and on most with several. |
 
+## [[client.paths]]
+
+| Key | Type | Description |
+|---|---|---|
+| `naive` | `NaiveClientConfig` | Naive contains the paired public endpoint, credentials and local helper path. |
+| `name` | `string` | Name matches the paired server path; it is used in health reports. |
+| `short` | `ShortClientConfig` | Short contains the paired bounded-request endpoint and local trust file. |
+| `sing` | `SingClientConfig` | Sing contains the paired sing-box endpoint and verified identity. |
+| `xray` | `XrayClientConfig` | Xray contains the paired XHTTP/REALITY endpoint and verified identity. |
+
+## [[server.paths]]
+
+| Key | Type | Description |
+|---|---|---|
+| `endpoint` | `string` | Endpoint optionally overrides the public host:port exported to the peer. Empty uses the setup link's public host and this path's listener port. |
+| `naive` | `NaiveServerConfig` | Naive is this path's optional Naive listener and local TLS material. |
+| `name` | `string` | Name is the stable path identity, unique within this tunnel. |
+| `short` | `ShortServerConfig` | Short is this path's optional bounded-request HTTPS listener. |
+| `sing` | `SingServerConfig` | Sing is this path's optional Hysteria2, TUIC, AnyTLS or ShadowTLS listener. |
+| `xray` | `XrayServerConfig` | Xray is this path's optional XHTTP or REALITY listener. |
+
 ## [awg.obfuscation]
 
 | Key | Type | Description |
@@ -94,12 +115,25 @@ them both ends have to agree on. This says what exists.
 | `server` | `string` | Server is the HTTP/2 proxy's host:port, reached from the outside client toward the Iran server. |
 | `username` | `string` | Username authenticates the HTTP/2 proxy independently of the reverse tunnel token. |
 
+## [client.path_policy]
+
+| Key | Type | Description |
+|---|---|---|
+| `failures` | `int` | Failures is consecutive failures before a healthy path is withdrawn; 0 uses 2. |
+| `improvement` | `int` | Improvement is minimum score improvement in percent for a healthy switch; 0 uses 20. |
+| `min_dwell` | `int` | MinDwell is minimum seconds before leaving a healthy path; 0 uses 30. |
+| `probe_bytes` | `int` | ProbeBytes is verified in each direction; 0 uses 16384, range 1024..65536. |
+| `probe_interval` | `int` | ProbeInterval is seconds between verified transfers per path; 0 uses 5. |
+| `probe_timeout` | `int` | ProbeTimeout is the total seconds for a verified transfer; 0 uses 5. |
+| `recoveries` | `int` | Recoveries is verified successes required for a failed path to return; 0 uses 2. |
+
 ## [client.short]
 
 | Key | Type | Description |
 |---|---|---|
 | `ca_file` | `string` | CAFile is an optional private PEM trust anchor; empty uses system roots. |
 | `server` | `string` | Server is the public HTTPS host:port. The certificate verifies this host. |
+| `server_name` | `string` | ServerName optionally selects the verified TLS name when Server is an IP. |
 
 ## [client.sing]
 
@@ -169,6 +203,8 @@ them both ends have to agree on. This says what exists.
 | `mux_version` | `int` | MuxVersion is the smux protocol version. Negotiated with the peer, so the two ends may differ and the lower wins. |
 | `naive` | `NaiveClientConfig` | Naive optionally reaches the loopback reverse target through a tunnel-owned official Chromium Naive helper; experimental and disabled when empty. |
 | `nodelay` | `bool` | Nodelay disables Nagle's algorithm on the tunnel's sockets. Off unless set; every preset sets it. It trades a little bandwidth for latency, which is what an interactive session wants and a bulk transfer does not notice. |
+| `path_policy` | `PathPolicy` | PathPolicy tunes verified probing, hysteresis and failover for Paths only. |
+| `paths` | `[]ManagedClientPath` | Paths keeps paired managed carriers warm and selects verified healthy paths. |
 | `pprof` | `bool` | PPROF exposes Go's profiling endpoint on loopback. Off by default, and loopback-only on purpose: its heap dump contains this tunnel's token. |
 | `preset` | `string` | Preset records which performance profile the tuning values came from — balance, turbo or aggressive. A label: the engine reads the values, never this. |
 | `proxy` | `string` | Proxy routes the connection to the tunnel server through a local or nearby proxy, for a client that cannot open an arbitrary outbound connection itself. One URL: "socks5://127.0.0.1:1080" or "http://user:pass@10.0.0.1:8080". Empty means dial the server directly. |
@@ -380,6 +416,7 @@ them both ends have to agree on. This says what exists.
 | `mux_version` | `int` | MuxVersion is the smux protocol version. Negotiated with the peer, so the two ends may differ and the lower wins. |
 | `naive` | `NaiveServerConfig` | Naive optionally wraps the loopback TCP reverse listener in HTTP/2 with a tunnel-owned sing-box helper; experimental and disabled when empty. |
 | `nodelay` | `bool` | Nodelay disables Nagle's algorithm on the tunnel's sockets. Off unless set; every preset sets it. It trades a little bandwidth for latency, which is what an interactive session wants and what a bulk transfer does not notice. |
+| `paths` | `[]ManagedServerPath` | Paths keeps 2..8 independent managed public carriers alive for one Reverse engine. |
 | `ports` | `[]string` | Ports are the forwarded ports this server exposes, as "443", "8080=127.0.0.1:80", "443-450" or "10.0.0.5:443". See docs/port-mappings.md for every form. |
 | `pprof` | `bool` | PPROF exposes Go's profiling endpoint on 127.0.0.1:6060. Off by default and loopback-only: its heap dump contains this tunnel's token. |
 | `preset` | `string` | Preset records which performance profile the tuning values came from — balance, turbo or aggressive. A label: the engine reads the values, never this. Set by hand only if you want the menu to stop offering to change them. |

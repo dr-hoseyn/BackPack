@@ -4,6 +4,8 @@ package config
 type ShortClientConfig struct {
 	// Server is the public HTTPS host:port. The certificate verifies this host.
 	Server string `toml:"server"`
+	// ServerName optionally selects the verified TLS name when Server is an IP.
+	ServerName string `toml:"server_name,omitempty"`
 	// CAFile is an optional private PEM trust anchor; empty uses system roots.
 	CAFile string `toml:"ca_file,omitempty"`
 }

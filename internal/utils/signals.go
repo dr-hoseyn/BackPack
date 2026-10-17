@@ -38,6 +38,8 @@ const (
 	// invalid token — which is wrong in wording but points at the right half of
 	// the configuration, where EOF pointed at nothing.
 	SG_Refused
+	// SG_PathProbe verifies a managed carrier without taking the control seat.
+	SG_PathProbe
 )
 
 // Why a control handshake was refused. Short, because it crosses the wire on

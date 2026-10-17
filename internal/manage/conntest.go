@@ -883,6 +883,7 @@ func (s *ConnTestIran) startManagedCase(c *connTestCase, used map[int]bool, o Co
 
 	switch c.tr {
 	case "short-https":
+		settings.ServerName = s.link.Host
 		spec.ShortServer = config.ShortServerConfig{Listen: public, ServerName: s.link.Host, Certificate: cert, Key: key}
 	case "hysteria2", "anytls", "tuic", "shadowtls":
 		spec.SingServer = config.SingServerConfig{Binary: binary, Listen: public, Protocol: c.tr, ServerName: settings.ServerName, Password: token, Certificate: cert, Key: key}

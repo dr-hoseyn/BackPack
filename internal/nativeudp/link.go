@@ -59,6 +59,7 @@ type Link struct {
 	pc                      net.PacketConn
 	dial                    bool
 	psk                     [32]byte
+	probeKey                [32]byte
 	mu                      sync.Mutex
 	peer                    net.Addr
 	active                  *keys
@@ -83,6 +84,7 @@ func NewLink(parent context.Context, pc net.PacketConn, peer net.Addr, token str
 	ctx, cancel := context.WithCancel(parent)
 	l := &Link{ctx: ctx, cancel: cancel, pc: pc, peer: peer, dial: peer != nil, psk: sha256.Sum256([]byte("backpack reverse native UDP psk v1\x00" + token)), pending: map[[16]byte]*keys{}, in: make(chan []byte, 128)}
 	l.wg.Add(2)
+	l.probeKey = sha256.Sum256([]byte("backpack native UDP path proof v1\x00" + token))
 	go l.read()
 	go l.maintain()
 	return l, nil
@@ -262,6 +264,10 @@ func (l *Link) read() {
 			continue
 		}
 		var id [16]byte
+		if b[0] == 4 && !l.dial {
+			l.answerProbe(b[:n], from)
+			continue
+		}
 		copy(id[:], b[1:17])
 		if l.dial && from.String() != l.peer.String() {
 			l.dropped.Add(1)

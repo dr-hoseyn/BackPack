@@ -194,10 +194,33 @@ func updateReverseFromLink(link ShareLink, o LinkApplyOptions, existing string) 
 	s.MuxVersion = paired.MuxVersion
 	s.KCPDataShards, s.KCPParityShards = paired.KCPDataShards, paired.KCPParityShards
 	previousXray := s.XrayClient
+	previousPaths, previousPolicy := s.ClientPaths, s.PathPolicy
 	clearManagedTransport(&s)
 	s.NaiveClient, s.XrayClient, s.SingClient = paired.NaiveClient, paired.XrayClient, paired.SingClient
 	if managedTransport(link.Tr) {
 		managedClientFromLink(&s, link, host)
+		if link.Tr == "managed-paths" {
+			s.PathPolicy = previousPolicy
+			for i := range s.ClientPaths {
+				for _, old := range previousPaths {
+					if s.ClientPaths[i].Name == old.Name {
+						p := &s.ClientPaths[i]
+						if p.Xray.Enabled() && p.Xray.Mode == old.Xray.Mode {
+							p.Xray.Binary = old.Xray.Binary
+							p.Xray.CopyXHTTPOptions(old.Xray)
+						}
+						if p.Sing.Enabled() && p.Sing.Protocol == old.Sing.Protocol {
+							p.Sing.Binary = old.Sing.Binary
+							p.Sing.UDPMaxFlows = old.Sing.UDPMaxFlows
+							p.Sing.UDPBandwidthMbps = old.Sing.UDPBandwidthMbps
+						}
+						if p.Naive.Enabled() && old.Naive.Enabled() {
+							p.Naive.Binary = old.Naive.Binary
+						}
+					}
+				}
+			}
+		}
 		s.XrayClient.CopyXHTTPOptions(previousXray)
 		s.Proxy, s.LocalAddr, s.Interface, s.EdgeIP = "", "", "", ""
 		s.SOMark, s.LoadBalance = 0, false

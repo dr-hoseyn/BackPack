@@ -347,6 +347,10 @@ type relayStatusError int
 func (e relayStatusError) Error() string { return fmt.Sprintf("relay status %d", int(e)) }
 
 func NewClient(endpoint, token, ca string) (*Client, error) {
+	return NewClientWithServerName(endpoint, token, ca, "")
+}
+
+func NewClientWithServerName(endpoint, token, ca, serverName string) (*Client, error) {
 	if !strings.HasPrefix(endpoint, "https://") || len(token) < 32 {
 		return nil, errors.New("HTTPS endpoint and a random shared token are required")
 	}
@@ -365,7 +369,7 @@ func NewClient(endpoint, token, ca string) (*Client, error) {
 	// per request is the mechanism; small classical ECDHE handshakes keep the
 	// request below the measured packet budget. Verification stays enabled.
 	tr := &http.Transport{Proxy: nil, DisableKeepAlives: true, ForceAttemptHTTP2: false, DialContext: (&net.Dialer{Timeout: 3 * time.Second}).DialContext, TLSHandshakeTimeout: 3 * time.Second,
-		TLSClientConfig: &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS13, CurvePreferences: []tls.CurveID{tls.X25519, tls.CurveP256}, NextProtos: []string{"http/1.1"}, ClientSessionCache: tls.NewLRUClientSessionCache(64)}}
+		TLSClientConfig: &tls.Config{ServerName: serverName, RootCAs: roots, MinVersion: tls.VersionTLS13, CurvePreferences: []tls.CurveID{tls.X25519, tls.CurveP256}, NextProtos: []string{"http/1.1"}, ClientSessionCache: tls.NewLRUClientSessionCache(64)}}
 	return &Client{endpoint: strings.TrimRight(endpoint, "/") + "/sync", token: token, http: &http.Client{Transport: tr, Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
 }
 

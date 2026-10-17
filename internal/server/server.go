@@ -9,6 +9,7 @@ import (
 	"github.com/backpack/backpack/internal/debugserver"
 	"github.com/backpack/backpack/internal/nativeudp"
 	"github.com/backpack/backpack/internal/server/transport"
+	"github.com/backpack/backpack/internal/tunnel/adaptive"
 	"github.com/backpack/backpack/internal/tunnel/chain"
 	"github.com/backpack/backpack/internal/tunnel/naive"
 	"github.com/backpack/backpack/internal/utils"
@@ -49,7 +50,14 @@ func NewServer(cfg *config.ServerConfig, parentCtx context.Context) *Server {
 }
 
 func (s *Server) Start() {
-	if s.config.Managed() {
+	if len(s.config.Paths) != 0 {
+		paths, err := adaptive.StartServer(s.ctx, s.config, s.logger)
+		if err != nil {
+			s.logger.Errorf("managed paths could not start: %v", err)
+			return
+		}
+		defer paths.Close()
+	} else if s.config.Managed() {
 		helper, err := naive.StartWithRetry(s.ctx, s.logger, func() (*naive.Helper, error) {
 			if s.config.Short.Enabled() {
 				return naive.StartShortServer(s.ctx, s.config, s.logger)
@@ -67,13 +75,13 @@ func (s *Server) Start() {
 		}
 		defer helper.Close()
 	}
-	if s.config.Sing.NativeUDP {
+	if native := s.config.NativeSing(); native.NativeUDP {
 		pc, err := net.ListenPacket("udp", s.config.BindAddr)
 		if err != nil {
 			s.logger.Errorf("native reverse UDP target could not bind: %v", err)
 			return
 		}
-		e, err := nativeudp.StartServer(s.ctx, pc, s.config.Token, s.config.Ports, s.config.Sing.UDPMaxFlows, s.config.Sing.UDPBandwidthMbps)
+		e, err := nativeudp.StartServer(s.ctx, pc, s.config.Token, s.config.Ports, native.UDPMaxFlows, native.UDPBandwidthMbps)
 		if err != nil {
 			pc.Close()
 			s.logger.Errorf("native reverse UDP could not start: %v", err)
@@ -181,6 +189,7 @@ func (s *Server) startTransport(ctx context.Context, tr config.TransportType) ru
 	switch tr {
 	case config.TCP, config.STEALTH:
 		tcpConfig := &transport.TcpConfig{
+			PathProbe:      len(s.config.Paths) != 0,
 			MPTCP:          s.config.MPTCP,
 			BindAddr:       s.config.BindAddr,
 			Nodelay:        s.config.Nodelay,
@@ -192,7 +201,7 @@ func (s *Server) startTransport(ctx context.Context, tr config.TransportType) ru
 			Sniffer:        s.config.Sniffer,
 			WebPort:        s.config.WebPort,
 			SnifferLog:     s.config.SnifferLog,
-			AcceptUDP:      s.config.ForwardsUDP() && !s.config.Sing.NativeUDP,
+			AcceptUDP:      s.config.ForwardsUDP() && !s.config.NativeSing().NativeUDP,
 			MSS:            s.config.MSS,
 			SO_RCVBUF:      s.config.SO_RCVBUF,
 			SO_SNDBUF:      s.config.SO_SNDBUF,

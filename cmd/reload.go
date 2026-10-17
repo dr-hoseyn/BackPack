@@ -76,7 +76,13 @@ func fileFingerprint(path string) (fingerprint, error) {
 func helperTLSIdentity(cfg *config.Config) ([sha256.Size]byte, error) {
 	var identity [sha256.Size]byte
 	hash := sha256.New()
-	paths := [...]string{cfg.Server.Short.Certificate, cfg.Server.Short.Key, cfg.Client.Short.CAFile, cfg.L3.SingL3Config.CertFile, cfg.L3.SingL3Config.KeyFile, cfg.L3.SingL3Config.CAFile, cfg.Server.Sing.Certificate, cfg.Server.Sing.Key, cfg.Client.Sing.CAFile, cfg.Server.Naive.Certificate, cfg.Server.Naive.Key, cfg.Client.Naive.CAFile, cfg.Server.Xray.Certificate, cfg.Server.Xray.Key, cfg.Client.Xray.CAFile, cfg.Client.Xray.DownloadCAFile}
+	paths := []string{cfg.Server.Short.Certificate, cfg.Server.Short.Key, cfg.Client.Short.CAFile, cfg.L3.SingL3Config.CertFile, cfg.L3.SingL3Config.KeyFile, cfg.L3.SingL3Config.CAFile, cfg.Server.Sing.Certificate, cfg.Server.Sing.Key, cfg.Client.Sing.CAFile, cfg.Server.Naive.Certificate, cfg.Server.Naive.Key, cfg.Client.Naive.CAFile, cfg.Server.Xray.Certificate, cfg.Server.Xray.Key, cfg.Client.Xray.CAFile, cfg.Client.Xray.DownloadCAFile}
+	for _, p := range cfg.Server.Paths {
+		paths = append(paths, p.Short.Certificate, p.Short.Key, p.Sing.Certificate, p.Sing.Key, p.Naive.Certificate, p.Naive.Key, p.Xray.Certificate, p.Xray.Key)
+	}
+	for _, p := range cfg.Client.Paths {
+		paths = append(paths, p.Short.CAFile, p.Sing.CAFile, p.Naive.CAFile, p.Xray.CAFile, p.Xray.DownloadCAFile)
+	}
 	for _, path := range paths {
 		if path == "" {
 			continue
@@ -268,6 +274,25 @@ func portsInUse(cfg *config.Config) []listenerBinding {
 		bindings = append(bindings, listenerBinding{network: "udp", address: net.JoinHostPort("0.0.0.0", itoa(cfg.AWG.ListenPort))})
 	}
 	if cfg.Server.BindAddr != "" {
+		if cfg.Server.NativeSing().NativeUDP {
+			bindings = append(bindings, listenerBinding{network: "udp", address: cfg.Server.BindAddr})
+		}
+		for _, p := range cfg.Server.Paths {
+			address, protocol := p.Naive.Listen, "tcp"
+			if p.Xray.Enabled() {
+				address = p.Xray.Listen
+			}
+			if p.Short.Enabled() {
+				address = p.Short.Listen
+			}
+			if p.Sing.Enabled() {
+				address = p.Sing.Listen
+				if config.SingDatagram(p.Sing.Protocol) {
+					protocol = "udp"
+				}
+			}
+			bindings = append(bindings, listenerBinding{network: protocol, address: address})
+		}
 		if cfg.Server.Short.Enabled() {
 			bindings = append(bindings, listenerBinding{network: "tcp", address: cfg.Server.Short.Listen})
 		}

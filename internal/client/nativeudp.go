@@ -43,3 +43,13 @@ func (c *Client) startNativeUDP(proxyURL string) func() {
 	}()
 	return func() { cancel(); <-done }
 }
+
+func (c *Client) startNativePacket(pc net.PacketConn, peer net.Addr) (func(), error) {
+	native := c.config.NativeSing()
+	e, err := nativeudp.StartClient(c.ctx, pc, peer, c.config.Token, native.UDPMaxFlows, native.UDPBandwidthMbps)
+	if err != nil {
+		pc.Close()
+		return nil, err
+	}
+	return func() { e.Close() }, nil
+}

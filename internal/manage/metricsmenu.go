@@ -65,6 +65,15 @@ func printSnapshot(t Tunnel, s metrics.Snapshot) {
 		sysstat.HumanBytes(s.BytesIn), sysstat.HumanBytes(s.BytesOut)))
 
 	if s.KCP == nil {
+		if p := s.ManagedPaths; p != nil {
+			tui.Info("  Managed TCP path: " + p.Active)
+			if p.NativeUDPActive != "" {
+				tui.Info("  Native UDP path : " + p.NativeUDPActive)
+			}
+			for _, path := range p.Paths {
+				tui.Info(fmt.Sprintf("    %s (%s): healthy=%t, %.1f ms, %.2f Mbit/s, %.1f%% probe failures", path.Name, path.Protocol, path.Healthy, path.RTTMillis, path.Mbps, path.FailurePercent))
+			}
+		}
 		if n := s.NativeUDP; n != nil {
 			tui.Info(fmt.Sprintf("  Native UDP    : connected=%t, %d flows", n.Connected, n.Flows))
 			tui.Info(fmt.Sprintf("  Datagrams     : %d in, %d out, %d dropped", n.Received, n.Sent, n.Dropped))

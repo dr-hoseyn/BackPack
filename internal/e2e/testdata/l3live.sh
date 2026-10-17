@@ -68,7 +68,7 @@ sing_ca = \"$W/sing-cert.pem\"" ;;
     # Both namespaces share these files; only the listener uses the key.
     openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
       -keyout "$W/masque-key.pem" -out "$W/masque-cert.pem" -days 1 \
-      -subj /CN=masque-live -addext subjectAltName=IP:10.99.0.2 >/dev/null 2>&1 || exit 1
+      -subj /CN=masque-live -addext subjectAltName=IP:10.99.0.2,IP:fd99::2 >/dev/null 2>&1 || exit 1
     extra_k="masque_cert = \"$W/masque-cert.pem\"
 masque_key = \"$W/masque-key.pem\""
     extra_i="masque_ca = \"$W/masque-cert.pem\"" ;;

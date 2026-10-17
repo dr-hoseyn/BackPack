@@ -45,6 +45,11 @@ import (
 // Outbound describes how a tunnel connection leaves this machine. A nil
 // *Outbound is the ordinary case: dial directly, and let the kernel route.
 type Outbound struct {
+	// PoolObserver retires idle managed-path connections when selection changes.
+	PoolObserver interface {
+		Idle(*net.TCPConn)
+		Active(*net.TCPConn)
+	}
 	// MPTCP affects tunnel sockets only. Backend dials have no Outbound.
 	MPTCP bool
 	// Proxy routes the connection through a SOCKS5 or HTTP proxy.

@@ -275,6 +275,8 @@ type PckConfig struct {
 
 // ServerConfig represents the configuration for the server.
 type ServerConfig struct {
+	// Paths keeps 2..8 independent managed public carriers alive for one Reverse engine.
+	Paths []ManagedServerPath `toml:"paths"`
 	// Short selects the in-process managed Short HTTPS wrapper for TCP Reverse.
 	Short ShortServerConfig `toml:"short"`
 	// MPTCP requests Multipath TCP on native tcp/stealth/tcpmux tunnel sockets.
@@ -465,6 +467,10 @@ func (s ServerConfig) ForwardsUDP() bool {
 
 // ClientConfig represents the configuration for the client.
 type ClientConfig struct {
+	// Paths keeps paired managed carriers warm and selects verified healthy paths.
+	Paths []ManagedClientPath `toml:"paths"`
+	// PathPolicy tunes verified probing, hysteresis and failover for Paths only.
+	PathPolicy PathPolicy `toml:"path_policy"`
 	// Short selects bounded HTTPS requests for this TCP Reverse tunnel.
 	Short ShortClientConfig `toml:"short"`
 	// MPTCP requests Multipath TCP on native tcp/stealth/tcpmux tunnel sockets.

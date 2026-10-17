@@ -7,6 +7,7 @@ import (
 
 	"github.com/backpack/backpack/internal/controlwire"
 	"github.com/backpack/backpack/internal/metrics"
+	"github.com/backpack/backpack/internal/pathprobe"
 	"github.com/backpack/backpack/internal/tunnel/naive"
 	"github.com/backpack/backpack/internal/utils"
 	"github.com/backpack/backpack/internal/utils/handlers"
@@ -51,6 +52,7 @@ type TcpTransport struct {
 }
 
 type TcpConfig struct {
+	PathProbe     bool
 	MPTCP         bool
 	BindAddr      string
 	Token         string
@@ -275,7 +277,7 @@ func (s *TcpTransport) admitTunnelConn(g *tcpGen, raw net.Conn) {
 	// so this branch stays exactly as it was, and is reachable only once a
 	// legacy control channel has been established (which is what leaves the
 	// nonce empty).
-	if s.controlChannel.IsSet() && s.poolNonce.Get() == "" {
+	if s.controlChannel.IsSet() && s.poolNonce.Get() == "" && !s.config.PathProbe {
 		// Read the peer address once: checking "is it set" and then asking for
 		// the address separately leaves a window where the control channel is
 		// cleared in between and the address comes back nil. Comparing through
@@ -297,6 +299,10 @@ func (s *TcpTransport) admitTunnelConn(g *tcpGen, raw net.Conn) {
 	}
 
 	switch {
+	case ann.signal == utils.SG_PathProbe && s.config.PathProbe:
+		if err := pathprobe.Serve(conn, s.config.Token, ann.payload); err != nil {
+			s.logger.Debugf("managed path probe ended: %v", err)
+		}
 	case isControlSignal(ann.signal):
 		s.admitControlChannel(g, conn, ann)
 

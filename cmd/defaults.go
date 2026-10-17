@@ -223,6 +223,7 @@ func warnIgnoredProxyProtocol(cfg *config.Config) {
 func validateConfig(cfg *config.Config) error {
 	for _, check := range []func(*config.Config) error{
 		checkMPTCP,
+		checkManagedPaths,
 		naive.ValidateShort,
 		checkNaive,
 		checkXray,

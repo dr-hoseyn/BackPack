@@ -9,6 +9,7 @@ func configureShort(n *TunnelSpec, old TunnelSpec, public, host string) bool {
 	if n.Role == "client" {
 		x := old.ShortClient
 		x.Server = public
+		x.ServerName = tui.PromptDefault("Verified TLS Name (Blank = Endpoint Host)", x.ServerName)
 		x.CAFile = tui.PromptDefault("Private CA File (Blank = System Trust)", x.CAFile)
 		n.ShortClient = x
 		n.ConnectionPool = 8
