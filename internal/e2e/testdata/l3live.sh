@@ -25,7 +25,14 @@ mount -t tmpfs none /run 2>/dev/null; mkdir -p /run/netns
 ip netns add iran; ip netns add kharej
 ip link add name vi type veth peer name vk
 ip link set vi netns iran; ip link set vk netns kharej
-ip -n iran addr add 10.99.0.1/24 dev vi; ip -n kharej addr add 10.99.0.2/24 dev vk
+ENDPOINT="10.99.0.2:9000"
+if [ "${IPV6:-}" = 1 ]; then
+  ip -n iran -6 addr add fd99::1/64 dev vi nodad
+  ip -n kharej -6 addr add fd99::2/64 dev vk nodad
+  ENDPOINT="[fd99::2]:9000"
+else
+  ip -n iran addr add 10.99.0.1/24 dev vi; ip -n kharej addr add 10.99.0.2/24 dev vk
+fi
 for n in iran kharej; do
   ip -n $n link set lo up
   # A forged or unexpected source is dropped by a strict rp_filter before the
@@ -63,7 +70,7 @@ conf() { # mode iface local peer extra
   cat <<EOF
 [l3]
 mode = "$1"
-addr = "10.99.0.2:9000"
+addr = "$ENDPOINT"
 token = "$TOKEN"
 carrier = "$CARRIER"
 iface = "$2"
