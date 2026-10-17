@@ -24,9 +24,11 @@ whoever is reading.
 exactly one engine.
 
 **Engine** — the code a tunnel runs, chosen by which table its file has, in this
-order: **layer-3** (`[l3]`, a TUN device and a Noise session), **direct**
-(`[direct]`, layer 4, dials out), **reverse** (`[server]`/`[client]`). The three
-share no configuration key and no code.
+order: **AmneziaWG** (`[awg]`, an independent authenticated IP engine),
+**layer-3** (`[l3]`, a TUN device and a Noise session), **direct**
+(`[direct]`, layer 4, dials out), **reverse** (`[server]`/`[client]`). Each owns
+its packet/session lifecycle; management, metrics and forwarding can be shared.
+AmneziaWG rejects a mixed engine configuration.
 
 **Transport** — how the reverse engine's connections travel: `tcp`, `tcpmux`,
 `stealth`, `ws`, `wss`, `wsmux`, `wssmux`, `kcp`, `quic`, `udp`, `xdi`, `pck`.
@@ -34,7 +36,10 @@ Several are one implementation with a layer added (stealth is tcp under Noise,
 wss is ws under TLS, xdi and pck are KCP over another socket).
 
 **Carrier** — how the layer-3 and direct engines' packets travel: `udp`, `pck`,
-`sni`, `xdi`, `spoof`, `quic`. A carrier is not a transport; they belong to
+`sni`, `xdi`, `spoof`, `quic`, `masque`, `hysteria2`, `tuic`. The last two use
+native sing-box UDP; AnyTLS and ShadowTLS are reverse helpers only. Managed
+reverse helper names select wrappers around private TCP, without changing the
+reverse engine's transport. A carrier is not a transport; they belong to
 different engines.
 
 **Forwarded port** — a port the Iran side listens on for users, mapped to a

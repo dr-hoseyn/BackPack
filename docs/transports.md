@@ -1,5 +1,9 @@
 # Transports
 
+This fork also offers managed **Hysteria2, AnyTLS, ShadowTLS v3 + SS2022 and
+TUIC v5**, plus native Hysteria2/TUIC datagram carriers for L3. See
+[managed protocols](managed-protocols.md) for paired setup and test scope.
+
 The optional managed Naive HTTP/2 wrapper runs with the existing TCP Reverse
 engine, configured using `[server.naive]` and `[client.naive]`. Install its pinned
 official helpers with `BP_HELPERS=naive bash install.sh` on Linux glibc amd64 or

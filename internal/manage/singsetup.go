@@ -35,6 +35,10 @@ func configureSing(n *TunnelSpec, old TunnelSpec, protocol, public, host string)
 	}
 	server.Protocol, server.Listen = protocol, public
 	server.Binary = tui.PromptDefault("Sing-Box Binary", defaultString(server.Binary, managedHelperPath("sing-box")))
+	if protocol == "shadowtls" {
+		server.Handshake = strings.TrimSpace(tui.PromptDefault("ShadowTLS Cover Endpoint (Hostname:Port)", server.Handshake))
+		host = addrHost(server.Handshake, "")
+	}
 	server.ServerName = tui.PromptDefault("Verified TLS Name", defaultString(server.ServerName, host))
 	server.Password = managedSecret("Helper Password", server.Password, randomToken(32))
 	if protocol == "tuic" {
@@ -57,7 +61,6 @@ func configureSing(n *TunnelSpec, old TunnelSpec, protocol, public, host string)
 		}
 	}
 	if protocol == "shadowtls" {
-		server.Handshake = strings.TrimSpace(tui.PromptDefault("ShadowTLS Cover Endpoint (Hostname:Port)", server.Handshake))
 		key := server.ShadowsocksKey
 		if key == "" {
 			var raw [32]byte

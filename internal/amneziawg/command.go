@@ -19,7 +19,7 @@ import (
 
 func Run(ctx context.Context, args []string, out io.Writer) error {
 	if len(args) == 0 || args[0] == "help" || args[0] == "--help" {
-		fmt.Fprintln(out, "Experimental AmneziaWG آ· Linux آ· independent point-to-point L3 engine\n  backpack awg init --endpoint <server-IP:port> --dir <new-private-directory>\n  backpack awg check --config <server.json|client.json>\n  backpack awg run --config <server.json|client.json>\nCopy only client.json to the connecting machine. Each file contains its own private key.\nOnly the peer host route is installed. No default route, NAT, forwarding or firewall change.")
+		fmt.Fprintln(out, "Experimental AmneziaWG · Linux · independent point-to-point L3 engine\n  backpack awg init --endpoint <server-IP:port> --dir <new-private-directory>\n  backpack awg check --config <server.json|client.json>\n  backpack awg run --config <server.json|client.json>\nCopy only client.json to the connecting machine. Each file contains its own private key.\nOnly the peer host route is installed. No default route, NAT, forwarding or firewall change.")
 		return nil
 	}
 	f := flag.NewFlagSet("awg "+args[0], flag.ContinueOnError)
@@ -99,7 +99,7 @@ func initialize(endpoint, dir, address, peer string, out io.Writer) error {
 		}
 	}
 	complete = true
-	fmt.Fprintf(out, "Created private AmneziaWG pair in %s.\nCopy only client.json to the connecting machine. Keep server.json local.\nPinned engine: %s آ· UDP required آ· experimental\n", dir, Version)
+	fmt.Fprintf(out, "Created private AmneziaWG pair in %s.\nCopy only client.json to the connecting machine. Keep server.json local.\nPinned engine: %s · UDP required · experimental\n", dir, Version)
 	return nil
 }
 

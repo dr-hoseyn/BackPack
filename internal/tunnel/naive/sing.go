@@ -62,6 +62,9 @@ func singIdentity(binary, protocol, name, password, uuid, obfs, ss string) error
 		return errors.New("obfs_password requires Hysteria2 and 16..1024 bytes without NUL or line breaks")
 	}
 	if protocol == "shadowtls" {
+		if !xrayDNSName(name) {
+			return errors.New("ShadowTLS server_name must be the explicit verified cover hostname")
+		}
 		b, err := base64.StdEncoding.DecodeString(ss)
 		if err != nil || len(b) != 32 || base64.StdEncoding.EncodeToString(b) != ss {
 			return errors.New("ShadowTLS requires a canonical base64 32-byte SS2022 key")
@@ -118,6 +121,14 @@ func ValidateSingServer(c *config.ServerConfig) error {
 	}
 	if _, _, err := hostPort(c.BindAddr, true); err != nil {
 		return fmt.Errorf("reverse target: %w", err)
+	}
+	if x.Protocol == "shadowtls" {
+		h, p, _ := net.SplitHostPort(x.Handshake)
+		ip := net.ParseIP(h)
+		_, inner, _ := net.SplitHostPort(c.BindAddr)
+		if p == inner && (ip != nil && ip.IsLoopback() || strings.EqualFold(h, "localhost")) {
+			return errors.New("ShadowTLS cover must differ from the private reverse target")
+		}
 	}
 	if _, p, _ := net.SplitHostPort(c.BindAddr); p != "" {
 		if _, outer, _ := net.SplitHostPort(x.Listen); outer == p {

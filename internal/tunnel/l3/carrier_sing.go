@@ -69,6 +69,12 @@ func validateSingCarrier(cfg Config) error {
 	if !config.SingDatagram(cfg.Carrier) {
 		return fmt.Errorf("native sing carrier must be hysteria2 or tuic")
 	}
+	if cfg.Mode == ModeListen && cfg.Sing.CAFile != "" {
+		return fmt.Errorf("sing_ca belongs to the dialling side")
+	}
+	if cfg.Mode == ModeDial && (cfg.Sing.CertFile != "" || cfg.Sing.KeyFile != "") {
+		return fmt.Errorf("sing_cert and sing_key belong to the listening side")
+	}
 	// The route and private UDP destination are checked by the same generator
 	// used at runtime, including trust material. No socket or helper is started.
 	pw, id, obfs := singCredentials(cfg.Token, cfg.Carrier)

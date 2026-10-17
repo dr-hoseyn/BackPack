@@ -5,11 +5,38 @@ import (
 	"context"
 	"net"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/backpack/backpack/config"
 )
+
+func TestNativeSingRejectsTLSFilesAssignedToTheWrongRole(t *testing.T) {
+	tls := masqueTestConfig(t)
+	bin, err := filepath.Abs(os.Args[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, protocol := range []string{"hysteria2", "tuic"} {
+		c := Config{Mode: ModeListen, Addr: "127.0.0.1:443", Carrier: protocol, Token: "native-test-token", Sing: config.SingL3Config{Binary: bin, Target: tls.Target, ServerName: tls.ServerName, CertFile: tls.CertFile, KeyFile: tls.KeyFile}}
+		if err := validateSingCarrier(c); err != nil {
+			t.Fatal(err)
+		}
+		c.Sing.CAFile = tls.CertFile
+		if err := validateSingCarrier(c); err == nil {
+			t.Fatal("listener accepted a client CA setting")
+		}
+		c.Mode = ModeDial
+		if err := validateSingCarrier(c); err == nil {
+			t.Fatal("dialler accepted server private-key settings")
+		}
+		c.Sing.CertFile, c.Sing.KeyFile = "", ""
+		if err := validateSingCarrier(c); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
 
 func TestNativeSingCarriersCarryIPOverAuthenticatedNoise(t *testing.T) {
 	bin := os.Getenv("BP_SINGBOX_BINARY")

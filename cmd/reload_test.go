@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"encoding/pem"
+	"fmt"
 	"math/big"
 	"net"
 	"os"
@@ -495,5 +496,36 @@ func TestXHTTPDownloadTrustIsIncludedInReloadIdentity(t *testing.T) {
 	}
 	if _, err := helperTLSIdentity(&c); err == nil {
 		t.Fatal("missing download trust silently accepted")
+	}
+}
+
+func TestSingAndNativeTLSFilesParticipateInReloadWithoutAFixedFileCapacity(t *testing.T) {
+	var c config.Config
+	fields := []*string{&c.Server.Sing.Certificate, &c.Server.Sing.Key, &c.Client.Sing.CAFile, &c.L3.SingL3Config.CertFile, &c.L3.SingL3Config.KeyFile, &c.L3.SingL3Config.CAFile}
+	for i, field := range fields {
+		*field = filepath.Join(t.TempDir(), fmt.Sprintf("tls-%d.pem", i))
+		if err := os.WriteFile(*field, []byte("first generation"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	base, err := helperTLSIdentity(&c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range fields {
+		if err := os.WriteFile(*field, []byte("replacement generation"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		next, err := helperTLSIdentity(&c)
+		if err != nil || next == base {
+			t.Fatalf("renewal was not observed: %v", err)
+		}
+		if err := os.WriteFile(*field, []byte("first generation"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		identical, err := helperTLSIdentity(&c)
+		if err != nil || identical != base {
+			t.Fatal("identical material changed generation identity")
+		}
 	}
 }

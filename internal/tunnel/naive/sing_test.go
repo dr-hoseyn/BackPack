@@ -75,6 +75,18 @@ func TestSingRejectsMismatchedRolesAndUnusableCredentials(t *testing.T) {
 	}
 }
 
+func TestSingShadowTLSRequiresACoverIdentitySeparateFromItsReverseTarget(t *testing.T) {
+	s, c := singFixture(t, "shadowtls")
+	c.Sing.ServerName = "127.0.0.1"
+	if err := ValidateSingClient(&c); err == nil {
+		t.Fatal("accepted a literal IP as the verified cover identity")
+	}
+	s.Sing.Handshake = s.BindAddr
+	if err := ValidateSingServer(&s); err == nil {
+		t.Fatal("accepted a cover that loops into the private reverse target")
+	}
+}
+
 func singFreeAddr(t *testing.T, udp bool) string {
 	t.Helper()
 	if udp {

@@ -2,14 +2,20 @@ package manage
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
+	"os"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/backpack/backpack/config"
 	"github.com/backpack/backpack/internal/amneziawg"
+	"github.com/backpack/backpack/internal/app"
 )
 
 func TestSingSetupLinksPreservePairedSettingsAndNeverExportLocalSecrets(t *testing.T) {
@@ -141,5 +147,71 @@ func TestManagedAWGPairExportsOnlyTheReceivingIdentityAndPreservesItOnEdit(t *te
 	mtu := 1280
 	if _, err := applyAWGEdit(c, DirectEdit{MTU: &mtu}); err == nil {
 		t.Fatal("accepted an unsupported paired edit")
+	}
+}
+
+func TestManagedAWGInstallationWritesAPrivateConfigAndReportsTheServiceState(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("managed Linux service fixture")
+	}
+	if err := os.MkdirAll(app.ConfigDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256([]byte(t.TempDir()))
+	name := fmt.Sprintf("protocol-awg-%x", sum[:6])
+	service := app.ServiceName(name)
+	t.Cleanup(func() { os.Remove(app.ConfigPath(name)) })
+	t.Cleanup(func() { os.Remove(app.ConfigPath(name + "-duplicate")) })
+	a, b, err := amneziawg.NewPair("203.0.113.1:25999", "10.254.248.1/32", "10.254.248.2/32")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := config.AWGConfig(a)
+	c.PeerSetupKey = b.PrivateKey
+	c.Interface = fmt.Sprintf("bpawg%x", sum[:4])
+	oldWrite, oldStart, oldReload, oldWait := writeUnit, StartService, DaemonReload, WaitServiceActive
+	defer func() {
+		writeUnit, StartService, DaemonReload, WaitServiceActive = oldWrite, oldStart, oldReload, oldWait
+	}()
+	written, started, waited := false, false, false
+	writeUnit = func(n string) error {
+		if n != name {
+			t.Fatal("wrong unit name")
+		}
+		written = true
+		return nil
+	}
+	StartService = func(s string) error {
+		if s != service {
+			t.Fatal("wrong service")
+		}
+		started = true
+		return nil
+	}
+	DaemonReload = func() error { return nil }
+	WaitServiceActive = func(s string, _ time.Duration) bool {
+		if s != service {
+			t.Fatal("wrong readiness target")
+		}
+		waited = true
+		return true
+	}
+	result, err := installAWG(name, c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !written || !started || !waited || !result.Active || result.Kind != "awg" || result.Service != service {
+		t.Fatal("managed installation did not report its actual active service")
+	}
+	st, err := os.Stat(app.ConfigPath(name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Mode().Perm() != 0600 {
+		t.Fatal("private identities were written with public permissions")
+	}
+	started = false
+	if _, err := installAWG(name+"-duplicate", c); err == nil || started {
+		t.Fatal("duplicate managed identity started a second service")
 	}
 }

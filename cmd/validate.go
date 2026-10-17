@@ -3,6 +3,7 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"runtime"
 
 	"github.com/backpack/backpack/config"
 	"github.com/backpack/backpack/internal/amneziawg"
@@ -14,6 +15,9 @@ import (
 // anything, run early so a reload can refuse a file instead of dying on it.
 func checkEngine(cfg *config.Config) error {
 	if cfg.AWG.Enabled() {
+		if runtime.GOOS != "linux" {
+			return errors.New("the managed AmneziaWG engine requires Linux TUN and network administration privileges")
+		}
 		if cfg.L3.Enabled() || cfg.Direct.Enabled() || cfg.Server.BindAddr != "" || cfg.Client.RemoteAddr != "" || cfg.Server.Managed() || cfg.Client.Managed() {
 			return errors.New("[awg] must be the only engine in this configuration")
 		}

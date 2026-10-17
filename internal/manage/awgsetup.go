@@ -11,6 +11,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/BurntSushi/toml"
 	"github.com/backpack/backpack/config"
@@ -124,7 +125,7 @@ func installAWG(name string, c config.AWGConfig) (LinkApplied, error) {
 	if err := StartService(app.ServiceName(name)); err != nil {
 		return LinkApplied{}, err
 	}
-	return LinkApplied{Name: name, Kind: "awg", Dials: c.Endpoint, Transport: "awg", Service: app.ServiceName(name)}, nil
+	return LinkApplied{Name: name, Kind: "awg", Dials: c.Endpoint, Transport: "awg", Service: app.ServiceName(name), Active: WaitServiceActive(app.ServiceName(name), 10*time.Second)}, nil
 }
 
 func applyAWGLink(l ShareLink, o LinkApplyOptions) (LinkApplied, error) {
