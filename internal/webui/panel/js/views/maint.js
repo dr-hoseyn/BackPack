@@ -9,6 +9,7 @@ import * as store from '../store.js';
 import { openScreen } from '../ui/screen.js';
 import { oops, toast } from '../ui/toast.js';
 import { confirmBox } from '../ui/confirm.js';
+import { reviewChanges } from '../ui/editreview.js';
 
 export async function maintView(ctx) {
   /* Opened straight from a link, this runs before the first poll, so the
@@ -410,7 +411,10 @@ export function undoView(ctx) {
           const row = tl.querySelector(`.ent6[data-e="${run.dataset.go}"]`);
           row.classList.remove('arm'); row.classList.add('busy6');
           try {
-            await api.confRestore(name, row.dataset.at);
+            const preview = await api.confPreview(name, row.dataset.at);
+            if (!preview.changes.length) { toast('These settings are already current.'); row.classList.remove('busy6'); return; }
+            if (!await reviewChanges(name, preview, true)) { row.classList.remove('busy6'); return; }
+            await api.confRestore(name, row.dataset.at, preview.revision);
             row.classList.add('done6');
             row.querySelector('span').textContent = 'put back — the tunnel came up on it';
             toast('Restored, and the tunnel came up on it.');

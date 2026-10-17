@@ -456,6 +456,8 @@ func (s *server) routes() *http.ServeMux {
 	mux.HandleFunc("/api/linktest", s.requireAuth(s.handleLinkTest))
 	mux.HandleFunc("/api/confhist", s.requireAuth(s.handleConfHistory))
 	mux.HandleFunc("/api/confhist/restore", s.requireAuth(s.handleConfRestore))
+	mux.HandleFunc("/api/confhist/preview", s.requireAuth(s.handleConfPreview))
+	mux.HandleFunc("/api/tunnel/preview", s.requireAuth(s.handleTunnelPreview))
 	mux.HandleFunc("/api/restorepoints", s.requireAuth(s.handleRestorePoints))
 	// Setup links, backups on the server, installing from a file, rollback and
 	// the panel's own path, code and restart. See handlers_upkeep.go.

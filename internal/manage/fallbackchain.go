@@ -22,7 +22,7 @@ import (
 // nothing, because the other end is still listening for — or dialling — one
 // carrier. That asymmetry is the most likely way to configure this wrongly, so
 // it is stated in the caller's output rather than left to be discovered.
-func SetFallbackTransports(name string, list []string, dwell int) error {
+func SetFallbackTransports(name string, list []string, dwell int, apply ...func(TunnelSpec) error) error {
 	s, err := LoadSpec(name)
 	if err != nil {
 		return err
@@ -36,7 +36,7 @@ func SetFallbackTransports(name string, list []string, dwell int) error {
 	}
 	s.FallbackTransports = clean
 	s.FallbackDwell = dwell
-	return applySpec(s)
+	return applySpecUsing(s, apply)
 }
 
 // cleanChain normalises and validates a chain against the tunnel's own
@@ -107,7 +107,7 @@ func changeFallbackTransports(name string, spec TunnelSpec) {
 		}
 	}
 
-	if err := SetFallbackTransports(name, list, dwell); err != nil {
+	if err := SetFallbackTransports(name, list, dwell, reviewSpec); err != nil {
 		tui.Error("Failed: " + err.Error())
 		tui.PressEnter()
 		return

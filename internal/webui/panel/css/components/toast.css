@@ -25,6 +25,8 @@
 /* ================= in-theme confirm ================= */
 .cfZ{position:fixed;inset:0;z-index:150;display:none;align-items:center;justify-content:center;padding:24px}
 .cfZ.on{display:flex}
+.cfZ .boxZ .listZ{max-height:45vh;overflow:auto;text-align:left}
+.cfZ .boxZ .listZ code{white-space:pre-wrap;overflow-wrap:anywhere}
 .cfZ .veilZ{position:absolute;inset:0;background:color-mix(in srgb,var(--bg) 58%,transparent);
   -webkit-backdrop-filter:blur(18px) saturate(115%);backdrop-filter:blur(18px) saturate(115%);
   opacity:0;transition:opacity .3s ease}

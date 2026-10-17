@@ -183,9 +183,10 @@ type sourceIndex struct {
 // methods and package-level variables share one namespace here. A clash only
 // makes a closure larger, which can hide an unread name but never invent one.
 type goPackage struct {
-	decls   map[string][]goDecl
-	types   map[string]*ast.StructType
-	helpers map[string]int // see keyHelpers
+	decls       map[string][]goDecl
+	types       map[string]*ast.StructType
+	typeImports map[*ast.StructType]map[string]string
+	helpers     map[string]int // see keyHelpers
 }
 
 // goDecl is a function body or a package-level variable's value, with the
@@ -216,7 +217,7 @@ func (ix *sourceIndex) pkg(t *testing.T, dir string) *goPackage {
 	if p, ok := ix.pkgs[dir]; ok {
 		return p
 	}
-	p := &goPackage{decls: map[string][]goDecl{}, types: map[string]*ast.StructType{}}
+	p := &goPackage{decls: map[string][]goDecl{}, types: map[string]*ast.StructType{}, typeImports: map[*ast.StructType]map[string]string{}}
 	ix.pkgs[dir] = p
 	files, err := filepath.Glob(filepath.Join(dir, "*.go"))
 	if err != nil {
@@ -252,6 +253,7 @@ func (ix *sourceIndex) pkg(t *testing.T, dir string) *goPackage {
 					case *ast.TypeSpec:
 						if st, ok := s.Type.(*ast.StructType); ok {
 							p.types[s.Name.Name] = st
+							p.typeImports[st] = imports
 						}
 					case *ast.ValueSpec:
 						for i, n := range s.Names {
@@ -389,7 +391,7 @@ func (ix *sourceIndex) closure(t *testing.T, home *goPackage, name string) handl
 						}
 					}
 				case *ast.StructType:
-					addFields(n, r.fields)
+					ix.addJSONFields(t, it.p, n, d.imports, r.fields)
 				case *ast.SelectorExpr:
 					sel := n.Sel.Name
 					if x, ok := n.X.(*ast.Ident); ok {
@@ -414,7 +416,7 @@ func (ix *sourceIndex) closure(t *testing.T, home *goPackage, name string) handl
 							queue = append(queue, item{op, sel, true})
 						}
 						if st := op.types[sel]; st != nil {
-							addFields(st, r.fields)
+							ix.addJSONFields(t, op, st, op.typeImports[st], r.fields)
 						}
 					} else if it.p.decls[sel] != nil {
 						queue = append(queue, item{it.p, sel, it.foreign})
@@ -424,7 +426,7 @@ func (ix *sourceIndex) closure(t *testing.T, home *goPackage, name string) handl
 						queue = append(queue, item{it.p, n.Name, it.foreign})
 					}
 					if st := it.p.types[n.Name]; st != nil {
-						addFields(st, r.fields)
+						ix.addJSONFields(t, it.p, st, it.p.typeImports[st], r.fields)
 					}
 				}
 				return true
@@ -477,6 +479,48 @@ func (p *goPackage) keyHelpers() map[string]int {
 		}
 	}
 	return out
+}
+
+// Go's JSON decoder promotes fields from embedded structs, including request
+// structs imported from manage. Follow those declarations as well as the local
+// fields, so the contract checker sees the same request shape as the decoder.
+func (ix *sourceIndex) addJSONFields(t *testing.T, p *goPackage, st *ast.StructType, imports map[string]string, fields map[string]map[string]bool) {
+	seen := map[*ast.StructType]bool{}
+	var walk func(*goPackage, *ast.StructType, map[string]string)
+	walk = func(pkg *goPackage, table *ast.StructType, aliases map[string]string) {
+		if table == nil || seen[table] {
+			return
+		}
+		seen[table] = true
+		addFields(table, fields)
+		for _, field := range table.Fields.List {
+			if len(field.Names) > 0 || field.Tag != nil {
+				continue
+			}
+			typ := field.Type
+			if ptr, ok := typ.(*ast.StarExpr); ok {
+				typ = ptr.X
+			}
+			switch typ := typ.(type) {
+			case *ast.Ident:
+				nested := pkg.types[typ.Name]
+				walk(pkg, nested, pkg.typeImports[nested])
+			case *ast.SelectorExpr:
+				alias, ok := typ.X.(*ast.Ident)
+				if !ok {
+					continue
+				}
+				path := aliases[alias.Name]
+				if !strings.HasPrefix(path, ix.module+"/") {
+					continue
+				}
+				other := ix.pkg(t, filepath.Join(ix.root, strings.TrimPrefix(path, ix.module+"/")))
+				nested := other.types[typ.Sel.Name]
+				walk(other, nested, other.typeImports[nested])
+			}
+		}
+	}
+	walk(p, st, imports)
 }
 
 // addFields records the JSON name and Go type of each field of a struct.

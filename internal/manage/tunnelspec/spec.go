@@ -497,6 +497,9 @@ func (s Spec) validateHelpers() error {
 	return nil
 }
 
+// ValidateEdit checks helper configurations before a reviewed edit is offered.
+func (s Spec) ValidateEdit() error { return s.validateHelpers() }
+
 // Save writes the config file, the systemd unit, reloads systemd and starts
 // the tunnel. It returns the service name on success.
 func (s Spec) Save() (string, error) {

@@ -16,6 +16,8 @@ import { openScreen } from '../ui/screen.js';
 import { oops, toast } from '../ui/toast.js';
 import { go } from '../router.js';
 import { setupLinkHTML, bindSetupLink } from '../ui/setuplink.js';
+import { mountPortMappings } from '../ui/portmaps.js';
+import { reviewChanges } from '../ui/editreview.js';
 
 /* The Iran end of a reverse tunnel: the one whose edits the kharej follows. */
 const tunnelIsIranEnd = (t, settings) => (settings.role || t?.role) === 'server';
@@ -490,6 +492,7 @@ export async function editView(ctx) {
       }
 
       if (direct) directBaseline.set(root, readDirect(root));
+      mountPortMappings(root, settings, direct);
 
       /* Tabs and drawers are the preview's own handlers, rebound in screen.js. */
 
@@ -525,10 +528,17 @@ export async function editView(ctx) {
         });
       }
       save?.addEventListener('click', async () => {
+        for (const field of root.querySelectorAll('.mapping-row input')) {
+          if (!field.reportValidity()) return;
+        }
         const payload = direct ? { name, direct: readDirect(root) } : { name, ...read(root) };
+        if (!direct && payload.ports !== undefined && !payload.ports.trim()) payload.clearPorts = true;
         save.disabled = true;
         try {
-          const r = await api.tunnelEdit(payload);
+          const preview = await api.tunnelPreview(payload);
+          if (!preview.changes.length) { toast('No settings changed.'); return; }
+          if (!await reviewChanges(name, preview)) return;
+          const r = await api.tunnelEdit({ ...payload, revision: preview.revision });
           if (r.status === 'partial') {
             /* This end changed and the other did not. Half the values on this
                form are ones both ends must agree on, so that is not a detail to
@@ -559,7 +569,7 @@ export async function editView(ctx) {
             : 'Saved — the tunnel restarted on the new settings.');
           close();
         } catch (e) { oops(e); }
-        save.disabled = false;
+        finally { save.disabled = false; }
       });
 
       ctx.setTeardown(close);

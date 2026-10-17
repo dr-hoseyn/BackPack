@@ -19,6 +19,7 @@ type forwardPortEditor struct {
 	allowEmpty  bool
 	reverse     bool
 	creating    bool
+	reviewNext  bool     // the shared settings review provides the final confirmation
 	reserved    []string // control listener and hidden relay, never editable here
 	checkEntry  func(string) error
 }
@@ -54,6 +55,9 @@ func (e forwardPortEditor) edit(current []string) ([]string, bool) {
 		}
 		fmt.Println()
 		saveLabel := "Save And Apply"
+		if e.reviewNext {
+			saveLabel = "Review And Apply"
+		}
 		if e.creating {
 			saveLabel = "Save Mappings For Setup"
 		}
@@ -111,6 +115,9 @@ func (e forwardPortEditor) edit(current []string) ([]string, bool) {
 				tui.Error(err.Error())
 				tui.PressEnter()
 				continue
+			}
+			if e.reviewNext {
+				return append([]string{}, draft...), true
 			}
 			confirmation := "Apply These Mappings And Restart The Tunnel"
 			if e.creating {
