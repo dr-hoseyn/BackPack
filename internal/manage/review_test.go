@@ -37,3 +37,25 @@ func TestSafePortClearingIsExplicitAndKeepsRelay(t *testing.T) {
 		t.Fatalf("explicit clear: %+v err=%v", s.Ports, err)
 	}
 }
+
+func TestSafeTLSPlanningDoesNotGenerateCertificates(t *testing.T) {
+	previous := EnsureSelfSignedCert
+	EnsureSelfSignedCert = func(string, string) (string, string, error) {
+		t.Fatal("planning generated a certificate")
+		return "", "", nil
+	}
+	defer func() { EnsureSelfSignedCert = previous }()
+	s := TunnelSpec{Name: "safe-preview-test", Role: "server", Transport: "tcp"}
+	if err := switchTransport(&s, "wss"); err != nil {
+		t.Fatal(err)
+	}
+	cert, key := selfSignedCertPaths(s.Name)
+	if s.TLSCert != cert || s.TLSKey != key {
+		t.Fatal("preview did not plan the certificate paths")
+	}
+	domain := "preview.example.com"
+	s.TLSCert, s.TLSKey = "", ""
+	if _, err := (TunnelEdit{ACMEDomain: &domain}).editCertificate(&s); err != nil {
+		t.Fatal(err)
+	}
+}

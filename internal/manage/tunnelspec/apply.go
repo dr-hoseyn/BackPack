@@ -13,12 +13,12 @@ import (
 	"github.com/backpack/backpack/internal/app"
 	"github.com/backpack/backpack/internal/enginectl"
 	"github.com/backpack/backpack/internal/manage/core"
+	"github.com/backpack/backpack/internal/manage/host"
 )
 
-// Apply writes a changed tunnel config, restarts the service and verifies
-// it actually came back up. If it does not, the previous config is put back and
-// the tunnel restarted with it, so a bad edit (a port already in use, a wrong
-// address) can never leave the user with a dead tunnel and a lost config.
+// Apply writes a changed tunnel config and verifies startup. Failed startup
+// restores the previous config and service state; errors identify a recovery
+// failure rather than reporting a rollback that did not complete.
 func Apply(s Spec) error { return ApplyReviewed(s, "") }
 
 // ApplyReviewed also refuses to overwrite a configuration changed since review.
@@ -56,9 +56,17 @@ func applyWith(name string, body []byte, note, revision string, prepare func() e
 	defer mu.Unlock()
 	path, service := app.ConfigPath(name), app.ServiceName(name)
 	tx := editTransaction{
-		read:    func() ([]byte, error) { return os.ReadFile(path) },
-		write:   func(b []byte) error { return app.WriteFileAtomic(path, b, app.TunnelConfigMode) },
-		prepare: prepare,
+		read:  func() ([]byte, error) { return os.ReadFile(path) },
+		write: func(b []byte) error { return app.WriteFileAtomic(path, b, app.TunnelConfigMode) },
+		prepare: func() error {
+			if err := prepareEditResources(name, body); err != nil {
+				return err
+			}
+			if prepare != nil {
+				return prepare()
+			}
+			return nil
+		},
 		active:  func() bool { return core.IsActive(service) },
 		restart: func() error { return core.RestartService(service) },
 		stop:    func() error { return core.StopService(service) },
@@ -66,6 +74,25 @@ func applyWith(name string, body []byte, note, revision string, prepare func() e
 		record:  func(b []byte, note string) { RecordChange(name, b, note) },
 	}
 	return tx.apply(body, note, revision)
+}
+
+// Planning a TLS change only names these paths. Generate missing managed
+// certificates after the user accepts, never while displaying a preview.
+func prepareEditResources(name string, body []byte) error {
+	var cfg config.Config
+	if _, err := toml.Decode(string(body), &cfg); err != nil {
+		return err
+	}
+	s := cfg.Server
+	if s.BindAddr == "" || (s.Transport != "wss" && s.Transport != "wssmux") {
+		return nil
+	}
+	base := app.ConfigDir + "/certs/" + name
+	if s.TLSCertFile == base+".crt" && s.TLSKeyFile == base+".key" {
+		_, _, err := host.EnsureSelfSignedCert(name, s.ACMEDomain)
+		return err
+	}
+	return nil
 }
 
 func PreviewBody(name, body string) (EditPreview, error) {

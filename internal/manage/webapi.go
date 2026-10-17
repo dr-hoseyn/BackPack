@@ -726,11 +726,7 @@ func (e TunnelEdit) editCertificate(s *TunnelSpec) (bool, error) {
 	}
 	s.ACMEDomain, s.ACMEEmail = domain, email
 	if needsTLS(s.Transport) && s.Role == "server" && (s.TLSCert == "" || !fileExists(s.TLSCert)) {
-		cert, key, err := EnsureSelfSignedCert(s.Name, domain)
-		if err != nil {
-			return false, fmt.Errorf("could not prepare the self-signed certificate: %w", err)
-		}
-		s.TLSCert, s.TLSKey = cert, key
+		s.TLSCert, s.TLSKey = selfSignedCertPaths(s.Name)
 	}
 	return true, nil
 }

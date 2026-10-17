@@ -5,6 +5,7 @@ import (
 	"net"
 	"strings"
 
+	"github.com/backpack/backpack/internal/app"
 	"github.com/backpack/backpack/internal/utils/network"
 )
 
@@ -204,11 +205,7 @@ func switchTransport(s *TunnelSpec, transport string) error {
 	}
 	// TLS transports need a certificate on the server side.
 	if s.Role == "server" && needsTLS(transport) && (s.TLSCert == "" || !fileExists(s.TLSCert)) {
-		cert, key, err := EnsureSelfSignedCert(s.Name, "")
-		if err != nil {
-			return fmt.Errorf("could not generate a TLS certificate: %w", err)
-		}
-		s.TLSCert, s.TLSKey = cert, key
+		s.TLSCert, s.TLSKey = selfSignedCertPaths(s.Name)
 	}
 	// A tunnel that was never on KCP has all its KCP knobs at zero. Fill them
 	// from the tunnel's own preset so switching to KCP produces a working
@@ -422,11 +419,12 @@ func SetCertificate(name, domain, email string, apply ...func(TunnelSpec) error)
 	// the config still points at, and regenerating it later would need the
 	// tunnel to be down.
 	if s.TLSCert == "" || !fileExists(s.TLSCert) {
-		cert, key, err := EnsureSelfSignedCert(s.Name, domain)
-		if err != nil {
-			return fmt.Errorf("could not prepare the self-signed certificate: %w", err)
-		}
-		s.TLSCert, s.TLSKey = cert, key
+		s.TLSCert, s.TLSKey = selfSignedCertPaths(s.Name)
 	}
 	return applySpecUsing(s, apply)
+}
+
+func selfSignedCertPaths(name string) (string, string) {
+	base := app.ConfigDir + "/certs/" + name
+	return base + ".crt", base + ".key"
 }
