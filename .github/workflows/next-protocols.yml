@@ -29,6 +29,14 @@ jobs:
         run: |
           go vet ./...
           go build ./...
+      - name: MPTCP multiple subflows and primary-path outage
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq iproute2
+          go test -c -o "$RUNNER_TEMP/network.test" ./internal/utils/network
+          sudo env TESTBIN="$RUNNER_TEMP/network.test" W="$RUNNER_TEMP/mptcp-live" timeout -k 5s 60s \
+            unshare --net --mount --fork bash internal/e2e/testdata/mptcp-live.sh
       - name: Real MASQUE HTTP2 TUN, restart and loss
         run: |
           set -euo pipefail

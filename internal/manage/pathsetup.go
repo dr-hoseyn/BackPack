@@ -53,7 +53,8 @@ func configureManagedPaths(n *TunnelSpec, old TunnelSpec, public, host string, p
 			return false
 		}
 		if n.Role == "server" {
-			n.ServerPaths = append(n.ServerPaths, config.ManagedServerPath{Name: name, Naive: one.NaiveServer, Xray: one.XrayServer, Sing: one.SingServer, Short: one.ShortServer})
+			export := tui.PromptDefault("Public Host:Port For Pairing (Empty Uses Shared Public Host)", "")
+			n.ServerPaths = append(n.ServerPaths, config.ManagedServerPath{Name: name, Endpoint: export, Naive: one.NaiveServer, Xray: one.XrayServer, Sing: one.SingServer, Short: one.ShortServer})
 			n.AcceptUDP = n.AcceptUDP || one.AcceptUDP
 		} else {
 			n.ClientPaths = append(n.ClientPaths, config.ManagedClientPath{Name: name, Naive: one.NaiveClient, Xray: one.XrayClient, Sing: one.SingClient, Short: one.ShortClient})

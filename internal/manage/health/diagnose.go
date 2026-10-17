@@ -431,6 +431,10 @@ func tunnelChecksFor(t core.Tunnel, pairs [][2]string) []Check {
 		host, port := addrHost(spec.RemoteAddr, ""), addrPort(spec.RemoteAddr)
 		out = append(out, Check{Group: g, Name: "Server address", Level: CheckInfo, Detail: spec.RemoteAddr})
 		switch {
+		case len(spec.ClientPaths) != 0:
+			out = append(out, Check{Group: g, Name: "Reachability", Level: CheckInfo,
+				Detail: fmt.Sprintf("%d managed carriers share the private target on Iran", len(spec.ClientPaths)),
+				Fix:    "inspect verified path transfers in Metrics; the private loopback address is not a local reachability probe"})
 		case host == "" || port == "":
 			// Nothing to probe.
 
@@ -473,7 +477,7 @@ func tunnelChecksFor(t core.Tunnel, pairs [][2]string) []Check {
 	// full-sized packet. Only worth measuring on a tunnel that is up; on one
 	// that is not, the checks above already say why. See diagnose_path.go.
 	if h.State == "online" {
-		if spec.ShortServer.Enabled() || spec.ShortClient.Enabled() || spec.NaiveServer.Enabled() || spec.NaiveClient.Enabled() || spec.XrayServer.Enabled() || spec.XrayClient.Enabled() || spec.SingServer.Enabled() || spec.SingClient.Enabled() {
+		if len(spec.ServerPaths) != 0 || len(spec.ClientPaths) != 0 || spec.ShortServer.Enabled() || spec.ShortClient.Enabled() || spec.NaiveServer.Enabled() || spec.NaiveClient.Enabled() || spec.XrayServer.Enabled() || spec.XrayClient.Enabled() || spec.SingServer.Enabled() || spec.SingClient.Enabled() {
 			out = append(out, managedPathChecks(g, t)...)
 		} else {
 			out = append(out, pathChecks(g, t)...)
@@ -489,6 +493,13 @@ func tunnelChecksFor(t core.Tunnel, pairs [][2]string) []Check {
 	}
 	if t.Role == "server" && spec.ShortServer.Enabled() && spec.ShortServer.Certificate != "" {
 		out = append(out, certCheck(g, spec.ShortServer.Certificate))
+	}
+	for _, p := range spec.ServerPaths {
+		for _, file := range []string{p.Naive.Certificate, p.Xray.Certificate, p.Sing.Certificate, p.Short.Certificate} {
+			if file != "" {
+				out = append(out, certCheck(g+" / "+p.Name, file))
+			}
+		}
 	}
 	if t.Role == "server" && spec.XrayServer.Enabled() && spec.XrayServer.Mode == "xhttp" {
 		out = append(out, certCheck(g, spec.XrayServer.Certificate))

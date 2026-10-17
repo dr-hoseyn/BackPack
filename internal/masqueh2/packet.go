@@ -22,6 +22,11 @@ type packet struct {
 	from net.Addr
 }
 
+type writeOperation struct {
+	cancel context.CancelFunc
+	timer  *time.Timer
+}
+
 // Conn owns its listener, all authenticated streams, and its bounded receive
 // queue. Close waits for every worker, so a reload can immediately reuse ports.
 type Conn struct {
@@ -39,11 +44,12 @@ type Conn struct {
 	readAt, writeAt time.Time
 	wake            chan struct{}
 	terminal        error
+	writes          map[*writeOperation]bool
 }
 
 func newConn(ctx context.Context) *Conn {
 	ctx, cancel := context.WithCancel(ctx)
-	c := &Conn{ctx: ctx, cancel: cancel, sessions: make(map[string]*session), pending: make(map[net.Conn]bool), in: make(chan packet, 64), wake: make(chan struct{})}
+	c := &Conn{ctx: ctx, cancel: cancel, sessions: make(map[string]*session), pending: make(map[net.Conn]bool), in: make(chan packet, 64), wake: make(chan struct{}), writes: make(map[*writeOperation]bool)}
 	context.AfterFunc(ctx, func() { c.Close() })
 	return c
 }
@@ -280,22 +286,36 @@ func (c *Conn) WriteTo(b []byte, addr net.Addr) (int, error) {
 	if addr == nil {
 		return 0, errors.New("missing MASQUE peer")
 	}
+	ctx, cancel := context.WithCancel(c.ctx)
+	defer cancel()
+	op := &writeOperation{cancel: cancel}
 	c.mu.Lock()
 	s, deadline := c.sessions[addr.String()], c.writeAt
+	if !deadline.IsZero() {
+		op.timer = time.AfterFunc(time.Until(deadline), cancel)
+	}
+	c.writes[op] = true
 	c.mu.Unlock()
+	defer func() {
+		c.mu.Lock()
+		delete(c.writes, op)
+		if op.timer != nil {
+			op.timer.Stop()
+		}
+		c.mu.Unlock()
+	}()
 	if s == nil {
 		return 0, net.ErrClosed
 	}
-	ctx := c.ctx
-	cancel := func() {}
 	if !deadline.IsZero() {
 		if !time.Now().Before(deadline) {
 			return 0, os.ErrDeadlineExceeded
 		}
-		ctx, cancel = context.WithDeadline(ctx, deadline)
 	}
-	defer cancel()
 	if err := s.send(ctx, b); err != nil {
+		if ctx.Err() != nil && c.ctx.Err() == nil {
+			return 0, os.ErrDeadlineExceeded
+		}
 		return 0, err
 	}
 	return len(b), nil
@@ -313,6 +333,16 @@ func (c *Conn) SetReadDeadline(t time.Time) error {
 func (c *Conn) SetWriteDeadline(t time.Time) error {
 	c.mu.Lock()
 	c.writeAt = t
+	for op := range c.writes {
+		if op.timer != nil {
+			op.timer.Stop()
+		}
+		if !t.IsZero() {
+			op.timer = time.AfterFunc(time.Until(t), op.cancel)
+		} else {
+			op.timer = nil
+		}
+	}
 	c.mu.Unlock()
 	return nil
 }

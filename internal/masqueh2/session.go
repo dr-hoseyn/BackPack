@@ -29,11 +29,12 @@ type session struct {
 	done           chan struct{}
 	once           sync.Once
 	writeMu        sync.Mutex
-	sendMu         sync.Mutex
+	sendGate       chan struct{}
 	mu             sync.Mutex
 	connWindow     int64
 	streamWindow   int64
 	initialWindow  int64
+	receiveWindow  int64
 	wake           chan struct{}
 	ready          chan error
 	server         bool
@@ -52,7 +53,7 @@ type session struct {
 func newSession(parent context.Context, conn net.Conn, server bool, headers []hpack.HeaderField, validate func([]hpack.HeaderField) error, deliver func([]byte)) *session {
 	ctx, cancel := context.WithCancel(parent)
 	s := &session{conn: conn, ctx: ctx, cancel: cancel, done: make(chan struct{}), wake: make(chan struct{}), ready: make(chan error, 1), credit: make(chan struct{}, 1), server: server, header: headers, validate: validate, deliver: deliver,
-		connWindow: 65535, streamWindow: 65535, initialWindow: 65535}
+		connWindow: 65535, streamWindow: 65535, initialWindow: 65535, receiveWindow: window, sendGate: make(chan struct{}, 1)}
 	s.fr = http2.NewFramer(conn, conn)
 	s.fr.SetMaxReadFrameSize(16384)
 	s.fr.ReadMetaHeaders = hpack.NewDecoder(4096, nil)
@@ -138,6 +139,9 @@ func (s *session) run() {
 			case <-s.credit:
 				n := s.received.Swap(0)
 				if n != 0 {
+					s.mu.Lock()
+					s.receiveWindow += int64(n)
+					s.mu.Unlock()
 					if err := s.write(func() error {
 						if err := s.fr.WriteWindowUpdate(0, n); err != nil {
 							return err
@@ -258,6 +262,13 @@ func (s *session) handle(frame http2.Frame) error {
 		if !s.opened || f.StreamID != 1 || f.StreamEnded() {
 			return errors.New("data outside CONNECT stream")
 		}
+		s.mu.Lock()
+		s.receiveWindow -= int64(f.Length)
+		exceeded := s.receiveWindow < 0
+		s.mu.Unlock()
+		if exceeded {
+			return errors.New("peer exceeded the advertised HTTP/2 receive window")
+		}
 		if err := s.decode.feed(f.Data(), s.deliver); err != nil {
 			return err
 		}
@@ -301,8 +312,16 @@ func (s *session) handle(frame http2.Frame) error {
 // splits one across DATA frames. A cancelled or timed-out send closes the
 // connection: a partial capsule cannot be replaced with a new packet.
 func (s *session) send(ctx context.Context, p []byte) error {
-	s.sendMu.Lock()
-	defer s.sendMu.Unlock()
+	select {
+	case s.sendGate <- struct{}{}:
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-s.ctx.Done():
+		return net.ErrClosed
+	}
+	defer func() { <-s.sendGate }()
+	stop := context.AfterFunc(ctx, s.close)
+	defer stop()
 	if len(p) > maxPacket {
 		return errors.New("MASQUE datagram exceeds UDP payload limit")
 	}
