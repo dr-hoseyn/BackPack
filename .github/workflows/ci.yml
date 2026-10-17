@@ -28,6 +28,8 @@ jobs:
         run: sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
       - name: Verify configuration, encrypted packets and negative authentication
         run: go test ./internal/amneziawg ./internal/tunnel/naive ./config ./cmd ./internal/manage/tunnelspec -race -count=1 -timeout 4m
+      - name: Exercise existing and advanced HTTPS menu flows
+        run: go test ./internal/manage -run '^(TestManagedHTTPS|TestXHTTPAdvanced)' -race -count=1 -timeout 1m
       - name: Install verified Xray and exercise independent TLS download
         run: |
           sudo env "PATH=$PATH" BP_HELPERS=xray BP_BUILD_FROM_SOURCE=1 bash ./install.sh
@@ -101,9 +103,27 @@ jobs:
             grep -q '^RESULT OK' "$RUNNER_TEMP/masque-$scenario.out"
           done
 
+  # Keep the existing required-check name while all three complete suites run
+  # independently. A matrix failure must fail this gate, never cancel coverage.
   test:
     name: Build and test
+    needs: test-suites
+    if: always()
     runs-on: ubuntu-latest
+    steps:
+      - name: Require every regression suite
+        env:
+          RESULT: ${{ needs.test-suites.result }}
+        run: test "$RESULT" = success
+
+  test-suites:
+    name: Regression (${{ matrix.mode }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [test, race, coverage]
     steps:
       - uses: actions/checkout@v7
 
@@ -128,6 +148,7 @@ jobs:
           node-version: '22'
 
       - name: Verify formatting
+        if: matrix.mode == 'test'
         run: |
           unformatted="$(gofmt -l . || true)"
           if [ -n "$unformatted" ]; then
@@ -137,19 +158,23 @@ jobs:
           fi
 
       - name: Vet
+        if: matrix.mode == 'test'
         run: go vet ./...
 
       - name: Test
+        if: matrix.mode == 'test'
         # The e2e tests bind loopback ports and wait on real handshakes, so
         # they need more than the default 10 minute budget on a shared runner.
         run: go test ./... -timeout 20m
 
       - name: Test with the race detector
+        if: matrix.mode == 'race'
         # Enforced. The transports are heavily concurrent and a data race there
         # corrupts traffic rather than crashing loudly, so this must stay clean.
         run: go test ./... -race -timeout 20m
 
       - name: Coverage
+        if: matrix.mode == 'coverage'
         # Measured with -coverpkg, which is the only way this number means
         # anything here.
         #
@@ -176,6 +201,7 @@ jobs:
           }'
 
       - name: Per-package coverage floors
+        if: matrix.mode == 'coverage'
         # A whole-project number hides a package falling off a cliff while
         # another one rises. These are the packages where a drop means something
         # specific, each with the reason it is on the list.
