@@ -12,7 +12,7 @@ func ctThemeLine(line string) string {
 	text := strings.TrimSpace(line)
 	color := tui.White
 	switch {
-	case strings.HasPrefix(text, "CONNECTION TEST"), text == "Works Steadily:", text == "BEST SETTINGS",
+	case strings.HasPrefix(text, "CONNECTION TEST"), text == "Works Steadily:", text == "BEST SETTINGS", text == "RECOMMENDED BY USE",
 		text == "Notes:", text == "Direct SNI domains:", text == "HTTPS path checks:":
 		color = tui.Bold + tui.Red
 	case text == "Reverse", text == "Direct", text == "Spoof":

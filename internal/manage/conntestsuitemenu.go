@@ -149,6 +149,7 @@ func ctSuiteSummary(out io.Writer, paths []ConnTestPath) {
 		fmt.Fprintln(out)
 	}
 	best := ConnTestSuiteBest(paths)
+	fmt.Fprint(out, ConnTestRecommendationsTable(best.Recommendations))
 	if best.Transport != "" {
 		fmt.Fprintf(out, "Recommended: %s · %s · %s\n", best.Family, best.Host, best.Transport)
 	}

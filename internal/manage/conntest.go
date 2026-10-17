@@ -1094,6 +1094,9 @@ func (s *ConnTestIran) Run(ctx context.Context, progress func(int, ConnTestResul
 	}
 	s.best = ctComputeBest(results, s.cases, pmtu, s.dir)
 	s.best.Host, s.best.Family = s.link.Host, ctFamily(s.link.Host)
+	for i := range s.best.Recommendations {
+		s.best.Recommendations[i].Host, s.best.Recommendations[i].Family = s.best.Host, s.best.Family
+	}
 	if s.best.Family == "IPv6" && s.best.MSS > 0 {
 		s.best.MSS = pmtu - 60
 	}
