@@ -9,6 +9,8 @@ All notable changes to Backpack are documented here.
   and its two capability probes remain IPv4-only.
 - Include MASQUE HTTP/3 in Connection Test on IPv4 and IPv6, with a temporary
   certificate generated on Kharej and only its public trust anchor sent to Iran.
+- Keep MASQUE connections alive when an automatic MTU probe exceeds QUIC's
+  datagram limit, and clean up abandoned PCK rules in both firewall families.
 - Group steady Connection Test results by Reverse/Direct, with aligned RTT,
   download and upload columns and one shared explanation of speed measurements.
 - Group the direct setup menu and panel into ICMP, TCP, UDP, HTTPS and IP Spoofing
