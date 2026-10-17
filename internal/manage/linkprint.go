@@ -19,6 +19,9 @@ import (
 // the tunnel in link there. It is run as root on the kharej; install.sh hands
 // what follows it to the installed binary (see the end of install.sh).
 func InstallCommand(link string) string {
+	if l, err := DecodeShareLink(link); err == nil && l.Kind == "awg" {
+		return ""
+	}
 	if l, err := DecodeShareLink(link); err == nil && l.Kind == "direct" && l.Tr == "masque" {
 		return "" // the released binary may predate this fork-only carrier
 	}
@@ -34,6 +37,17 @@ func InstallCommand(link string) string {
 // printLinkBlock prints the two ways to build the kharej from link. menuPath
 // is where the Setup Link answer is in the kharej's menu, for the first.
 func printLinkBlock(link, menuPath string) {
+	if l, err := DecodeShareLink(link); err == nil && (l.Kind == "awg" || (l.Kind == "direct" && (l.Tr == "hysteria2" || l.Tr == "tuic"))) {
+		tui.Info("Install matching builds on both machines, then use the terminal Setup Link flow.")
+		fmt.Println(link)
+		if l.Kind == "awg" {
+			fmt.Println("sudo backpack link apply '" + link + "'")
+		} else {
+			tui.Info("Kharej also needs its local --sing-cert and --sing-key paths.")
+		}
+		return
+	}
+
 	if l, err := DecodeShareLink(link); err == nil && l.Kind == "direct" && l.Tr == "masque" {
 		fmt.Println()
 		tui.Info("Install This Fork's MASQUE Build On Kharej, Then Use Setup From A Link Or:")

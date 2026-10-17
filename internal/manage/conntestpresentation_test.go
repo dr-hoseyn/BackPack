@@ -2,6 +2,7 @@ package manage
 
 import (
 	"bytes"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -78,7 +79,7 @@ func TestConnectionTestStartupGroupsSharedWarningsAndExplainsIPv6Skips(t *testin
 	ctMenuStartup(&out, suite)
 	text := out.String()
 	t.Log("\n" + text)
-	for _, want := range []string{"18 ready / 3 skipped", "12 ready / 9 skipped", "not network failures",
+	for _, want := range []string{fmt.Sprintf("%d ready / 3 skipped", len(connTestReverse)+4), fmt.Sprintf("%d ready / 9 skipped", len(connTestReverse)-2), "not network failures",
 		"[IPv4, IPv6] Naive / HTTP2", "XHTTP / TLS, REALITY / Vision", "These tests use IPv4 packets",
 		"Direct PCK", "Direct xDi", "Direct SNI", "IP spoofing", "both servers", "also updates the BackPack binary"} {
 		if !strings.Contains(text, want) {

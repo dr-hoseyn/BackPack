@@ -101,7 +101,7 @@ func (e *engineControl) setGeneration(stop func(), cfg *config.Config) {
 	e.restart = stop
 	e.role, e.transport = role, transport
 	e.helperReady = nil
-	if cfg.Server.Naive.Enabled() || cfg.Client.Naive.Enabled() || cfg.Server.Xray.Enabled() || cfg.Client.Xray.Enabled() {
+	if cfg.Server.Managed() || cfg.Client.Managed() || config.SingDatagram(cfg.L3.Carrier) {
 		ready := false
 		e.helperReady = &ready
 	}
@@ -122,6 +122,12 @@ func (e *engineControl) helperContext(ctx context.Context) context.Context {
 // engineIdentity names the role and transport a configuration runs, in the
 // words the metrics file uses for the same tunnel.
 func engineIdentity(cfg *config.Config) (role, transport string) {
+	if cfg.AWG.Enabled() {
+		if cfg.AWG.Endpoint == "" {
+			return "server", "awg"
+		}
+		return "client", "awg"
+	}
 	switch {
 	case cfg.L3.Enabled():
 		carrier := cfg.L3.Carrier

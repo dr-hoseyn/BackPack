@@ -73,9 +73,9 @@ func fileFingerprint(path string) (fingerprint, error) {
 // A renewed helper certificate is not a TOML edit. Compare contents so an
 // identical rewrite does not interrupt traffic, and validate a replacement
 // before stopping the current generation. No helper means no extra file reads.
-func helperTLSIdentity(cfg *config.Config) ([7][sha256.Size]byte, error) {
-	var identity [7][sha256.Size]byte
-	paths := [...]string{cfg.Server.Sing.Certificate, cfg.Server.Sing.Key, cfg.Client.Sing.CAFile, cfg.Server.Naive.Certificate, cfg.Server.Naive.Key, cfg.Client.Naive.CAFile, cfg.Server.Xray.Certificate, cfg.Server.Xray.Key, cfg.Client.Xray.CAFile, cfg.Client.Xray.DownloadCAFile}
+func helperTLSIdentity(cfg *config.Config) ([13][sha256.Size]byte, error) {
+	var identity [13][sha256.Size]byte
+	paths := [...]string{cfg.L3.SingL3Config.CertFile, cfg.L3.SingL3Config.KeyFile, cfg.L3.SingL3Config.CAFile, cfg.Server.Sing.Certificate, cfg.Server.Sing.Key, cfg.Client.Sing.CAFile, cfg.Server.Naive.Certificate, cfg.Server.Naive.Key, cfg.Client.Naive.CAFile, cfg.Server.Xray.Certificate, cfg.Server.Xray.Key, cfg.Client.Xray.CAFile, cfg.Client.Xray.DownloadCAFile}
 	for i, path := range paths {
 		if path == "" {
 			continue
@@ -127,7 +127,7 @@ func awaitConfigChange(ctx, gen context.Context, path string, current *config.Co
 	lastTLS, _ := helperTLSIdentity(current)
 	var lastComplaint struct {
 		config fingerprint
-		tls    [7][sha256.Size]byte
+		tls    [13][sha256.Size]byte
 	}
 
 	ticker := time.NewTicker(configPollInterval)
@@ -151,7 +151,7 @@ func awaitConfigChange(ctx, gen context.Context, path string, current *config.Co
 		last = fp
 		complaint := struct {
 			config fingerprint
-			tls    [7][sha256.Size]byte
+			tls    [13][sha256.Size]byte
 		}{fp, tlsIdentity}
 
 		next, err := loadConfig(path)
@@ -257,6 +257,9 @@ func bindingIsFree(binding listenerBinding) bool {
 // server that actually needs waiting for.
 func portsInUse(cfg *config.Config) []listenerBinding {
 	var bindings []listenerBinding
+	if cfg.AWG.Enabled() && cfg.AWG.ListenPort > 0 {
+		bindings = append(bindings, listenerBinding{network: "udp", address: net.JoinHostPort("0.0.0.0", itoa(cfg.AWG.ListenPort))})
+	}
 	if cfg.Server.BindAddr != "" {
 		if cfg.Server.Sing.Enabled() {
 			network := "tcp"

@@ -19,6 +19,9 @@ import (
 )
 
 func runDevice(ctx context.Context, c Config, out io.Writer) error {
+	return runDeviceWithStats(ctx, c, out, nil)
+}
+func runDeviceWithStats(ctx context.Context, c Config, out io.Writer, report func(RuntimeStats)) error {
 	if err := c.Validate(); err != nil {
 		return err
 	}
@@ -83,10 +86,26 @@ func runDevice(ctx context.Context, c Config, out io.Writer) error {
 		return fmt.Errorf("start AmneziaWG UDP endpoint: %w", err)
 	}
 	fmt.Fprintf(out, "AmneziaWG %s · experimental · interface %s ready\nLocal %s ↔ peer %s · UDP required · handshake not yet verified\n", Version, c.Interface, c.Address, c.PeerAddress)
-	select {
-	case <-ctx.Done():
-		return nil
-	case <-d.Wait():
-		return errors.New("AmneziaWG device stopped unexpectedly")
+
+	tick := time.NewTicker(time.Second)
+	defer tick.Stop()
+	readStats := func() {
+		if report != nil {
+			if raw, err := d.IpcGet(); err == nil {
+				report(runtimeStats(raw))
+			}
+		}
+	}
+	readStats()
+	defer readStats()
+	for {
+		select {
+		case <-tick.C:
+			readStats()
+		case <-ctx.Done():
+			return nil
+		case <-d.Wait():
+			return errors.New("AmneziaWG device stopped unexpectedly")
+		}
 	}
 }

@@ -152,8 +152,14 @@ func sectionOf(name string) string {
 		return "[direct]"
 	case "L3Config":
 		return "[l3]"
+	case "SingL3Config":
+		return "[l3] native sing-box datagrams"
 	case "MasqueConfig":
 		return "[l3] — the MASQUE carrier"
+	case "AWGConfig":
+		return "[awg]"
+	case "AWGObfuscation":
+		return "[awg.obfuscation]"
 	case "SingClientConfig":
 		return "[client.sing]"
 	case "SingServerConfig":

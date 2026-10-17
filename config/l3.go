@@ -64,6 +64,9 @@ type L3Config struct {
 	// MASQUE uses verified TLS and an authenticated, loopback-only UDP target.
 	MasqueConfig
 
+	// SingL3Config configures native Hysteria2/TUIC datagrams; unused for other carriers.
+	SingL3Config
+
 	// Encap is always GRE now: four bytes, or eight with gre_key. "ipip" is
 	// still accepted and read as GRE, so a file written when there was a choice
 	// keeps working. One tunnel carries both IPv4 and IPv6.

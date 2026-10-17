@@ -27,7 +27,7 @@ import (
 //
 // What the panel collects is what the wizard asks, in the same order: which
 // side, how the packets travel, where the peer is, a name, the token, the
-// ports, and a tuning preset. The MTU is deliberately absent — the tunnel
+// ports, and a tuning preset. The MTU is deliberately absent â€” the tunnel
 // measures the path itself once it is up.
 
 // NewDirectTunnel is a filled direct-tunnel form.
@@ -65,14 +65,14 @@ type NewDirectTunnel struct {
 
 	// Spoof is the forged-source carrier's drawer, nil unless it was opened.
 	// It is the same shape the CLI's IP Spoofing screen fills, and it is only
-	// read when the carrier is spoof — a drawer sent for a udp tunnel would put
+	// read when the carrier is spoof â€” a drawer sent for a udp tunnel would put
 	// keys in the config that nothing reads.
 	Spoof *SpoofTune `json:"spoof"`
 
 	// Stealth turns on the obfuscation group in one answer, exactly as the
 	// wizard's Stealth question does: padding, header cosmetics, and the fake
 	// TLS record header where the profile carries one. It is applied after the
-	// drawer, so a form can send both and the group wins — which is the answer
+	// drawer, so a form can send both and the group wins â€” which is the answer
 	// the operator gave last.
 	Stealth bool `json:"stealth"`
 
@@ -82,7 +82,7 @@ type NewDirectTunnel struct {
 	Paths int `json:"paths"`
 
 	// FEC turns on error correction with the recommended scheme, the same one
-	// answer the wizard asks. The exact pair is a CLI-only tuning — or comes
+	// answer the wizard asks. The exact pair is a CLI-only tuning â€” or comes
 	// from the other side's setup link, in FECData and FECParity, which then
 	// win: the two ends must use the same pair.
 	FEC       bool `json:"fec"`
@@ -102,10 +102,11 @@ type NewDirectTunnel struct {
 
 	// SNIDomain is the server name the sni carrier announces at the start of
 	// the flow. Empty takes the built-in default. Both ends may name different
-	// domains — each one is only telling the box in front of it what to think —
+	// domains â€” each one is only telling the box in front of it what to think â€”
 	// but the same one on both is one less thing to remember.
 	SNIDomain string              `json:"sniDomain"`
 	Masque    config.MasqueConfig `json:"masque"`
+	Sing      config.SingL3Config `json:"sing"`
 
 	// GREKey separates tunnels that share the same two servers. Both ends must
 	// match. Zero omits it.
@@ -131,23 +132,26 @@ func DirectCarriers() []map[string]string {
 		{"value": "pck", "family": "tcp", "label": "PCK", "needsRoot": "1",
 			"desc": "looks like an ordinary TCP flow, but with no socket the firewall can touch"},
 		{"value": "udp", "family": "udp", "label": "UDP", "needsRoot": "",
-			"desc": "plain and simple — use it where the path does not interfere"},
+			"desc": "plain and simple â€” use it where the path does not interfere"},
 		{"value": "quic", "family": "udp", "label": "Quic", "needsRoot": "",
-			"desc": "a real QUIC session on UDP — indistinguishable from HTTP/3, and needs no root"},
+			"desc": "a real QUIC session on UDP â€” indistinguishable from HTTP/3, and needs no root"},
 		{"value": "masque", "family": "https", "label": "MASQUE (HTTP/3)", "needsRoot": "",
 			"desc": "authenticated CONNECT-UDP over HTTPS; requires a TLS certificate on Kharej"},
+
+		{"value": "hysteria2", "family": "udp", "label": "Hysteria2 / Salamander", "needsRoot": "", "cliOnly": "1", "desc": "native datagrams through the managed sing-box helper; verified TLS"},
+		{"value": "tuic", "family": "udp", "label": "TUIC v5", "needsRoot": "", "cliOnly": "1", "desc": "native QUIC datagrams through the managed sing-box helper; verified TLS"},
 		// cliOnly keeps a carrier out of the panel without taking it away.
 		//
 		// These two are the ones whose answers depend on the route rather than
 		// on the tunnel: which forged source a path will carry, which domain it
 		// already lets through. Getting them wrong produces a tunnel that comes
 		// up and moves nothing, and finding out costs a capture on the machine
-		// itself. That is CLI work, so the panel does not offer them — and the
+		// itself. That is CLI work, so the panel does not offer them â€” and the
 		// engine still runs a config that names one, whichever screen wrote it.
 		{"value": "spoof", "family": "spoof", "label": "IP Spoofing", "needsRoot": "1", "cliOnly": "1",
-			"desc": "raw packets with a forged source address — needs testing on your route"},
+			"desc": "raw packets with a forged source address â€” needs testing on your route"},
 		{"value": "sni", "family": "tcp", "label": "SNI Spoofing", "needsRoot": "1", "cliOnly": "1",
-			"desc": "PCK, plus a TLS hello naming a domain your route allows — the box in front reads that name and lets the rest through"},
+			"desc": "PCK, plus a TLS hello naming a domain your route allows â€” the box in front reads that name and lets the rest through"},
 	}
 }
 
@@ -236,11 +240,11 @@ func DirectPresets(layer ...int) []map[string]string {
 	}
 	return []map[string]string{
 		{"value": PresetTurbo, "label": "Turbo",
-			"desc": "the default — 8 MB of socket buffer, suits most links"},
+			"desc": "the default â€” 8 MB of socket buffer, suits most links"},
 		{"value": PresetBalance, "label": "Balance",
 			"desc": "smallest footprint, for a small VPS or several tunnels on one box"},
 		{"value": PresetAggressive, "label": "Aggressive",
-			"desc": "for a fast link with bursts — 32 MB of buffer and a deep queue"},
+			"desc": "for a fast link with bursts â€” 32 MB of buffer and a deep queue"},
 	}
 }
 
@@ -265,7 +269,7 @@ func SuggestDirectDefaults(side string) map[string]any {
 //
 // A tunnel that is created but does not come up is reported as such rather than
 // as a failure, exactly as the reverse path reports it: the config is on disk
-// either way, and the usual cause — a port already taken — is fixed by editing
+// either way, and the usual cause â€” a port already taken â€” is fixed by editing
 // the tunnel, not by creating it again.
 func CreateDirectTunnel(n NewDirectTunnel) (service string, active bool, err error) {
 	spec, err := n.spec()
@@ -274,14 +278,14 @@ func CreateDirectTunnel(n NewDirectTunnel) (service string, active bool, err err
 	}
 	// A second kharej given the first one's ports: those ports are shared
 	// with it rather than bound twice, which could only fail. The panel has no
-	// screen to ask on, and there is no other reading of the request — see
+	// screen to ask on, and there is no other reading of the request â€” see
 	// l3share.go.
 	if spec.Side == sideIran && len(spec.Ports) > 0 {
 		if spec.Ports, err = shareL3PortsQuietly(spec); err != nil {
 			return "", false, err
 		}
 		if busy := busyForwardPorts(spec.Ports, spec.PeerIP); len(busy) > 0 {
-			return "", false, fmt.Errorf("already in use on this server: %s — "+
+			return "", false, fmt.Errorf("already in use on this server: %s â€” "+
 				"the web panel's own port is the usual one; pick other ports", strings.Join(busy, ", "))
 		}
 	}
@@ -340,17 +344,17 @@ func ApplyDirectTunnel(n NewDirectTunnel) (service string, active bool, created 
 	if err := RestartService(service); err != nil {
 		revertSpec(path, prev, service, wasActive)
 		return service, IsActive(service), false,
-			fmt.Errorf("the tunnel failed to restart with the new settings — reverted: %w", err)
+			fmt.Errorf("the tunnel failed to restart with the new settings â€” reverted: %w", err)
 	}
 	if !WaitServiceActive(service, 10*time.Second) {
 		detail := lastLogLine(service)
 		revertSpec(path, prev, service, wasActive)
 		if detail != "" {
 			return service, IsActive(service), false,
-				fmt.Errorf("the tunnel did not come up with the new settings — reverted. Reason: %s", detail)
+				fmt.Errorf("the tunnel did not come up with the new settings â€” reverted. Reason: %s", detail)
 		}
 		return service, IsActive(service), false,
-			fmt.Errorf("the tunnel did not come up with the new settings — reverted to the previous config")
+			fmt.Errorf("the tunnel did not come up with the new settings â€” reverted to the previous config")
 	}
 	recordConfigChange(name, prev, "")
 	return service, IsActive(service), false, nil
@@ -396,7 +400,7 @@ func writeDirectConfig(name, body string) error {
 }
 
 // spec validates a form and turns it into what the renderer takes. Everything
-// the wizard refuses, this refuses, with the same wording — the two paths write
+// the wizard refuses, this refuses, with the same wording â€” the two paths write
 // the same file and must reject the same input.
 func (n NewDirectTunnel) spec() (l3Spec, error) {
 	var side directSide
@@ -410,7 +414,7 @@ func (n NewDirectTunnel) spec() (l3Spec, error) {
 	}
 
 	// Checked against the one list the screens are built from, not a copy of
-	// it. There were three copies — this one, the panel's and the wizard's —
+	// it. There were three copies â€” this one, the panel's and the wizard's â€”
 	// and adding a carrier to two of them produced a screen that offered
 	// something the form behind it refused by name.
 	carrier := strings.ToLower(strings.TrimSpace(n.Carrier))
@@ -459,7 +463,7 @@ func (n NewDirectTunnel) spec() (l3Spec, error) {
 	if err := l3.CheckTunnelEnds(local, peer); err != nil {
 		return l3Spec{}, err
 	}
-	// Given addresses — from a setup link, or typed into the form — were
+	// Given addresses â€” from a setup link, or typed into the form â€” were
 	// chosen on the other machine or by hand, not against this one's tunnels.
 	// Two tunnels here on one block put two interfaces on one subnet, and the
 	// second one never carries anything.
@@ -479,6 +483,7 @@ func (n NewDirectTunnel) spec() (l3Spec, error) {
 		Encap: "gre", GREKey: n.GREKey,
 		SNIDomain: strings.ToLower(strings.TrimSpace(n.SNIDomain)),
 		Masque:    n.Masque,
+		Sing:      n.Sing,
 		Addr:      addr, Token: token,
 		Iface: freeL3Iface(), LocalIP: local, PeerIP: peer,
 		MTU:            defaultL3MTU,
@@ -555,7 +560,7 @@ func SuggestDirectPort() string {
 // Editing a direct tunnel from the panel.
 //
 // The reverse settings endpoints go through LoadSpec, which reads [server] and
-// [client] and refuses anything else by design — so a direct tunnel sent there
+// [client] and refuses anything else by design â€” so a direct tunnel sent there
 // came back as "not a client tunnel" and the Edit button did nothing. These are
 // the direct half, offering what the CLI editor offers and nothing that has to
 // match the other machine.
@@ -637,6 +642,16 @@ func DirectSettingsOf(name string) (DirectSettings, error) {
 	if err != nil {
 		return DirectSettings{}, err
 	}
+
+	if cfg.AWG.Enabled() {
+		c := cfg.AWG
+		side := "iran"
+		addr := fmt.Sprintf("UDP :%d", c.ListenPort)
+		if c.Endpoint != "" {
+			side, addr = "kharej", c.Endpoint
+		}
+		return DirectSettings{Name: name, Layer: 3, Side: side, Carrier: "awg", Addr: addr, Iface: c.Interface, LocalIP: c.Address, PeerIP: c.PeerAddress, MTU: c.MTU, Ports: strings.Join(c.Ports, ", "), AcceptUDP: c.AcceptUDP, HoldsPorts: true, MaxConnections: c.MaxConnections, BandwidthMbps: c.BandwidthMbps}, nil
+	}
 	if cfg.Direct.Enabled() {
 		d := cfg.Direct
 		return DirectSettings{Name: name, Layer: 4, Side: directRole(d.ResolvedRole()), Carrier: orDefault(d.Transport, "tcp"),
@@ -653,7 +668,7 @@ func DirectSettingsOf(name string) (DirectSettings, error) {
 // directSettingsFrom is the mapping, with no filesystem in it.
 //
 // Separated because ConfigDir is a constant and a test cannot point it
-// somewhere safe — so the only way to check what this decides is to hand it a
+// somewhere safe â€” so the only way to check what this decides is to hand it a
 // config directly. Which is the better shape anyway: the decisions are here and
 // the I/O is above.
 func directSettingsFrom(name string, l config.L3Config) DirectSettings {
@@ -699,6 +714,18 @@ func EditDirectSettings(name string, e DirectEdit) error {
 	if err != nil {
 		return err
 	}
+
+	if cfg.AWG.Enabled() {
+		c, err := applyAWGEdit(cfg.AWG, e)
+		if err != nil {
+			return err
+		}
+		body, err := awgBody(c)
+		if err != nil {
+			return err
+		}
+		return tunnelspec.ApplyBody(name, body, "panel edit")
+	}
 	raw, err := os.ReadFile(app.ConfigPath(name))
 	if err != nil {
 		return err
@@ -707,6 +734,7 @@ func EditDirectSettings(name string, e DirectEdit) error {
 	if _, err := toml.Decode(string(raw), &document); err != nil {
 		return err
 	}
+
 	if cfg.Direct.Enabled() {
 		d := cfg.Direct
 		if e.MTU != nil || e.AutoMTU != nil || e.Paths != nil || e.FEC != nil || e.Spoof != nil || e.Stealth != nil {
@@ -820,7 +848,7 @@ func applyDirectEdit(l config.L3Config, e DirectEdit) (config.L3Config, error) {
 	if e.BandwidthMbps != nil {
 		l.BandwidthMbps = *e.BandwidthMbps
 	}
-	// The carrier's drawer, then the group over it — in that order, so a form
+	// The carrier's drawer, then the group over it â€” in that order, so a form
 	// that sends both gets the group's answer rather than whichever field the
 	// drawer happened to carry. It is the answer the operator gave last, and
 	// the one the screen was showing them.
@@ -879,7 +907,7 @@ func applyDirectEdit(l config.L3Config, e DirectEdit) (config.L3Config, error) {
 func MultipathFor(paths int) l3.MultipathConfig { return l3.MultipathConfig{Paths: paths} }
 
 // directSpecFrom turns a config back into what the renderer takes, carrying
-// every key the form does not touch — including the carrier tables, so an edit
+// every key the form does not touch â€” including the carrier tables, so an edit
 // cannot quietly drop a spoof or pck profile.
 func directSpecFrom(name string, l config.L3Config) l3Spec {
 	side := sideIran
@@ -893,6 +921,7 @@ func directSpecFrom(name string, l config.L3Config) l3Spec {
 		Encap:     orDefault(l.Encap, "gre"),
 		SNIDomain: l.SNIDomain,
 		Masque:    l.MasqueConfig,
+		Sing:      l.SingL3Config,
 		GREKey:    l.GREKey,
 		Addr:      l.Addr,
 		Token:     l.Token,

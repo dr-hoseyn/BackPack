@@ -49,12 +49,36 @@ if [ -n "${NETEM:-}" ]; then
   ip netns exec awg-client tc qdisc add dev awgc root netem $NETEM
 fi
 "$BIN" awg init --endpoint "$endpoint" --dir "$W/pair" "${inner[@]}"
+if [ "${MANAGED:-}" = 1 ]; then
+  python3 - "$W/pair" <<'PY'
+import json, pathlib, sys
+root=pathlib.Path(sys.argv[1])
+for role in ('server','client'):
+    c=json.loads((root/(role+'.json')).read_text())
+    obfs=c.pop('obfuscation')
+    if role=='server':
+        peer=c['peer_address'].split('/')[0]
+        c['ports']=['127.0.0.1:28080='+('['+peer+']' if ':' in peer else peer)+':26020']
+        c['accept_udp']=True
+    lines=['[awg]']+[k+' = '+json.dumps(v) for k,v in c.items()]
+    lines+=['[awg.obfuscation]']+[k+' = '+json.dumps(v) for k,v in obfs.items()]
+    (root/(role+'.toml')).write_text('\n'.join(lines)+'\n')
+PY
+fi
 start_server() {
-  ip netns exec awg-server "$BIN" awg run --config "$W/pair/server.json" >> "$W/server.log" 2>&1 &
+  if [ "${MANAGED:-}" = 1 ]; then
+    ip netns exec awg-server "$BIN" -c "$W/pair/server.toml" >> "$W/server.log" 2>&1 &
+  else
+    ip netns exec awg-server "$BIN" awg run --config "$W/pair/server.json" >> "$W/server.log" 2>&1 &
+  fi
   server_pid=$!
 }
 start_server
-ip netns exec awg-client "$BIN" awg run --config "$W/pair/client.json" > "$W/client.log" 2>&1 &
+if [ "${MANAGED:-}" = 1 ]; then
+  ip netns exec awg-client "$BIN" -c "$W/pair/client.toml" > "$W/client.log" 2>&1 &
+else
+  ip netns exec awg-client "$BIN" awg run --config "$W/pair/client.json" > "$W/client.log" 2>&1 &
+fi
 client_pid=$!
 await_ping() {
   for ((i=0;i<${1};i++)); do
@@ -80,6 +104,15 @@ copy() {
 }
 copy awg-client awg-server "$server_ip" 26001
 copy awg-server awg-client "$client_ip" 26002
+if [ "${MANAGED:-}" = 1 ]; then
+  family=(); case "$client_ip" in *:*) family=(-6) ;; esac
+  ip netns exec awg-client timeout 20 nc "${family[@]}" -l -p 26020 > "$W/forwarded" &
+  receiver_pid=$!
+  sleep .2
+  ip netns exec awg-server timeout 20 nc -N -w 15 127.0.0.1 28080 < "$W/payload"
+  wait "$receiver_pid"; receiver_pid=
+  cmp "$W/payload" "$W/forwarded"
+fi
 # A second process must refuse the live interface without changing it.
 if ip netns exec awg-server "$BIN" awg run --config "$W/pair/server.json" > "$W/duplicate.log" 2>&1; then
   echo 'duplicate interface unexpectedly accepted'; exit 1
@@ -97,6 +130,15 @@ fi
 kill -TERM "$client_pid" "$server_pid"
 wait "$client_pid"; client_pid=
 wait "$server_pid"; server_pid=
+if [ "${MANAGED:-}" = 1 ]; then
+  python3 - "$W/pair" <<'PY'
+import json, pathlib, sys
+for role in ('server','client'):
+    c=json.loads((pathlib.Path(sys.argv[1])/(role+'.metrics.json')).read_text())
+    assert c['transport']=='awg' and c['bytes_in']>0 and c['bytes_out']>0,c
+    assert not any(k in str(c) for k in ('private_key','preshared_key','header_protection_key')),c
+PY
+fi
 for ns in awg-server awg-client; do
   if ip -n "$ns" link show bpawg0 >/dev/null 2>&1; then echo 'interface leaked'; exit 1; fi
 done

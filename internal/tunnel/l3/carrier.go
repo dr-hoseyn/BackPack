@@ -171,7 +171,7 @@ func KnownCarrier(name string) bool { return knownCarrier(name) }
 // refused before anything is created rather than after.
 func knownCarrier(name string) bool {
 	switch name {
-	case CarrierUDP, CarrierPck, CarrierXdi, CarrierSpoof, CarrierQuic, CarrierSNI, CarrierMasque:
+	case CarrierUDP, CarrierPck, CarrierXdi, CarrierSpoof, CarrierQuic, CarrierSNI, CarrierMasque, "hysteria2", "tuic":
 		return true
 	}
 	return false
@@ -221,6 +221,8 @@ func openBareCarrier(ctx context.Context, cfg Config) (DatagramCarrier, net.Addr
 		return openQuicContext(ctx, cfg)
 	case CarrierMasque:
 		return openMasque(ctx, cfg)
+	case "hysteria2", "tuic":
+		return openSingCarrier(ctx, cfg)
 	case CarrierSNI:
 		return openSNI(cfg)
 	default:

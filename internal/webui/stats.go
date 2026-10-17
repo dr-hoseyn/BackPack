@@ -550,6 +550,10 @@ func peerHost(peer string) string {
 // zero that looks like a setting. What it also shows is the certificate, which is the one thing an
 // operator of a wss direct tunnel has to keep an eye on.
 func fillDirectConfig(info *TunnelInfo, cfg config.Config) {
+	if cfg.AWG.Enabled() {
+		info.MaxConnections, info.BandwidthMbps = cfg.AWG.MaxConnections, cfg.AWG.BandwidthMbps
+		return
+	}
 	if cfg.L3.Enabled() {
 		info.MaxConnections = cfg.L3.MaxConnections
 		info.BandwidthMbps = cfg.L3.BandwidthMbps

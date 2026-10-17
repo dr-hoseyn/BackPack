@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/backpack/backpack/config"
 	"github.com/backpack/backpack/internal/app"
 	"github.com/backpack/backpack/internal/optimize"
 )
@@ -29,7 +30,8 @@ type LinkApplyOptions struct {
 	// be found, or to dial another one.
 	Host string
 	// MASQUE certificate files are local to the listening server, never shared.
-	MasqueCert, MasqueKey string
+	MasqueCert, MasqueKey                 string
+	SingBinary, SingCert, SingKey, SingCA string
 }
 
 // LinkApplied is what was built.
@@ -99,6 +101,9 @@ func ApplySetupLink(raw string, o LinkApplyOptions) (LinkApplied, error) {
 	link, err := DecodeShareLink(FindSetupLink(raw))
 	if err != nil {
 		return LinkApplied{}, err
+	}
+	if link.Kind == "awg" {
+		return applyAWGLink(link, o)
 	}
 	if !strings.EqualFold(link.From, "iran") {
 		return LinkApplied{}, fmt.Errorf("this link was made on a kharej server and is for the Iran side: " +
@@ -244,6 +249,14 @@ func reverseLinkClash(s TunnelSpec) string {
 
 func applyDirectLink(link ShareLink, o LinkApplyOptions) (LinkApplied, error) {
 	form := MirrorForPeer(link)
+
+	if config.SingDatagram(link.Tr) {
+		form.Sing.Binary = defaultString(o.SingBinary, managedHelperPath("sing-box"))
+		form.Sing.CertFile, form.Sing.KeyFile, form.Sing.CAFile = o.SingCert, o.SingKey, o.SingCA
+		if form.Side == "kharej" && (o.SingCert == "" || o.SingKey == "") {
+			return LinkApplied{}, fmt.Errorf("native sing-box carrier requires --sing-cert and --sing-key on Kharej, or Setup from a link in the terminal")
+		}
+	}
 	if link.Tr == "masque" {
 		form.Masque.CertFile, form.Masque.KeyFile = o.MasqueCert, o.MasqueKey
 		if form.Masque.CertFile == "" || form.Masque.KeyFile == "" {

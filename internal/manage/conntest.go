@@ -74,7 +74,7 @@ const connTestKind = "test"
 // ConnTestOptions.SpoofSrc); pck, on either side, needs root on both servers.
 var (
 	connTestReverse = []string{"tcp", "tcpmux", "stealth", "pck", "ws", "wss", "wsmux", "wssmux", "kcp", "quic", "udp", "naive", "xhttp", "reality", "hysteria2", "anytls", "shadowtls", "tuic"}
-	connTestDirect  = []string{"udp", "quic", "pck", "xdi", "sni", "masque"}
+	connTestDirect  = []string{"udp", "quic", "pck", "xdi", "sni", "masque", "hysteria2", "tuic"}
 )
 
 // connTestNeedsRoot is a reverse transport that builds its own packets.
@@ -1022,6 +1022,18 @@ func (s *ConnTestIran) Run(ctx context.Context, progress func(int, ConnTestResul
 		_, port, _ := net.SplitHostPort(c.l3.Addr)
 		port = s.coord.directPort(c.caseKey(), port)
 		c.l3.Addr = net.JoinHostPort(kharej, port)
+
+		if config.SingDatagram(c.tr) {
+			s.coord.mu.Lock()
+			raw := s.coord.carriers["direct/"+c.tr]
+			s.coord.mu.Unlock()
+			cfg, err := ctSingClient(raw, s.dir, c.name)
+			if err != nil {
+				c.skip = "native helper identity unavailable: " + err.Error()
+				continue
+			}
+			c.l3.Sing = cfg
+		}
 		if c.tr == "masque" {
 			s.coord.mu.Lock()
 			raw := s.coord.masqueSettings
@@ -1830,6 +1842,9 @@ func (c *ctCoordinator) answer(line, from string) string {
 	if len(f) > 3 {
 		return ""
 	}
+	if f[0] == "sing-cert" && len(f) == 3 {
+		return ctAcceptSingIdentity(c, f[2])
+	}
 	if f[0] == "masque-cert" && len(f) == 3 {
 		if _, err := ctDecodeMasqueSettings(f[2]); err != nil {
 			return ""
@@ -2202,6 +2217,15 @@ func runConnTestKharejLink(ctx context.Context, link ConnTestLink, out io.Writer
 				form.TunnelPort = port
 			}
 			n := form.ToNewDirectTunnel()
+
+			if config.SingDatagram(c.Tr) {
+				native, err := ctSingListener(ctx, link, c.Tr, dir, name, usedDirectPorts)
+				if err != nil {
+					local[c.Kind+"/"+key] = err.Error()
+					continue
+				}
+				n.Sing = native
+			}
 			if c.Tr == "masque" {
 				var err error
 				n.Masque, err = ctMasqueListener(ctx, link, dir, name, usedDirectPorts)

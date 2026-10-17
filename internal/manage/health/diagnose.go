@@ -750,6 +750,15 @@ func directChecks(g string, t core.Tunnel) []Check {
 			Detail: "unreadable: " + err.Error(), Fix: "restore from a backup"})
 	}
 
+	if cfg.AWG.Enabled() {
+		out = append(out, Check{Group: g, Name: "Config", Level: CheckOK, Detail: "independent AmneziaWG engine; only the peer host route is installed"})
+		if ifaceExists(cfg.AWG.Interface) {
+			out = append(out, Check{Group: g, Name: "Interface", Level: CheckOK, Detail: cfg.AWG.Interface})
+		} else {
+			out = append(out, Check{Group: g, Name: "Interface", Level: CheckFail, Detail: "missing " + cfg.AWG.Interface, Fix: "check TUN access and the service log"})
+		}
+		return out
+	}
 	if cfg.L3.Enabled() {
 		l := cfg.L3
 		out = append(out, Check{Group: g, Name: "Config", Level: CheckOK,

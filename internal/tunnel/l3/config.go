@@ -69,6 +69,7 @@ type Config struct {
 	// Carrier names the datagram carrier beneath the tunnel.
 	Carrier string
 	Masque  config.MasqueConfig
+	Sing    config.SingL3Config
 
 	// Encap names the framing. There is one: "gre". A config that still says
 	// "ipip" is read as GRE — see NewEncap.
@@ -212,6 +213,11 @@ func (c *Config) Validate() error {
 	if !knownCarrier(c.Carrier) {
 		return fmt.Errorf("l3: carrier %q is not available (have %q, %q, %q, %q, %q, %q, %q)",
 			c.Carrier, CarrierUDP, CarrierPck, CarrierXdi, CarrierSpoof, CarrierQuic, CarrierSNI, CarrierMasque)
+	}
+	if config.SingDatagram(c.Carrier) {
+		if err := validateSingCarrier(*c); err != nil {
+			return err
+		}
 	}
 	if c.Carrier == CarrierMasque {
 		if err := c.Masque.Validate(c.Mode == ModeListen); err != nil {
@@ -362,6 +368,7 @@ func ConfigFromTable(table config.L3Config) (Config, error) {
 		Token:          table.Token,
 		Carrier:        table.Carrier,
 		Masque:         table.MasqueConfig,
+		Sing:           table.SingL3Config,
 		Encap:          table.Encap,
 		GREKey:         table.GREKey,
 		Iface:          table.Iface,

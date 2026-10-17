@@ -34,6 +34,9 @@ func IsDatagram(t string) bool {
 	// inevitable failure as the tunnel being down. The Iran card went offline
 	// while the tunnel was carrying traffic and the kharej card stayed green,
 	// because only the dialling side runs that probe.
+	if t == "awg" {
+		return true
+	}
 	if strings.HasPrefix(t, "l3/") {
 		// Every layer-3 carrier is a datagram one, and no reliable carrier can
 		// ever be added — see the l3 package doc.

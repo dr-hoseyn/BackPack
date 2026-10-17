@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/backpack/backpack/config"
 	"io"
 	"net"
 	"net/netip"
@@ -23,35 +24,9 @@ import (
 
 const Version = "v3.1.20260828"
 
-type Obfuscation struct {
-	JunkCount           int    `json:"junk_count"`
-	JunkMin             int    `json:"junk_min"`
-	JunkMax             int    `json:"junk_max"`
-	S1                  int    `json:"s1"`
-	S2                  int    `json:"s2"`
-	S3                  int    `json:"s3"`
-	S4                  int    `json:"s4"`
-	H1                  string `json:"h1"`
-	H2                  string `json:"h2"`
-	H3                  string `json:"h3"`
-	H4                  string `json:"h4"`
-	HeaderProtectionKey string `json:"header_protection_key"`
-	ContentPadding      int    `json:"content_padding"`
-}
+type Obfuscation = config.AWGObfuscation
 
-type Config struct {
-	Interface     string      `json:"interface"`
-	Address       string      `json:"address"`
-	PeerAddress   string      `json:"peer_address"`
-	ListenPort    int         `json:"listen_port"`
-	Endpoint      string      `json:"endpoint,omitempty"`
-	PrivateKey    string      `json:"private_key"`
-	PeerPublicKey string      `json:"peer_public_key"`
-	PresharedKey  string      `json:"preshared_key"`
-	MTU           int         `json:"mtu"`
-	Keepalive     int         `json:"keepalive"`
-	Obfuscation   Obfuscation `json:"obfuscation"`
-}
+type Config config.AWGConfig
 
 var interfaceName = regexp.MustCompile(`^bpawg[a-zA-Z0-9_-]{0,10}$`)
 
@@ -74,6 +49,20 @@ func hostPrefix(value string) (netip.Prefix, error) {
 func (c Config) Validate() error {
 	if !interfaceName.MatchString(c.Interface) {
 		return errors.New("interface must start with bpawg and contain at most 15 letters, digits, underscores or hyphens")
+	}
+
+	if c.MaxConnections < 0 || c.BandwidthMbps < 0 {
+		return errors.New("forwarding limits must be nonnegative")
+	}
+	if c.PeerSetupKey != "" {
+		raw, err := keyBytes(c.PeerSetupKey, "peer_setup_key")
+		if err != nil {
+			return err
+		}
+		key, err := ecdh.X25519().NewPrivateKey(raw)
+		if err != nil || base64.StdEncoding.EncodeToString(key.PublicKey().Bytes()) != c.PeerPublicKey {
+			return errors.New("peer_setup_key does not match peer_public_key")
+		}
 	}
 	a, err := hostPrefix(c.Address)
 	if err != nil {

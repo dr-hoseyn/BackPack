@@ -84,6 +84,10 @@ func manageOne(t Tunnel) {
 		})
 		switch idx {
 		case 0:
+			if t.Transport == "awg" {
+				editAWG(t)
+				break
+			}
 			// The reverse editor reads [server] and [client], which a direct
 			// config does not have. Sending one there would show an empty
 			// screen and, worse, could write a reverse-shaped file over it.

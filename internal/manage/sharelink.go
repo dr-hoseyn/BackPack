@@ -79,6 +79,8 @@ type ShareLink struct {
 	SNI              string `json:"sni,omitempty"` // direct, sni carrier only
 	MasqueTarget     string `json:"mat,omitempty"`
 	MasqueServerName string `json:"masn,omitempty"`
+	SingTarget       string `json:"sgt,omitempty"`
+	SingServerName   string `json:"sgn,omitempty"`
 	Port             string `json:"p"`           // the tunnel port
 	Host             string `json:"h,omitempty"` // the producing side's real address
 
@@ -161,6 +163,7 @@ type ShareLink struct {
 	HelperCA        string `json:"hca,omitempty"`
 	HelperObfs      string `json:"hob,omitempty"`
 	HelperSSKey     string `json:"hss,omitempty"`
+	AWGPeer         string `json:"awgp,omitempty"`
 }
 
 // Encode renders a link as the string an operator copies.
@@ -276,7 +279,7 @@ func checkShareLink(out ShareLink) error {
 		return fmt.Errorf("the setup link is missing the token or the transport — it was not made by this version")
 	}
 	switch out.Kind {
-	case "reverse", "direct":
+	case "reverse", "direct", "awg":
 	default:
 		return fmt.Errorf("the setup link does not say what kind of tunnel it is")
 	}
@@ -308,6 +311,7 @@ type PeerForm struct {
 	Carrier    string              `json:"carrier,omitempty"`   // direct
 	SNIDomain  string              `json:"sniDomain,omitempty"` // direct, sni carrier only
 	Masque     config.MasqueConfig `json:"masque,omitempty"`
+	Sing       config.SingL3Config `json:"sing,omitempty"`
 	Encap      string              `json:"encap,omitempty"`      // direct
 	ServerAddr string              `json:"serverAddr,omitempty"` // the address this side dials
 	TunnelPort string              `json:"tunnelPort,omitempty"`
@@ -358,7 +362,7 @@ type PeerForm struct {
 // and so needs the link's Host.
 func (l ShareLink) PeerNeedsAddress() bool {
 	side := l.PeerSide()
-	return (l.Kind == "reverse" && side == "kharej") || (l.Kind == "direct" && side == "iran")
+	return ((l.Kind == "reverse" || l.Kind == "awg") && side == "kharej") || (l.Kind == "direct" && side == "iran")
 }
 
 // NeedsServerAddr reports whether the side this form builds dials the other.
@@ -423,6 +427,10 @@ func MirrorForPeer(l ShareLink) PeerForm {
 		}
 	} else {
 		f.Carrier = l.Tr
+		if config.SingDatagram(l.Tr) {
+			f.Sing.Target, f.Sing.ServerName = l.SingTarget, l.SingServerName
+			f.Sing.Binary = managedHelperPath("sing-box")
+		}
 		if l.Tr == "masque" {
 			f.Masque.Target, f.Masque.ServerName = l.MasqueTarget, l.MasqueServerName
 			paired = append(paired, "masque.target", "masque.serverName")
@@ -598,6 +606,9 @@ func shareLinkOf(name, host string, cfg config.Config) (string, error) {
 	}
 	l := ShareLink{Name: name, Host: strings.TrimSpace(host)}
 
+	if cfg.AWG.Enabled() {
+		return awgLink(name, strings.TrimSpace(host), cfg.AWG)
+	}
 	switch {
 	case cfg.L3.Enabled():
 		l.Kind = "direct"
@@ -608,6 +619,9 @@ func shareLinkOf(name, host string, cfg config.Config) (string, error) {
 		l.Tok = cfg.L3.Token
 		l.Tr = orDefault(cfg.L3.Carrier, "udp")
 		l.SNI = cfg.L3.SNIDomain
+		if config.SingDatagram(l.Tr) {
+			l.SingTarget, l.SingServerName = cfg.L3.SingL3Config.TargetAddr(), cfg.L3.SingL3Config.ServerName
+		}
 		if l.Tr == "masque" {
 			l.MasqueTarget = cfg.L3.MasqueConfig.TargetAddr()
 			l.MasqueServerName = cfg.L3.MasqueConfig.ServerName

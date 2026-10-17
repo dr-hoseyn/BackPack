@@ -30,6 +30,44 @@ jobs:
           echo "LD_LIBRARY_PATH=$RUNNER_TEMP/sing-box-1.14.2-linux-amd64" >> "$GITHUB_ENV"
       - name: Actual TCP and native UDP transfers with all four protocols
         run: go test ./internal/tunnel/naive -run '^TestSing' -count=1 -race -v -timeout 8m
+      - name: Prepare private configuration fixtures
+        run: sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
+      - name: Native carriers through Noise and paired management settings
+        run: go test ./cmd ./internal/manage ./internal/tunnel/l3 ./internal/amneziawg ./config -run '^(TestSing|TestNativeSing|TestNativeDatagram|TestManagedAWG|TestManagedTelemetry|TestConnectionTestStartup|TestEveryShareLink|TestHelperCertificate)' -count=1 -race -v -timeout 4m
+      - name: Real Linux TUN, IPv4 and IPv6, process restart and packet loss
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq iproute2 netcat-openbsd bc
+          go build -o "$RUNNER_TEMP/backpack-protocols" .
+          for protocol in hysteria2 tuic; do
+            for scenario in ipv4 ipv6 restart loss; do
+              extra=()
+              case "$scenario" in
+                ipv6) extra+=(IPV6=1) ;;
+                restart) extra+=(RESTART=1) ;;
+                loss) extra+=("NETEM=delay 20ms loss 1%") ;;
+              esac
+              sudo env BIN="$RUNNER_TEMP/backpack-protocols" W="$RUNNER_TEMP/native-$protocol-$scenario" \
+                BP_SINGBOX_BINARY="$BP_SINGBOX_BINARY" LD_LIBRARY_PATH="$LD_LIBRARY_PATH" "${extra[@]}" \
+                timeout -k 5s 6m unshare --net --mount --fork -- bash internal/e2e/testdata/l3live.sh "$protocol" 1 \
+                | tee "$RUNNER_TEMP/native-$protocol-$scenario.out"
+              grep -q '^RESULT OK' "$RUNNER_TEMP/native-$protocol-$scenario.out"
+            done
+          done
+          for scenario in ipv4 ipv6 restart loss; do
+            extra=()
+            case "$scenario" in
+              ipv6) extra+=(IPV6=1) ;;
+              restart) extra+=(RESTART=1) ;;
+              loss) extra+=("NETEM=delay 20ms loss 1%") ;;
+            esac
+            sudo env MANAGED=1 BIN="$RUNNER_TEMP/backpack-protocols" W="$RUNNER_TEMP/managed-awg-$scenario" "${extra[@]}" \
+              timeout -k 5s 6m unshare --net --mount --fork -- bash internal/amneziawg/testdata/live.sh \
+              | tee "$RUNNER_TEMP/managed-awg-$scenario.out"
+            grep -q '^RESULT OK' "$RUNNER_TEMP/managed-awg-$scenario.out"
+          done
       - name: Regression tests and race detector
         run: go test ./... -race -count=1 -timeout 15m
       - name: Vet

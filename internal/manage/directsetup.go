@@ -270,6 +270,19 @@ func pendingShareLinkFrom(cfg l3Spec, host string, extras linkExtras) string {
 // askL3CarrierExtras asks the questions only some carriers have. It reports
 // false when the setup cannot go on.
 func askL3CarrierExtras(cfg *l3Spec, side directSide) bool {
+	if config.SingDatagram(cfg.Carrier) {
+		cfg.Sing.Binary = tui.PromptDefault("Sing-Box Binary", defaultString(cfg.Sing.Binary, managedHelperPath("sing-box")))
+		cfg.Sing.Target = tui.PromptDefault("Private UDP Target (Same On Both Ends)", cfg.Sing.TargetAddr())
+		cfg.Sing.ServerName = tui.PromptDefault("Verified TLS Hostname Or IP", cfg.Sing.ServerName)
+		if side == sideKharej {
+			cfg.Sing.CertFile = tui.PromptDefault("TLS Certificate File", cfg.Sing.CertFile)
+			cfg.Sing.KeyFile = tui.PromptDefault("TLS Private Key File", cfg.Sing.KeyFile)
+		} else {
+			cfg.Sing.CAFile = tui.PromptDefault("Private CA File (Empty = System Trust)", cfg.Sing.CAFile)
+		}
+		return true
+	}
+
 	if cfg.Carrier == "masque" {
 		cfg.Masque.Target = strings.TrimSpace(tui.PromptDefault("MASQUE Private UDP Target (Same On Both Ends)", cfg.Masque.TargetAddr()))
 		cfg.Masque.ServerName = strings.TrimSpace(tui.PromptDefault("TLS Server Name (Certificate Hostname)", cfg.Masque.ServerName))
@@ -359,6 +372,18 @@ func setupL3FromLink(chosen string) {
 
 	form := MirrorForPeer(link)
 	form.Name = uniqueName(tui.PromptDefault("Tunnel Name", form.Name))
+
+	if config.SingDatagram(form.Carrier) {
+		side := sideIran
+		if form.Side == "kharej" {
+			side = sideKharej
+		}
+		cfg := l3Spec{Carrier: form.Carrier, Sing: form.Sing}
+		if !askL3CarrierExtras(&cfg, side) {
+			return
+		}
+		form.Sing = cfg.Sing
+	}
 	if link.Tr == "masque" {
 		cfg := l3Spec{Carrier: "masque", Masque: form.Masque}
 		if !askL3CarrierExtras(&cfg, sideKharej) {
