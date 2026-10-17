@@ -44,7 +44,7 @@ func IsDatagram(t string) bool {
 		// probe is exactly the right thing for them.
 		return false
 	}
-	return t == "udp" || t == "kcp" || t == "xdi" || t == "quic" || t == "pck"
+	return t == "udp" || t == "kcp" || t == "xdi" || t == "quic" || t == "pck" || t == "hysteria2" || t == "tuic"
 }
 
 // SupportsProxyProtocol reports whether a transport can carry the PROXY

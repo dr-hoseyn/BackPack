@@ -75,7 +75,7 @@ func fileFingerprint(path string) (fingerprint, error) {
 // before stopping the current generation. No helper means no extra file reads.
 func helperTLSIdentity(cfg *config.Config) ([7][sha256.Size]byte, error) {
 	var identity [7][sha256.Size]byte
-	paths := [7]string{cfg.Server.Naive.Certificate, cfg.Server.Naive.Key, cfg.Client.Naive.CAFile, cfg.Server.Xray.Certificate, cfg.Server.Xray.Key, cfg.Client.Xray.CAFile, cfg.Client.Xray.DownloadCAFile}
+	paths := [...]string{cfg.Server.Sing.Certificate, cfg.Server.Sing.Key, cfg.Client.Sing.CAFile, cfg.Server.Naive.Certificate, cfg.Server.Naive.Key, cfg.Client.Naive.CAFile, cfg.Server.Xray.Certificate, cfg.Server.Xray.Key, cfg.Client.Xray.CAFile, cfg.Client.Xray.DownloadCAFile}
 	for i, path := range paths {
 		if path == "" {
 			continue
@@ -258,6 +258,13 @@ func bindingIsFree(binding listenerBinding) bool {
 func portsInUse(cfg *config.Config) []listenerBinding {
 	var bindings []listenerBinding
 	if cfg.Server.BindAddr != "" {
+		if cfg.Server.Sing.Enabled() {
+			network := "tcp"
+			if config.SingDatagram(cfg.Server.Sing.Protocol) {
+				network = "udp"
+			}
+			bindings = append(bindings, listenerBinding{network: network, address: cfg.Server.Sing.Listen})
+		}
 		if cfg.Server.Naive.Enabled() {
 			bindings = append(bindings, listenerBinding{network: "tcp", address: cfg.Server.Naive.Listen})
 		}

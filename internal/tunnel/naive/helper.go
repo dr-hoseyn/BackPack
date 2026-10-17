@@ -108,6 +108,9 @@ func StartXrayServer(ctx context.Context, c *config.ServerConfig, log *logrus.Lo
 }
 
 func helperLabel(mode string) string {
+	if strings.HasPrefix(mode, "sing-") {
+		return "sing-box"
+	}
 	if strings.HasPrefix(mode, "xray-") {
 		return "Xray"
 	}
@@ -161,7 +164,7 @@ func startManaged(parent context.Context, binary, mode string, body []byte, addr
 	ctx, cancel := context.WithCancel(parent)
 	output := helperOutput(ctx)
 	h := &Helper{cancel: cancel, done: make(chan struct{}), addr: addr, dir: dir}
-	if mode == "server" || strings.HasPrefix(mode, "xray-") {
+	if mode == "server" || strings.HasPrefix(mode, "xray-") || strings.HasPrefix(mode, "sing-") {
 		checkCtx, stop := context.WithTimeout(ctx, 10*time.Second)
 		args := []string{"check", "-c", file}
 		if label == "Xray" {
@@ -200,7 +203,7 @@ func startManaged(parent context.Context, binary, mode string, body []byte, addr
 		first := true
 		for ctx.Err() == nil {
 			args := []string{file}
-			if mode == "server" || label == "Xray" {
+			if mode == "server" || label == "Xray" || label == "sing-box" {
 				args = []string{"run", "-c", file}
 			}
 			cmd := exec.Command(binary, args...)
@@ -304,7 +307,7 @@ func waitReady(ctx context.Context, addr, mode string, exited <-chan error) erro
 		conn, err := net.DialTimeout("tcp", addr, 100*time.Millisecond)
 		if err == nil {
 			_ = conn.SetDeadline(time.Now().Add(200 * time.Millisecond))
-			if mode == "client" || mode == "xray-client" {
+			if mode == "client" || mode == "xray-client" || strings.HasPrefix(mode, "sing-") {
 				_, err = conn.Write([]byte{5, 1, 0})
 				if err == nil {
 					var reply [2]byte

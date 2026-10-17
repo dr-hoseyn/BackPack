@@ -95,8 +95,11 @@ func (c *Client) Start() {
 		c.logger.Errorf("ignoring the configured outbound settings and dialling directly: %v", err)
 		outbound = nil
 	}
-	if c.config.Naive.Enabled() || c.config.Xray.Enabled() {
+	if c.config.Managed() {
 		helper, err := naive.StartWithRetry(c.ctx, c.logger, func() (*naive.Helper, error) {
+			if c.config.Sing.Enabled() {
+				return naive.StartSingClient(c.ctx, c.config, c.logger)
+			}
 			if c.config.Xray.Enabled() {
 				return naive.StartXrayClient(c.ctx, c.config, c.logger)
 			}
@@ -211,7 +214,7 @@ func (c *Client) startTransport(ctx context.Context, tr config.TransportType, en
 			// Stealth is the TCP transport with a Noise record layer over every
 			// tunnel connection; everything else about it is identical.
 			Stealth:       tr == config.STEALTH,
-			ManagedHelper: c.config.Naive.Enabled() || c.config.Xray.Enabled(),
+			ManagedHelper: c.config.Managed(),
 		}
 		tcpClient := transport.NewTCPClient(ctx, tcpConfig, c.logger)
 		go tcpClient.Start()

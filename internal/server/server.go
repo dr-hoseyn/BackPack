@@ -47,8 +47,11 @@ func NewServer(cfg *config.ServerConfig, parentCtx context.Context) *Server {
 }
 
 func (s *Server) Start() {
-	if s.config.Naive.Enabled() || s.config.Xray.Enabled() {
+	if s.config.Managed() {
 		helper, err := naive.StartWithRetry(s.ctx, s.logger, func() (*naive.Helper, error) {
+			if s.config.Sing.Enabled() {
+				return naive.StartSingServer(s.ctx, s.config, s.logger)
+			}
 			if s.config.Xray.Enabled() {
 				return naive.StartXrayServer(s.ctx, s.config, s.logger)
 			}
@@ -179,7 +182,7 @@ func (s *Server) startTransport(ctx context.Context, tr config.TransportType) ru
 			// Stealth is the TCP transport with a Noise record layer over every
 			// tunnel connection; everything else about it is identical.
 			Stealth:       tr == config.STEALTH,
-			ManagedHelper: s.config.Naive.Enabled() || s.config.Xray.Enabled(),
+			ManagedHelper: s.config.Managed(),
 		}
 
 		tcpServer := transport.NewTCPServer(ctx, tcpConfig, s.logger)

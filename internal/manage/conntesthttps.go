@@ -17,6 +17,9 @@ import (
 func ctProbeHTTPS(parent context.Context, spec TunnelSpec) string {
 	ctx, cancel := context.WithTimeout(parent, 5*time.Second)
 	defer cancel()
+	if spec.SingClient.Enabled() {
+		return ""
+	}
 	endpoint, serverName, caFile := spec.XrayClient.Server, spec.XrayClient.ServerName, spec.XrayClient.CAFile
 	if spec.NaiveClient.Enabled() {
 		endpoint, caFile = spec.NaiveClient.Server, spec.NaiveClient.CAFile

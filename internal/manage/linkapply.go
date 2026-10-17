@@ -190,7 +190,7 @@ func updateReverseFromLink(link ShareLink, o LinkApplyOptions, existing string) 
 	s.KCPDataShards, s.KCPParityShards = paired.KCPDataShards, paired.KCPParityShards
 	previousXray := s.XrayClient
 	clearManagedTransport(&s)
-	s.NaiveClient, s.XrayClient = paired.NaiveClient, paired.XrayClient
+	s.NaiveClient, s.XrayClient, s.SingClient = paired.NaiveClient, paired.XrayClient, paired.SingClient
 	if managedTransport(link.Tr) {
 		managedClientFromLink(&s, link, host)
 		s.XrayClient.CopyXHTTPOptions(previousXray)

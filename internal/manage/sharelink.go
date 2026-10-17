@@ -159,6 +159,8 @@ type ShareLink struct {
 	HelperPublicKey string `json:"hk,omitempty"`
 	HelperShortID   string `json:"hsid,omitempty"`
 	HelperCA        string `json:"hca,omitempty"`
+	HelperObfs      string `json:"hob,omitempty"`
+	HelperSSKey     string `json:"hss,omitempty"`
 }
 
 // Encode renders a link as the string an operator copies.
@@ -591,7 +593,7 @@ func shareLinkWith(name, host string, cfg config.Config, x linkExtras) (string, 
 // shareLinkOf builds the link from a config in hand, which is how the direct
 // wizard shows it in its summary before the tunnel is written.
 func shareLinkOf(name, host string, cfg config.Config) (string, error) {
-	if cfg.Client.Naive.Enabled() || cfg.Client.Xray.Enabled() {
+	if cfg.Client.Managed() {
 		return "", fmt.Errorf("generate the managed HTTPS setup link on Iran; server private keys cannot be reconstructed from Kharej")
 	}
 	l := ShareLink{Name: name, Host: strings.TrimSpace(host)}
@@ -660,10 +662,16 @@ func shareLinkOf(name, host string, cfg config.Config) (string, error) {
 	if l.Tok == "" {
 		return "", fmt.Errorf("%q has no token to hand over", name)
 	}
-	if cfg.Server.Naive.Enabled() || cfg.Server.Xray.Enabled() {
+	if cfg.Server.Managed() {
 		l.InnerPort = l.Port
 		var cert string
-		if cfg.Server.Naive.Enabled() {
+
+		if cfg.Server.Sing.Enabled() {
+			x := cfg.Server.Sing
+			l.Tr, l.Port, l.HelperPassword, l.HelperSNI = x.Protocol, addrPort(x.Listen), x.Password, x.ServerName
+			l.HelperUUID, l.HelperObfs, l.HelperSSKey = x.UUID, x.ObfsPassword, x.ShadowsocksKey
+			cert = x.Certificate
+		} else if cfg.Server.Naive.Enabled() {
 			x := cfg.Server.Naive
 			l.Tr, l.Port, l.HelperUser, l.HelperPassword = "naive", addrPort(x.Listen), x.Username, x.Password
 			cert = x.Certificate
@@ -766,7 +774,7 @@ func prepareManagedLink(s TunnelSpec, link ShareLink) error {
 			return err
 		}
 		withoutCA := s
-		withoutCA.NaiveClient.CAFile, withoutCA.XrayClient.CAFile = "", ""
+		withoutCA.NaiveClient.CAFile, withoutCA.XrayClient.CAFile, withoutCA.SingClient.CAFile = "", "", ""
 		if err := validateManagedSpec(withoutCA); err != nil {
 			return err
 		}
@@ -783,7 +791,11 @@ func managedClientFromLink(s *TunnelSpec, link ShareLink, host string) {
 	s.FallbackAddrs, s.FallbackTransports = nil, nil
 	s.FallbackDwell = 0
 	public := net.JoinHostPort(host, link.Port)
-	if link.Tr == "naive" {
+
+	if config.SingProtocol(link.Tr) {
+		s.SingClient = config.SingClientConfig{Binary: managedHelperPath("sing-box"), Protocol: link.Tr, Server: public, ServerName: link.HelperSNI,
+			Password: link.HelperPassword, UUID: link.HelperUUID, ObfsPassword: link.HelperObfs, ShadowsocksKey: link.HelperSSKey, CAFile: managedLinkCAPath(link.HelperCA)}
+	} else if link.Tr == "naive" {
 		s.NaiveClient = config.NaiveClientConfig{Binary: managedHelperPath("naive"), Server: public,
 			Username: link.HelperUser, Password: link.HelperPassword, CAFile: managedLinkCAPath(link.HelperCA)}
 	} else {
