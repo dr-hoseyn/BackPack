@@ -369,13 +369,24 @@ func changeTunnelPort(name string, spec TunnelSpec) {
 
 // changeForwardedPorts prompts for and applies a new forwarded-ports list.
 func changeForwardedPorts(name string, spec TunnelSpec) {
-	fmt.Println()
-	tui.Info("Current: " + strings.Join(VisiblePorts(spec.Ports, spec.Token), ", "))
-	raw := tui.Prompt("Forwarded Ports (Full List, e.g. 443,8080): ")
-	ports := parsePorts(raw)
-	if len(ports) == 0 {
-		tui.Error("No valid ports.")
-		tui.PressEnter()
+	editor := forwardPortEditor{defaultHost: "127.0.0.1", reverse: true, allowEmpty: true}
+	editor.checkEntry = func(entry string) error {
+		if isBotRelayPort(entry, spec.Token) {
+			return fmt.Errorf("that target is reserved for the built-in relay; choose the service's port instead")
+		}
+		return nil
+	}
+	// The hidden relay and control channel must survive user port edits.
+	for _, p := range spec.Ports {
+		if isBotRelayPort(p, spec.Token) {
+			editor.reserved = append(editor.reserved, p)
+		}
+	}
+	if spec.BindAddr != "" {
+		editor.reserved = append(editor.reserved, spec.BindAddr+"=1")
+	}
+	ports, changed := editor.edit(VisiblePorts(spec.Ports, spec.Token))
+	if !changed {
 		return
 	}
 	if err := EditTunnel(name, "", "", ports); err != nil {
