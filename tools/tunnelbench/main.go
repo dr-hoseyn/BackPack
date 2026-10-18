@@ -27,15 +27,17 @@ func (v *stringsFlag) String() string     { return strings.Join(*v, ",") }
 func (v *stringsFlag) Set(s string) error { *v = append(*v, s); return nil }
 
 type result struct {
-	Name          string          `json:"name"`
-	StartedAt     time.Time       `json:"started_at_utc"`
-	Endpoint      string          `json:"endpoint"`
-	Parallel      int             `json:"parallel"`
-	Seconds       float64         `json:"seconds"`
-	VerifiedBytes uint64          `json:"verified_bytes"`
-	Mbps          float64         `json:"verified_echo_mbps"`
-	Failures      uint64          `json:"failures"`
-	Resources     *resourceResult `json:"local_resources,omitempty"`
+	Name             string          `json:"name"`
+	StartedAt        time.Time       `json:"started_at_utc"`
+	Endpoint         string          `json:"endpoint"`
+	Parallel         int             `json:"parallel"`
+	Seconds          float64         `json:"seconds"`
+	ChunkBytes       int             `json:"chunk_bytes"`
+	IOTimeoutSeconds float64         `json:"io_timeout_seconds"`
+	VerifiedBytes    uint64          `json:"verified_bytes"`
+	Mbps             float64         `json:"verified_echo_mbps"`
+	Failures         uint64          `json:"failures"`
+	Resources        *resourceResult `json:"local_resources,omitempty"`
 }
 type resourceResult struct {
 	CPUSeconds float64 `json:"cpu_seconds"`
@@ -103,9 +105,9 @@ func (s *sampler) sample() {
 	s.result.Samples++
 	s.result.PeakRSS = max(s.result.PeakRSS, rss)
 }
-func runCase(parent context.Context, endpoint string, parallel int, duration time.Duration, chunk int, pids []int32) (result, error) {
-	r := result{Endpoint: endpoint, Parallel: parallel}
-	if parallel < 1 || parallel > 256 || chunk < 1 || chunk > 1<<20 || duration <= 0 {
+func runCase(parent context.Context, endpoint string, parallel int, duration time.Duration, chunk int, ioTimeout time.Duration, pids []int32) (result, error) {
+	r := result{Endpoint: endpoint, Parallel: parallel, ChunkBytes: chunk, IOTimeoutSeconds: ioTimeout.Seconds()}
+	if parallel < 1 || parallel > 256 || chunk < 1 || chunk > 1<<20 || duration <= 0 || ioTimeout <= 0 {
 		return r, errors.New("invalid benchmark bounds")
 	}
 	// Establish all connections before the sampling window. A setup failure
@@ -166,7 +168,7 @@ func runCase(parent context.Context, endpoint string, parallel int, duration tim
 			stop := context.AfterFunc(ctx, func() { conn.Close() })
 			defer stop()
 			for ctx.Err() == nil {
-				conn.SetDeadline(minTime(deadline, time.Now().Add(2*time.Second)))
+				conn.SetDeadline(minTime(deadline, time.Now().Add(ioTimeout)))
 				_, err := io.CopyN(conn, bytes.NewReader(body), int64(len(body)))
 				if err == nil {
 					_, err = io.ReadFull(conn, read)
@@ -251,6 +253,7 @@ func run(ctx context.Context, args []string, out, diagnostics io.Writer) error {
 	duration := flags.Duration("duration", 15*time.Second, "measurement time per target/concurrency")
 	concurrency := flags.String("parallel", "1,8,32", "comma-separated simultaneous connections")
 	chunk := flags.Int("chunk", 32<<10, "verified bytes per echo exchange")
+	ioTimeout := flags.Duration("io-timeout", 2*time.Second, "maximum time for one verified echo exchange")
 	asJSON := flags.Bool("json", false, "write a JSON array for comparison")
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -270,8 +273,8 @@ func run(ctx context.Context, args []string, out, diagnostics io.Writer) error {
 		fmt.Fprintln(diagnostics, "Echo backend:", l.Addr())
 		return serve(ctx, l)
 	}
-	if len(targets) == 0 || len(targets) > 16 || *duration < time.Second || *duration > 10*time.Minute || *chunk < 1 || *chunk > 1<<20 {
-		return errors.New("provide 1..16 targets; duration 1s..10m; chunk 1..1048576")
+	if len(targets) == 0 || len(targets) > 16 || *duration < time.Second || *duration > 10*time.Minute || *chunk < 1 || *chunk > 1<<20 || *ioTimeout < 100*time.Millisecond || *ioTimeout > time.Minute {
+		return errors.New("provide 1..16 targets; duration 1s..10m; chunk 1..1048576; io-timeout 100ms..1m")
 	}
 	var levels []int
 	if len(strings.Split(*concurrency, ",")) > 8 {
@@ -312,7 +315,7 @@ func run(ctx context.Context, args []string, out, diagnostics io.Writer) error {
 				return ctx.Err()
 			}
 			fmt.Fprintf(diagnostics, "Testing %s with %d connections...\n", name, n)
-			r, err := runCase(ctx, endpoints[name], n, *duration, *chunk, pids[name])
+			r, err := runCase(ctx, endpoints[name], n, *duration, *chunk, *ioTimeout, pids[name])
 			if err != nil {
 				return fmt.Errorf("%s: %w", name, err)
 			}

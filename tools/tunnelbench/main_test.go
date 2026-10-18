@@ -35,7 +35,7 @@ func echoFixture(t *testing.T) string {
 }
 func TestConcurrentEchoBenchmarkVerifiesBytesAndSamplesLocalResources(t *testing.T) {
 	address := echoFixture(t)
-	r, err := runCase(t.Context(), address, 4, 200*time.Millisecond, 4096, []int32{int32(os.Getpid())})
+	r, err := runCase(t.Context(), address, 4, 200*time.Millisecond, 4096, 2*time.Second, []int32{int32(os.Getpid())})
 	if err != nil || r.Failures != 0 || r.VerifiedBytes == 0 || r.Mbps <= 0 || r.Parallel != 4 {
 		t.Fatalf("verified benchmark: %+v %v", r, err)
 	}
@@ -64,7 +64,7 @@ func TestCorruptedEchoNeverBecomesVerifiedThroughput(t *testing.T) {
 		body[0] ^= 255
 		_, _ = conn.Write(body)
 	}()
-	r, err := runCase(t.Context(), l.Addr().String(), 1, time.Second, 1024, nil)
+	r, err := runCase(t.Context(), l.Addr().String(), 1, time.Second, 1024, 2*time.Second, nil)
 	if err != nil || r.Failures != 1 || r.VerifiedBytes != 0 || r.Mbps != 0 {
 		t.Fatalf("corruption claimed as throughput: %+v %v", r, err)
 	}
@@ -74,7 +74,7 @@ func TestBenchmarkCancellationStopsBlockedReaders(t *testing.T) {
 	address := echoFixture(t)
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)
-	go func() { _, err := runCase(ctx, address, 2, 10*time.Second, 1024, nil); done <- err }()
+	go func() { _, err := runCase(ctx, address, 2, 10*time.Second, 1024, 2*time.Second, nil); done <- err }()
 	time.Sleep(20 * time.Millisecond)
 	cancel()
 	select {
@@ -87,7 +87,8 @@ func TestBenchmarkCancellationStopsBlockedReaders(t *testing.T) {
 	}
 }
 func TestBenchmarkRejectsUnboundedOrAmbiguousWorkloads(t *testing.T) {
-	for _, args := range [][]string{{}, {"-target", "a=127.0.0.1:1", "-parallel", "257"}, {"-target", "a=127.0.0.1:1", "-duration", "0s"}, {"-target", "a=127.0.0.1:1", "-target", "a=127.0.0.1:2"}, {"-target", "a=127.0.0.1:1", "-pid", "b=123"}} {
+	for _, args := range [][]string{{}, {"-target", "a=127.0.0.1:1", "-parallel", "257"},
+		{"-target", "a=127.0.0.1:1", "-io-timeout", "0s"}, {"-target", "a=127.0.0.1:1", "-duration", "0s"}, {"-target", "a=127.0.0.1:1", "-target", "a=127.0.0.1:2"}, {"-target", "a=127.0.0.1:1", "-pid", "b=123"}} {
 		if err := run(t.Context(), args, &bytes.Buffer{}, &bytes.Buffer{}); err == nil {
 			t.Fatalf("invalid flags accepted: %s", strings.Join(args, " "))
 		}

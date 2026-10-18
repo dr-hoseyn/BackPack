@@ -22,7 +22,11 @@ Each target/concurrency runs serially. All connections are established before
 timing. Every completed echo must match the random payload byte for byte. The
 reported `verified_echo_mbps` counts verified payload bytes **once**, even though
 an exchange travels in both directions. It is a round-trip echo workload, not
-independent upload/download capacity. Failed or corrupted transfers are counted
+independent upload/download capacity. The per-exchange I/O deadline defaults to 2 seconds; set `-io-timeout 5s`
+(or another value in 100ms..1m) when evaluating intentionally slow request
+carriers such as Short HTTPS. Use the same deadline for comparisons. The overall
+case deadline still bounds the workload. JSON records the chunk size and I/O
+budget. Failed or corrupted transfers are counted
 and never contribute bytes. Keep payload size, duration, machines, routes and
 concurrency identical when comparing protocols. Repeat in reversed target order
 and across representative hours to reduce order and path bias.
