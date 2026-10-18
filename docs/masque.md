@@ -8,7 +8,9 @@ Backpack process, with no helper binary.
 
 The `masque` mode is HTTP/3 and UDP-based. The separate `masque-h2` mode
 implements HTTP/2 Extended CONNECT and RFC 9297 DATAGRAM Capsules over verified
-TLS/TCP. Xray CONNECT-IP interoperability is not implemented. UDP/QUIC must work
+TLS/TCP. The independent `connect-ip` carrier implements RFC 9484 native IP
+without the Noise/GRE envelope; see [modern networking](modern-networking.md#native-connect-ip-rfc-9484).
+Xray interoperability is not claimed. UDP/QUIC must work
 on the route for HTTP/3.
 HTTPS framing does not guarantee that a network will allow it or make it faster.
 

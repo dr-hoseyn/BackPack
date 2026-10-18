@@ -7,6 +7,7 @@ import (
 	"github.com/backpack/backpack/internal/app"
 	"net"
 	"os"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
@@ -20,6 +21,9 @@ type AutomaticRequest struct {
 	Profile string `json:"profile"`
 	Cover   string `json:"cover"`
 }
+
+var automaticDNSName = regexp.MustCompile(`(?i)^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*\.?$`)
+
 type AutomaticListener struct {
 	Protocol string `json:"protocol"`
 	Network  string `json:"network"`
@@ -92,6 +96,9 @@ func PrepareAutomatic(ctx context.Context, r AutomaticRequest) (*AutomaticPlan, 
 	}
 	if r.Host == "" || r.Host == "-" || strings.ContainsAny(r.Host, "/ \t\r\n") {
 		return nil, errors.New("a public IPv4 or DNS hostname is required")
+	}
+	if net.ParseIP(r.Host) == nil && (len(r.Host) > 253 || !automaticDNSName.MatchString(r.Host)) {
+		return nil, errors.New("host must be a valid public IPv4 or DNS hostname")
 	}
 	if ip := net.ParseIP(r.Host); ip != nil && ip.To4() == nil {
 		return nil, errors.New("Automatic public listeners currently require IPv4")

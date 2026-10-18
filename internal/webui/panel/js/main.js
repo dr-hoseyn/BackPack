@@ -112,6 +112,7 @@ router.route('/servers', serversView);
 /* The pages a dialog can be opened over. Which one is drawn underneath is the
    page you were on, not a guess — see router.setHome. */
 const PAGES = {
+	'/network': networkView,
   '/': overview, '/conntest': connTestView, '/tunnels': dashboard,
   '/terminal': terminalView, '/manage': manageView, '/servers': serversView,
 };

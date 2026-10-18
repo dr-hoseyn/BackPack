@@ -12,7 +12,7 @@ export function networkView(ctx) {
     <p class="tl-sub">Prepare an Automatic tunnel on Iran, inspect a Kharej carrier, or compare saved measurements.</p>
     <section class="tl-card"><h3>Automatic setup · Iran</h3>
       <form id="autoForm">
-        <label>Tunnel name<input name="name" maxlength="64" placeholder="Chosen automatically when empty"></label>
+        <label>Tunnel name<input name="name" maxlength="40" placeholder="Chosen automatically when empty"></label>
         <label>Public IPv4 or hostname<input name="host" maxlength="253" placeholder="Detect IPv4 when empty"></label>
         <label>Forwarded ports<input name="ports" required placeholder="443,8080=127.0.0.1:2096"></label>
         <label>Profile<select name="profile"><option value="economy">Economy · up to three carriers</option><option value="full">Full · all available carriers</option></select></label>
@@ -86,7 +86,7 @@ export function networkView(ctx) {
     event.preventDefault(); const form=event.currentTarget, button=form.querySelector('button');button.disabled=true;
     try {
       const r=await api.managedLink({action:'preview',...Object.fromEntries(new FormData(form))});
-      if (!alive) return; peerPlan=r.id;
+      if (!alive) { api.managedLink({action:'cancel',id:r.id}).catch(() => {}); return; } peerPlan=r.id;
       peer.innerHTML=`<h4>${esc(r.preview.name)} · ${esc(r.preview.host)}</h4><p>${esc(r.preview.profile || r.preview.transport)}</p>
         <ul>${(r.preview.paths || []).map(p=>`<li>${esc(p)}</li>`).join('')}</ul><button class="btn" id="createPeer">Create this peer</button>`;
       peer.querySelector('button').onclick=async e=>{

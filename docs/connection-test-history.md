@@ -1,6 +1,6 @@
 # Connection Test history
 
-Terminal Connection Tests save measurements automatically on each server after a run.
+Terminal and web panel Connection Tests save measurements automatically on each server after a run.
 Open **Connection Test → History**, or use:
 
 ```sh
@@ -33,14 +33,13 @@ representative hours before choosing a carrier; the program does not schedule
 network traffic automatically.
 
 Existing stored configurations and coordinator links are unchanged. New peers
-include per-protocol jitter in the result; older peers omit it, and their jitter is shown as unmeasured. Web panel runs
-are not saved by this terminal-only feature.
+include per-protocol jitter in the result; older peers omit it, and their jitter is shown as unmeasured. The panel Network page reads the same history and comparisons through authenticated APIs.
 
 <div dir="rtl">
 
 ## خلاصهٔ فارسی
 
-نتایج تست ترمینال خودکار ذخیره می‌شوند و از گزینهٔ History یا دستورهای بالا قابل
+نتایج تست ترمینال و پنل خودکار ذخیره می‌شوند و از گزینهٔ History یا دستورهای بالا قابل
 مشاهده و مقایسه‌اند. حداکثر ۱۰۰ اجرا نگهداری می‌شود. تست لغوشده در مقایسه حساب
 نمی‌شود؛ مسیر، خانوادهٔ IP، تنظیمات و دامنهٔ SNI متفاوت جدا می‌مانند. نسبت اجراهای
 موفق، درصد آپ‌تایم نیست. لینک اتصال، رمز و خطای خام ذخیره نمی‌شوند.

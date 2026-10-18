@@ -16,6 +16,9 @@ type ManagedPeerPreview struct {
 // PreviewManagedPeer never writes public trust, credentials or a service. The
 // dedicated panel flow creates a new peer; existing peers use reviewed edits.
 func PreviewManagedPeer(raw, name string) (ManagedPeerPreview, error) {
+	if name != "" && (!validName(name) || fileExists(app.ConfigPath(name))) {
+		return ManagedPeerPreview{}, errors.New("choose an unused valid local tunnel name")
+	}
 	l, err := DecodeShareLink(FindSetupLink(raw))
 	if err != nil {
 		return ManagedPeerPreview{}, err
