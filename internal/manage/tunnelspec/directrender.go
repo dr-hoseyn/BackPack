@@ -220,8 +220,8 @@ func (s L3Spec) Render() string {
 			}
 		}
 	}
-	if s.Carrier == "masque" || s.Carrier == "masque-h2" || s.Carrier == "connect-ip" {
-		if s.Carrier != "connect-ip" {
+	if s.Carrier == "masque" || s.Carrier == "masque-h2" || s.Carrier == "connect-ip" || s.Carrier == "webtransport" {
+		if s.Carrier != "connect-ip" && s.Carrier != "webtransport" {
 			writeKV(&b, "masque_target", quote(s.Masque.TargetAddr()))
 		}
 		for _, kv := range [][2]string{

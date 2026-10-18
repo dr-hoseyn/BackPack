@@ -172,6 +172,12 @@ func sectionOf(name string) string {
 		return "[client.path_policy]"
 	case "ShortClientConfig":
 		return "[client.short]"
+	case "ConnectClientConfig":
+		return "[client.connect]"
+	case "ConnectServerConfig":
+		return "[server.connect]"
+	case "TailcatConfig":
+		return "[server.sing.tailcat] / [client.sing.tailcat]"
 	case "ShortServerConfig":
 		return "[server.short]"
 	case "SingServerConfig":

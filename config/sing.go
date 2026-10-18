@@ -3,6 +3,8 @@ package config
 // SingClientConfig carries the reverse engine through a restricted sing-box
 // helper. The helper is a carrier, never a general-purpose proxy.
 type SingClientConfig struct {
+	// Tailcat is the experimental point-to-point identity and explicit DERP selection.
+	Tailcat TailcatConfig `toml:"tailcat,omitempty"`
 	// ObfsType is salamander (legacy default) or gecko; Hysteria2 only.
 	ObfsType string `toml:"obfs_type,omitempty"`
 	// GeckoMin/Max bound on-wire padded packets (512..1400); zero uses 512/1200.
@@ -46,6 +48,8 @@ func (s SingClientConfig) Enabled() bool { return s != (SingClientConfig{}) }
 // SingServerConfig owns one public helper and only permits the paired local
 // reverse target. ShadowTLS delegates to an SS2022 inbound inside the helper.
 type SingServerConfig struct {
+	// Tailcat provisions one authorized peer with a separately pinned helper.
+	Tailcat TailcatConfig `toml:"tailcat,omitempty"`
 	// ObfsType selects salamander (legacy default) or gecko for Hysteria2.
 	ObfsType string `toml:"obfs_type,omitempty"`
 	// GeckoMin is the minimum padded packet size; zero uses 512.
@@ -94,7 +98,7 @@ func (s SingServerConfig) Enabled() bool { return s != (SingServerConfig{}) }
 
 func SingProtocol(s string) bool {
 	switch s {
-	case "hysteria2", "anytls", "shadowtls", "tuic":
+	case "hysteria2", "anytls", "shadowtls", "tuic", "tailcat":
 		return true
 	}
 	return false
@@ -105,8 +109,8 @@ func SingProtocol(s string) bool {
 func SingDatagram(s string) bool { return s == "hysteria2" || s == "tuic" }
 
 func (c ClientConfig) Managed() bool {
-	return len(c.Paths) != 0 || c.Short.Enabled() || c.Naive.Enabled() || c.Xray.Enabled() || c.Sing.Enabled()
+	return len(c.Paths) != 0 || c.Connect.Enabled() || c.Short.Enabled() || c.Naive.Enabled() || c.Xray.Enabled() || c.Sing.Enabled()
 }
 func (c ServerConfig) Managed() bool {
-	return len(c.Paths) != 0 || c.Short.Enabled() || c.Naive.Enabled() || c.Xray.Enabled() || c.Sing.Enabled()
+	return len(c.Paths) != 0 || c.Connect.Enabled() || c.Short.Enabled() || c.Naive.Enabled() || c.Xray.Enabled() || c.Sing.Enabled()
 }

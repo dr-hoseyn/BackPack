@@ -124,6 +124,8 @@ func StartClient(parent context.Context, cfg *config.ClientConfig, log *logrus.L
 
 func startClientHelper(ctx context.Context, cfg *config.ClientConfig, log *logrus.Logger) (*naive.Helper, error) {
 	switch {
+	case cfg.Connect.Enabled():
+		return naive.StartConnectClient(ctx, cfg, log)
 	case cfg.Short.Enabled():
 		return naive.StartShortClient(ctx, cfg, log)
 	case cfg.Sing.Enabled():

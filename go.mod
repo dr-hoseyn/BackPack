@@ -12,6 +12,7 @@ require (
 	github.com/quic-go/connect-ip-go v0.6.0
 	github.com/quic-go/masque-go v0.6.0
 	github.com/quic-go/quic-go v0.63.0
+	github.com/quic-go/webtransport-go v0.13.0
 	github.com/refraction-networking/utls v1.8.2
 	github.com/shirou/gopsutil/v4 v4.26.9
 	github.com/sirupsen/logrus v1.10.2

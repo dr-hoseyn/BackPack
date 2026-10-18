@@ -16,6 +16,8 @@ type ManagedServerPath struct {
 	Sing SingServerConfig `toml:"sing,omitempty"`
 	// Short is this path's optional bounded-request HTTPS listener.
 	Short ShortServerConfig `toml:"short,omitempty"`
+	// Connect is this path's restricted TrustTunnel or WebTransport listener.
+	Connect ConnectServerConfig `toml:"connect,omitempty"`
 }
 
 type ManagedClientPath struct {
@@ -29,6 +31,8 @@ type ManagedClientPath struct {
 	Sing SingClientConfig `toml:"sing,omitempty"`
 	// Short contains the paired bounded-request endpoint and local trust file.
 	Short ShortClientConfig `toml:"short,omitempty"`
+	// Connect contains the paired in-process HTTP carrier endpoint and trust.
+	Connect ConnectClientConfig `toml:"connect,omitempty"`
 }
 
 // PathPolicy governs new TCP connections; active forwards remain on their path.

@@ -21,6 +21,7 @@ func serverConfig(base config.ServerConfig, p config.ManagedServerPath) config.S
 	base.Xray = p.Xray
 	base.Sing = p.Sing
 	base.Short = p.Short
+	base.Connect = p.Connect
 	if native || p.Short.Enabled() {
 		off := false
 		base.AcceptUDP = &off
@@ -38,6 +39,7 @@ func clientConfig(base config.ClientConfig, p config.ManagedClientPath) config.C
 	base.Xray = p.Xray
 	base.Sing = p.Sing
 	base.Short = p.Short
+	base.Connect = p.Connect
 	return base
 }
 
@@ -88,7 +90,7 @@ func Validate(c *config.Config) error {
 		if v.NativeSing().NativeUDP && !v.ForwardsUDP() {
 			return errors.New("native UDP paths require server.accept_udp = true")
 		}
-		if v.BindAddr == "" || c.Client.RemoteAddr != "" || v.Transport != config.TCP || len(v.FallbackTransports) != 0 || v.Naive.Enabled() || v.Xray.Enabled() || v.Sing.Enabled() || v.Short.Enabled() || v.MPTCP {
+		if v.BindAddr == "" || c.Client.RemoteAddr != "" || v.Transport != config.TCP || len(v.FallbackTransports) != 0 || v.Naive.Enabled() || v.Xray.Enabled() || v.Sing.Enabled() || v.Short.Enabled() || v.Connect.Enabled() || v.MPTCP {
 			return errors.New("server.paths requires TCP Reverse without an inline helper, MPTCP or transport fallback")
 		}
 		type binding struct{ network, host, port string }
@@ -107,7 +109,7 @@ func Validate(c *config.Config) error {
 			if err := name(p.Name); err != nil {
 				return err
 			}
-			if count(p.Naive.Enabled(), p.Xray.Enabled(), p.Sing.Enabled(), p.Short.Enabled()) != 1 {
+			if count(p.Naive.Enabled(), p.Xray.Enabled(), p.Sing.Enabled(), p.Short.Enabled(), p.Connect.Enabled()) != 1 {
 				return fmt.Errorf("path %s requires exactly one managed carrier", p.Name)
 			}
 			child := config.Config{Server: serverConfig(v, p)}
@@ -121,8 +123,20 @@ func Validate(c *config.Config) error {
 			if p.Short.Enabled() {
 				listen = p.Short.Listen
 			}
+			if p.Connect.Enabled() {
+				listen = p.Connect.Listen
+				network = "both"
+				if p.Connect.Protocol == "webtransport" || p.Connect.Mode == "h3" {
+					network = "udp"
+				} else if p.Connect.Mode == "h2" {
+					network = "tcp"
+				}
+			}
 			if p.Sing.Enabled() {
 				listen = p.Sing.Listen
+				if p.Sing.Protocol == "tailcat" {
+					continue
+				} // DERP has no public listener here.
 				if config.SingDatagram(p.Sing.Protocol) {
 					network = "udp"
 				}
@@ -132,7 +146,7 @@ func Validate(c *config.Config) error {
 				return err
 			}
 			for _, b := range bindings {
-				if network == b.network && port == b.port && (host == b.host || host == "0.0.0.0" || host == "::" || b.host == "0.0.0.0" || b.host == "::") {
+				if (network == b.network || network == "both" || b.network == "both") && port == b.port && (host == b.host || host == "0.0.0.0" || host == "::" || b.host == "0.0.0.0" || b.host == "::") {
 					return errors.New("managed path public listeners overlap")
 				}
 			}
@@ -150,7 +164,7 @@ func Validate(c *config.Config) error {
 		return nil
 	}
 	v := c.Client
-	if v.RemoteAddr == "" || c.Server.BindAddr != "" || v.Transport != config.TCP || len(v.FallbackTransports) != 0 || len(v.FallbackAddrs) != 0 || v.Naive.Enabled() || v.Xray.Enabled() || v.Sing.Enabled() || v.Short.Enabled() || v.MPTCP || v.Proxy != "" || v.Interface != "" || v.LocalAddr != "" || v.SOMark != 0 || v.LoadBalance || v.HealthFailover {
+	if v.RemoteAddr == "" || c.Server.BindAddr != "" || v.Transport != config.TCP || len(v.FallbackTransports) != 0 || len(v.FallbackAddrs) != 0 || v.Naive.Enabled() || v.Xray.Enabled() || v.Sing.Enabled() || v.Short.Enabled() || v.Connect.Enabled() || v.MPTCP || v.Proxy != "" || v.Interface != "" || v.LocalAddr != "" || v.SOMark != 0 || v.LoadBalance || v.HealthFailover {
 		return errors.New("client.paths requires TCP Reverse without an inline helper, routing override or old fallback settings")
 	}
 	if _, err := policyDefaults(v.PathPolicy); err != nil {
@@ -161,7 +175,7 @@ func Validate(c *config.Config) error {
 		if err := name(p.Name); err != nil {
 			return err
 		}
-		if count(p.Naive.Enabled(), p.Xray.Enabled(), p.Sing.Enabled(), p.Short.Enabled()) != 1 {
+		if count(p.Naive.Enabled(), p.Xray.Enabled(), p.Sing.Enabled(), p.Short.Enabled(), p.Connect.Enabled()) != 1 {
 			return fmt.Errorf("path %s requires exactly one managed carrier", p.Name)
 		}
 		child := config.Config{Client: clientConfig(v, p)}
@@ -174,6 +188,9 @@ func Validate(c *config.Config) error {
 		}
 		if p.Short.Enabled() {
 			endpoint = p.Short.Server
+		}
+		if p.Connect.Enabled() {
+			endpoint = p.Connect.Protocol + "/" + p.Connect.Server
 		}
 		if p.Sing.Enabled() {
 			endpoint = p.Sing.Protocol + "/" + p.Sing.Server
@@ -194,7 +211,7 @@ func Validate(c *config.Config) error {
 }
 
 func validateChild(c *config.Config) error {
-	for _, check := range []func(*config.Config) error{naive.Validate, naive.ValidateXray, naive.ValidateSing, naive.ValidateShort} {
+	for _, check := range []func(*config.Config) error{naive.Validate, naive.ValidateXray, naive.ValidateSing, naive.ValidateShort, naive.ValidateConnect} {
 		if err := check(c); err != nil {
 			return err
 		}

@@ -10,6 +10,9 @@ func (c *ClientPaths) Status() metrics.ManagedPathsStats {
 	for i, state := range states {
 		p := c.cfg.Paths[i]
 		protocol := "naive"
+		if p.Connect.Enabled() {
+			protocol = p.Connect.Protocol
+		}
 		if p.Xray.Enabled() {
 			protocol = p.Xray.Mode
 		}

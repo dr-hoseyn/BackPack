@@ -20,6 +20,7 @@ import (
 
 	"github.com/backpack/backpack/config"
 	"github.com/backpack/backpack/internal/app"
+	"github.com/backpack/backpack/internal/tunnel/naive"
 )
 
 // Handing a tunnel's settings to the other server.
@@ -151,32 +152,38 @@ type ShareLink struct {
 
 	// Managed HTTPS links carry peer credentials, never executable paths or
 	// server private keys. The public TLS bundle is needed for private CAs.
-	InnerPort        string   `json:"hi,omitempty"`
-	HelperUser       string   `json:"hu,omitempty"`
-	HelperPassword   string   `json:"hp,omitempty"`
-	HelperUUID       string   `json:"hid,omitempty"`
-	HelperSNI        string   `json:"hn,omitempty"`
-	HelperPath       string   `json:"hpa,omitempty"`
-	HelperHost       string   `json:"hh,omitempty"`
-	HelperPublicKey  string   `json:"hk,omitempty"`
-	HelperShortID    string   `json:"hsid,omitempty"`
-	HelperCA         string   `json:"hca,omitempty"`
-	HelperObfs       string   `json:"hob,omitempty"`
-	HelperObfsType   string   `json:"hot,omitempty"`
-	HelperGeckoMin   int      `json:"hgmin,omitempty"`
-	HelperGeckoMax   int      `json:"hgmax,omitempty"`
-	HelperECH        string   `json:"hech,omitempty"`
-	HelperRealmURL   string   `json:"hrurl,omitempty"`
-	HelperRealmToken string   `json:"hrtok,omitempty"`
-	HelperRealmID    string   `json:"hrid,omitempty"`
-	HelperRealmSTUN  string   `json:"hrstun,omitempty"`
-	HelperRealmIP    int      `json:"hrip,omitempty"`
-	HelperBBR        string   `json:"hbbr,omitempty"`
-	HelperSSKey      string   `json:"hss,omitempty"`
-	HelperNativeUDP  bool     `json:"hnu,omitempty"`
-	PathLinks        []string `json:"mpl,omitempty"`
-	PathProfile      string   `json:"mpp,omitempty"`
-	AWGPeer          string   `json:"awgp,omitempty"`
+	InnerPort          string   `json:"hi,omitempty"`
+	HelperUser         string   `json:"hu,omitempty"`
+	HelperMode         string   `json:"hmode,omitempty"`
+	HelperTailcatKey   string   `json:"htkey,omitempty"`
+	HelperTailcatDisco string   `json:"htdisco,omitempty"`
+	HelperTailcatPSK   string   `json:"htpsk,omitempty"`
+	HelperDERPURL      string   `json:"hderp,omitempty"`
+	HelperDERPRegion   int      `json:"hdr,omitempty"`
+	HelperPassword     string   `json:"hp,omitempty"`
+	HelperUUID         string   `json:"hid,omitempty"`
+	HelperSNI          string   `json:"hn,omitempty"`
+	HelperPath         string   `json:"hpa,omitempty"`
+	HelperHost         string   `json:"hh,omitempty"`
+	HelperPublicKey    string   `json:"hk,omitempty"`
+	HelperShortID      string   `json:"hsid,omitempty"`
+	HelperCA           string   `json:"hca,omitempty"`
+	HelperObfs         string   `json:"hob,omitempty"`
+	HelperObfsType     string   `json:"hot,omitempty"`
+	HelperGeckoMin     int      `json:"hgmin,omitempty"`
+	HelperGeckoMax     int      `json:"hgmax,omitempty"`
+	HelperECH          string   `json:"hech,omitempty"`
+	HelperRealmURL     string   `json:"hrurl,omitempty"`
+	HelperRealmToken   string   `json:"hrtok,omitempty"`
+	HelperRealmID      string   `json:"hrid,omitempty"`
+	HelperRealmSTUN    string   `json:"hrstun,omitempty"`
+	HelperRealmIP      int      `json:"hrip,omitempty"`
+	HelperBBR          string   `json:"hbbr,omitempty"`
+	HelperSSKey        string   `json:"hss,omitempty"`
+	HelperNativeUDP    bool     `json:"hnu,omitempty"`
+	PathLinks          []string `json:"mpl,omitempty"`
+	PathProfile        string   `json:"mpp,omitempty"`
+	AWGPeer            string   `json:"awgp,omitempty"`
 }
 
 // Encode renders a link as the string an operator copies.
@@ -444,7 +451,7 @@ func MirrorForPeer(l ShareLink) PeerForm {
 			f.Sing.Target, f.Sing.ServerName = l.SingTarget, l.SingServerName
 			f.Sing.Binary = managedHelperPath("sing-box")
 		}
-		if l.Tr == "masque" || l.Tr == "masque-h2" || l.Tr == "connect-ip" {
+		if l.Tr == "masque" || l.Tr == "masque-h2" || l.Tr == "connect-ip" || l.Tr == "webtransport" {
 			f.Masque.Target, f.Masque.ServerName = l.MasqueTarget, l.MasqueServerName
 			paired = append(paired, "masque.target", "masque.serverName")
 		}
@@ -635,7 +642,7 @@ func shareLinkOf(name, host string, cfg config.Config) (string, error) {
 		if config.SingDatagram(l.Tr) {
 			l.SingTarget, l.SingServerName = cfg.L3.SingL3Config.TargetAddr(), cfg.L3.SingL3Config.ServerName
 		}
-		if l.Tr == "masque" || l.Tr == "masque-h2" || l.Tr == "connect-ip" {
+		if l.Tr == "masque" || l.Tr == "masque-h2" || l.Tr == "connect-ip" || l.Tr == "webtransport" {
 			l.MasqueTarget = cfg.L3.MasqueConfig.TargetAddr()
 			l.MasqueServerName = cfg.L3.MasqueConfig.ServerName
 		}
@@ -696,7 +703,12 @@ func shareLinkOf(name, host string, cfg config.Config) (string, error) {
 		l.InnerPort = l.Port
 		var cert string
 
-		if cfg.Server.Short.Enabled() {
+		if cfg.Server.Connect.Enabled() {
+			x := cfg.Server.Connect
+			l.Tr, l.Port, l.HelperSNI = x.Protocol, addrPort(x.Listen), x.ServerName
+			l.HelperUser, l.HelperPassword, l.HelperPath, l.HelperMode = x.Username, x.Password, x.Path, x.Mode
+			cert = x.Certificate
+		} else if cfg.Server.Short.Enabled() {
 			x := cfg.Server.Short
 			l.Tr, l.Port, l.HelperSNI = "short-https", addrPort(x.Listen), x.ServerName
 			cert = x.Certificate
@@ -709,6 +721,15 @@ func shareLinkOf(name, host string, cfg config.Config) (string, error) {
 			l.HelperECH, l.HelperBBR = x.ECHConfig, x.BBRProfile
 			l.HelperRealmURL, l.HelperRealmToken, l.HelperRealmID, l.HelperRealmSTUN, l.HelperRealmIP = x.Realm.ServerURL, x.Realm.Token, x.Realm.RealmID, x.Realm.STUNServers, x.Realm.IPVersion
 			cert = x.Certificate
+			if x.Protocol == "tailcat" {
+				public, disco, err := naive.TailcatPublic(x.Tailcat.PrivateKey)
+				if err != nil {
+					return "", err
+				}
+				l.HelperPublicKey, l.HelperTailcatDisco = public, disco
+				l.HelperTailcatKey, l.HelperTailcatPSK = x.Tailcat.ClientKey, x.Tailcat.PreSharedKey
+				l.HelperDERPURL, l.HelperDERPRegion = x.Tailcat.DERPMapURL, x.Tailcat.DERPRegion
+			}
 		} else if cfg.Server.Naive.Enabled() {
 			x := cfg.Server.Naive
 			l.Tr, l.Port, l.HelperUser, l.HelperPassword = "naive", addrPort(x.Listen), x.Username, x.Password
@@ -718,7 +739,7 @@ func shareLinkOf(name, host string, cfg config.Config) (string, error) {
 			l.Tr, l.Port = x.Mode, addrPort(x.Listen)
 			l.HelperUUID, l.HelperSNI, l.HelperPath, l.HelperHost = x.UUID, x.ServerName, x.Path, x.Host
 			cert = x.Certificate
-			if x.Mode == "reality" {
+			if config.XrayREALITY(x.Mode) {
 				if strings.TrimSpace(x.PrivateKey) == "" {
 					return "", fmt.Errorf("REALITY server has no private key; repair its configuration before exporting a setup link")
 				}
@@ -816,6 +837,7 @@ func prepareManagedLink(s TunnelSpec, link ShareLink) error {
 		}
 		withoutCA := s
 		withoutCA.ShortClient.CAFile = ""
+		withoutCA.ConnectClient.CAFile = ""
 		withoutCA.NaiveClient.CAFile, withoutCA.XrayClient.CAFile, withoutCA.SingClient.CAFile = "", "", ""
 		if err := validateManagedSpec(withoutCA); err != nil {
 			return err
@@ -838,7 +860,9 @@ func managedClientFromLink(s *TunnelSpec, link ShareLink, host string) {
 		return
 	}
 
-	if link.Tr == "short-https" {
+	if config.ConnectProtocol(link.Tr) {
+		s.ConnectClient = config.ConnectClientConfig{Protocol: link.Tr, Mode: link.HelperMode, Server: public, ServerName: link.HelperSNI, Username: link.HelperUser, Password: link.HelperPassword, Path: link.HelperPath, CAFile: managedLinkCAPath(link.HelperCA)}
+	} else if link.Tr == "short-https" {
 		s.ShortClient = config.ShortClientConfig{Server: public, ServerName: link.HelperSNI, CAFile: managedLinkCAPath(link.HelperCA)}
 		s.ConnectionPool = 8
 		s.AggressivePool = false
@@ -849,6 +873,10 @@ func managedClientFromLink(s *TunnelSpec, link ShareLink, host string) {
 		s.SingClient.ObfsType, s.SingClient.GeckoMin, s.SingClient.GeckoMax = link.HelperObfsType, link.HelperGeckoMin, link.HelperGeckoMax
 		s.SingClient.ECHConfig, s.SingClient.BBRProfile = link.HelperECH, link.HelperBBR
 		s.SingClient.Realm = config.HysteriaRealm{ServerURL: link.HelperRealmURL, Token: link.HelperRealmToken, RealmID: link.HelperRealmID, STUNServers: link.HelperRealmSTUN, IPVersion: link.HelperRealmIP}
+		if link.Tr == "tailcat" {
+			s.SingClient.Binary = managedHelperPath("tailcat")
+			s.SingClient.Tailcat = config.TailcatConfig{PrivateKey: link.HelperTailcatKey, PublicKey: link.HelperPublicKey, DiscoKey: link.HelperTailcatDisco, PreSharedKey: link.HelperTailcatPSK, DERPMapURL: link.HelperDERPURL, DERPRegion: link.HelperDERPRegion}
+		}
 	} else if link.Tr == "naive" {
 		s.NaiveClient = config.NaiveClientConfig{Binary: managedHelperPath("naive"), Server: public,
 			Username: link.HelperUser, Password: link.HelperPassword, CAFile: managedLinkCAPath(link.HelperCA)}

@@ -299,8 +299,8 @@ func xrayIdentity(binary, mode, id, serverName string) error {
 	if err := readableFile(binary); err != nil {
 		return fmt.Errorf("Xray helper binary: %w", err)
 	}
-	if mode != "xhttp" && mode != "reality" {
-		return errors.New("Xray mode must be xhttp or reality")
+	if !config.XrayHTTP(mode) && !config.XrayREALITY(mode) {
+		return errors.New("Xray mode must be xhttp, reality or xhttp-reality")
 	}
 	if len(id) != 36 || id[8] != '-' || id[13] != '-' || id[18] != '-' || id[23] != '-' {
 		return errors.New("Xray uuid must be a canonical 36-character UUID")
@@ -374,9 +374,14 @@ func ValidateXrayClient(c *config.ClientConfig) error {
 	if err := validateXHTTPOptions(x); err != nil {
 		return err
 	}
-	if x.Mode == "reality" {
-		if x.Path != "" || x.Host != "" || x.CAFile != "" {
-			return errors.New("REALITY does not accept XHTTP path, host or TLS ca_file")
+	if config.XrayREALITY(x.Mode) {
+		if x.CAFile != "" || (!config.XrayHTTP(x.Mode) && (x.Path != "" || x.Host != "")) {
+			return errors.New("RAW REALITY does not accept HTTP fields; REALITY never accepts TLS ca_file")
+		}
+		if config.XrayHTTP(x.Mode) {
+			if err := xrayHTTP(x.Path, x.Host); err != nil {
+				return err
+			}
 		}
 		return xrayReality(x.PublicKey, x.ShortID)
 	}
@@ -426,9 +431,14 @@ func ValidateXrayServer(c *config.ServerConfig) error {
 	if err := xrayIdentity(x.Binary, x.Mode, x.UUID, x.ServerName); err != nil {
 		return err
 	}
-	if x.Mode == "reality" {
-		if x.Path != "" || x.Host != "" || x.Certificate != "" || x.Key != "" {
-			return errors.New("REALITY does not accept XHTTP path, host or TLS certificate/key")
+	if config.XrayREALITY(x.Mode) {
+		if x.Certificate != "" || x.Key != "" || (!config.XrayHTTP(x.Mode) && (x.Path != "" || x.Host != "")) {
+			return errors.New("RAW REALITY does not accept HTTP fields; REALITY never accepts TLS certificate/key")
+		}
+		if config.XrayHTTP(x.Mode) {
+			if err := xrayHTTP(x.Path, x.Host); err != nil {
+				return err
+			}
 		}
 		realityHost, realityPort, err := xrayEndpoint(x.Target)
 		if err != nil {
@@ -507,11 +517,20 @@ func XrayClientJSON(c *config.ClientConfig, socksAddr string) ([]byte, error) {
 	}
 	user := map[string]any{"id": x.UUID, "encryption": "none"}
 	var stream map[string]any
-	if x.Mode == "reality" {
-		user["flow"] = "xtls-rprx-vision"
+	if config.XrayREALITY(x.Mode) {
+		if !config.XrayHTTP(x.Mode) {
+			user["flow"] = "xtls-rprx-vision"
+		}
 		stream = map[string]any{"network": "raw", "security": "reality", "realitySettings": map[string]any{
 			"serverName": x.ServerName, "fingerprint": "chrome", "password": x.PublicKey, "shortId": x.ShortID,
 		}}
+		if config.XrayHTTP(x.Mode) {
+			settings, err := xhttpSettings(x, false)
+			if err != nil {
+				return nil, err
+			}
+			stream["network"], stream["xhttpSettings"] = "xhttp", settings
+		}
 	} else {
 		tlsConfig, err := xhttpTLS(x.ServerName, x.CAFile)
 		if err != nil {
@@ -552,12 +571,21 @@ func XrayServerJSON(c *config.ServerConfig) ([]byte, error) {
 	}
 	user := map[string]any{"id": x.UUID}
 	var stream map[string]any
-	if x.Mode == "reality" {
-		user["flow"] = "xtls-rprx-vision"
+	if config.XrayREALITY(x.Mode) {
+		if !config.XrayHTTP(x.Mode) {
+			user["flow"] = "xtls-rprx-vision"
+		}
 		stream = map[string]any{"network": "raw", "security": "reality", "realitySettings": map[string]any{
 			"show": false, "target": x.Target, "xver": 0, "serverNames": []string{x.ServerName},
 			"privateKey": x.PrivateKey, "shortIds": []string{x.ShortID},
 		}}
+		if config.XrayHTTP(x.Mode) {
+			host := x.Host
+			if host == "" {
+				host = x.ServerName
+			}
+			stream["network"], stream["xhttpSettings"] = "xhttp", map[string]any{"path": x.Path, "host": host, "mode": "stream-up"}
+		}
 	} else {
 		certificate, key, err := validatedTLSMaterial(x.Certificate, x.Key, x.ServerName, "XHTTP")
 		if err != nil {

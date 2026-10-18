@@ -10,6 +10,9 @@ import (
 )
 
 func pathServerEndpoint(p config.ManagedServerPath) string {
+	if p.Connect.Enabled() {
+		return p.Connect.Listen
+	}
 	if p.Short.Enabled() {
 		return p.Short.Listen
 	}
@@ -22,6 +25,9 @@ func pathServerEndpoint(p config.ManagedServerPath) string {
 	return p.Naive.Listen
 }
 func pathClientEndpoint(p config.ManagedClientPath) string {
+	if p.Connect.Enabled() {
+		return p.Connect.Server
+	}
 	if p.Short.Enabled() {
 		return p.Short.Server
 	}
@@ -44,6 +50,7 @@ func managedPathsLink(l ShareLink, server config.ServerConfig) (string, error) {
 		child.Xray = p.Xray
 		child.Sing = p.Sing
 		child.Short = p.Short
+		child.Connect = p.Connect
 		if server.NativeSing().NativeUDP && !p.Sing.NativeUDP || p.Short.Enabled() {
 			off := false
 			child.AcceptUDP = &off
@@ -123,7 +130,7 @@ func managedPathsClientFromLink(s *TunnelSpec, l ShareLink, host string) {
 		child := *s
 		clearManagedTransport(&child)
 		managedClientFromLink(&child, p, endpointHost)
-		s.ClientPaths = append(s.ClientPaths, config.ManagedClientPath{Name: p.Name, Naive: child.NaiveClient, Xray: child.XrayClient, Sing: child.SingClient, Short: child.ShortClient})
+		s.ClientPaths = append(s.ClientPaths, config.ManagedClientPath{Name: p.Name, Naive: child.NaiveClient, Xray: child.XrayClient, Sing: child.SingClient, Short: child.ShortClient, Connect: child.ConnectClient})
 	}
 	s.ConnectionPool = 8
 	for _, p := range s.ClientPaths {
@@ -147,6 +154,7 @@ func prepareManagedPaths(s TunnelSpec, l ShareLink) error {
 		p.Xray.DownloadCAFile = ""
 		p.Sing.CAFile = ""
 		p.Short.CAFile = ""
+		p.Connect.CAFile = ""
 	}
 	if err := validateManagedSpec(withoutCA); err != nil {
 		return err

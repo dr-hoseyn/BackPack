@@ -279,7 +279,9 @@ type ServerConfig struct {
 	PathProfile string `toml:"path_profile,omitempty"`
 	// Paths keeps 2..8 independent managed public carriers alive for one Reverse engine.
 	Paths []ManagedServerPath `toml:"paths"`
-	// Short selects the in-process managed Short HTTPS wrapper for TCP Reverse.
+	// Connect selects authenticated TrustTunnel or WebTransport streams for Reverse.
+	Connect ConnectServerConfig `toml:"connect"`
+	// Short selects bounded fresh HTTPS requests for TCP Reverse.
 	Short ShortServerConfig `toml:"short"`
 	// MPTCP requests Multipath TCP on native tcp/stealth/tcpmux tunnel sockets.
 	// Unsupported kernels and peers fall back to TCP; host routing is unchanged.
@@ -473,7 +475,9 @@ type ClientConfig struct {
 	Paths []ManagedClientPath `toml:"paths"`
 	// PathPolicy tunes verified probing, hysteresis and failover for Paths only.
 	PathPolicy PathPolicy `toml:"path_policy"`
-	// Short selects bounded HTTPS requests for this TCP Reverse tunnel.
+	// Connect selects restricted TrustTunnel or WebTransport streams for Reverse.
+	Connect ConnectClientConfig `toml:"connect"`
+	// Short selects bounded fresh HTTPS requests for TCP Reverse.
 	Short ShortClientConfig `toml:"short"`
 	// MPTCP requests Multipath TCP on native tcp/stealth/tcpmux tunnel sockets.
 	MPTCP bool `toml:"mptcp"`

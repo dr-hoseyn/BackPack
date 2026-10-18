@@ -164,6 +164,69 @@ path must accommodate QUIC overhead in addition to the inner packet.
 
 ## Sustained measurement
 
+## Additional HTTP carriers and explicit combinations
+
+Reverse HTTPS setup now offers `xhttp-reality`, `trusttunnel`, `webtransport`
+and experimental `tailcat`. The terminal's **Adaptive Managed Paths** wizard
+combines any 2–8 independent carriers. The browser's **Network tools** Automatic
+form accepts the same comma-separated carrier selection. Economy limits an
+explicit selection to three; Full permits eight. Every carrier owns independent
+credentials and endpoints. The existing verified selector steers new streams;
+active streams stay on their original path. This is failover, not aggregation
+of a single stream's bandwidth.
+
+`xhttp-reality` combines XHTTP transport with REALITY security. It requires a
+verified cover, a matching private HTTP path, UUID, public key and Short ID.
+The server's private key remains local. RAW-only XTLS Vision is not enabled on
+this combination. Connection reuse limits remain available; a separate TLS
+download leg is rejected because its identity/trust contract differs.
+
+`trusttunnel` implements the TrustTunnel TCP CONNECT carrier in process, with
+verified TLS, a separate Basic-auth account, and one exact loopback destination.
+Its `mode` is `auto`, `h2` or `h3`. Auto starts HTTP/3 and starts HTTP/2 one second
+later, selecting the first authenticated connection. The server reserves TCP
+and UDP at the same public port. Losing connections and cancelled requests are
+closed. Reverse UDP forwarding, if enabled, uses the existing Reverse stream
+engine; this carrier does not expose the general-purpose TrustTunnel VPN's
+arbitrary UDP/ICMP proxy endpoints.
+
+`webtransport` Reverse uses authenticated HTTP/3 sessions with independently
+half-closed streams and the `backpack-stream-v1` application protocol. Both
+ends need Backpack; this stream profile is not a generic browser proxy. A new
+Direct/L3 `webtransport` carrier uses native datagrams instead, negotiated as
+`backpack-datagram-v1`, with the existing GRE/Noise packet engine above it.
+Packets are fragmented into bounded datagrams when necessary; missing pieces
+expire without retransmission. Receive queues and partial assemblies are
+bounded. Large IPv6 packets therefore do not rely on a QUIC datagram exceeding
+the path MTU. Direct uses the existing `masque_cert`, `masque_key`,
+`masque_server_name` and `masque_ca` TLS fields, with no private UDP proxy target.
+
+`tailcat` uses a separately pinned sing-box `v1.15.0-alpha.12`; install it only
+when requested with `BP_HELPERS=naive,xray,tailcat bash install.sh`. The stable
+sing-box helper remains at its existing path. Both peers need this optional
+helper. Tailcat uses WireGuard's point-to-point data plane and an explicitly
+chosen HTTPS DERP map for rendezvous/relay. No inbound listener is opened at its
+advertised pairing endpoint. Select it explicitly in the carrier list and fill
+the DERP map URL; it is never added by default. Use a relay you operate or whose
+availability and bandwidth policy you have evaluated.
+
+Tailcat's server stores its private key, a distinct provisioned client private
+key and a pair-specific pre-shared key. The Setup Link contains the client
+provisioning key, server public/discovery keys, pre-shared key and DERP selection;
+it never contains the server private key. Treat the link as an account secret.
+Its listener authorizes only that client's public key. Native Reverse UDP is
+not enabled for Tailcat; UDP forwards use the existing reliable stream engine.
+Local helper readiness does not prove DERP or peer connectivity: the selector's
+authenticated payload probe supplies that evidence.
+
+An example custom pool is `trusttunnel,webtransport,xhttp-reality` with a verified
+cover. To add NAT traversal, select Full and explicitly add `tailcat` plus your
+DERP map. HTTP/3 carriers share a dependency on UDP reachability, so retaining
+an HTTP/2/TCP path is useful. These combinations require live route measurement;
+runner-local transfers do not establish performance on Iranian networks.
+
+## Sustained measurement
+
 Use an echo backend for availability/recovery sampling:
 
 ```sh

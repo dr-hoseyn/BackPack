@@ -22,7 +22,7 @@ func InstallCommand(link string) string {
 	if l, err := DecodeShareLink(link); err == nil && l.Kind == "awg" {
 		return ""
 	}
-	if l, err := DecodeShareLink(link); err == nil && l.Kind == "direct" && (l.Tr == "masque" || l.Tr == "masque-h2" || l.Tr == "connect-ip") {
+	if l, err := DecodeShareLink(link); err == nil && l.Kind == "direct" && (l.Tr == "masque" || l.Tr == "masque-h2" || l.Tr == "connect-ip" || l.Tr == "webtransport") {
 		return "" // the released binary may predate this fork-only carrier
 	}
 	// The published release may predate managed HTTPS link support. Installing
@@ -48,7 +48,7 @@ func printLinkBlock(link, menuPath string) {
 		return
 	}
 
-	if l, err := DecodeShareLink(link); err == nil && l.Kind == "direct" && (l.Tr == "masque" || l.Tr == "masque-h2" || l.Tr == "connect-ip") {
+	if l, err := DecodeShareLink(link); err == nil && l.Kind == "direct" && (l.Tr == "masque" || l.Tr == "masque-h2" || l.Tr == "connect-ip" || l.Tr == "webtransport") {
 		fmt.Println()
 		tui.Info("Install This Fork's MASQUE Build On Kharej, Then Use Setup From A Link Or:")
 		fmt.Println(tui.Color(tui.Bold+tui.White, "sudo backpack link apply '"+link+"' --masque-cert /path/fullchain.pem --masque-key /path/privkey.pem"))

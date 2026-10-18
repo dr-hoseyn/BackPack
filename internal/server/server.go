@@ -59,6 +59,9 @@ func (s *Server) Start() {
 		defer paths.Close()
 	} else if s.config.Managed() {
 		helper, err := naive.StartWithRetry(s.ctx, s.logger, func() (*naive.Helper, error) {
+			if s.config.Connect.Enabled() {
+				return naive.StartConnectServer(s.ctx, s.config, s.logger)
+			}
 			if s.config.Short.Enabled() {
 				return naive.StartShortServer(s.ctx, s.config, s.logger)
 			}

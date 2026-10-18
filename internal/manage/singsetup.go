@@ -12,6 +12,9 @@ import (
 )
 
 func configureSing(n *TunnelSpec, old TunnelSpec, protocol, public, host string) bool {
+	if protocol == "tailcat" {
+		return configureTailcat(n, old, public)
+	}
 	client := old.SingClient
 	server := old.SingServer
 	if selectedTransport(old) != protocol {

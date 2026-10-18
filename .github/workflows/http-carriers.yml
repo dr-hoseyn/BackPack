@@ -1,0 +1,50 @@
+name: HTTP carriers and Tailcat
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  streams:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Race, deadlines, HTTP fallback and bounded datagram reassembly
+        run: go test -race ./internal/httpcarrier -count=5 -v -timeout 3m
+      - name: Install separately pinned official helpers
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 https://github.com/SagerNet/sing-box/releases/download/v1.15.0-alpha.12/sing-box-1.15.0-alpha.12-linux-amd64.tar.gz -o "$RUNNER_TEMP/tailcat.tar.gz"
+          echo "b107528ec7d989333d986573c097d840b9ef1afa9bb177f8eb03e0767f370514  $RUNNER_TEMP/tailcat.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/tailcat.tar.gz" -C "$RUNNER_TEMP"
+          curl -fL --retry 3 https://github.com/XTLS/Xray-core/releases/download/v26.3.27/Xray-linux-64.zip -o "$RUNNER_TEMP/xray.zip"
+          echo "23cd9af937744d97776ee35ecad4972cf4b2109d1e0fe6be9930467608f7c8ae  $RUNNER_TEMP/xray.zip" | sha256sum -c -
+          mkdir "$RUNNER_TEMP/xray"; unzip -q "$RUNNER_TEMP/xray.zip" -d "$RUNNER_TEMP/xray"
+          echo "BP_TAILCAT_BINARY=$RUNNER_TEMP/sing-box-1.15.0-alpha.12-linux-amd64/sing-box" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=$RUNNER_TEMP/sing-box-1.15.0-alpha.12-linux-amd64" >> "$GITHUB_ENV"
+          echo "BP_XRAY_BINARY=$RUNNER_TEMP/xray/xray" >> "$GITHUB_ENV"
+      - name: XHTTP REALITY and isolated authenticated Tailcat DERP transfers
+        run: go test -race ./internal/tunnel/naive -run '^Test(XHTTPReality|Tailcat)' -count=1 -v -timeout 3m
+      - name: Native WebTransport TUN IPv4, IPv6, restart and loss
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq iproute2 iputils-ping netcat-openbsd bc openssl
+          go build -o "$RUNNER_TEMP/backpack-http" .
+          for scenario in ipv4 ipv6 restart loss; do
+            extra=()
+            case "$scenario" in
+              ipv6) extra+=(IPV6=1) ;;
+              restart) extra+=(RESTART=1) ;;
+              loss) extra+=("NETEM=delay 20ms loss 1%") ;;
+            esac
+            sudo env BIN="$RUNNER_TEMP/backpack-http" W="$RUNNER_TEMP/wt-$scenario" "${extra[@]}" \
+              timeout -k 5s 5m unshare --net --mount --fork -- bash internal/e2e/testdata/l3live.sh webtransport 1 \
+              | tee "$RUNNER_TEMP/wt-$scenario.out"
+            grep -q '^RESULT OK' "$RUNNER_TEMP/wt-$scenario.out"
+          done

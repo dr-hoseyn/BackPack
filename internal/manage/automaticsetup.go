@@ -161,7 +161,20 @@ func buildAutomaticSpec(name, host, private string, material automaticTLSMateria
 			p.Short = config.ShortServerConfig{Listen: endpoints[i], ServerName: host, Certificate: cert, Key: key}
 		case "naive":
 			p.Naive = config.NaiveServerConfig{Binary: managedHelperPath("sing-box"), Listen: endpoints[i], Username: "backpack", Password: randomToken(32), Certificate: cert, Key: key}
-		case "xhttp", "reality":
+		case "trusttunnel", "webtransport":
+			x := config.ConnectServerConfig{Protocol: carrier, Listen: endpoints[i], ServerName: host, Username: "backpack", Password: randomToken(32), Certificate: cert, Key: key, Mode: "auto"}
+			if carrier == "webtransport" {
+				x.Mode = "h3"
+				x.Path = "/" + randomToken(24)
+			}
+			p.Connect = x
+		case "tailcat":
+			x, err := automaticTailcat(endpoints[i])
+			if err != nil {
+				return TunnelSpec{}, err
+			}
+			p.Sing = x
+		case "xhttp", "reality", "xhttp-reality":
 			x := config.XrayServerConfig{Binary: managedHelperPath("xray"), Listen: endpoints[i], Mode: carrier, UUID: id, ServerName: host}
 			if carrier == "xhttp" {
 				x.Path, x.Certificate, x.Key = "/"+randomToken(24), cert, key
@@ -183,6 +196,9 @@ func buildAutomaticSpec(name, host, private string, material automaticTLSMateria
 					return TunnelSpec{}, err
 				}
 				x.ShortID = hex.EncodeToString(shortID[:])
+				if config.XrayHTTP(carrier) {
+					x.Path = "/" + randomToken(24)
+				}
 			}
 			p.Xray = x
 		case "hysteria2", "anytls", "tuic", "shadowtls":
@@ -274,6 +290,7 @@ func setupAutomaticIran() {
 		}
 	}
 	carriers := automaticCarriers(sing, xray, automaticExecutable(managedHelperPath("naive")), cover)
+	carriers = modernAutomaticCarriers(carriers)
 	profile := "full"
 	if tui.Confirm("Use Economy (Up To Three Carriers, Reduced Backup Probes)", true) {
 		profile = "economy"

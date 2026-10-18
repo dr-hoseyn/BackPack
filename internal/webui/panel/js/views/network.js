@@ -15,7 +15,10 @@ export function networkView(ctx) {
         <label>Tunnel name<input name="name" maxlength="40" placeholder="Chosen automatically when empty"></label>
         <label>Public IPv4 or hostname<input name="host" maxlength="253" placeholder="Detect IPv4 when empty"></label>
         <label>Forwarded ports<input name="ports" required placeholder="443,8080=127.0.0.1:2096"></label>
-        <label>Profile<select name="profile"><option value="economy">Economy · up to three carriers</option><option value="full">Full · all available carriers</option></select></label>
+        <label>Profile<select name="profile"><option value="economy">Economy · up to three carriers</option><option value="full">Full · up to eight carriers</option></select></label>
+        <label>Carriers (optional, comma-separated)<input name="carriers" maxlength="180" placeholder="trusttunnel,webtransport,xhttp-reality"></label>
+        <p class="hint">Leave empty for automatic selection. Combine 2–8 carriers; Economy permits up to three. Available types: trusttunnel, webtransport, xhttp-reality, xhttp, reality, hysteria2, anytls, tuic, naive, shadowtls, short-https and experimental tailcat. Helper-based types require their installed binaries; REALITY and ShadowTLS require a verified cover.</p>
+        <label>Tailcat HTTPS DERP map (only when selecting tailcat)<input name="derpMapURL" maxlength="2048" placeholder="https://relay.example.com/derpmap.json"></label>
         <label>Verified cover endpoint · optional<input name="cover" placeholder="your-cover.example:443"></label>
         <button class="tl-btn" type="submit">Review required ports</button>
       </form><div id="autoResult" role="status" aria-live="polite"></div>

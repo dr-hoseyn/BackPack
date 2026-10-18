@@ -11,7 +11,7 @@ func economyPathPolicy() config.PathPolicy {
 // both ends. Full mode retains all eligible carriers and the existing policy.
 func economicalCarriers(available []string) []string {
 	var selected []string
-	for _, candidate := range []string{"hysteria2", "reality", "anytls", "xhttp", "naive", "shadowtls", "short-https", "tuic"} {
+	for _, candidate := range []string{"hysteria2", "trusttunnel", "xhttp-reality", "reality", "anytls", "xhttp", "naive", "shadowtls", "short-https", "webtransport", "tuic"} {
 		for _, v := range available {
 			if v == candidate {
 				selected = append(selected, v)

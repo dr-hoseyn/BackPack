@@ -15,11 +15,13 @@ import (
 )
 
 type AutomaticRequest struct {
-	Name    string `json:"name"`
-	Host    string `json:"host"`
-	Ports   string `json:"ports"`
-	Profile string `json:"profile"`
-	Cover   string `json:"cover"`
+	Carriers   string `json:"carriers"`
+	DERPMapURL string `json:"derpMapURL"`
+	Name       string `json:"name"`
+	Host       string `json:"host"`
+	Ports      string `json:"ports"`
+	Profile    string `json:"profile"`
+	Cover      string `json:"cover"`
 }
 
 var automaticDNSName = regexp.MustCompile(`(?i)^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*\.?$`)
@@ -39,13 +41,13 @@ type AutomaticPreview struct {
 	Expires   time.Time           `json:"expires"`
 }
 type AutomaticPlan struct {
-	Preview             AutomaticPreview
-	private, cover      string
-	carriers, endpoints []string
-	mu                  sync.Mutex
-	closed              bool
-	reservations        []func()
-	timer               *time.Timer
+	Preview                    AutomaticPreview
+	private, cover, derpMapURL string
+	carriers, endpoints        []string
+	mu                         sync.Mutex
+	closed                     bool
+	reservations               []func()
+	timer                      *time.Timer
 }
 
 func (p *AutomaticPlan) Close() {
@@ -123,18 +125,34 @@ func PrepareAutomatic(ctx context.Context, r AutomaticRequest) (*AutomaticPlan, 
 		return nil, err
 	}
 	carriers := automaticCarriers(sing, xray, automaticExecutable(managedHelperPath("naive")), cover)
-	if r.Profile == "economy" {
+	if r.Carriers != "" {
+		var err error
+		carriers, err = customAutomaticCarriers(r.Carriers, r.DERPMapURL, cover, sing, xray, automaticExecutable(managedHelperPath("naive")))
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		carriers = modernAutomaticCarriers(carriers)
+	}
+	if r.Profile == "economy" && r.Carriers == "" {
 		carriers = economicalCarriers(carriers)
+	}
+	if r.Profile == "economy" && len(carriers) > 3 {
+		return nil, errors.New("Economy accepts at most three explicit carriers; select Full to combine more")
 	}
 	if len(carriers) < 2 {
 		return nil, errors.New("install pinned sing-box or Xray; Automatic needs at least two compatible carriers")
 	}
-	if sing {
+	nativeUDP := false
+	for _, carrier := range carriers {
+		nativeUDP = nativeUDP || carrier == "hysteria2" || carrier == "tuic"
+	}
+	if nativeUDP {
 		if busy := automaticUDPConflict(ports); busy != "" {
 			return nil, fmt.Errorf("forwarded UDP port already in use: %s", busy)
 		}
 	}
-	p := &AutomaticPlan{Preview: AutomaticPreview{Name: r.Name, Host: r.Host, Ports: ports, Profile: r.Profile, Expires: time.Now().Add(2 * time.Minute)}, cover: cover, carriers: carriers}
+	p := &AutomaticPlan{Preview: AutomaticPreview{Name: r.Name, Host: r.Host, Ports: ports, Profile: r.Profile, Expires: time.Now().Add(2 * time.Minute)}, cover: cover, carriers: carriers, derpMapURL: r.DERPMapURL}
 	used := map[int]bool{}
 	for _, port := range ReservedPorts() {
 		used[port] = true
@@ -160,6 +178,16 @@ func PrepareAutomatic(ctx context.Context, r AutomaticRequest) (*AutomaticPlan, 
 		}
 		p.endpoints = append(p.endpoints, addr)
 		network := "TCP"
+		if carrier == "trusttunnel" {
+			network = "TCP+UDP"
+		}
+		if carrier == "webtransport" {
+			network = "UDP"
+		}
+		if carrier == "tailcat" {
+			network = "DERP (no public listener)"
+			p.Preview.Warnings = append(p.Preview.Warnings, "Tailcat is experimental and uses the explicitly selected DERP map; install its separate helper on both peers.")
+		}
 		if carrier == "hysteria2" || carrier == "tuic" {
 			network = "UDP"
 		}
@@ -200,6 +228,11 @@ func (p *AutomaticPlan) Commit() (name, service, link string, active bool, err e
 	if e != nil {
 		err = e
 		return
+	}
+	for i := range s.ServerPaths {
+		if s.ServerPaths[i].Sing.Protocol == "tailcat" {
+			s.ServerPaths[i].Sing.Tailcat.DERPMapURL = p.derpMapURL
+		}
 	}
 	s.PathProfile = p.Preview.Profile
 	if err = validateManagedSpec(s); err != nil {

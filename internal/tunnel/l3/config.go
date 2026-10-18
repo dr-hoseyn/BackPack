@@ -219,7 +219,7 @@ func (c *Config) Validate() error {
 			return err
 		}
 	}
-	if c.Carrier == CarrierMasque || c.Carrier == CarrierMasqueH2 || c.Carrier == CarrierConnectIP {
+	if c.Carrier == CarrierMasque || c.Carrier == CarrierMasqueH2 || c.Carrier == CarrierConnectIP || c.Carrier==CarrierWebTransport {
 		if err := c.Masque.Validate(c.Mode == ModeListen); err != nil {
 			return fmt.Errorf("l3: %w", err)
 		}

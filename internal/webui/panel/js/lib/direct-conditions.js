@@ -2,7 +2,7 @@
 export function directConditionMatches(condition, side, carrier) {
   return condition.split('-').every(part => {
     if (part === 'server' || part === 'client') return side === part;
-    if (part === 'masque') return ['masque', 'masque-h2', 'connect-ip'].includes(carrier);
+    if (part === 'masque') return ['masque', 'masque-h2', 'connect-ip', 'webtransport'].includes(carrier);
     return carrier === part;
   });
 }

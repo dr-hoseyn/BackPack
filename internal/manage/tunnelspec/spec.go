@@ -26,14 +26,16 @@ type Spec struct {
 
 	// Preserve experimental helper settings across ordinary tunnel edits.
 	// They include credentials and must not enter generic JSON responses.
-	SingServer  config.SingServerConfig  `json:"-"`
-	ShortServer config.ShortServerConfig `json:"-"`
-	ShortClient config.ShortClientConfig `json:"-"`
-	SingClient  config.SingClientConfig  `json:"-"`
-	NaiveServer config.NaiveServerConfig `json:"-"`
-	NaiveClient config.NaiveClientConfig `json:"-"`
-	XrayServer  config.XrayServerConfig  `json:"-"`
-	XrayClient  config.XrayClientConfig  `json:"-"`
+	SingServer    config.SingServerConfig    `json:"-"`
+	ShortServer   config.ShortServerConfig   `json:"-"`
+	ShortClient   config.ShortClientConfig   `json:"-"`
+	ConnectServer config.ConnectServerConfig `json:"-"`
+	ConnectClient config.ConnectClientConfig `json:"-"`
+	SingClient    config.SingClientConfig    `json:"-"`
+	NaiveServer   config.NaiveServerConfig   `json:"-"`
+	NaiveClient   config.NaiveClientConfig   `json:"-"`
+	XrayServer    config.XrayServerConfig    `json:"-"`
+	XrayClient    config.XrayClientConfig    `json:"-"`
 
 	// Preset is the performance profile every tuning field was filled from:
 	// balance, turbo or aggressive. Empty means the values were set by hand or
@@ -448,6 +450,13 @@ func (s Spec) writeHelpers(b *strings.Builder) {
 		text := strings.ReplaceAll(encoded.String(), "[[paths]]", "[[client.paths]]")
 		b.WriteString("\n" + strings.ReplaceAll(text, "[paths.", "[client.paths."))
 	}
+	if s.Role == "server" && s.ConnectServer.Enabled() {
+		b.WriteString("\n[server.connect]\n")
+		_ = toml.NewEncoder(b).Encode(s.ConnectServer)
+	} else if s.Role == "client" && s.ConnectClient.Enabled() {
+		b.WriteString("\n[client.connect]\n")
+		_ = toml.NewEncoder(b).Encode(s.ConnectClient)
+	}
 	if s.Role == "server" && s.ShortServer.Enabled() {
 		b.WriteString("\n[server.short]\n")
 		_ = toml.NewEncoder(b).Encode(s.ShortServer)
@@ -517,6 +526,15 @@ func (s Spec) validateNaive() error {
 }
 
 func (s Spec) validateHelpers() error {
+	if s.ConnectServer.Enabled() || s.ConnectClient.Enabled() {
+		var cfg config.Config
+		if _, err := toml.Decode(s.Render(), &cfg); err != nil {
+			return err
+		}
+		if err := naive.ValidateConnect(&cfg); err != nil {
+			return err
+		}
+	}
 	if len(s.ServerPaths) != 0 || len(s.ClientPaths) != 0 || s.PathPolicy != (config.PathPolicy{}) {
 		var cfg config.Config
 		if _, err := toml.Decode(s.Render(), &cfg); err != nil {

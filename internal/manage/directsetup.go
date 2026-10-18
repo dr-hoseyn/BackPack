@@ -282,10 +282,10 @@ func askL3CarrierExtras(cfg *l3Spec, side directSide) bool {
 		return true
 	}
 
-	if cfg.Carrier == "masque" || cfg.Carrier == "masque-h2" || cfg.Carrier == "connect-ip" {
-		if cfg.Carrier != "connect-ip" {
+	if cfg.Carrier == "masque" || cfg.Carrier == "masque-h2" || cfg.Carrier == "connect-ip" || cfg.Carrier == "webtransport" {
+		if cfg.Carrier != "connect-ip" && cfg.Carrier != "webtransport" {
 			cfg.Masque.Target = strings.TrimSpace(tui.PromptDefault("MASQUE Private UDP Target (Same On Both Ends)", cfg.Masque.TargetAddr()))
-		} else {
+		} else if cfg.Carrier == "connect-ip" {
 			off := false
 			cfg.AutoMTU = &off
 			cfg.MTU, cfg.FECData, cfg.FECParity = 1280, 0, 0
@@ -389,7 +389,7 @@ func setupL3FromLink(chosen string) {
 		}
 		form.Sing = cfg.Sing
 	}
-	if link.Tr == "masque" || link.Tr == "masque-h2" || link.Tr == "connect-ip" {
+	if link.Tr == "masque" || link.Tr == "masque-h2" || link.Tr == "connect-ip" || link.Tr == "webtransport" {
 		cfg := l3Spec{Carrier: link.Tr, Masque: form.Masque}
 		if !askL3CarrierExtras(&cfg, sideKharej) {
 			return

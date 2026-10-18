@@ -63,7 +63,7 @@ sing_key = \"$W/sing-key.pem\""
 sing_server_name = \"localhost\"
 sing_ca = \"$W/sing-cert.pem\"" ;;
   pck|sni) extra_k='pck_interface = "vk"'; extra_i='pck_interface = "vi"' ;;
-  masque|masque-h2|connect-ip)
+  masque|masque-h2|connect-ip|webtransport)
     # The test owns a private CA and verifies the listener's veth address.
     # Both namespaces share these files; only the listener uses the key.
     openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
