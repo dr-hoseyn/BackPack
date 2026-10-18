@@ -97,6 +97,6 @@ func ctSNINotes(out io.Writer, rows []ConnTestResult) {
 			fmt.Fprintln(out, "\nDirect SNI domains:")
 			wrote = true
 		}
-		fmt.Fprintf(out, "  %-16s %s\n", ctResultName(r), r.SNIDomain)
+		fmt.Fprintf(out, "  %-*s %s\n", ctNameWidth, ctResultName(r), r.SNIDomain)
 	}
 }

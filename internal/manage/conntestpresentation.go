@@ -14,7 +14,7 @@ import (
 
 func ctMenuStage(out io.Writer, number, title, detail string) {
 	fmt.Fprintf(out, "%s\n  %s %s\n  %s\n",
-		tui.Color(tui.Gray, strings.Repeat("─", 55)),
+		tui.Color(tui.Gray, ctRule()),
 		tui.Color(tui.Bold+tui.Red, number+"."), tui.Color(tui.Bold+tui.White, title),
 		tui.Color(tui.Gray, detail))
 }
