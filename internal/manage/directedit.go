@@ -11,6 +11,18 @@ import (
 	"github.com/backpack/backpack/internal/tui"
 )
 
+// Use the validated, rollback-capable settings writer for port-only edits.
+// This preserves carrier settings that the older CLI renderer cannot hold.
+func saveForwardedPorts(name string, ports []string) {
+	raw := strings.Join(ports, ",")
+	if err := EditDirectSettings(name, DirectEdit{Ports: &raw}); err != nil {
+		tui.Error("Failed: " + err.Error())
+	} else {
+		tui.Success("Forwarded Ports Saved — Restarted.")
+	}
+	tui.PressEnter()
+}
+
 // Editing a direct tunnel after it exists.
 //
 // The two things an operator actually comes back to change are the forwarded
@@ -85,21 +97,11 @@ func editDirectPorts(t Tunnel, cfg config.Config) bool {
 		{Title: "Kharej Address", Desc: "now " + d.Addr},
 	}) {
 	case 0:
-		raw := tui.Prompt("Forwarded Ports (e.g. 443,8080=80): ")
-		ports := parsePorts(raw)
-		if len(ports) == 0 {
-			tui.Error("No valid ports.")
-			tui.PressEnter()
+		ports, changed := (forwardPortEditor{defaultHost: "127.0.0.1"}).edit(d.Ports)
+		if !changed {
 			return true
 		}
-		if err := validatePortSpecs(ports); err != nil {
-			tui.Error(err.Error())
-			tui.PressEnter()
-			return true
-		}
-		d.Ports = ports
-		showForwardTargets(ports, d.AcceptUDP)
-		saveDirect(t, d)
+		saveForwardedPorts(t.Name, ports)
 	case 1:
 		d.AcceptUDP = tui.Confirm("Carry UDP As Well As TCP", d.AcceptUDP)
 		saveDirect(t, d)
@@ -237,19 +239,11 @@ func editL3Ports(t Tunnel, cfg config.Config) bool {
 
 	switch choice {
 	case 0:
-		raw := tui.Prompt("Forwarded Ports (Blank = None): ")
-		if strings.TrimSpace(raw) == "" {
-			l.Ports = nil
-		} else {
-			ports := parsePorts(raw)
-			if err := validatePortSpecs(ports); err != nil {
-				tui.Error(err.Error())
-				tui.PressEnter()
-				return true
-			}
-			l.Ports = ports
+		ports, changed := (forwardPortEditor{defaultHost: hostOnly(l.PeerIP), allowEmpty: true}).edit(l.Ports)
+		if !changed {
+			return true
 		}
-		saveL3(t, l)
+		saveForwardedPorts(t.Name, ports)
 	case 1:
 		l.AcceptUDP = tui.Confirm("Carry UDP As Well As TCP", l.AcceptUDP)
 		saveL3(t, l)

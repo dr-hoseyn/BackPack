@@ -12,13 +12,14 @@ import (
 // IPv6), or fallback when it can't be parsed.
 
 // EditTunnel changes a tunnel's ports/address in one shot and restarts it so
-// the change takes effect. Empty values leave a setting unchanged:
+// the change takes effect. Empty strings and nil ports leave settings unchanged:
 //
 //   - tunnelPort — the tunnel (control-channel) port: the local bind port on a
 //     server, the remote server port on a client
 //   - host — the server address (client tunnels only)
 //   - ports — the full new forwarded-ports list (server tunnels only); the
-//     hidden bot-relay mapping, if present, is preserved automatically
+//     hidden bot-relay mapping, if present, is preserved automatically.
+//     A non-nil empty slice explicitly removes all visible forwarded ports.
 func EditTunnel(name, host, tunnelPort string, ports []string) error {
 	s, err := LoadSpec(name)
 	if err != nil {
@@ -70,7 +71,7 @@ func EditTunnel(name, host, tunnelPort string, ports []string) error {
 		changed = true
 	}
 
-	if len(ports) > 0 {
+	if ports != nil {
 		if s.Role != "server" {
 			return fmt.Errorf("forwarded ports exist only on server tunnels")
 		}
@@ -80,7 +81,7 @@ func EditTunnel(name, host, tunnelPort string, ports []string) error {
 				clean = append(clean, p)
 			}
 		}
-		if len(clean) == 0 {
+		if len(ports) > 0 && len(clean) == 0 {
 			return fmt.Errorf("at least one forwarded port is required")
 		}
 		if err := validatePortSpecs(clean); err != nil {
