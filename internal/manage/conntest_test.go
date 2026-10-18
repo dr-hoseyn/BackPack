@@ -347,10 +347,10 @@ func TestAConnectionTestOverLoopbackPassesEveryReverseTransport(t *testing.T) {
 		}
 		if managedTransport(r.Transport) {
 			want := "tls-ok"
-			if r.Transport == "reality" {
+			if config.XrayREALITY(r.Transport) {
 				want = "tcp-ok"
 			}
-			if config.SingProtocol(r.Transport) {
+			if config.SingProtocol(r.Transport) || r.Transport == "webtransport" {
 				want = "not-applicable"
 			}
 			if r.HTTPSProbe != want || r.TestPort < 1 {
