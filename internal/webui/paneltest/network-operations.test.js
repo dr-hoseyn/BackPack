@@ -38,6 +38,19 @@ function mount(kind) {
     create: () => box.querySelector(kind === 'auto' ? '#createAutomatic' : 'button')};
 }
 
+test('custom carrier setup sends the DERP region as an integer and avoids suggesting an inbound Tailcat port', async () => {
+  const h = mount('auto');
+  h.form.fields.push(['carriers','trusttunnel,tailcat'],['derpMapURL','https://relay.example/map.json'],['derpRegion','901']);
+  const pending = h.submit(); await tick();
+  assert.equal(h.calls[0].body.derpRegion, 901);
+  assert.equal(h.calls[0].body.carriers, 'trusttunnel,tailcat');
+  const reply = h.preview('custom');
+  reply.preview.listeners = [{protocol:'tailcat',network:'DERP',port:''}];
+  h.calls[0].finish(reply); await pending;
+  assert.match(h.box.innerHTML, /outbound DERP; no public listener/);
+  h.leave(); await tick(); h.calls[1].finish(); await tick();
+});
+
 for (const kind of ['auto', 'peer']) {
   test(`${kind}: repeated submit and clicks cannot replace an in-flight commit`, async () => {
     const h = mount(kind);

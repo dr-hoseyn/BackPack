@@ -37,6 +37,7 @@ type PacketConn struct {
 	once            sync.Once
 	sequence        atomic.Uint32
 	fragments       map[fragmentKey]*assembly
+	active          int
 }
 
 func newPackets(parent context.Context) *PacketConn {
@@ -75,14 +76,16 @@ func ListenPackets(parent context.Context, addr, path, user, password string, cf
 			return
 		}
 		p.mu.Lock()
-		if p.ctx.Err() != nil || len(p.sessions) >= 64 {
+		if p.ctx.Err() != nil || p.active >= 64 {
 			p.mu.Unlock()
 			w.WriteHeader(http.StatusServiceUnavailable)
 			return
 		}
 		p.wg.Add(1)
+		p.active++
 		p.mu.Unlock()
 		defer p.wg.Done()
+		defer func() { p.mu.Lock(); p.active--; p.mu.Unlock() }()
 		sess, err := s.Upgrade(w, r)
 		if err != nil {
 			return
