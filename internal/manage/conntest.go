@@ -341,6 +341,7 @@ type ConnTestResult struct {
 	OK          int     `json:"o"`           // echoes that came back
 	Tried       int     `json:"n"`           // echoes sent
 	RTTms       int     `json:"r,omitempty"`
+	JitterMs    float64 `json:"jitter_ms,omitempty"`
 	Mbps        float64 `json:"m,omitempty"`
 	UploadMbps  float64 `json:"upload_mbps,omitempty"`
 	SpeedStable bool    `json:"speed_stable,omitempty"`
@@ -1459,6 +1460,7 @@ func ctProbe(ctx context.Context, c *connTestCase, l3Echo int, report func(ConnT
 	}
 	if r.OK > 0 {
 		r.RTTms = int((rtt / time.Duration(r.OK)).Milliseconds())
+		r.JitterMs = float64(ctQuality(r, c.rtts).Jitter) / float64(time.Millisecond)
 	}
 
 	switch {

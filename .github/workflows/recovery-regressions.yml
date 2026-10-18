@@ -20,6 +20,8 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - name: Save and compare bounded credential-free Connection Test history
+        run: go test ./internal/testhistory ./internal/manage ./internal/cli -run '^Test(ConcurrentRuns|CorruptOrOversized|ComparisonKeeps|EmptyStore|ConnectionTestHistory)' -race -count=1 -timeout 1m
       - name: Exhaust descriptors with an independent caller and backend
         run: go test ./internal/e2e -run '^TestATunnelSurvivesRunningOutOfFileDescriptors$' -count=5 -race -v -timeout 5m
       - name: Exercise descriptor recovery with coverage instrumentation
