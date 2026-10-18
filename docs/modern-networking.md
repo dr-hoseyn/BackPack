@@ -12,6 +12,10 @@ direction every five seconds on selected/unhealthy paths, and every sixty
 seconds on healthy unselected backups. Promotion wakes verification immediately.
 The smaller sample reduces overhead but is not a capacity benchmark. Reduced
 backup freshness is a deliberate tradeoff; a backup may fail between probes.
+Path health, selected TCP/UDP identities and probe cadence share one selector
+snapshot, so a failover cannot combine measurements from different selections.
+Closed native UDP associations release their parent registration and queued
+packet references; a stopped parent refuses new associations.
 Active TCP forwards keep their connections. Local helper exits withdraw paths
 immediately; unverified routes never become a fallback.
 
@@ -146,7 +150,11 @@ own host address. Packets are checked against these peers. Capsule announcements
 never install DNS, default routes, NAT or arbitrary remote routes. One authorized
 session owns the TUN; unverified peers cannot evict it and have bounded setup
 lifetimes. TUN traffic/ICMP establishes liveness; a TLS handshake alone is not
-health. ICMP Packet Too Big feedback is returned to the local TUN.
+health. Incoming packets count as liveness only after successful TUN delivery.
+A failed or short TUN write ends the generation with its original error so the
+existing runner can recover it. The serialized write path reuses its packet
+batch rather than allocating a new batch wrapper for every packet.
+ICMP Packet Too Big feedback is returned to the local TUN.
 
 This paired point-to-point mode uses MTU 1280 and rejects Noise auto-MTU, GRE keys,
 FEC and multipath. General remote-access routing and external proxy authentication

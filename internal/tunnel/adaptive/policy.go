@@ -56,9 +56,14 @@ func policyDefaults(p config.PathPolicy) (config.PathPolicy, error) {
 func (s *Selector) ProbeDelay(i int) time.Duration {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	seconds := s.policy.ProbeInterval
-	if s.policy.StandbyInterval > 0 && i >= 0 && i < len(s.states) && s.states[i].healthy && i != s.selected[0] && i != s.selected[1] {
-		seconds = s.policy.StandbyInterval
+	healthy := i >= 0 && i < len(s.states) && s.states[i].healthy
+	return probeDelay(s.policy, healthy, i == s.selected[0] || i == s.selected[1])
+}
+
+func probeDelay(policy config.PathPolicy, healthy, selected bool) time.Duration {
+	seconds := policy.ProbeInterval
+	if policy.StandbyInterval > 0 && healthy && !selected {
+		seconds = policy.StandbyInterval
 	}
 	return time.Duration(seconds) * time.Second
 }
@@ -206,11 +211,17 @@ type PathStatus struct {
 }
 
 func (s *Selector) Status() []PathStatus {
+	states, _ := s.statusSnapshot()
+	return states
+}
+
+// Selection and the health measurements describing it share one observation.
+func (s *Selector) statusSnapshot() ([]PathStatus, [2]int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	result := make([]PathStatus, len(s.states))
 	for i, p := range s.states {
 		result[i] = PathStatus{p.healthy, p.rtt / float64(time.Millisecond), p.speed * 8 / 1e6, p.loss * 100, p.failures, p.checked}
 	}
-	return result
+	return result, s.selected
 }

@@ -2,8 +2,12 @@ package l3
 
 import (
 	"context"
+	"errors"
+	"io"
 	"net"
 	"net/netip"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -114,5 +118,92 @@ func TestConnectIPRejectsNoiseSpecificTuning(t *testing.T) {
 	c.AutoMTU = true
 	if c.Validate() == nil {
 		t.Fatal("accepted Noise MTU probes for native IP")
+	}
+}
+
+// A peer packet is not proof of health until the local TUN accepts it.
+type blockedConnectIPDevice struct {
+	*fakeDevice
+	entered chan struct{}
+	release chan struct{}
+	once    sync.Once
+	failure error
+}
+
+func (d *blockedConnectIPDevice) Write(_ [][]byte) (int, error) {
+	d.once.Do(func() { close(d.entered) })
+	select {
+	case <-d.release:
+		return 0, d.failure
+	case <-d.closed:
+		return 0, io.EOF
+	}
+}
+
+func TestConnectIPFailedTUNWriteEndsGenerationWithoutFalseHealth(t *testing.T) {
+	for _, family := range []string{"IPv4", "IPv6"} {
+		for _, short := range []bool{false, true} {
+			name := family + "/error"
+			if short {
+				name = family + "/short"
+			}
+			t.Run(name, func(t *testing.T) {
+				ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+				defer cancel()
+				cfg := Config{Mode: ModeListen, Addr: "127.0.0.1:0", Token: "paired-connect-ip-account", Carrier: CarrierConnectIP, Masque: masqueTestConfig(t), LocalIP: "10.205.0.2/30", PeerIP: "10.205.0.1", MTU: 1280}
+				if family == "IPv6" {
+					cfg.LocalIP, cfg.PeerIP = "fd51::2/126", "fd51::1"
+				}
+				tunnel, err := New(cfg, quietLogger())
+				if err != nil {
+					t.Fatal(err)
+				}
+				failure := errors.New("injected TUN write failure")
+				if short {
+					failure = nil
+				}
+				dev := &blockedConnectIPDevice{fakeDevice: newFakeDevice(1280), entered: make(chan struct{}), release: make(chan struct{}), failure: failure}
+				tunnel.openDevice = func(deviceSpec) (packetDevice, error) { return dev, nil }
+				result := make(chan error, 1)
+				done := make(chan struct{})
+				go func() { defer close(done); result <- tunnel.Run(ctx) }()
+				t.Cleanup(func() { cancel(); dev.Close(); <-done })
+				clientCfg := cfg
+				clientCfg.Mode, clientCfg.Addr = ModeDial, awaitBind(t, tunnel).String()
+				clientCfg.LocalIP, clientCfg.PeerIP = cfg.PeerIP, strings.Split(cfg.LocalIP, "/")[0]
+				client, err := dialConnectIP(ctx, clientCfg)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer client.close()
+				local, peer := ipEnds(clientCfg)
+				if _, err := client.conn.WritePacket(connectIPPing(local, peer)); err != nil {
+					t.Fatal(err)
+				}
+				select {
+				case <-dev.entered:
+				case <-ctx.Done():
+					t.Fatal("packet never reached the TUN")
+				}
+				if tunnel.Up() {
+					t.Error("reported healthy before the TUN accepted the packet")
+				}
+				close(dev.release)
+				select {
+				case err := <-result:
+					if err == nil || !strings.Contains(err.Error(), "CONNECT-IP TUN write") {
+						t.Fatalf("lost TUN failure: %v", err)
+					}
+					if short && !errors.Is(err, io.ErrShortWrite) {
+						t.Fatal("short TUN write was not rejected")
+					}
+					if tunnel.Up() {
+						t.Fatal("failed generation retained healthy state")
+					}
+				case <-time.After(2 * time.Second):
+					t.Fatal("TUN failure did not end the generation promptly")
+				}
+			})
+		}
 	}
 }

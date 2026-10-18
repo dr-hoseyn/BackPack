@@ -31,6 +31,9 @@ type packetConn struct {
 }
 
 func (c *ClientPaths) PacketConn() (net.PacketConn, net.Addr, error) {
+	if c.ctx.Err() != nil {
+		return nil, nil, net.ErrClosed
+	}
 	if !c.cfg.NativeSing().NativeUDP {
 		return nil, nil, errors.New("no native UDP path configured")
 	}
@@ -106,6 +109,19 @@ func (p *packetConn) Close() error {
 			pc.Close()
 		}
 		p.wg.Wait()
+		// Reconnects create replacement associations. The long-lived parent must
+		// not retain closed connections and their queued datagrams indefinitely.
+		p.parent.mu.Lock()
+		for i, old := range p.parent.packets {
+			if old == p {
+				last := len(p.parent.packets) - 1
+				copy(p.parent.packets[i:], p.parent.packets[i+1:])
+				p.parent.packets[last] = nil
+				p.parent.packets = p.parent.packets[:last]
+				break
+			}
+		}
+		p.parent.mu.Unlock()
 	})
 	return nil
 }

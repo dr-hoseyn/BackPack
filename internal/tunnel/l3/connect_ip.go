@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/netip"
@@ -254,8 +255,8 @@ func connectIPPacket(p []byte, src, dst netip.Addr) bool {
 }
 
 func (t *Tunnel) runConnectIP(ctx context.Context) error {
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
 	var s *connectIPSession
 	var err error
 	if t.cfg.Mode == ModeDial {
@@ -284,11 +285,25 @@ func (t *Tunnel) runConnectIP(ctx context.Context) error {
 	local, peer := ipEnds(t.cfg)
 	var wg sync.WaitGroup
 	var writes sync.Mutex
-	write := func(p []byte) { writes.Lock(); defer writes.Unlock(); _, _ = dev.Write([][]byte{p}) }
+	var batch [1][]byte
+	write := func(p []byte) error {
+		writes.Lock()
+		defer writes.Unlock()
+		batch[0] = p
+		n, err := dev.Write(batch[:])
+		batch[0] = nil
+		if err == nil && n != 1 {
+			err = io.ErrShortWrite
+		}
+		if err != nil {
+			return fmt.Errorf("CONNECT-IP TUN write: %w", err)
+		}
+		return nil
+	}
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		defer cancel()
+		defer cancel(nil)
 		bufs := make([][]byte, dev.BatchSize())
 		sizes := make([]int, len(bufs))
 		for i := range bufs {
@@ -297,6 +312,7 @@ func (t *Tunnel) runConnectIP(ctx context.Context) error {
 		for {
 			n, err := dev.Read(bufs, sizes)
 			if err != nil {
+				cancel(fmt.Errorf("CONNECT-IP TUN read: %w", err))
 				return
 			}
 			for i := 0; i < n; i++ {
@@ -310,7 +326,10 @@ func (t *Tunnel) runConnectIP(ctx context.Context) error {
 					return
 				}
 				if reply != nil {
-					write(reply)
+					if err := write(reply); err != nil {
+						cancel(err)
+						return
+					}
 					t.stats.dropped.Add(1)
 					continue
 				}
@@ -321,7 +340,7 @@ func (t *Tunnel) runConnectIP(ctx context.Context) error {
 	}()
 	go func() {
 		defer wg.Done()
-		defer cancel()
+		defer cancel(nil)
 		p := make([]byte, 65536)
 		for {
 			n, err := s.conn.ReadPacket(p)
@@ -333,11 +352,15 @@ func (t *Tunnel) runConnectIP(ctx context.Context) error {
 				t.stats.dropped.Add(1)
 				continue
 			}
+			if err := write(packet); err != nil {
+				t.stats.dropped.Add(1)
+				cancel(err)
+				return
+			}
 			t.connectIPLast.Store(time.Now().UnixNano())
 			t.publishPeer()
 			t.stats.bytesIn.Add(uint64(n))
 			t.stats.packetsIn.Add(1)
-			write(packet)
 		}
 	}()
 	tick := time.NewTicker(5 * time.Second)
@@ -347,11 +370,11 @@ func (t *Tunnel) runConnectIP(ctx context.Context) error {
 	for ctx.Err() == nil {
 		last := t.connectIPLast.Load()
 		if (last == 0 && time.Since(started) > 30*time.Second) || (last != 0 && !t.Up()) {
-			cancel()
+			cancel(nil)
 			break
 		}
 		if _, err := s.conn.WritePacket(connectIPPing(local, peer)); err != nil {
-			cancel()
+			cancel(nil)
 			break
 		}
 		select {
@@ -362,7 +385,7 @@ func (t *Tunnel) runConnectIP(ctx context.Context) error {
 	s.close()
 	dev.Close()
 	wg.Wait()
-	return ctx.Err()
+	return context.Cause(ctx)
 }
 
 func connectIPPing(src, dst netip.Addr) []byte {

@@ -22,6 +22,11 @@ All notable changes to Backpack are documented here.
 - Restore MASQUE-H2/CONNECT-IP certificate fields, hide incompatible native
   tuning controls, and validate Direct creation with the runtime engine.
 
+- Keep path health, selected identities and cadence in one snapshot during
+  failover; release closed native UDP associations from the parent registry.
+- Stop CONNECT-IP generations on failed/short TUN delivery, preserve the failure
+  cause, and reuse the serialized packet-write batch.
+
 See [Network efficiency and modern carriers](docs/modern-networking.md).
 
 ## v1.12.0 — 2026-10-18 (dr-hoseyn fork)
