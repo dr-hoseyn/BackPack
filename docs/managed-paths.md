@@ -116,7 +116,12 @@ setup cost. Short HTTPS especially benefits from modest pools and measured
 probe settings.
 
 Normal edits and Setup Link updates preserve path settings and local policy.
-Each helper restarts independently under the tunnel context. Valid static TLS
+Each helper restarts independently under the tunnel context. A reported local
+helper exit withdraws its TCP and native UDP path immediately, bypassing remote
+probe failure thresholds and healthy dwell. Idle connections are retired; active
+forwards retain ownership. Readiness after restart wakes verification promptly,
+and the recovery threshold still applies. Late results from the previous helper
+process cannot revive the restarted path. Valid static TLS
 replacement triggers the normal generation reload; such reloads may interrupt
 active flows. Metrics show selected TCP/native UDP paths and per-path verified
 RTT, transfer rate, probe failures and helper readiness in the CLI and panel.

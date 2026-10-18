@@ -20,6 +20,8 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - name: Withdraw exited helpers and verify restart recovery
+        run: go test ./internal/tunnel/adaptive ./internal/tunnel/naive -run '^Test(ManagedHelper|HelperReadiness|StartupRetry)' -race -count=3 -v -timeout 1m
       - name: Exhaust descriptors with an independent caller and backend
         run: go test ./internal/e2e -run '^TestATunnelSurvivesRunningOutOfFileDescriptors$' -count=5 -race -v -timeout 5m
       - name: Exercise descriptor recovery with coverage instrumentation
