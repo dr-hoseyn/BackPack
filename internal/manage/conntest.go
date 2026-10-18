@@ -261,6 +261,13 @@ func ctConfig(l ConnTestLink) string {
 	l.Cases = append([]ShareLink(nil), l.Cases...)
 	for i := range l.Cases {
 		l.Cases[i].Tok = ""
+		// Reverse forwarding listeners belong to Iran. The peer only dials
+		// the tunnel endpoint; it never consumes these random port mappings.
+		// Omitting them keeps the expanded carrier suite within one packet,
+		// without changing either peer's transport, auth or tuning settings.
+		if l.Cases[i].Kind == "reverse" {
+			l.Cases[i].Ports = ""
+		}
 		if l.Cases[i].Host == host {
 			l.Cases[i].Host = ""
 		}
