@@ -51,6 +51,11 @@ func TestAWSSClientRefusesAServerThatCannotProveItself(t *testing.T) {
 	srv.StartTLS()
 	defer srv.Close()
 	addr := strings.TrimPrefix(srv.URL, "https://")
+	// A recycled ephemeral port is a new fixture, not a previously proven
+	// endpoint in this test's client process. Keep anti-downgrade history
+	// isolated while preserving it across all dials within this test.
+	wssAnswered.Delete(addr)
+	defer wssAnswered.Delete(addr)
 
 	dial := func() error {
 		c, err := WebSocketDialer(context.Background(), nil, addr, "", "/channel", 3*time.Second, 10*time.Second,
@@ -89,6 +94,10 @@ func TestAWSSClientStillReachesAnOlderServer(t *testing.T) {
 	srv.StartTLS()
 	defer srv.Close()
 	addr := strings.TrimPrefix(srv.URL, "https://")
+	// This scenario models a fresh client reaching a legacy endpoint. Other
+	// fixtures may previously have owned the same recycled ephemeral port.
+	wssAnswered.Delete(addr)
+	defer wssAnswered.Delete(addr)
 	c, err := WebSocketDialer(context.Background(), nil, addr, "", "/channel", 3*time.Second, 10*time.Second,
 		true, "some-token-0123456789abcdef", config.WSS, false, 1, 0, 0, 0)
 	if err != nil {
