@@ -557,7 +557,7 @@ func summariseReverse(s TunnelSpec, host, link string) {
 		tui.Info("Use Iran's Setup Link On Kharej To Copy The Paired HTTPS Settings.")
 	}
 	if link != "" {
-		printLinkBlock(link, "sudo backpack → Setup Kharej → Reverse → Setup Link")
+		printLinkBlock(link, "sudo backpack → Setup Kharej → Setup Link")
 	}
 	tui.Rule()
 	fmt.Println()

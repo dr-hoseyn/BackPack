@@ -669,7 +669,7 @@ func summariseL3(cfg l3Spec, link string) {
 	row("Tuning", presetLabel(cfg.Preset))
 	row("Config File", app.ConfigPath(cfg.Name))
 	if link != "" {
-		printLinkBlock(link, "sudo backpack → Setup Kharej → Direct → Setup Link")
+		printLinkBlock(link, "sudo backpack → Setup Kharej → Setup Link")
 	}
 	tui.Rule()
 	fmt.Println()

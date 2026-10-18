@@ -334,7 +334,7 @@ func TestManagedHTTPSSetupInstructionsRequireMatchingBuild(t *testing.T) {
 		t.Fatal("managed helper link would install the published legacy release")
 	}
 	out := capture(t, func() { printLinkBlock(raw, "unused") })
-	for _, expected := range []string{"BP_HELPERS=naive,xray", "HTTPS → Same Protocol → Setup Link", "sudo backpack link apply '" + raw + "'"} {
+	for _, expected := range []string{"BP_HELPERS=naive,xray", "Setup Kharej → Setup Link", "sudo backpack link apply '" + raw + "'"} {
 		if !strings.Contains(out, expected) {
 			t.Fatalf("missing setup instruction %q", expected)
 		}
