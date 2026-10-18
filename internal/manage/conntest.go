@@ -1007,6 +1007,8 @@ func ctManagedClient(ctx context.Context, link ConnTestLink, c ShareLink, dir st
 	}
 	if c.Tr == "webtransport" {
 		paired.HelperMode = "h3"
+	} else if c.Tr == "trusttunnel" {
+		paired.HelperMode = "auto"
 	}
 	spec := reverseClientFromLink(paired, link.Host)
 	var ca string
