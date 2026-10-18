@@ -73,6 +73,7 @@ type Link struct {
 	lastRx                  time.Time
 	wmu                     sync.Mutex
 	wbuf                    []byte
+	plain                   []byte // framing scratch, guarded by wmu like wbuf
 	in                      chan []byte
 	wg                      sync.WaitGroup
 	once                    sync.Once
@@ -205,6 +206,12 @@ func (l *Link) rawWrite(b []byte, peer net.Addr) error {
 }
 
 func (l *Link) send(payload []byte) error {
+	return l.sendParts(nil, payload)
+}
+
+// sendParts serializes reusable plaintext and wire buffers through the socket
+// write. The packet connection consumes them before another sender reuses them.
+func (l *Link) sendParts(prefix, payload []byte) error {
 	l.mu.Lock()
 	k, peer := l.active, l.peer
 	if k == nil || peer == nil || time.Since(k.created) > sessionLife || k.counter >= 1<<60 {
@@ -215,7 +222,7 @@ func (l *Link) send(payload []byte) error {
 	k.counter++
 	// Noise's primitive Cipher is safe with explicit independent nonces. The
 	// shared scratch and socket are serialized without holding the receive lock.
-	header := envelope(3, k.id, counter)
+	id := k.id
 	cipher := k.send
 	l.mu.Unlock()
 	l.wmu.Lock()
@@ -223,11 +230,22 @@ func (l *Link) send(payload []byte) error {
 	if l.ctx.Err() != nil {
 		return net.ErrClosed
 	}
-	l.wbuf = cipher.Encrypt(l.wbuf[:0], counter, header, payload)
-	b := append(header, l.wbuf...)
+	if cap(l.wbuf) < headerSize {
+		l.wbuf = make([]byte, headerSize, headerSize+fragmentHeader+fragmentSize+16)
+	}
+	l.wbuf = l.wbuf[:headerSize]
+	l.wbuf[0] = 3
+	copy(l.wbuf[1:17], id[:])
+	binary.BigEndian.PutUint64(l.wbuf[17:], counter)
+	if len(prefix) != 0 {
+		l.plain = append(l.plain[:0], prefix...)
+		l.plain = append(l.plain, payload...)
+		payload = l.plain
+	}
+	l.wbuf = cipher.Encrypt(l.wbuf, counter, l.wbuf[:headerSize], payload)
 	_ = l.pc.SetWriteDeadline(time.Now().Add(time.Second))
-	n, err := l.pc.WriteTo(b, peer)
-	if err == nil && n != len(b) {
+	n, err := l.pc.WriteTo(l.wbuf, peer)
+	if err == nil && n != len(l.wbuf) {
 		err = io.ErrShortWrite
 	}
 	return err

@@ -32,3 +32,18 @@ jobs:
             go test ./internal/manage -run '^TestTheKCPConnectionTestAcrossAnIPv6OnlyPath$' -count=5 -v -timeout 8m
       - name: Keep slow setup within both directional budgets and cancel pending dials
         run: go test ./internal/manage -run '^TestConnectionTestSpeed' -race -count=1 -v -timeout 1m
+
+  performance:
+    name: Native UDP performance and concurrent benchmark
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Verify buffers, payload correctness and resource sampling
+        run: go test ./internal/nativeudp ./tools/tunnelbench -race -count=1 -timeout 1m
+      - name: Record sender allocations and contention
+        run: go test ./internal/nativeudp -run '^$' -bench '^BenchmarkNativeUDPEncryptedSend' -benchmem -benchtime 200ms -count=2
