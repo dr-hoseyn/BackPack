@@ -173,7 +173,7 @@ func TestConnectionTestRowsReportLossFromAttemptsActuallyMade(t *testing.T) {
 			table := ConnTestTable([]ConnTestResult{r})
 			plain := strings.NewReplacer("🟢", "  ", "🟡", "  ", "🔴", "  ", "⚪", "  ").Replace(table)
 			for _, line := range strings.Split(plain, "\n") {
-				if !strings.Contains(line, "Reverse   Hysteria2") {
+				if !strings.Contains(line, "Reverse   Hy2") {
 					continue
 				}
 				if got := strings.TrimSpace(line[end-6 : end]); got != c.want {
