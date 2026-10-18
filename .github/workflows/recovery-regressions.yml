@@ -10,6 +10,19 @@ permissions:
   contents: read
 
 jobs:
+  history:
+    name: Connection Test history and comparison
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Save and compare bounded credential-free samples
+        run: go test ./internal/testhistory ./internal/manage ./internal/cli -run '^Test(ConcurrentRuns|CorruptOrOversized|ComparisonKeeps|EmptyStore|ConnectionTestHistory|OlderPeerWithoutJitter)' -race -count=1 -timeout 1m
+
   recovery:
     name: Descriptor recovery and IPv6 KCP transfers
     runs-on: ubuntu-latest
