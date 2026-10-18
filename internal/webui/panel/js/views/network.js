@@ -83,7 +83,7 @@ export function networkView(ctx) {
       const id = r.id; plan = id;
       const p = r.preview;
       auto.innerHTML = `<h4>${esc(p.name)} · ${esc(p.profile)}</h4><p>${esc(p.host)} · ${esc((p.ports || []).join(', '))}</p>
-        <ul>${(p.listeners || []).map(l => `<li>${esc(l.protocol)} · allow inbound ${esc(l.network)} ${esc(l.port)}</li>`).join('')}</ul>
+        <ul>${(p.listeners || []).map(l => `<li>${esc(l.protocol)} · ${l.network === 'DERP' ? 'outbound DERP; no public listener' : `allow inbound ${esc(l.network)} ${esc(l.port)}`}</li>`).join('')}</ul>
         ${(p.warnings || []).map(w => `<p>${esc(w)}</p>`).join('')}
         <p>Review expires at ${esc(new Date(p.expires).toLocaleTimeString())}.</p>
         <button class="tl-btn" id="createAutomatic">Create this tunnel</button> <button class="tl-btn" id="cancelAutomatic">Cancel</button>`;

@@ -7,7 +7,7 @@ permissions:
 jobs:
   streams:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -30,6 +30,14 @@ jobs:
           echo "BP_TAILCAT_BINARY=$RUNNER_TEMP/sing-box-1.15.0-alpha.12-linux-amd64/sing-box" >> "$GITHUB_ENV"
           echo "LD_LIBRARY_PATH=$RUNNER_TEMP/sing-box-1.15.0-alpha.12-linux-amd64" >> "$GITHUB_ENV"
           echo "BP_XRAY_BINARY=$RUNNER_TEMP/xray/xray" >> "$GITHUB_ENV"
+          curl -fL --retry 3 https://github.com/TrustTunnel/TrustTunnel/releases/download/v1.1.0/trusttunnel-v1.1.0-linux-x86_64.tar.gz -o "$RUNNER_TEMP/trusttunnel.tar.gz"
+          echo "91c2ea3db7416a01b5258a4c047ec22890490bc55e1b194206031aa75144f0e7  $RUNNER_TEMP/trusttunnel.tar.gz" | sha256sum -c -
+          mkdir "$RUNNER_TEMP/trusttunnel"; tar -xzf "$RUNNER_TEMP/trusttunnel.tar.gz" -C "$RUNNER_TEMP/trusttunnel"
+          endpoint=$(find "$RUNNER_TEMP/trusttunnel" -type f -name trusttunnel_endpoint -print -quit)
+          test -n "$endpoint"
+          echo "BP_TRUSTTUNNEL_BINARY=$endpoint" >> "$GITHUB_ENV"
+      - name: Interoperate with the independent official TrustTunnel endpoint
+        run: go test -race ./internal/httpcarrier -run '^TestTrustTunnelOfficialEndpointInteroperability$' -count=1 -v -timeout 1m
       - name: XHTTP REALITY and isolated authenticated Tailcat DERP transfers
         run: go test -race ./internal/tunnel/naive -run '^Test(XHTTPReality|Tailcat)' -count=1 -v -timeout 3m
       - name: Native WebTransport TUN IPv4, IPv6, restart and loss

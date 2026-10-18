@@ -234,11 +234,27 @@ func fixedConnectSOCKS(c net.Conn, target string) error {
 		return errors.New("SOCKS CONNECT required")
 	}
 	n := 0
+	var encodedIP net.IP
 	switch head[3] {
 	case 1:
 		n = 4
 	case 4:
 		n = 16
+	case 3:
+		var length [1]byte
+		if _, err := io.ReadFull(c, length[:]); err != nil {
+			return err
+		}
+		name := make([]byte, int(length[0]))
+		if _, err := io.ReadFull(c, name); err != nil {
+			return err
+		}
+		// The engine's SOCKS client represents even literal IPs with ATYP=3.
+		// Parse the literal directly; never resolve a caller-controlled name.
+		encodedIP = net.ParseIP(string(name))
+		if encodedIP == nil {
+			return errors.New("literal SOCKS destination required")
+		}
 	default:
 		return errors.New("literal SOCKS destination required")
 	}
@@ -246,11 +262,14 @@ func fixedConnectSOCKS(c net.Conn, target string) error {
 	if _, err := io.ReadFull(c, address); err != nil {
 		return err
 	}
+	if encodedIP == nil {
+		encodedIP = net.IP(address[:n])
+	}
 	want, err := net.ResolveTCPAddr("tcp", target)
 	if err != nil {
 		return err
 	}
-	if !net.IP(address[:n]).Equal(want.IP) || int(address[n])<<8|int(address[n+1]) != want.Port {
+	if !encodedIP.Equal(want.IP) || int(address[n])<<8|int(address[n+1]) != want.Port {
 		return fmt.Errorf("SOCKS destination refused")
 	}
 	return nil

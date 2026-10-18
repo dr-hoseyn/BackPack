@@ -192,13 +192,17 @@ func PrepareAutomatic(ctx context.Context, r AutomaticRequest) (*AutomaticPlan, 
 			network = "UDP"
 		}
 		if carrier == "tailcat" {
-			network = "DERP (no public listener)"
+			network = "DERP"
 			p.Preview.Warnings = append(p.Preview.Warnings, "Tailcat is experimental and uses the explicitly selected DERP map; install its separate helper on both peers.")
 		}
 		if carrier == "hysteria2" || carrier == "tuic" {
 			network = "UDP"
 		}
-		p.Preview.Listeners = append(p.Preview.Listeners, AutomaticListener{carrier, network, addrPort(addr)})
+		port := addrPort(addr)
+		if carrier == "tailcat" {
+			port = ""
+		}
+		p.Preview.Listeners = append(p.Preview.Listeners, AutomaticListener{carrier, network, port})
 	}
 	if cover == "" {
 		p.Preview.Warnings = append(p.Preview.Warnings, "REALITY and ShadowTLS omitted: supply a cover endpoint to verify them.")
