@@ -10,12 +10,17 @@ import (
 )
 
 func validateXHTTPOptions(x config.XrayClientConfig) error {
-	if x.Mode != "xhttp" {
+	if !config.XrayHTTP(x.Mode) {
 		if x.MaxConcurrency != 0 || x.MaxConnections != 0 || x.MaxRequests != 0 || x.MaxReuseSeconds != 0 ||
 			x.DownloadServer != "" || x.DownloadServerName != "" || x.DownloadHost != "" || x.DownloadPath != "" || x.DownloadCAFile != "" {
 			return errors.New("XHTTP download and connection settings require mode = xhttp")
 		}
 		return nil
+	}
+	// A TLS download leg needs a different identity/trust contract. Keep the
+	// combined REALITY carrier single-security until it is explicitly configured.
+	if config.XrayREALITY(x.Mode) && x.DownloadServer != "" {
+		return errors.New("a separate TLS download endpoint cannot be combined with XHTTP REALITY")
 	}
 	for _, v := range []struct {
 		name       string

@@ -10,6 +10,9 @@ import (
 )
 
 func pathServerEndpoint(p config.ManagedServerPath) string {
+	if p.Connect.Enabled() {
+		return p.Connect.Listen
+	}
 	if p.Short.Enabled() {
 		return p.Short.Listen
 	}
@@ -22,6 +25,9 @@ func pathServerEndpoint(p config.ManagedServerPath) string {
 	return p.Naive.Listen
 }
 func pathClientEndpoint(p config.ManagedClientPath) string {
+	if p.Connect.Enabled() {
+		return p.Connect.Server
+	}
 	if p.Short.Enabled() {
 		return p.Short.Server
 	}
@@ -35,7 +41,11 @@ func pathClientEndpoint(p config.ManagedClientPath) string {
 }
 
 func managedPathsLink(l ShareLink, server config.ServerConfig) (string, error) {
+	l.PathProfile = server.PathProfile
 	l.Tr, l.InnerPort = "managed-paths", l.Port
+	if h, _, err := net.SplitHostPort(server.BindAddr); err == nil && h != "127.0.0.1" {
+		l.InnerHost = h
+	}
 	for _, p := range server.Paths {
 		child := server
 		child.Paths = nil
@@ -43,6 +53,7 @@ func managedPathsLink(l ShareLink, server config.ServerConfig) (string, error) {
 		child.Xray = p.Xray
 		child.Sing = p.Sing
 		child.Short = p.Short
+		child.Connect = p.Connect
 		if server.NativeSing().NativeUDP && !p.Sing.NativeUDP || p.Short.Enabled() {
 			off := false
 			child.AcceptUDP = &off
@@ -80,7 +91,10 @@ func managedPathsLink(l ShareLink, server config.ServerConfig) (string, error) {
 }
 
 func decodeManagedPaths(l ShareLink) ([]ShareLink, error) {
-	if l.Kind != "reverse" || l.From != "iran" || !validPort(l.InnerPort) || len(l.PathLinks) < 2 || len(l.PathLinks) > 8 || len(l.Fallbacks) != 0 || len(l.Hosts) != 0 {
+	if l.PathProfile != "" && l.PathProfile != "economy" && l.PathProfile != "full" {
+		return nil, errors.New("unknown managed path profile")
+	}
+	if l.Kind != "reverse" || l.From != "iran" || !validManagedLinkInnerHost(l) || !validPort(l.InnerPort) || len(l.PathLinks) < 2 || len(l.PathLinks) > 8 || len(l.Fallbacks) != 0 || len(l.Hosts) != 0 {
 		return nil, errors.New("invalid managed paths setup link")
 	}
 	paths := make([]ShareLink, 0, len(l.PathLinks))
@@ -90,7 +104,7 @@ func decodeManagedPaths(l ShareLink) ([]ShareLink, error) {
 		if err != nil {
 			return nil, err
 		}
-		if p.Tr == "managed-paths" || len(p.PathLinks) != 0 || !managedTransport(p.Tr) || p.Kind != "reverse" || p.From != "iran" || p.InnerPort != l.InnerPort || p.Tok != l.Tok || p.Name == "" || names[p.Name] || !validPort(p.Port) {
+		if p.Tr == "managed-paths" || len(p.PathLinks) != 0 || !managedTransport(p.Tr) || p.Kind != "reverse" || p.From != "iran" || p.InnerPort != l.InnerPort || managedLinkInnerHost(p) != managedLinkInnerHost(l) || p.Tok != l.Tok || p.Name == "" || names[p.Name] || !validPort(p.Port) {
 			return nil, errors.New("managed path identities, private ports and tokens must match the enclosing link")
 		}
 		if p.HelperNativeUDP && (!config.SingDatagram(p.Tr) || !l.AcceptUDP) {
@@ -103,6 +117,9 @@ func decodeManagedPaths(l ShareLink) ([]ShareLink, error) {
 }
 
 func managedPathsClientFromLink(s *TunnelSpec, l ShareLink, host string) {
+	if l.PathProfile == "economy" {
+		s.PathPolicy = economyPathPolicy()
+	}
 	s.ClientPaths = nil
 	paths, err := decodeManagedPaths(l)
 	if err != nil {
@@ -116,7 +133,7 @@ func managedPathsClientFromLink(s *TunnelSpec, l ShareLink, host string) {
 		child := *s
 		clearManagedTransport(&child)
 		managedClientFromLink(&child, p, endpointHost)
-		s.ClientPaths = append(s.ClientPaths, config.ManagedClientPath{Name: p.Name, Naive: child.NaiveClient, Xray: child.XrayClient, Sing: child.SingClient, Short: child.ShortClient})
+		s.ClientPaths = append(s.ClientPaths, config.ManagedClientPath{Name: p.Name, Naive: child.NaiveClient, Xray: child.XrayClient, Sing: child.SingClient, Short: child.ShortClient, Connect: child.ConnectClient})
 	}
 	s.ConnectionPool = 8
 	for _, p := range s.ClientPaths {
@@ -140,6 +157,7 @@ func prepareManagedPaths(s TunnelSpec, l ShareLink) error {
 		p.Xray.DownloadCAFile = ""
 		p.Sing.CAFile = ""
 		p.Short.CAFile = ""
+		p.Connect.CAFile = ""
 	}
 	if err := validateManagedSpec(withoutCA); err != nil {
 		return err

@@ -19,6 +19,8 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - name: Repeat WSS proof and legacy endpoint fixture lifecycles
+        run: go test ./internal/utils/network -race -run '^TestAWSSClient' -count=20 -timeout 1m
       - name: Config and network regression tests with race detection
         run: |
           sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack

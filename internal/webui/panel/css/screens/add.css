@@ -526,3 +526,5 @@ body[data-accent] .dlg.add .rp2.on .rp-load i.on{background:var(--ac)}
 .dlg.add .rp-sets-g span{display:block;font-size:10px;font-weight:640;letter-spacing:.07em;text-transform:uppercase;color:var(--dim)}
 .dlg.add .rp-sets-g b{display:block;font-size:14px;font-weight:650;margin-top:3px;font-variant-numeric:tabular-nums}
 @media (prefers-reduced-motion:reduce){ .dlg.add .rp-sets-g > div{animation:none} }
+
+.dlg.add .network-entry{display:block;margin-bottom:16px;padding:10px 0;color:var(--tx2);font-size:12px;text-underline-offset:4px}

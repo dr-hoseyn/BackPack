@@ -30,6 +30,9 @@ func ctMasqueListener(ctx context.Context, link ConnTestLink, dir, name string, 
 	if len(carrier) != 0 && carrier[0] == "masque-h2" {
 		command = "masque-h2-cert"
 	}
+	if len(carrier) != 0 && carrier[0] == "webtransport" {
+		command = "webtransport-cert"
+	}
 	reply, err := ctAskContext(ctx, link.Host, link.Coord, command+" "+link.Tok+" "+raw)
 	if err != nil || reply != "ok" {
 		return config.MasqueConfig{}, fmt.Errorf("could not announce MASQUE trust anchor: %v", err)

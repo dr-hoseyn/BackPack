@@ -115,14 +115,7 @@ func setupL3(side directSide) {
 		}
 	}
 
-	// There is nothing to ask about the encapsulation. Every direct tunnel is
-	// GRE inside the Noise session — the framing Backpack writes itself, not
-	// the kernel's protocol 47 — and offering a choice between that and IPIP
-	// was offering four bytes of saving in exchange for one more decision and
-	// one more thing the two ends can silently disagree about. The engine still
-	// reads "ipip" from a config that has it as GRE, so nothing already built
-	// stops loading — but both ends have to be updated together, which the
-	// handshake says plainly if they are not.
+	// Existing carriers use GRE inside Noise; CONNECT-IP bypasses both.
 	const encap = "gre"
 	greKey := uint32(0)
 
@@ -211,6 +204,9 @@ func setupL3(side directSide) {
 	askL3Paths(&cfg, carrier, side)
 
 	cfg.MTU, cfg.Iface = defaultL3MTU, freeL3Iface()
+	if carrier == "connect-ip" {
+		cfg.MTU = 1280
+	}
 	chooseL3Preset(false).apply(&cfg)
 	if tui.Confirm("Fine-Tune The Advanced Settings", false) {
 		askL3Advanced(&cfg, side, side == sideIran)
@@ -286,8 +282,14 @@ func askL3CarrierExtras(cfg *l3Spec, side directSide) bool {
 		return true
 	}
 
-	if cfg.Carrier == "masque" || cfg.Carrier == "masque-h2" {
-		cfg.Masque.Target = strings.TrimSpace(tui.PromptDefault("MASQUE Private UDP Target (Same On Both Ends)", cfg.Masque.TargetAddr()))
+	if cfg.Carrier == "masque" || cfg.Carrier == "masque-h2" || cfg.Carrier == "connect-ip" || cfg.Carrier == "webtransport" {
+		if cfg.Carrier != "connect-ip" && cfg.Carrier != "webtransport" {
+			cfg.Masque.Target = strings.TrimSpace(tui.PromptDefault("MASQUE Private UDP Target (Same On Both Ends)", cfg.Masque.TargetAddr()))
+		} else if cfg.Carrier == "connect-ip" {
+			off := false
+			cfg.AutoMTU = &off
+			cfg.MTU, cfg.FECData, cfg.FECParity = 1280, 0, 0
+		}
 		cfg.Masque.ServerName = strings.TrimSpace(tui.PromptDefault("TLS Server Name (Certificate Hostname)", cfg.Masque.ServerName))
 		if side == sideKharej {
 			cfg.Masque.CertFile = strings.TrimSpace(tui.Prompt("TLS Certificate File: "))
@@ -387,7 +389,7 @@ func setupL3FromLink(chosen string) {
 		}
 		form.Sing = cfg.Sing
 	}
-	if link.Tr == "masque" || link.Tr == "masque-h2" {
+	if link.Tr == "masque" || link.Tr == "masque-h2" || link.Tr == "connect-ip" || link.Tr == "webtransport" {
 		cfg := l3Spec{Carrier: link.Tr, Masque: form.Masque}
 		if !askL3CarrierExtras(&cfg, sideKharej) {
 			return
@@ -545,22 +547,24 @@ func askL3Advanced(cfg *l3Spec, side directSide, addresses bool) {
 		}
 	}
 
-	fmt.Println()
-	cfg.MTU = tui.PromptInt("Starting MTU", cfg.MTU)
-	if !tui.Confirm("Auto MTU (Measure And Correct)", true) {
-		off := false
-		cfg.AutoMTU = &off
+	if cfg.Carrier != "connect-ip" {
+		fmt.Println()
+		cfg.MTU = tui.PromptInt("Starting MTU", cfg.MTU)
+		if !tui.Confirm("Auto MTU (Measure And Correct)", true) {
+			off := false
+			cfg.AutoMTU = &off
+		}
+		fmt.Println()
+		cfg.GREKey = askGREKey()
+	} else {
+		tui.Info("CONNECT-IP uses MTU 1280 and native HTTP/3 datagrams.")
 	}
-
 	cfg.Iface = tui.PromptDefault("Interface Name", cfg.Iface)
-
-	fmt.Println()
-	cfg.GREKey = askGREKey()
-
 	fmt.Println()
 	cfg.MSSClamp = tui.PromptInt("TCP MSS Clamp (0 = From MTU, -1 = Off)", cfg.MSSClamp)
-
-	askL3FECPair(cfg)
+	if cfg.Carrier != "connect-ip" {
+		askL3FECPair(cfg)
+	}
 
 	// Only the forwarded ports can be capped: routed traffic goes through the
 	// interface and never passes the forwarder, so there is nothing to count.
@@ -811,6 +815,9 @@ func defaultL3FEC() FECPlan { return RecommendFEC(PathQuality{}) }
 // stutters — and because it is paired: the two ends must be set the same, and a
 // setting buried in an optional screen is one that gets set on one machine.
 func askL3FEC(cfg *l3Spec, side directSide) {
+	if cfg.Carrier == "connect-ip" {
+		return
+	}
 	there := "kharej"
 	if side == sideKharej {
 		there = "Iran"

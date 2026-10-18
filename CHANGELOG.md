@@ -2,6 +2,42 @@
 
 All notable changes to Backpack are documented here.
 
+## Unreleased
+
+- Add combined XHTTP/REALITY, restricted TrustTunnel HTTP/3 with HTTP/2
+  fallback, and native WebTransport streams and fragmented datagrams.
+- Add explicitly selected Tailcat paths using a separate checksum-pinned
+  experimental helper, authenticated peer keys and a required DERP region.
+- Pair the new carriers through Setup Links, preserve them across edits,
+  and expose custom 2..8 carrier combinations in Network tools.
+
+- Add Automatic Economy with at most three carriers, slower verified backup
+  probes, stream probe counters and helper-tree resource measurements.
+- Add reviewed Automatic and Kharej pairing, shared Connection Test history,
+  comparisons and staged datagram-carrier diagnostics to the browser panel.
+- Add Hysteria2 Gecko/BBR profiles, optional ECH for managed Hysteria2/AnyTLS/TUIC,
+  Hysteria Realm pairing and a bounded standalone rendezvous service.
+- Add native RFC 9484 CONNECT-IP over verified HTTP/3 with peer-only TUN policy,
+  strict packet addresses, authenticated setup and traffic-based liveness.
+- Add up-to-one-hour bulk measurements, reconnecting soak reports and optional
+  30-minute Hy2/TUIC CI observations with a controlled helper restart.
+
+- Coalesce helper resource reads with PID-scoped caching; invalidate on stop or
+  replacement and retry failed samples promptly.
+- Serialize panel setup operations, scope cancellation to its preview ID, and
+  keep in-flight commits independent of browser navigation.
+- Restore MASQUE-H2/CONNECT-IP certificate fields, hide incompatible native
+  tuning controls, and validate Direct creation with the runtime engine.
+
+- Keep path health, selected identities and cadence in one snapshot during
+  failover; release closed native UDP associations from the parent registry.
+- Stop CONNECT-IP generations on failed/short TUN delivery, preserve the failure
+  cause, and reuse the serialized packet-write batch.
+- Preserve queued TCPMux payloads after failed writes by withholding their relay
+  buffers from reuse; retain pooling after completed writes.
+
+See [Network efficiency and modern carriers](docs/modern-networking.md).
+
 ## v1.12.0 — 2026-10-18 (dr-hoseyn fork)
 
 - Set up Kharej directly from a Setup Link: direction, protocol, helper

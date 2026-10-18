@@ -124,6 +124,9 @@ func (c *Client) Start() {
 		}
 	} else if c.config.Managed() {
 		helper, err := naive.StartWithRetry(c.ctx, c.logger, func() (*naive.Helper, error) {
+			if c.config.Connect.Enabled() {
+				return naive.StartConnectClient(c.ctx, c.config, c.logger)
+			}
 			if c.config.Short.Enabled() {
 				return naive.StartShortClient(c.ctx, c.config, c.logger)
 			}

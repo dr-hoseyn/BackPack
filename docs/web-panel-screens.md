@@ -17,12 +17,12 @@ right now: processor, memory, and what is moving this second. It keeps updating
 while a dialog is open.
 
 **Five sections**, chosen from the dock: **Overview**, **Connection test**,
-**Tunnels**, **Terminal**, **Manage**. Only these are pages (Servers is out of
-the dock for now, and its address still works). Each renders into the same slot, and
+**Tunnels**, **Terminal**, **Manage**. Network tools is a linked page reached from Connection test or Add a tunnel;
+Servers is out of the dock for now, and its address still works. Each renders into the same slot, and
 switching between them is the only navigation that replaces what you are
 looking at.
 
-**Dialogs** — everything else. A dialog opens *over* the section you were on
+**Dialogs** — the remaining management screens. A dialog opens *over* the section you were on
 and closing it puts you back exactly there, so opening Health check from the
 Overview does not land you on the Tunnels when you close it.
 
@@ -87,6 +87,25 @@ a suggested TCP MSS subtracts 60 bytes. Missing managed helpers are skipped as
 before. All temporary test engines and files are removed when the test ends.
 
 *CLI: 0 Connection Test → Iran.*
+
+### Network tools — `#/network`
+
+Open the link in **Connection test** or **Add a tunnel**. On Iran, Automatic
+prepares a public listener manifest with Economy or Full, then creates the
+service only after confirmation. Cancelled or expired previews release their
+reserved ports. Copy the resulting private Setup Link into the Kharej pairing
+form, review its name and paths, then create that peer.
+
+The same page runs bounded TUIC/Hysteria2 carrier diagnostics on Kharej with
+temporary helpers, and reads shared browser/terminal Connection Test history
+and route-specific comparisons. Cancelled samples remain partial and do not
+contribute to comparisons. Diagnostics keep the active tunnel running.
+
+See [modern networking](modern-networking.md) for probe accounting, optional
+protocol settings, pairing requirements and the limits of saved measurements.
+
+*CLI: Automatic; Setup Kharej → Setup Link; `backpack diagnose -c FILE`;
+Connection Test → History.*
 
 ### Terminal — `#/terminal`
 

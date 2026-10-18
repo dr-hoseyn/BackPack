@@ -338,3 +338,28 @@ func TestPresetRoundTrips(t *testing.T) {
 		t.Fatalf("unknown preset resolved to %q, want %q", got, PresetTurbo)
 	}
 }
+
+// The native carrier must not advertise or persist unused GRE or UDP-target settings.
+func TestConnectIPRenderedNativeSettings(t *testing.T) {
+	off := false
+	body := (l3Spec{Side: sideIran, Carrier: "connect-ip", Addr: "203.0.113.9:443",
+		Token: "paired-connect-ip-token", Iface: "bp0", LocalIP: "10.10.0.1/30",
+		PeerIP: "10.10.0.2", MTU: 1280, AutoMTU: &off,
+		Masque: config.MasqueConfig{ServerName: "peer.example"},
+	}).Render()
+	for _, unused := range []string{"encap =", "gre_key =", "masque_target ="} {
+		if strings.Contains(body, unused) {
+			t.Fatalf("native config contains %q", unused)
+		}
+	}
+	cfg := decode(t, body)
+	if label := l3EncapLabel(cfg.L3); label != "Native IP over verified HTTP/3" {
+		t.Fatal(label)
+	}
+	engine := l3.Config{Mode: cfg.L3.Mode, Addr: cfg.L3.Addr, Token: cfg.L3.Token,
+		Carrier: cfg.L3.Carrier, LocalIP: cfg.L3.LocalIP, PeerIP: cfg.L3.PeerIP,
+		MTU: cfg.L3.MTU, Iface: cfg.L3.Iface, Masque: cfg.L3.MasqueConfig}
+	if err := engine.Validate(); err != nil {
+		t.Fatal(err)
+	}
+}

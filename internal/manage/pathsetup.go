@@ -41,10 +41,12 @@ func configureManagedPaths(n *TunnelSpec, old TunnelSpec, public, host string, p
 			p := old.ServerPaths[i]
 			previousName, previousEndpoint, previousExport = p.Name, pathServerEndpoint(p), p.Endpoint
 			one.NaiveServer, one.XrayServer, one.SingServer, one.ShortServer = p.Naive, p.Xray, p.Sing, p.Short
+			one.ConnectServer = p.Connect
 		} else if n.Role == "client" && i < len(old.ClientPaths) {
 			p := old.ClientPaths[i]
 			previousName, previousEndpoint = p.Name, pathClientEndpoint(p)
 			one.NaiveClient, one.XrayClient, one.SingClient, one.ShortClient = p.Naive, p.Xray, p.Sing, p.Short
+			one.ConnectClient = p.Connect
 		}
 		name := tui.PromptDefault("Path Identity (Same On Both Machines)", previousName)
 		choice := tui.ChooseOpt(fmt.Sprintf("Carrier For %s", name), options)
@@ -62,10 +64,10 @@ func configureManagedPaths(n *TunnelSpec, old TunnelSpec, public, host string, p
 		}
 		if n.Role == "server" {
 			export := tui.PromptDefault("Public Host:Port For Pairing (Empty Uses Shared Public Host)", previousExport)
-			n.ServerPaths = append(n.ServerPaths, config.ManagedServerPath{Name: name, Endpoint: export, Naive: one.NaiveServer, Xray: one.XrayServer, Sing: one.SingServer, Short: one.ShortServer})
+			n.ServerPaths = append(n.ServerPaths, config.ManagedServerPath{Name: name, Endpoint: export, Naive: one.NaiveServer, Xray: one.XrayServer, Sing: one.SingServer, Short: one.ShortServer, Connect: one.ConnectServer})
 			n.AcceptUDP = n.AcceptUDP || one.AcceptUDP
 		} else {
-			n.ClientPaths = append(n.ClientPaths, config.ManagedClientPath{Name: name, Naive: one.NaiveClient, Xray: one.XrayClient, Sing: one.SingClient, Short: one.ShortClient})
+			n.ClientPaths = append(n.ClientPaths, config.ManagedClientPath{Name: name, Naive: one.NaiveClient, Xray: one.XrayClient, Sing: one.SingClient, Short: one.ShortClient, Connect: one.ConnectClient})
 		}
 	}
 	if n.Role == "client" {

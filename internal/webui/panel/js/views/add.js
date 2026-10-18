@@ -11,10 +11,11 @@
 import { $$, el, esc, dialogSubtitle } from '../lib/dom.js';
 import { isUp } from '../lib/tstate.js';
 import { NUMERIC } from '../lib/numeric.js';
+import { directConditionMatches } from '../lib/direct-conditions.js';
 import * as api from '../api.js';
 import { setupLinkHTML, bindSetupLink } from '../ui/setuplink.js';
 import * as store from '../store.js';
-import { openScreen } from '../ui/screen.js';
+import { openScreen, closeScreen } from '../ui/screen.js';
 import { oops, toast } from '../ui/toast.js';
 import { go } from '../router.js';
 
@@ -23,6 +24,10 @@ export function addView(ctx) {
     pick: '.dlg',
     bind: async (root, close) => {
       dialogSubtitle(root, store.get().stats, 'this server’s end — the other is built from its setup link');
+	  const automaticLink = document.createElement('a');
+	  automaticLink.href = '#/network'; automaticLink.className = 'network-entry';
+	  automaticLink.textContent = 'Automatic setup and carrier diagnostics';
+	  root.querySelector('.body5')?.prepend(automaticLink);
       let opts = { families: [], presets: [] };
       try { opts = await api.tunnelOptions(); } catch (e) { oops(e); }
 
@@ -434,7 +439,8 @@ export function addView(ctx) {
         show('.step3direct', direct);
         if (direct) suggestDirect(chosen.side);
 		const masqueBox = root.querySelector('#masqueSettings');
-		if (masqueBox) masqueBox.hidden = !(direct && ['masque', 'masque-h2'].includes(chosen.carrier));
+		if (masqueBox) masqueBox.querySelector('[name="masque.target"]')?.closest('.f3')?.toggleAttribute('hidden', ['connect-ip','webtransport'].includes(chosen.carrier));
+		if (masqueBox) masqueBox.hidden = !(direct && ['masque', 'masque-h2', 'connect-ip', 'webtransport'].includes(chosen.carrier));
 
         /* "server" is the Iran side, "client" the kharej side — the words the
            create endpoints use. */
@@ -450,10 +456,7 @@ export function addView(ctx) {
           const when = n.dataset.when;
           if (when === 'server' || when === 'client' || when === 'tls') return;
           const row = n.closest('.f3, .tg3, .f, .row') || n;
-          const ok = when.split('-').every(part => {
-            if (part === 'server' || part === 'client') return chosen.side === part;
-            return chosen.carrier === part;
-          });
+          const ok = directConditionMatches(when, chosen.side, chosen.carrier);
           row.hidden = !ok;
         });
         /* Groups that were moved out of .step3rev / .step3direct carry the mode
@@ -1118,7 +1121,7 @@ export function addView(ctx) {
         return { r, name: payload.name };
       }
 
-      ctx.setTeardown(close);
+      ctx.setTeardown(closeScreen);
     },
   }).catch(oops);
 }

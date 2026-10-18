@@ -43,7 +43,7 @@ type XrayClientConfig struct {
 	Binary string `toml:"binary"`
 	// Server is the outer Xray host:port; client.remote_addr remains the Iran loopback reverse listener.
 	Server string `toml:"server"`
-	// Mode selects xhttp (verified TLS/HTTP2) or reality (RAW, REALITY and Vision).
+	// Mode selects xhttp (TLS), reality (RAW with Vision), or xhttp-reality (XHTTP with REALITY).
 	Mode string `toml:"mode"`
 	// UUID is one canonical UUID shared by the two helper accounts, separate from the reverse token.
 	UUID string `toml:"uuid"`
@@ -90,7 +90,7 @@ type XrayServerConfig struct {
 	Binary string `toml:"binary"`
 	// Listen is the public TCP host:port, separate from the loopback server.bind_addr.
 	Listen string `toml:"listen"`
-	// Mode selects xhttp or reality and must match the client.
+	// Mode selects xhttp, reality or xhttp-reality and must match the client.
 	Mode string `toml:"mode"`
 	// UUID is the canonical VLESS account UUID shared with the client.
 	UUID string `toml:"uuid"`
@@ -114,10 +114,14 @@ type XrayServerConfig struct {
 
 func (x XrayServerConfig) Enabled() bool { return x != (XrayServerConfig{}) }
 
+// XrayHTTP and XrayREALITY describe independent transport/security capabilities.
+func XrayHTTP(mode string) bool    { return mode == "xhttp" || mode == "xhttp-reality" }
+func XrayREALITY(mode string) bool { return mode == "reality" || mode == "xhttp-reality" }
+
 // CopyXHTTPOptions preserves local-only connection tuning across a peer-owned
 // setup-link update or a visit to HTTPS Settings. Other modes inherit none.
 func (x *XrayClientConfig) CopyXHTTPOptions(from XrayClientConfig) {
-	if x.Mode != "xhttp" || from.Mode != "xhttp" {
+	if !XrayHTTP(x.Mode) || x.Mode != from.Mode {
 		return
 	}
 	x.MaxConcurrency, x.MaxConnections = from.MaxConcurrency, from.MaxConnections

@@ -28,13 +28,14 @@ import (
 	"golang.org/x/net/proxy"
 )
 
-func xhttpFixture(t *testing.T) (config.ClientConfig, string, string) {
+func xhttpFixture(t *testing.T, extraNames ...string) (config.ClientConfig, string, string) {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
 	leaf := &x509.Certificate{SerialNumber: big.NewInt(42), DNSNames: []string{"origin.backpack.invalid", "upload.backpack.invalid", "download.backpack.invalid"}, NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour), KeyUsage: x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}, IsCA: true, BasicConstraintsValid: true}
+	leaf.DNSNames = append(leaf.DNSNames, extraNames...)
 	der, err := x509.CreateCertificate(rand.Reader, leaf, leaf, &key.PublicKey, key)
 	if err != nil {
 		t.Fatal(err)

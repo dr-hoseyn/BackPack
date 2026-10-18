@@ -15,6 +15,7 @@ import (
 
 // Spec is the full description of a tunnel used to render a TOML config.
 type Spec struct {
+	PathProfile string
 	ServerPaths []config.ManagedServerPath `json:"-"`
 	ClientPaths []config.ManagedClientPath `json:"-"`
 	PathPolicy  config.PathPolicy
@@ -25,14 +26,16 @@ type Spec struct {
 
 	// Preserve experimental helper settings across ordinary tunnel edits.
 	// They include credentials and must not enter generic JSON responses.
-	SingServer  config.SingServerConfig  `json:"-"`
-	ShortServer config.ShortServerConfig `json:"-"`
-	ShortClient config.ShortClientConfig `json:"-"`
-	SingClient  config.SingClientConfig  `json:"-"`
-	NaiveServer config.NaiveServerConfig `json:"-"`
-	NaiveClient config.NaiveClientConfig `json:"-"`
-	XrayServer  config.XrayServerConfig  `json:"-"`
-	XrayClient  config.XrayClientConfig  `json:"-"`
+	SingServer    config.SingServerConfig    `json:"-"`
+	ShortServer   config.ShortServerConfig   `json:"-"`
+	ShortClient   config.ShortClientConfig   `json:"-"`
+	ConnectServer config.ConnectServerConfig `json:"-"`
+	ConnectClient config.ConnectClientConfig `json:"-"`
+	SingClient    config.SingClientConfig    `json:"-"`
+	NaiveServer   config.NaiveServerConfig   `json:"-"`
+	NaiveClient   config.NaiveClientConfig   `json:"-"`
+	XrayServer    config.XrayServerConfig    `json:"-"`
+	XrayClient    config.XrayClientConfig    `json:"-"`
 
 	// Preset is the performance profile every tuning field was filled from:
 	// balance, turbo or aggressive. Empty means the values were set by hand or
@@ -278,6 +281,9 @@ func (s Spec) Render() string {
 
 	if s.Role == "server" {
 		b.WriteString("[server]\n")
+		if s.PathProfile != "" {
+			p("path_profile = %q\n", s.PathProfile)
+		}
 		p("bind_addr = %q\n", s.BindAddr)
 		p("transport = %q\n", s.Transport)
 		if s.Preset != "" {
@@ -444,6 +450,13 @@ func (s Spec) writeHelpers(b *strings.Builder) {
 		text := strings.ReplaceAll(encoded.String(), "[[paths]]", "[[client.paths]]")
 		b.WriteString("\n" + strings.ReplaceAll(text, "[paths.", "[client.paths."))
 	}
+	if s.Role == "server" && s.ConnectServer.Enabled() {
+		b.WriteString("\n[server.connect]\n")
+		_ = toml.NewEncoder(b).Encode(s.ConnectServer)
+	} else if s.Role == "client" && s.ConnectClient.Enabled() {
+		b.WriteString("\n[client.connect]\n")
+		_ = toml.NewEncoder(b).Encode(s.ConnectClient)
+	}
 	if s.Role == "server" && s.ShortServer.Enabled() {
 		b.WriteString("\n[server.short]\n")
 		_ = toml.NewEncoder(b).Encode(s.ShortServer)
@@ -452,11 +465,9 @@ func (s Spec) writeHelpers(b *strings.Builder) {
 		_ = toml.NewEncoder(b).Encode(s.ShortClient)
 	}
 	if s.Role == "server" && s.SingServer.Enabled() {
-		b.WriteString("\n[server.sing]\n")
-		_ = toml.NewEncoder(b).Encode(s.SingServer)
+		writeSingTable(b, "server", s.SingServer)
 	} else if s.Role == "client" && s.SingClient.Enabled() {
-		b.WriteString("\n[client.sing]\n")
-		_ = toml.NewEncoder(b).Encode(s.SingClient)
+		writeSingTable(b, "client", s.SingClient)
 	}
 	if s.Role == "server" && s.NaiveServer.Enabled() {
 		b.WriteString("\n[server.naive]\n")
@@ -472,6 +483,14 @@ func (s Spec) writeHelpers(b *strings.Builder) {
 		b.WriteString("\n[client.xray]\n")
 		_ = toml.NewEncoder(b).Encode(s.XrayClient)
 	}
+}
+
+// A nested Realm table must stay underneath this role's sing table. Encoding
+// the struct alone would emit [realm] at the document root after inline keys.
+func writeSingTable(b *strings.Builder, role string, value any) {
+	var encoded strings.Builder
+	_ = toml.NewEncoder(&encoded).Encode(map[string]any{"sing": value})
+	b.WriteString("\n" + strings.ReplaceAll(encoded.String(), "[sing", "["+role+".sing"))
 }
 
 func (s Spec) validateXray() error {
@@ -507,6 +526,15 @@ func (s Spec) validateNaive() error {
 }
 
 func (s Spec) validateHelpers() error {
+	if s.ConnectServer.Enabled() || s.ConnectClient.Enabled() {
+		var cfg config.Config
+		if _, err := toml.Decode(s.Render(), &cfg); err != nil {
+			return err
+		}
+		if err := naive.ValidateConnect(&cfg); err != nil {
+			return err
+		}
+	}
 	if len(s.ServerPaths) != 0 || len(s.ClientPaths) != 0 || s.PathPolicy != (config.PathPolicy{}) {
 		var cfg config.Config
 		if _, err := toml.Decode(s.Render(), &cfg); err != nil {

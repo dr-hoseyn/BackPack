@@ -1,15 +1,20 @@
 package manage
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"strings"
 
 	"github.com/backpack/backpack/config"
 	"github.com/backpack/backpack/internal/tui"
+	"github.com/backpack/backpack/internal/tunnel/naive"
 )
 
 func configureSing(n *TunnelSpec, old TunnelSpec, protocol, public, host string) bool {
+	if protocol == "tailcat" {
+		return configureTailcat(n, old, public)
+	}
 	client := old.SingClient
 	server := old.SingServer
 	if selectedTransport(old) != protocol {
@@ -24,7 +29,17 @@ func configureSing(n *TunnelSpec, old TunnelSpec, protocol, public, host string)
 			client.UUID = tui.PromptDefault("TUIC UUID (From Iran)", client.UUID)
 		}
 		if protocol == "hysteria2" {
-			client.ObfsPassword = managedSecret("Salamander Password (Empty = Disabled)", client.ObfsPassword, "")
+			client.ObfsPassword = managedSecret("Obfuscation Password (Empty = Disabled)", client.ObfsPassword, "")
+			if client.ObfsPassword != "" {
+				client.ObfsType = tui.PromptDefault("Obfuscation Type (salamander/gecko)", defaultString(client.ObfsType, "salamander"))
+			} else {
+				client.ObfsType = ""
+			}
+			if client.ObfsType != "gecko" {
+				client.GeckoMin, client.GeckoMax = 0, 0
+			}
+			client.BBRProfile = tui.PromptDefault("BBR Profile (standard/conservative/aggressive)", defaultString(client.BBRProfile, "standard"))
+			client.Realm = configureRealm(client.Realm)
 		}
 		if protocol == "shadowtls" {
 			client.ShadowsocksKey = managedSecret("SS2022 Base64 Key (From Iran)", client.ShadowsocksKey, "")
@@ -60,11 +75,18 @@ func configureSing(n *TunnelSpec, old TunnelSpec, protocol, public, host string)
 		server.UUID = tui.PromptDefault("TUIC UUID", id)
 	}
 	if protocol == "hysteria2" {
-		if tui.Confirm("Enable Salamander Obfuscation (Both Sides Must Match)", server.ObfsPassword != "") {
-			server.ObfsPassword = managedSecret("Salamander Password", server.ObfsPassword, randomToken(32))
+		if tui.Confirm("Enable Obfuscation (Both Sides Must Match)", server.ObfsPassword != "") {
+			server.ObfsPassword = managedSecret("Obfuscation Password", server.ObfsPassword, randomToken(32))
+			server.ObfsType = tui.PromptDefault("Obfuscation Type (salamander/gecko)", defaultString(server.ObfsType, "salamander"))
 		} else {
 			server.ObfsPassword = ""
+			server.ObfsType, server.GeckoMin, server.GeckoMax = "", 0, 0
 		}
+		if server.ObfsType != "gecko" {
+			server.GeckoMin, server.GeckoMax = 0, 0
+		}
+		server.BBRProfile = tui.PromptDefault("BBR Profile (standard/conservative/aggressive)", defaultString(server.BBRProfile, "standard"))
+		server.Realm = configureRealm(server.Realm)
 	}
 	if protocol == "shadowtls" {
 		key := server.ShadowsocksKey
@@ -84,6 +106,30 @@ func configureSing(n *TunnelSpec, old TunnelSpec, protocol, public, host string)
 			return false
 		}
 	}
+	if protocol != "shadowtls" && tui.Confirm("Enable ECH (Public Configuration Travels In Setup Link)", server.ECHKey != "") {
+		if server.ECHKey == "" {
+			publicName := tui.PromptDefault("ECH Public DNS Name", server.ServerName)
+			public, private, err := naive.GenerateECH(context.Background(), server.Binary, publicName)
+			if err != nil {
+				tui.Error(err.Error())
+				return false
+			}
+			server.ECHConfig, server.ECHKey = public, private
+		}
+	} else {
+		server.ECHConfig, server.ECHKey = "", ""
+	}
 	n.SingServer = server
 	return true
+}
+
+func configureRealm(old config.HysteriaRealm) config.HysteriaRealm {
+	if !tui.Confirm("Use An Existing Hysteria Realm (NAT Traversal)", old.Enabled()) {
+		return config.HysteriaRealm{}
+	}
+	old.ServerURL = tui.PromptDefault("Realm HTTPS URL", old.ServerURL)
+	old.RealmID = tui.PromptDefault("Realm ID (Same On Both Peers)", old.RealmID)
+	old.Token = managedSecret("Realm Account Token", old.Token, "")
+	old.STUNServers = tui.PromptDefault("STUN Endpoints (Comma-Separated Host:Port)", old.STUNServers)
+	return old
 }

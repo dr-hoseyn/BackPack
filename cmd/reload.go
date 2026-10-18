@@ -76,12 +76,12 @@ func fileFingerprint(path string) (fingerprint, error) {
 func helperTLSIdentity(cfg *config.Config) ([sha256.Size]byte, error) {
 	var identity [sha256.Size]byte
 	hash := sha256.New()
-	paths := []string{cfg.Server.Short.Certificate, cfg.Server.Short.Key, cfg.Client.Short.CAFile, cfg.L3.SingL3Config.CertFile, cfg.L3.SingL3Config.KeyFile, cfg.L3.SingL3Config.CAFile, cfg.Server.Sing.Certificate, cfg.Server.Sing.Key, cfg.Client.Sing.CAFile, cfg.Server.Naive.Certificate, cfg.Server.Naive.Key, cfg.Client.Naive.CAFile, cfg.Server.Xray.Certificate, cfg.Server.Xray.Key, cfg.Client.Xray.CAFile, cfg.Client.Xray.DownloadCAFile}
+	paths := []string{cfg.Server.Connect.Certificate, cfg.Server.Connect.Key, cfg.Client.Connect.CAFile, cfg.Server.Short.Certificate, cfg.Server.Short.Key, cfg.Client.Short.CAFile, cfg.L3.SingL3Config.CertFile, cfg.L3.SingL3Config.KeyFile, cfg.L3.SingL3Config.CAFile, cfg.Server.Sing.Certificate, cfg.Server.Sing.Key, cfg.Client.Sing.CAFile, cfg.Server.Naive.Certificate, cfg.Server.Naive.Key, cfg.Client.Naive.CAFile, cfg.Server.Xray.Certificate, cfg.Server.Xray.Key, cfg.Client.Xray.CAFile, cfg.Client.Xray.DownloadCAFile}
 	for _, p := range cfg.Server.Paths {
-		paths = append(paths, p.Short.Certificate, p.Short.Key, p.Sing.Certificate, p.Sing.Key, p.Naive.Certificate, p.Naive.Key, p.Xray.Certificate, p.Xray.Key)
+		paths = append(paths, p.Connect.Certificate, p.Connect.Key, p.Short.Certificate, p.Short.Key, p.Sing.Certificate, p.Sing.Key, p.Naive.Certificate, p.Naive.Key, p.Xray.Certificate, p.Xray.Key)
 	}
 	for _, p := range cfg.Client.Paths {
-		paths = append(paths, p.Short.CAFile, p.Sing.CAFile, p.Naive.CAFile, p.Xray.CAFile, p.Xray.DownloadCAFile)
+		paths = append(paths, p.Connect.CAFile, p.Short.CAFile, p.Sing.CAFile, p.Naive.CAFile, p.Xray.CAFile, p.Xray.DownloadCAFile)
 	}
 	for _, path := range paths {
 		if path == "" {

@@ -220,8 +220,10 @@ func (s L3Spec) Render() string {
 			}
 		}
 	}
-	if s.Carrier == "masque" || s.Carrier == "masque-h2" {
-		writeKV(&b, "masque_target", quote(s.Masque.TargetAddr()))
+	if s.Carrier == "masque" || s.Carrier == "masque-h2" || s.Carrier == "connect-ip" || s.Carrier == "webtransport" {
+		if s.Carrier != "connect-ip" && s.Carrier != "webtransport" {
+			writeKV(&b, "masque_target", quote(s.Masque.TargetAddr()))
+		}
 		for _, kv := range [][2]string{
 			{"masque_cert", s.Masque.CertFile}, {"masque_key", s.Masque.KeyFile},
 			{"masque_server_name", s.Masque.ServerName}, {"masque_ca", s.Masque.CAFile},
@@ -238,13 +240,11 @@ func (s L3Spec) Render() string {
 		writeKV(&b, "sni_domain", quote(s.SNIDomain))
 	}
 
-	// Written out even when it is the default, because the two ends have to
-	// agree on it and a key that is only implied is one an operator cannot
-	// check against the other machine's file.
-	// One encapsulation, written plainly rather than defaulted: a file that
-	// says what it does is a file the next reader does not have to know the
-	// defaults of.
-	writeKV(&b, "encap", quote("gre"))
+	// CONNECT-IP carries raw IP and does not use Backpack GRE framing.
+	if s.Carrier != "connect-ip" {
+		writeKV(&b, "encap", quote("gre"))
+	}
+	// Preserve an explicit key so startup validation can reject it for native IP.
 	if s.GREKey != 0 {
 		writeKV(&b, "gre_key", fmt.Sprint(s.GREKey))
 	}
@@ -478,6 +478,9 @@ func tomlList(items []string) string {
 // management screens. The key is shown because both ends must agree on it and
 // a mismatch is otherwise invisible.
 func L3EncapLabel(l config.L3Config) string {
+	if l.Carrier == "connect-ip" {
+		return "Native IP over verified HTTP/3"
+	}
 	// "+ Noise" is part of the name on every screen, because "GRE" on its own
 	// means the kernel's tunnel to anyone who has set one up — bare IP protocol
 	// 47, unencrypted, and blocked by a single firewall rule. This is the same

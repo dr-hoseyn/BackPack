@@ -152,6 +152,8 @@ func sectionOf(name string) string {
 		return "[direct]"
 	case "L3Config":
 		return "[l3]"
+	case "HysteriaRealm":
+		return "[server.sing.realm] / [client.sing.realm]"
 	case "SingL3Config":
 		return "[l3] native sing-box datagrams"
 	case "MasqueConfig":
@@ -170,6 +172,12 @@ func sectionOf(name string) string {
 		return "[client.path_policy]"
 	case "ShortClientConfig":
 		return "[client.short]"
+	case "ConnectClientConfig":
+		return "[client.connect]"
+	case "ConnectServerConfig":
+		return "[server.connect]"
+	case "TailcatConfig":
+		return "[server.sing.tailcat] / [client.sing.tailcat]"
 	case "ShortServerConfig":
 		return "[server.short]"
 	case "SingServerConfig":

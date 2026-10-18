@@ -1,5 +1,7 @@
 # Backpack docs
 
+- [Network efficiency and modern carriers](modern-networking.md)
+
 Reference pages: what each part of Backpack **is**, and every setting it has.
 
 - [Architecture](architecture.md) — what the project is made of and where each part lives

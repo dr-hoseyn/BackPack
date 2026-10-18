@@ -140,6 +140,9 @@ func ProbeQUIC(ctx context.Context, endpoint string, t *tls.Config) Stage {
 }
 
 func NetworkStages(parent context.Context, x config.SingClientConfig) []Stage {
+	if x.Realm.Enabled() {
+		return []Stage{{Name: "quic-tls", Status: "skipped", Code: "realm_discovered_endpoint", Detail: "Realm discovers the remote UDP endpoint dynamically. Only the actual helper and authenticated payload checks measure this path."}}
+	}
 	host, port, err := net.SplitHostPort(x.Server)
 	if err != nil {
 		return []Stage{{Name: "dns", Status: "fail", Code: "invalid_endpoint", Detail: "Expected a host:port endpoint."}}

@@ -69,6 +69,10 @@ func cliTransportGroups() []transportGroup {
 			{ctName("naive"), "HTTP/2 HTTPS proxy — certificate or a private trust file", "naive"},
 			{ctName("xhttp"), "HTTP/2 streaming over TLS — certificate or a private trust file", "xhttp"},
 			{ctName("reality"), "Vision with a TLS cover endpoint — no local certificate required", "reality"},
+			{ctName("xhttp-reality"), "XHTTP streams protected by REALITY with a verified cover", "xhttp-reality"},
+			{ctName("trusttunnel"), "verified HTTP/3 with HTTP/2 fallback; runs in process", "trusttunnel"},
+			{ctName("webtransport"), "authenticated independent HTTP/3 streams; requires UDP", "webtransport"},
+			{ctName("tailcat"), "experimental point-to-point WireGuard through DERP; separate helper", "tailcat"},
 			{ctName("hysteria2"), "Hysteria2 with optional Salamander obfuscation — requires UDP", "hysteria2"},
 			{ctName("anytls"), "TLS with padding and connection reuse — TCP", "anytls"},
 			{ctName("shadowtls"), "ShadowTLS v3 with SS2022 — verified TLS cover and encrypted inner stream, TCP", "shadowtls"},
@@ -80,10 +84,16 @@ func cliTransportGroups() []transportGroup {
 }
 
 func managedTransport(value string) bool {
-	return value == "managed-paths" || value == "short-https" || value == "naive" || value == "xhttp" || value == "reality" || config.SingProtocol(value)
+	return value == "managed-paths" || value == "short-https" || value == "naive" || config.XrayHTTP(value) || config.XrayREALITY(value) || config.SingProtocol(value) || config.ConnectProtocol(value)
 }
 
 func selectedTransport(s TunnelSpec) string {
+	if s.ConnectServer.Enabled() {
+		return s.ConnectServer.Protocol
+	}
+	if s.ConnectClient.Enabled() {
+		return s.ConnectClient.Protocol
+	}
 	if len(s.ServerPaths) != 0 || len(s.ClientPaths) != 0 {
 		return "managed-paths"
 	}
@@ -109,6 +119,12 @@ func selectedTransport(s TunnelSpec) string {
 }
 
 func managedEndpoint(s TunnelSpec) string {
+	if s.Role == "server" && s.ConnectServer.Enabled() {
+		return s.ConnectServer.Listen
+	}
+	if s.Role == "client" && s.ConnectClient.Enabled() {
+		return s.ConnectClient.Server
+	}
 	if s.Role == "server" && len(s.ServerPaths) != 0 {
 		return pathServerEndpoint(s.ServerPaths[0])
 	}
@@ -146,6 +162,7 @@ func managedEndpoint(s TunnelSpec) string {
 }
 
 func clearManagedTransport(s *TunnelSpec) {
+	s.ConnectServer, s.ConnectClient = config.ConnectServerConfig{}, config.ConnectClientConfig{}
 	s.ServerPaths, s.ClientPaths, s.PathPolicy = nil, nil, config.PathPolicy{}
 	s.ShortServer, s.ShortClient = config.ShortServerConfig{}, config.ShortClientConfig{}
 	s.SingServer, s.SingClient = config.SingServerConfig{}, config.SingClientConfig{}
@@ -154,6 +171,9 @@ func clearManagedTransport(s *TunnelSpec) {
 }
 
 func managedHelperPath(tool string) string {
+	if tool == "tailcat" {
+		return filepath.Join("/usr/local/lib/backpack/helpers", "sing-box", "v1.15.0-alpha.12-"+runtime.GOARCH, "sing-box")
+	}
 	version := map[string]string{"naive": "v154.0.8037.49-4", "sing-box": "v1.14.2", "xray": "v26.3.27"}[tool]
 	return filepath.Join("/usr/local/lib/backpack/helpers", tool, version+"-"+runtime.GOARCH, tool)
 }
@@ -240,6 +260,9 @@ func validateManagedSpec(s TunnelSpec) error {
 		return err
 	}
 	if err := adaptive.Validate(&c); err != nil {
+		return err
+	}
+	if err := naive.ValidateConnect(&c); err != nil {
 		return err
 	}
 	if err := naive.ValidateShort(&c); err != nil {
@@ -329,6 +352,10 @@ func setupManagedCarrierWithProbe(s *TunnelSpec, chosen, public, host string, pr
 		if !configureManagedPaths(&n, *s, public, host, probe) {
 			return false
 		}
+	} else if config.ConnectProtocol(chosen) {
+		if !configureConnect(&n, *s, chosen, public, host) {
+			return false
+		}
 	} else if chosen == "short-https" {
 		if !configureShort(&n, *s, public, host) {
 			return false
@@ -351,9 +378,20 @@ func setupManagedCarrierWithProbe(s *TunnelSpec, chosen, public, host string, pr
 				tui.Info("Native Reverse UDP Is Disabled. Any Enabled UDP Forwarding Uses Reliable Streams.")
 			}
 		}
-	} else if chosen == "reality" {
+	} else if config.XrayREALITY(chosen) {
 		if !configureReality(&n, *s, public, probe) {
 			return false
+		}
+		if config.XrayHTTP(chosen) {
+			if n.Role == "server" {
+				n.XrayServer.Mode = chosen
+				n.XrayServer.Path = tui.PromptDefault("Shared XHTTP Path", defaultString(s.XrayServer.Path, "/"+randomToken(24)))
+				n.XrayServer.Host = tui.PromptDefault("Shared XHTTP Host (Empty Uses SNI)", s.XrayServer.Host)
+			} else {
+				n.XrayClient.Mode = chosen
+				n.XrayClient.Path = tui.PromptDefault("XHTTP Path From Iran", s.XrayClient.Path)
+				n.XrayClient.Host = tui.PromptDefault("XHTTP Host From Iran", s.XrayClient.Host)
+			}
 		}
 	} else if chosen == "naive" {
 		if n.Role == "server" {

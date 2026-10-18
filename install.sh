@@ -149,11 +149,14 @@ helpers_defaults() {
 }
 
 helpers_validate() {
-  case "${BP_HELPERS:-}" in
-    ""|naive|xray|naive,xray) ;;
-    *) err 'BP_HELPERS must be empty, naive, xray or naive,xray'; return 2 ;;
-  esac
   [[ -z "${BP_HELPERS:-}" ]] && return 0
+  local selected
+  case "$BP_HELPERS" in ,*|*,|*,,*) err 'BP_HELPERS contains an empty selection'; return 2 ;; esac
+  local -a selections
+  IFS=, read -r -a selections <<< "$BP_HELPERS"
+  for selected in "${selections[@]}"; do
+    case "$selected" in naive|xray|tailcat) ;; *) err 'BP_HELPERS accepts naive, xray and optional experimental tailcat'; return 2 ;; esac
+  done
   [[ "$(uname -s)" == Linux ]] || { err 'Optional helpers require Linux'; return 1; }
   case "$ARCH" in amd64|arm64) ;; *) err "Optional helpers do not support $ARCH"; return 1 ;; esac
   if [[ "$BP_HELPERS" == *naive* ]]; then
@@ -173,6 +176,10 @@ helpers_require_tools() {
   fi
   if [[ "$BP_HELPERS" == *xray* ]]; then
     command -v unzip >/dev/null || tools+=(unzip)
+  fi
+  if [[ "$BP_HELPERS" == *tailcat* ]]; then
+    command -v tar >/dev/null || tools+=(tar)
+    command -v gzip >/dev/null || tools+=(gzip)
   fi
   if ! command -v sha256sum >/dev/null && ! command -v shasum >/dev/null; then tools+=(sha256sum); fi
   [[ ${#tools[@]} -gt 0 ]] || return 0
@@ -211,6 +218,8 @@ helper_spec() {
     naive/arm64) helper_sha=dfa99dc36dafa1ee7f97f48bde14e9ee96bc4011e5cc10c7881fa7883859a036 ;;
     sing-box/amd64) helper_sha=a684484d7477d1437282ee411f4d131d0340aaad60a7868841ebd5d87dd8a0c6 ;;
     sing-box/arm64) helper_sha=b43a1fb1bda131c6653576741ce527eb2bdeab7c9308ca90ee8b972abb7e4a7f ;;
+    tailcat/amd64) helper_sha=b107528ec7d989333d986573c097d840b9ef1afa9bb177f8eb03e0767f370514 ;;
+    tailcat/arm64) helper_sha=70802bc7da7b5dacd6ddc3d71f62022fda47ac178b03ed366345f722c4e536e9 ;;
     xray/amd64) helper_sha=23cd9af937744d97776ee35ecad4972cf4b2109d1e0fe6be9930467608f7c8ae; helper_arch=64 ;;
     xray/arm64) helper_sha=4d30283ae614e3057f730f67cd088a42be6fdf91f8639d82cb69e48cde80413c; helper_arch=arm64-v8a ;;
     *) return 1 ;;
@@ -222,6 +231,10 @@ helper_spec() {
       helper_asset="$helper_stem.tar.xz"; helper_member="$helper_stem/naive"; helper_kind=xz ;;
     sing-box)
       helper_version=v1.14.2; helper_repo=SagerNet/sing-box
+      helper_stem="sing-box-${helper_version#v}-linux-$helper_arch"
+      helper_asset="$helper_stem.tar.gz"; helper_member="$helper_stem/sing-box"; helper_extra="$helper_stem/libcronet.so"; helper_kind=gz ;;
+    tailcat)
+      helper_tool=sing-box; helper_version=v1.15.0-alpha.12; helper_repo=SagerNet/sing-box
       helper_stem="sing-box-${helper_version#v}-linux-$helper_arch"
       helper_asset="$helper_stem.tar.gz"; helper_member="$helper_stem/sing-box"; helper_extra="$helper_stem/libcronet.so"; helper_kind=gz ;;
     xray)
@@ -273,6 +286,7 @@ install_helpers() {
     install_helper naive || return 1
     install_helper sing-box || return 1
   fi
+  if [[ "$BP_HELPERS" == *tailcat* ]]; then install_helper tailcat || return 1; fi
   [[ "$BP_HELPERS" != *xray* ]] || install_helper xray
 }
 

@@ -7,7 +7,8 @@ import (
 	"strings"
 )
 
-// MasqueConfig configures the dedicated RFC 9298 HTTP/3 CONNECT-UDP endpoint.
+// MasqueConfig supplies verified TLS for MASQUE, CONNECT-IP and WebTransport.
+// The private UDP target applies only to the MASQUE carriers.
 // Target is a private loopback UDP socket on the listener, not a public proxy.
 type MasqueConfig struct {
 	// Target is the listener's private loopback UDP address, identical on both ends.

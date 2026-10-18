@@ -279,6 +279,7 @@ export function connTestView(ctx) {
   view.innerHTML = `<div class="tl-page ct">
     <div class="sech2 tl-head"><h2>Connection test</h2><span class="cnt" id="ctState">—</span><span class="sp"></span></div>
     <p class="tl-sub">Which transports actually survive the route between this Iran server and a kharej — measured, not guessed.</p>
+	<a class="tl-btn" href="#/network">Saved tests, Automatic setup and diagnostics</a>
     <div id="ctSteps"></div>
     <div id="ctPaths" class="ct-paths" aria-label="IP path comparison"></div>
     <div class="ct-duo">
@@ -321,7 +322,7 @@ export function connTestView(ctx) {
   };
 
   const paintLeft = (v, st) => {
-    const sig = JSON.stringify([fresh, st, v.command, v.error, v.kharej, v.best, v.host, v.suiteActive, st === 'idle' || fresh ? v.root : 0]);
+    const sig = JSON.stringify([fresh, st, v.command, v.error, v.historyWarning, v.kharej, v.best, v.host, v.suiteActive, st === 'idle' || fresh ? v.root : 0]);
     if (sig === leftSig) {
       if (st === 'running') { const s = $('#ctSettled', left); if (s) s.textContent = settled(v); }
       return;
@@ -334,7 +335,7 @@ export function connTestView(ctx) {
     else if (st === 'running') html = runPane(v);
     else if (st === 'done') html = bestPane(v);
     else html = endPane(v);
-    left.innerHTML = html;
+    left.innerHTML = html + (!fresh && v.historyWarning ? `<p class="tl-meta" role="status">${esc(v.historyWarning)}</p>` : '');
     left.dataset.ph = fresh ? 'idle' : st;
     for (const [id,value] of keep) if (value !== undefined && $('#' + id,left)) $('#' + id,left).value = value;
     paintClock();

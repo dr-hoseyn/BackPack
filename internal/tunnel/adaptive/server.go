@@ -58,6 +58,8 @@ func StartServer(parent context.Context, cfg *config.ServerConfig, log *logrus.L
 
 func startServerHelper(ctx context.Context, cfg *config.ServerConfig, log *logrus.Logger) (*naive.Helper, error) {
 	switch {
+	case cfg.Connect.Enabled():
+		return naive.StartConnectServer(ctx, cfg, log)
 	case cfg.Short.Enabled():
 		return naive.StartShortServer(ctx, cfg, log)
 	case cfg.Sing.Enabled():

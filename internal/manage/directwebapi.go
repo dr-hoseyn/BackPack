@@ -136,6 +136,8 @@ func DirectCarriers() []map[string]string {
 			"desc": "a real QUIC session on UDP — indistinguishable from HTTP/3, and needs no root"},
 		{"value": "masque", "family": "https", "label": ctName("masque"), "needsRoot": "",
 			"desc": "authenticated CONNECT-UDP over HTTP/3; requires a TLS certificate on Kharej"},
+		{"value": "connect-ip", "family": "https", "label": "CONNECT-IP", "needsRoot": "1", "desc": "RFC 9484 native IP over authenticated HTTP/3; verified TLS, peer-only routes"},
+		{"value": "webtransport", "family": "https", "label": "WebTransport", "needsRoot": "1", "desc": "Authenticated HTTP/3 datagrams with bounded packet fragmentation; verified TLS"},
 		{"value": "masque-h2", "family": "https", "label": ctName("masque-h2"), "needsRoot": "",
 			"desc": "verified HTTP/2 CONNECT-UDP Capsules over TCP; reliable fallback for blocked UDP, with head-of-line delay"},
 
@@ -181,7 +183,7 @@ func groupDirectCarriers(carriers []map[string]string) []DirectCarrierFamily {
 		{Value: "icmp", Label: "ICMP", Desc: "inside ping packets", Entries: nil},
 		{Value: "tcp", Label: "TCP", Desc: "packet-level TCP, with optional SNI camouflage", Entries: nil},
 		{Value: "udp", Label: "UDP", Desc: "plain datagrams or QUIC", Entries: nil},
-		{Value: "https", Label: "HTTPS", Desc: "authenticated CONNECT-UDP over HTTP/3", Entries: nil},
+		{Value: "https", Label: "HTTPS", Desc: "authenticated HTTP CONNECT over HTTP/3 or HTTP/2", Entries: nil},
 		{Value: "spoof", Label: "IP Spoofing", Desc: "forged-source packets for a route you have tested", Entries: nil},
 	}
 	out := make([]DirectCarrierFamily, 0, len(families))
@@ -354,6 +356,13 @@ func directBodyFromSpec(spec l3Spec) (name, body string, err error) {
 	if _, err := toml.Decode(body, &check); err != nil {
 		return "", "", fmt.Errorf("the form produced a config that does not parse: %w", err)
 	}
+	engine, err := l3.ConfigFromTable(check.L3)
+	if err != nil {
+		return "", "", err
+	}
+	if err := engine.Validate(); err != nil {
+		return "", "", fmt.Errorf("the form produced an invalid tunnel: %w", err)
+	}
 	return spec.Name, body, nil
 }
 
@@ -451,9 +460,7 @@ func (n NewDirectTunnel) spec() (l3Spec, error) {
 
 	spec := l3Spec{
 		Name: name, Side: side, Carrier: carrier,
-		// Always Backpack's own GRE inside the Noise session. There is no
-		// choice here and the panel does not offer one; see askL3Encap's
-		// removal in the CLI wizard for why.
+		// Legacy carriers use GRE inside Noise; native CONNECT-IP ignores it.
 		Encap: "gre", GREKey: n.GREKey,
 		SNIDomain: strings.ToLower(strings.TrimSpace(n.SNIDomain)),
 		Masque:    n.Masque,
@@ -517,7 +524,16 @@ func (n NewDirectTunnel) spec() (l3Spec, error) {
 					"because the peer forges the source of every packet it sends")
 		}
 	}
-	if carrier == "masque" || carrier == "masque-h2" {
+	if carrier == "connect-ip" {
+		off := false
+		if n.AutoMTU == nil {
+			spec.AutoMTU = &off
+		}
+		if n.MTU == 0 {
+			spec.MTU = 1280
+		}
+	}
+	if carrier == "masque" || carrier == "masque-h2" || carrier == "connect-ip" || carrier == "webtransport" {
 		if err := spec.Masque.Validate(side == sideKharej); err != nil {
 			return l3Spec{}, err
 		}

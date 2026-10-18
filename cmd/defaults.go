@@ -225,6 +225,7 @@ func validateConfig(cfg *config.Config) error {
 		checkMPTCP,
 		checkManagedPaths,
 		naive.ValidateShort,
+		naive.ValidateConnect,
 		checkNaive,
 		checkXray,
 		checkSing,

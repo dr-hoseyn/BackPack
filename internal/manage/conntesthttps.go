@@ -22,8 +22,15 @@ func ctProbeHTTPS(parent context.Context, spec TunnelSpec) string {
 	if spec.SingClient.Enabled() {
 		return "not-applicable" // these protocols are not standalone HTTPS/H2 services
 	}
+	if spec.ConnectClient.Enabled() && (spec.ConnectClient.Protocol == "webtransport" || spec.ConnectClient.Mode == "h3") {
+		return "not-applicable"
+	}
 	endpoint, serverName, caFile := spec.XrayClient.Server, spec.XrayClient.ServerName, spec.XrayClient.CAFile
 	alpn, minimumTLS := "h2", uint16(tls.VersionTLS12)
+	if spec.ConnectClient.Enabled() {
+		endpoint, serverName, caFile = spec.ConnectClient.Server, spec.ConnectClient.ServerName, spec.ConnectClient.CAFile
+		minimumTLS = tls.VersionTLS13
+	}
 	if spec.ShortClient.Enabled() {
 		endpoint, serverName, caFile = spec.ShortClient.Server, spec.ShortClient.ServerName, spec.ShortClient.CAFile
 		if serverName == "" {
@@ -43,7 +50,7 @@ func ctProbeHTTPS(parent context.Context, spec TunnelSpec) string {
 		attempt, stopAttempt := context.WithTimeout(ctx, time.Second)
 		conn, err := (&net.Dialer{}).DialContext(attempt, "tcp", endpoint)
 		if err == nil {
-			if spec.XrayClient.Mode == "reality" {
+			if config.XrayREALITY(spec.XrayClient.Mode) {
 				conn.Close()
 				stopAttempt()
 				return "tcp-ok" // only authenticated tunnel traffic can prove REALITY
@@ -89,13 +96,13 @@ func ctValidHTTPSProbe(tr, probe string) bool {
 	}
 	switch probe {
 	case "not-applicable":
-		return config.SingProtocol(tr)
+		return config.SingProtocol(tr) || tr == "webtransport"
 	case "tcp-failed":
 		return !config.SingProtocol(tr)
 	case "tcp-ok":
-		return tr == "reality"
+		return config.XrayREALITY(tr)
 	case "tls-ok", "tls-failed":
-		return tr == "naive" || tr == "xhttp" || tr == "short-https"
+		return tr == "naive" || tr == "xhttp" || tr == "short-https" || tr == "trusttunnel"
 	}
 	return false
 }

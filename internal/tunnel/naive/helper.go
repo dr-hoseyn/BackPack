@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/backpack/backpack/config"
@@ -28,6 +29,8 @@ type Helper struct {
 	dir         string
 	once        sync.Once
 	proxyScheme string
+	pid         atomic.Int32
+	resources   helperResourceCache
 }
 
 func (h *Helper) ProxyURL() string {
@@ -204,6 +207,7 @@ func startManaged(parent context.Context, binary, mode string, body []byte, addr
 	ready := make(chan error, 1)
 	go func() {
 		defer close(h.done)
+		defer h.pid.Store(0)
 		defer os.RemoveAll(dir)
 		defer reportReadiness(ctx, false)
 		first := true
@@ -223,10 +227,12 @@ func startManaged(parent context.Context, binary, mode string, body []byte, addr
 				}
 				continue
 			}
+			h.pid.Store(int32(cmd.Process.Pid))
 			exited := make(chan error, 1)
 			go func() { exited <- cmd.Wait(); close(exited) }()
 			if err := waitReady(ctx, addr, mode, exited); err != nil {
 				stopChild(cmd, exited)
+				h.pid.Store(0)
 				if ctx.Err() != nil {
 					ready <- ctx.Err()
 					return
@@ -248,6 +254,7 @@ func startManaged(parent context.Context, binary, mode string, body []byte, addr
 				stopChild(cmd, exited)
 				return
 			case <-exited:
+				h.pid.Store(0)
 				reportReadiness(ctx, false)
 				// Also remove descendants after the leader has exited.
 				_ = killProcess(cmd.Process)

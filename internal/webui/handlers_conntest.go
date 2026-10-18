@@ -67,23 +67,24 @@ type conntestPath struct {
 }
 
 type conntestView struct {
-	Addresses []manage.ConnTestAddress `json:"addresses"`
-	Paths     []conntestPath           `json:"paths,omitempty"`
-	State     string                   `json:"state"`
-	Host      string                   `json:"host,omitempty"`
-	Preset    string                   `json:"preset,omitempty"`
-	Link      string                   `json:"link,omitempty"`
-	Command   string                   `json:"command,omitempty"`
-	Install   string                   `json:"install,omitempty"`
-	Kharej    string                   `json:"kharej,omitempty"`
-	Error     string                   `json:"error,omitempty"`
-	Started   int64                    `json:"started,omitempty"`
-	Deadline  int64                    `json:"deadline,omitempty"` // unix: when waiting gives up
-	Ran       int64                    `json:"ran,omitempty"`      // unix: when the kharej joined and the test began
-	Ends      int64                    `json:"ends,omitempty"`     // unix: about when the running test is judged
-	Finished  int64                    `json:"finished,omitempty"`
-	Rows      []conntestRow            `json:"rows,omitempty"`
-	Best      *manage.ConnTestBest     `json:"best,omitempty"`
+	Addresses      []manage.ConnTestAddress `json:"addresses"`
+	Paths          []conntestPath           `json:"paths,omitempty"`
+	State          string                   `json:"state"`
+	Host           string                   `json:"host,omitempty"`
+	Preset         string                   `json:"preset,omitempty"`
+	Link           string                   `json:"link,omitempty"`
+	Command        string                   `json:"command,omitempty"`
+	Install        string                   `json:"install,omitempty"`
+	Kharej         string                   `json:"kharej,omitempty"`
+	Error          string                   `json:"error,omitempty"`
+	Started        int64                    `json:"started,omitempty"`
+	Deadline       int64                    `json:"deadline,omitempty"` // unix: when waiting gives up
+	Ran            int64                    `json:"ran,omitempty"`      // unix: when the kharej joined and the test began
+	Ends           int64                    `json:"ends,omitempty"`     // unix: about when the running test is judged
+	Finished       int64                    `json:"finished,omitempty"`
+	HistoryWarning string                   `json:"historyWarning,omitempty"`
+	Rows           []conntestRow            `json:"rows,omitempty"`
+	Best           *manage.ConnTestBest     `json:"best,omitempty"`
 	// What the form starts from.
 	DefaultHost string `json:"defaultHost,omitempty"`
 	Root        bool   `json:"root"`
@@ -217,7 +218,11 @@ func (c *conntestRunner) start(parent context.Context, hosts []string, preset st
 			})
 		})
 		best := manage.ConnTestSuiteBest(paths)
+		historyErr := manage.SaveConnTestHistory("iran", preset, paths, ctx.Err() == nil)
 		c.update(func(v *conntestView) {
+			if historyErr != nil {
+				v.HistoryWarning = "Test completed, but its history could not be saved."
+			}
 			v.State, v.Finished = ctFinished, time.Now().Unix()
 			completed := false
 			for _, p := range paths {

@@ -399,10 +399,11 @@ function directMarkup(set) {
       sw('acceptUdp', 'Accept UDP', 'Carry UDP over the forwarded ports.') : '') +
     `<div class="f"><label>Performance preset</label><div class="sel" data-name="preset">Turbo` +
     `<span class="sp"></span><svg class="x" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div></div>` +
-    `<div class="two">${field('mtu', 'MTU')}` +
-    (set.carrier === 'udp' ? field('paths', 'Sockets', '1 is one socket; 2–8 spread it.') : '<div></div>') + `</div>` +
-    sw('autoMtu', 'Auto MTU', 'Measure the path and correct the MTU once up.') +
-    sw('fec', 'Error correction (FEC)', 'Spare packets repair loss. Both ends must match.') +
+    (set.carrier === 'connect-ip' ? '<p class="hint">Native CONNECT-IP uses MTU 1280 and HTTP/3 datagrams.</p>' :
+      `<div class="two">${field('mtu', 'MTU')}` +
+      (set.carrier === 'udp' ? field('paths', 'Sockets', '1 is one socket; 2–8 spread it.') : '<div></div>') + `</div>` +
+      sw('autoMtu', 'Auto MTU', 'Measure the path and correct the MTU once up.') +
+      sw('fec', 'Error correction (FEC)', 'Spare packets repair loss. Both ends must match.')) +
     (set.carrier === 'spoof' ? sw('stealth', 'Stealth', 'Padding and header cosmetics. Both ends must match.') : '') +
     (ports ? `<div class="two">${field('maxConnections', 'Max connections', '0 is no limit.')}` +
       `${field('bandwidthMbps', 'Bandwidth (Mbit/s)', '0 is no limit.')}</div>` : '') +

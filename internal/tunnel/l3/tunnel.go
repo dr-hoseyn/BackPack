@@ -280,7 +280,8 @@ type Tunnel struct {
 	// flowStuck is set by the handshake loop when it ends a generation because
 	// a pck or sni flow stopped answering (see flowStuckAfter), so Run can say
 	// why it returned.
-	flowStuck atomic.Bool
+	flowStuck     atomic.Bool
+	connectIPLast atomic.Int64
 
 	// The listening side answers a retransmitted first message with the
 	// identical reply rather than starting a second handshake, which would
@@ -336,6 +337,9 @@ func New(cfg Config, log *logrus.Logger) (*Tunnel, error) {
 // Run opens the device and the carrier and serves the tunnel until ctx ends.
 // It always cleans up what it opened, including on the error paths.
 func (t *Tunnel) Run(ctx context.Context) error {
+	if t.cfg.Carrier == CarrierConnectIP {
+		return t.runConnectIP(ctx)
+	}
 	carrier, peer, err := openCarrierContext(ctx, t.cfg)
 	if err != nil {
 		return err

@@ -49,6 +49,7 @@ them both ends have to agree on. This says what exists.
 
 | Key | Type | Description |
 |---|---|---|
+| `connect` | `ConnectClientConfig` | Connect contains the paired in-process HTTP carrier endpoint and trust. |
 | `naive` | `NaiveClientConfig` | Naive contains the paired public endpoint, credentials and local helper path. |
 | `name` | `string` | Name matches the paired server path; it is used in health reports. |
 | `short` | `ShortClientConfig` | Short contains the paired bounded-request endpoint and local trust file. |
@@ -59,6 +60,7 @@ them both ends have to agree on. This says what exists.
 
 | Key | Type | Description |
 |---|---|---|
+| `connect` | `ConnectServerConfig` | Connect is this path's restricted TrustTunnel or WebTransport listener. |
 | `endpoint` | `string` | Endpoint optionally overrides the public host:port exported to the peer. Empty uses the setup link's public host and this path's listener port. |
 | `naive` | `NaiveServerConfig` | Naive is this path's optional Naive listener and local TLS material. |
 | `name` | `string` | Name is the stable path identity, unique within this tunnel. |
@@ -105,6 +107,19 @@ them both ends have to agree on. This says what exists.
 | `preshared_key` | `string` | PresharedKey is the independent shared 32-byte PSK. |
 | `private_key` | `string` | PrivateKey is this machine's canonical base64 X25519 private identity. |
 
+## [client.connect]
+
+| Key | Type | Description |
+|---|---|---|
+| `ca_file` | `string` | CAFile optionally supplies private trust; empty uses system roots. |
+| `mode` | `string` | Mode selects TrustTunnel auto, h2 or h3; WebTransport uses h3. |
+| `password` | `string` | Password is the carrier account secret, containing at least 16 bytes. |
+| `path` | `string` | Path is the paired private WebTransport session endpoint, unused by TrustTunnel. |
+| `protocol` | `string` | Protocol selects trusttunnel or webtransport. |
+| `server` | `string` | Server is the paired public endpoint, as host:port. |
+| `server_name` | `string` | ServerName is the explicit verified certificate hostname or IP. |
+| `username` | `string` | Username is the carrier account, separate from the Reverse token. |
+
 ## [client.naive]
 
 | Key | Type | Description |
@@ -126,6 +141,7 @@ them both ends have to agree on. This says what exists.
 | `probe_interval` | `int` | ProbeInterval is seconds between verified transfers per path; 0 uses 5. |
 | `probe_timeout` | `int` | ProbeTimeout is the total seconds for a verified transfer; 0 uses 5. |
 | `recoveries` | `int` | Recoveries is verified successes required for a failed path to return; 0 uses 2. |
+| `standby_interval` | `int` | StandbyInterval slows verified probes on healthy unselected paths; 0 keeps ProbeInterval. |
 
 ## [client.short]
 
@@ -139,15 +155,22 @@ them both ends have to agree on. This says what exists.
 
 | Key | Type | Description |
 |---|---|---|
+| `bbr_profile` | `string` | BBRProfile is standard, conservative or aggressive; empty uses standard. |
 | `binary` | `string` | Binary is the absolute path to the pinned sing-box executable. |
 | `ca_file` | `string` | CAFile optionally adds a private PEM trust anchor; TLS verification stays on. |
+| `ech_config` | `string` | ECHConfig contains public PEM ECH CONFIGS. TLS verification remains enabled. |
+| `gecko_max` | `int` | GeckoMax bounds the maximum Gecko on-wire packet size; zero uses 1200. |
+| `gecko_min` | `int` | GeckoMin/Max bound on-wire padded packets (512..1400); zero uses 512/1200. |
 | `native_udp` | `bool` | NativeUDP carries reverse forwarded UDP as native datagrams (Hysteria2/TUIC only); paired. |
 | `obfs_password` | `string` | ObfsPassword enables Hysteria2 Salamander when nonempty; must match the server. |
+| `obfs_type` | `string` | ObfsType is salamander (legacy default) or gecko; Hysteria2 only. |
 | `password` | `string` | Password authenticates this helper separately from the reverse token. |
 | `protocol` | `string` | Protocol is hysteria2, anytls, shadowtls (v3 with SS2022), or tuic (v5). |
+| `realm` | `HysteriaRealm` | Realm optionally discovers the listening Hysteria2 peer through an HTTPS rendezvous. |
 | `server` | `string` | Server is the public helper endpoint, as a hostname or IP and port. |
 | `server_name` | `string` | ServerName is the identity verified by TLS, including the cover for ShadowTLS. |
 | `shadowsocks_key` | `string` | ShadowsocksKey is a canonical base64 32-byte SS2022 key for ShadowTLS only. |
+| `tailcat` | `TailcatConfig` | Tailcat is the experimental point-to-point identity and explicit DERP selection. |
 | `udp_bandwidth_mbps` | `int` | UDPBandwidthMbps caps native UDP separately, dropping excess packets; 0 is unlimited. |
 | `udp_max_flows` | `int` | UDPMaxFlows caps native associations on this machine; 0 uses 128, maximum 4096. |
 | `uuid` | `string` | UUID identifies the TUIC account; unused for the other protocols. |
@@ -168,7 +191,7 @@ them both ends have to agree on. This says what exists.
 | `max_connections` | `int` | Maximum XHTTP connections, 0 uses the pinned default; cannot be combined with max_concurrency. |
 | `max_requests` | `int` | Requests per XHTTP connection before renewal, 0 retains the pinned default. |
 | `max_reuse_seconds` | `int` | XHTTP connection reuse lifetime in seconds, 0 retains the pinned default. |
-| `mode` | `string` | Mode selects xhttp (verified TLS/HTTP2) or reality (RAW, REALITY and Vision). |
+| `mode` | `string` | Mode selects xhttp (TLS), reality (RAW with Vision), or xhttp-reality (XHTTP with REALITY). |
 | `path` | `string` | Path is an explicit non-root private XHTTP path shared by both helpers; unused by REALITY. |
 | `public_key` | `string` | PublicKey is the server's 32-byte unpadded base64url X25519 public key for REALITY. |
 | `server` | `string` | Server is the outer Xray host:port; client.remote_addr remains the Iran loopback reverse listener. |
@@ -181,6 +204,7 @@ them both ends have to agree on. This says what exists.
 | Key | Type | Description |
 |---|---|---|
 | `aggressive_pool` | `bool` | AggressivePool lets the pool grow faster under load, at the cost of holding more idle connections. Worth it on a path where a handshake is expensive. |
+| `connect` | `ConnectClientConfig` | Connect selects restricted TrustTunnel or WebTransport streams for Reverse. |
 | `connection_pool` | `int` | ConnectionPool is how many spare connections the client keeps warm, so a user's first request does not wait for a handshake. The pool grows past this under load; see aggressive_pool. |
 | `dial_timeout` | `int` | DialTimeout is how many seconds a single connection attempt may take. It is also what a filtered address costs before the next one is tried — see fallback_addrs. |
 | `edge_ip` | `string` | EdgeIP dials a CDN edge address directly while still presenting the configured hostname, for the websocket transports behind a CDN. |
@@ -210,7 +234,7 @@ them both ends have to agree on. This says what exists.
 | `proxy` | `string` | Proxy routes the connection to the tunnel server through a local or nearby proxy, for a client that cannot open an arbitrary outbound connection itself. One URL: "socks5://127.0.0.1:1080" or "http://user:pass@10.0.0.1:8080". Empty means dial the server directly. |
 | `remote_addr` | `string` | RemoteAddr is the server's address and port, as the client dials it. The port must match the server's bind_addr. |
 | `retry_interval` | `int` | RetryInterval is how many seconds to wait before dialling again after a failed attempt. |
-| `short` | `ShortClientConfig` | Short selects bounded HTTPS requests for this TCP Reverse tunnel. |
+| `short` | `ShortClientConfig` | Short selects bounded fresh HTTPS requests for TCP Reverse. |
 | `simple_auth` | `bool` | SimpleAuth authorises a wss tunnel by the raw token instead of a proof bound to the TLS session. It exists for one deployment the binding otherwise makes impossible: a TLS-terminating reverse proxy — typically NGINX — in front of the tunnel, which holds a different TLS session from the client so a bound proof can never match. It is off by default because it hands the token to whoever terminates the TLS; turn it on only when a trusted proxy is doing so, and set it on both ends. |
 | `sing` | `SingClientConfig` | Sing selects a restricted managed Hysteria2, AnyTLS, ShadowTLS or TUIC carrier. |
 | `skip_optz` | `bool` | SkipOptz stops the engine applying its own socket and sysctl tuning at start, for a machine whose tuning is managed elsewhere. |
@@ -331,6 +355,20 @@ them both ends have to agree on. This says what exists.
 | `spoof_uplink` | `string` | SpoofUplink and SpoofDownlink set the profile per direction, for a path whose filtering is not symmetric — e.g. ICMP survives client→server while UDP survives server→client. Uplink is client→server, downlink is server→client; both ends must set the same pair. Empty falls back to SpoofProfile, which is the symmetric case. |
 | `spoof_xdp_interface` | `string` | SpoofXDPInterface, when set to a NIC name (e.g. "eth0"), attaches an XDP/eBPF program to that device to receive the tunnel's forged-source packets in the kernel fast path, before the normal socket stack — higher throughput and lower CPU under load than the default raw-socket receive. Pure Go (no clang or libbpf), opt-in, and best-effort: if the kernel is too old or the attach or verifier fails, the carrier logs it and silently falls back to the ordinary raw/UDP receive, so a working tunnel is never lost to it. Empty disables it. Linux only; needs CAP_BPF/CAP_NET_ADMIN in addition to the carrier's CAP_NET_RAW. |
 
+## [server.connect]
+
+| Key | Type | Description |
+|---|---|---|
+| `certificate` | `string` | Certificate is the local PEM certificate chain. |
+| `key` | `string` | Key is its local PEM private key and never enters a Setup Link. |
+| `listen` | `string` | Listen is the public bind address. TrustTunnel auto reserves both TCP and UDP. |
+| `mode` | `string` | Mode selects TrustTunnel auto, h2 or h3; WebTransport uses h3. |
+| `password` | `string` | Password authenticates the carrier independently of the Reverse engine. |
+| `path` | `string` | Path is the shared private WebTransport path; TrustTunnel leaves it empty. |
+| `protocol` | `string` | Protocol selects trusttunnel or webtransport. |
+| `server_name` | `string` | ServerName must match the local certificate identity. |
+| `username` | `string` | Username identifies the single paired carrier account. |
+
 ## [server.naive]
 
 | Key | Type | Description |
@@ -353,21 +391,51 @@ them both ends have to agree on. This says what exists.
 | `listen` | `string` | Listen is the public TCP host:port, distinct from the private reverse port. |
 | `server_name` | `string` | ServerName is the certificate's public hostname or IP. |
 
+## [server.sing.realm] / [client.sing.realm]
+
+| Key | Type | Description |
+|---|---|---|
+| `ip_version` | `int` | IPVersion restricts discovery to 4 or 6; zero allows either. |
+| `realm_id` | `string` | RealmID identifies the shared 1..64 character slot. |
+| `server_url` | `string` | ServerURL is the HTTPS rendezvous endpoint with normal system trust. |
+| `stun_servers` | `string` | STUNServers lists one to eight explicit host:port endpoints, comma-separated. |
+| `token` | `string` | Token authenticates this registration independently of the tunnel. |
+
+## [server.sing.tailcat] / [client.sing.tailcat]
+
+| Key | Type | Description |
+|---|---|---|
+| `client_key` | `string` | ClientKey provisions the one authorized client, server only. Setup links carry this client's key; the server's own private key never leaves it. |
+| `derp_map_url` | `string` | DERPMapURL explicitly chooses a verified HTTPS relay map; no public default is assumed. |
+| `derp_region` | `int` | DERPRegion is the required region ID from the selected map, in 1..65535. |
+| `disco_key` | `string` | DiscoKey is the server's derived discovery public key, client only. |
+| `pre_shared_key` | `string` | PreSharedKey is a canonical base64 32-byte key shared by this pair. |
+| `private_key` | `string` | PrivateKey is this peer's canonical base64 X25519 private key. |
+| `public_key` | `string` | PublicKey is the server's X25519 public key, client only. |
+
 ## [server.sing]
 
 | Key | Type | Description |
 |---|---|---|
+| `bbr_profile` | `string` | BBRProfile selects standard, conservative or aggressive for Hysteria2. |
 | `binary` | `string` | Binary is the absolute path to the pinned sing-box executable. |
 | `certificate` | `string` | Certificate is the verified PEM certificate chain; unused for ShadowTLS. |
+| `ech_config` | `string` | ECHConfig is the matching public PEM ECH CONFIGS exported to the peer. |
+| `ech_key` | `string` | ECHKey is private PEM ECH KEYS, retained only in the server configuration. |
+| `gecko_max` | `int` | GeckoMax is the maximum padded packet size; zero uses 1200. |
+| `gecko_min` | `int` | GeckoMin is the minimum padded packet size; zero uses 512. |
 | `handshake` | `string` | Handshake is the explicit ShadowTLS cover endpoint; no wildcard SNI routing. |
 | `key` | `string` | Key is the PEM private key, which remains on this server. |
 | `listen` | `string` | Listen is the public helper bind address, separate from the reverse port. |
 | `native_udp` | `bool` | NativeUDP selects native reverse UDP rather than reliable stream forwarding; paired. |
 | `obfs_password` | `string` | ObfsPassword enables Hysteria2 Salamander; empty keeps ordinary QUIC framing. |
+| `obfs_type` | `string` | ObfsType selects salamander (legacy default) or gecko for Hysteria2. |
 | `password` | `string` | Password is the helper account secret, independent of the reverse token. |
 | `protocol` | `string` | Protocol is hysteria2, anytls, shadowtls, or tuic. |
+| `realm` | `HysteriaRealm` | Realm registers this listener with an existing HTTPS rendezvous service. |
 | `server_name` | `string` | ServerName is the TLS identity, or the verified cover identity for ShadowTLS. |
 | `shadowsocks_key` | `string` | ShadowsocksKey is the base64 32-byte SS2022 key, required for ShadowTLS v3. |
+| `tailcat` | `TailcatConfig` | Tailcat provisions one authorized peer with a separately pinned helper. |
 | `udp_bandwidth_mbps` | `int` | UDPBandwidthMbps caps native UDP in Mbit/s; 0 is unlimited. |
 | `udp_max_flows` | `int` | UDPMaxFlows caps native forwarded flows; 0 uses 128, maximum 4096. |
 | `uuid` | `string` | UUID is the canonical TUIC v5 account identity. |
@@ -381,7 +449,7 @@ them both ends have to agree on. This says what exists.
 | `host` | `string` | Host is the optional shared XHTTP HTTP host; empty uses server_name. |
 | `key` | `string` | Key is the XHTTP PEM private key paired with certificate. |
 | `listen` | `string` | Listen is the public TCP host:port, separate from the loopback server.bind_addr. |
-| `mode` | `string` | Mode selects xhttp or reality and must match the client. |
+| `mode` | `string` | Mode selects xhttp, reality or xhttp-reality and must match the client. |
 | `path` | `string` | Path is the private XHTTP path shared with the client; unused by REALITY. |
 | `private_key` | `string` | PrivateKey is the secret 32-byte unpadded base64url X25519 REALITY key. |
 | `server_name` | `string` | ServerName is the DNS name in the XHTTP certificate or REALITY target's TLS identity. |
@@ -399,6 +467,7 @@ them both ends have to agree on. This says what exists.
 | `bandwidth_mbps` | `int` | BandwidthMbps caps total tunnel throughput in Mbit/s (0 = unlimited). |
 | `bind_addr` | `string` | BindAddr is the address and port this server listens on for the control channel — "0.0.0.0:443" for every interface, or one address to pin it to a single local IP. The client's remote_addr must name the same port. |
 | `channel_size` | `int` | ChannelSize is how many connections may queue between the accept loop and the handlers before new ones are dropped. A larger queue absorbs a burst; it does not make the tunnel faster. |
+| `connect` | `ConnectServerConfig` | Connect selects authenticated TrustTunnel or WebTransport streams for Reverse. |
 | `fallback_dwell` | `int` | FallbackDwell is how many seconds the server holds one candidate before trying the next. 0 uses DefaultFallbackDwell. |
 | `fallback_transports` | `[]TransportType` | FallbackTransports are additional carriers this tunnel may fall back to when the configured one stops getting through. Both ends carry the same list and rotate through it — see internal/tunnel/chain for how they meet without negotiating — so a filtered carrier is recovered from without an operator. Empty (the default) means one transport, exactly as before. |
 | `heartbeat` | `int` | Heartbeat is how often, in seconds, the server sends a liveness byte down the control channel. It is how a client notices a server that has gone away without closing the socket. The control channel beats at least every 10 seconds whatever is set here, so a client can give up on a crashed server in about 30 rather than waiting out its keepalive. The first beats on a new control channel come faster, starting a tenth of a second in, so this holds from the first moments of a connection too: 15 seconds until the steady rhythm is learnt. |
@@ -416,12 +485,13 @@ them both ends have to agree on. This says what exists.
 | `mux_version` | `int` | MuxVersion is the smux protocol version. Negotiated with the peer, so the two ends may differ and the lower wins. |
 | `naive` | `NaiveServerConfig` | Naive optionally wraps the loopback TCP reverse listener in HTTP/2 with a tunnel-owned sing-box helper; experimental and disabled when empty. |
 | `nodelay` | `bool` | Nodelay disables Nagle's algorithm on the tunnel's sockets. Off unless set; every preset sets it. It trades a little bandwidth for latency, which is what an interactive session wants and what a bulk transfer does not notice. |
+| `path_profile` | `string` | PathProfile selects economy or full for the peer's initial managed probe policy. |
 | `paths` | `[]ManagedServerPath` | Paths keeps 2..8 independent managed public carriers alive for one Reverse engine. |
 | `ports` | `[]string` | Ports are the forwarded ports this server exposes, as "443", "8080=127.0.0.1:80", "443-450" or "10.0.0.5:443". See docs/port-mappings.md for every form. |
 | `pprof` | `bool` | PPROF exposes Go's profiling endpoint on 127.0.0.1:6060. Off by default and loopback-only: its heap dump contains this tunnel's token. |
 | `preset` | `string` | Preset records which performance profile the tuning values came from — balance, turbo or aggressive. A label: the engine reads the values, never this. Set by hand only if you want the menu to stop offering to change them. |
 | `proxy_protocol` | `bool` | ProxyProtocol prefixes each forwarded connection with a PROXY protocol header, so the service behind the tunnel sees the user's real address rather than the tunnel's. The service has to be configured to expect it. |
-| `short` | `ShortServerConfig` | Short selects the in-process managed Short HTTPS wrapper for TCP Reverse. |
+| `short` | `ShortServerConfig` | Short selects bounded fresh HTTPS requests for TCP Reverse. |
 | `simple_auth` | `bool` | SimpleAuth authorises a wss tunnel by the raw token instead of a proof bound to the TLS session. It exists for one deployment the binding otherwise makes impossible: a TLS-terminating reverse proxy — typically NGINX — in front of the tunnel, which holds a different TLS session from the client so a bound proof can never match. It is off by default because it hands the token to whoever terminates the TLS; turn it on only when a trusted proxy is doing so, and set it on both ends. |
 | `sing` | `SingServerConfig` | Sing selects a restricted managed Hysteria2, AnyTLS, ShadowTLS or TUIC carrier. |
 | `skip_optz` | `bool` | SkipOptz stops the engine applying its own socket and sysctl tuning at start. For a machine whose tuning is managed elsewhere. |

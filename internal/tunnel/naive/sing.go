@@ -77,6 +77,9 @@ func singIdentity(binary, protocol, name, password, uuid, obfs, ss string) error
 
 func ValidateSingClient(c *config.ClientConfig) error {
 	x := c.Sing
+	if x.Realm.Enabled() && x.Realm.Token == c.Token {
+		return errors.New("Realm account token must differ from the Reverse tunnel token")
+	}
 	if !x.Enabled() {
 		return nil
 	}
@@ -93,6 +96,23 @@ func ValidateSingClient(c *config.ClientConfig) error {
 }
 
 func validateSingClientIdentity(x config.SingClientConfig) error {
+	if x.Protocol == "tailcat" {
+		if err := validateTailcat(x.Binary, x.Tailcat, false); err != nil {
+			return err
+		}
+		allowed := config.SingClientConfig{Protocol: x.Protocol, Binary: x.Binary, Server: x.Server, Tailcat: x.Tailcat}
+		if x != allowed {
+			return errors.New("Tailcat does not accept TLS, password, obfuscation or native UDP fields")
+		}
+		_, _, err := xrayEndpoint(x.Server)
+		return err
+	}
+	if x.Tailcat != (config.TailcatConfig{}) {
+		return errors.New("tailcat settings require protocol = tailcat")
+	}
+	if err := validateSingAdvanced(x.Protocol, x.ObfsType, x.ObfsPassword, x.GeckoMin, x.GeckoMax, "", x.ECHConfig, x.BBRProfile, x.Realm, false); err != nil {
+		return err
+	}
 	if _, _, err := xrayEndpoint(x.Server); err != nil {
 		return fmt.Errorf("sing-box server: %w", err)
 	}
@@ -116,6 +136,9 @@ func validateSingClientIdentity(x config.SingClientConfig) error {
 
 func ValidateSingServer(c *config.ServerConfig) error {
 	x := c.Sing
+	if x.Realm.Enabled() && x.Realm.Token == c.Token {
+		return errors.New("Realm account token must differ from the Reverse tunnel token")
+	}
 	if !x.Enabled() {
 		return nil
 	}
@@ -148,6 +171,23 @@ func ValidateSingServer(c *config.ServerConfig) error {
 }
 
 func validateSingServerIdentity(x config.SingServerConfig) error {
+	if x.Protocol == "tailcat" {
+		if err := validateTailcat(x.Binary, x.Tailcat, true); err != nil {
+			return err
+		}
+		allowed := config.SingServerConfig{Protocol: x.Protocol, Binary: x.Binary, Listen: x.Listen, Tailcat: x.Tailcat}
+		if x != allowed {
+			return errors.New("Tailcat does not accept TLS, password, obfuscation or native UDP fields")
+		}
+		_, _, err := xrayEndpoint(x.Listen)
+		return err
+	}
+	if x.Tailcat != (config.TailcatConfig{}) {
+		return errors.New("tailcat settings require protocol = tailcat")
+	}
+	if err := validateSingAdvanced(x.Protocol, x.ObfsType, x.ObfsPassword, x.GeckoMin, x.GeckoMax, x.ECHKey, x.ECHConfig, x.BBRProfile, x.Realm, true); err != nil {
+		return err
+	}
 	if _, _, err := xrayEndpoint(x.Listen); err != nil {
 		return fmt.Errorf("sing-box listen: %w", err)
 	}
@@ -211,6 +251,9 @@ func SingClientJSON(x config.SingClientConfig, socks, target, network string) ([
 	if err := validateSingClientIdentity(x); err != nil {
 		return nil, err
 	}
+	if x.Protocol == "tailcat" {
+		return tailcatClientJSON(x, socks, target, network)
+	}
 	if network != "tcp" && ((network != "udp" && network != "both") || !config.SingDatagram(x.Protocol)) {
 		return nil, errors.New("native datagrams require Hysteria2 or TUIC")
 	}
@@ -227,11 +270,22 @@ func SingClientJSON(x config.SingClientConfig, socks, target, network string) ([
 		return nil, err
 	}
 	out := map[string]any{"type": x.Protocol, "tag": "tunnel", "server": server, "server_port": port, "password": x.Password, "tls": tls}
+	if x.ECHConfig != "" {
+		tls["ech"] = map[string]any{"enabled": true, "config": []string{x.ECHConfig}}
+	}
+	if x.Realm.Enabled() {
+		out["realm"] = singRealm(x.Realm)
+		delete(out, "server")
+		delete(out, "server_port")
+	}
+	if x.BBRProfile != "" {
+		out["bbr_profile"] = x.BBRProfile
+	}
 	outs := []any{out}
 	switch x.Protocol {
 	case "hysteria2":
 		if x.ObfsPassword != "" {
-			out["obfs"] = map[string]any{"type": "salamander", "password": x.ObfsPassword}
+			out["obfs"] = singObfs(x.ObfsType, x.ObfsPassword, x.GeckoMin, x.GeckoMax)
 		}
 	case "tuic":
 		out["uuid"], out["congestion_control"], out["udp_relay_mode"], out["zero_rtt_handshake"] = x.UUID, "bbr", "native", false
@@ -252,6 +306,9 @@ func SingServerJSON(x config.SingServerConfig, ready, target, network string) ([
 	if err := validateSingServerIdentity(x); err != nil {
 		return nil, err
 	}
+	if x.Protocol == "tailcat" {
+		return tailcatServerJSON(x, ready, target, network)
+	}
 	if network != "tcp" && ((network != "udp" && network != "both") || !config.SingDatagram(x.Protocol)) {
 		return nil, errors.New("native datagrams require Hysteria2 or TUIC")
 	}
@@ -267,14 +324,23 @@ func SingServerJSON(x config.SingServerConfig, ready, target, network string) ([
 			return nil, err
 		}
 		in["tls"] = map[string]any{"enabled": true, "certificate": []string{string(cert)}, "key": []string{string(key)}}
+		if x.ECHKey != "" {
+			in["tls"].(map[string]any)["ech"] = map[string]any{"enabled": true, "key": []string{x.ECHKey}}
+		}
 		in["users"] = []any{map[string]any{"name": "backpack", "password": x.Password}}
 	}
 	switch x.Protocol {
 	case "hysteria2":
 		// Adaptive BBR avoids inventing a bandwidth ceiling for an unknown path.
 		in["ignore_client_bandwidth"] = true
+		if x.BBRProfile != "" {
+			in["bbr_profile"] = x.BBRProfile
+		}
+		if x.Realm.Enabled() {
+			in["realm"] = singRealm(x.Realm)
+		}
 		if x.ObfsPassword != "" {
-			in["obfs"] = map[string]any{"type": "salamander", "password": x.ObfsPassword}
+			in["obfs"] = singObfs(x.ObfsType, x.ObfsPassword, x.GeckoMin, x.GeckoMax)
 		}
 	case "tuic":
 		in["users"] = []any{map[string]any{"name": "backpack", "uuid": x.UUID, "password": x.Password}}
@@ -316,6 +382,11 @@ func StartSingClient(ctx context.Context, c *config.ClientConfig, log *logrus.Lo
 }
 
 func StartSingProxy(ctx context.Context, x config.SingClientConfig, target, network string, log *logrus.Logger) (*Helper, error) {
+	if x.Protocol == "tailcat" {
+		if err := checkTailcatBinary(ctx, x.Binary); err != nil {
+			return nil, err
+		}
+	}
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return nil, err
@@ -340,11 +411,23 @@ func StartSingServer(ctx context.Context, c *config.ServerConfig, log *logrus.Lo
 }
 
 func StartSingListener(ctx context.Context, x config.SingServerConfig, target, network string, log *logrus.Logger) (*Helper, error) {
+	if x.Protocol == "tailcat" {
+		if err := checkTailcatBinary(ctx, x.Binary); err != nil {
+			return nil, err
+		}
+	}
 	ready, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return nil, err
 	}
 	defer ready.Close()
+	if x.Protocol == "tailcat" {
+		body, err := SingServerJSON(x, ready.Addr().String(), target, network)
+		if err != nil {
+			return nil, err
+		}
+		return startManaged(ctx, x.Binary, "sing-server", body, ready.Addr().String(), os.Environ(), log, ready.Close)
+	}
 	var reservation interface{ Close() error }
 	if config.SingDatagram(x.Protocol) {
 		reservation, err = net.ListenPacket("udp", x.Listen)

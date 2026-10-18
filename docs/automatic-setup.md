@@ -27,6 +27,10 @@ Manual setup and the detailed managed-path editor remain available.
 
 Automatic supports all eight compatible managed carriers: Short HTTPS, Naive H2,
 XHTTP, REALITY, Hysteria2 with Salamander, AnyTLS, TUIC and ShadowTLS v3 with SS2022.
+Economy is the default: it selects at most three eligible carriers, preferring
+Hysteria2 and independent TCP paths. Full includes every eligible carrier.
+Both peers receive the selected profile and paths. See [network efficiency](modern-networking.md)
+for probe cadence, accounting and the panel preview/commit flow.
 Only installed pinned helpers are included. REALITY/ShadowTLS require a successful
 authenticated cover probe; unavailable carriers are explained and omitted.
 At least two compatible carriers are required. Install the matching fork build

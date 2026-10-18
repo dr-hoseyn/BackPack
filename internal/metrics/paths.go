@@ -6,15 +6,22 @@ import (
 )
 
 type ManagedPathStatus struct {
-	Name                string    `json:"name"`
-	Protocol            string    `json:"protocol"`
-	HelperReady         bool      `json:"helper_ready"`
-	Healthy             bool      `json:"healthy"`
-	RTTMillis           float64   `json:"rtt_ms"`
-	Mbps                float64   `json:"mbps"`
-	FailurePercent      float64   `json:"failure_percent"`
-	ConsecutiveFailures int       `json:"consecutive_failures"`
-	Checked             time.Time `json:"checked"`
+	ProbeSentBytes          uint64    `json:"probe_sent_bytes"`
+	ProbeReceivedBytes      uint64    `json:"probe_received_bytes"`
+	ProbeAttempts           uint64    `json:"probe_attempts"`
+	NextProbeSeconds        float64   `json:"probe_interval_seconds"`
+	HelperRSSBytes          uint64    `json:"helper_rss_bytes,omitempty"`
+	HelperCPUSeconds        float64   `json:"helper_cpu_seconds,omitempty"`
+	HelperResourcesMeasured bool      `json:"helper_resources_measured"`
+	Name                    string    `json:"name"`
+	Protocol                string    `json:"protocol"`
+	HelperReady             bool      `json:"helper_ready"`
+	Healthy                 bool      `json:"healthy"`
+	RTTMillis               float64   `json:"rtt_ms"`
+	Mbps                    float64   `json:"mbps"`
+	FailurePercent          float64   `json:"failure_percent"`
+	ConsecutiveFailures     int       `json:"consecutive_failures"`
+	Checked                 time.Time `json:"checked"`
 }
 
 type ManagedPathsStats struct {

@@ -1,0 +1,51 @@
+name: Modern network regression
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  protocols:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      - name: Install pinned official helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 https://github.com/SagerNet/sing-box/releases/download/v1.14.2/sing-box-1.14.2-linux-amd64.tar.gz -o "$RUNNER_TEMP/sing.tar.gz"
+          echo "a684484d7477d1437282ee411f4d131d0340aaad60a7868841ebd5d87dd8a0c6  $RUNNER_TEMP/sing.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/sing.tar.gz" -C "$RUNNER_TEMP"
+          echo "BP_SINGBOX_BINARY=$RUNNER_TEMP/sing-box-1.14.2-linux-amd64/sing-box" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=$RUNNER_TEMP/sing-box-1.14.2-linux-amd64" >> "$GITHUB_ENV"
+      - name: Policy, panel, protocol, pairing and soak regressions
+        run: |
+          sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
+          go test -race ./internal/tunnel/l3 ./internal/tunnel/naive ./internal/tunnel/adaptive ./internal/manage ./internal/webui ./tools/tunnelbench -run 'TestConnectIP|TestSingAdvanced|TestSingRealm|TestEconomy|TestNetwork|TestAutomatic|TestSoak|TestEveryPanelCallReachesAHandler|TestManagedPeer' -count=1 -v -timeout 8m
+      - name: Real CONNECT-IP TUN, verified files, restart and loss
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq iproute2 netcat-openbsd bc
+          go build -o "$RUNNER_TEMP/backpack-modern" .
+          for scenario in ipv4 ipv6 restart loss; do
+            extra=()
+            case "$scenario" in
+              ipv6) extra+=(IPV6=1) ;;
+              restart) extra+=(RESTART=1) ;;
+              loss) extra+=(NETEM="loss 1% delay 5ms") ;;
+            esac
+            sudo env BIN="$RUNNER_TEMP/backpack-modern" W="$RUNNER_TEMP/connect-ip-$scenario" L3_MTU=1280 "${extra[@]}" \
+              unshare --net --mount --fork -- bash internal/e2e/testdata/l3live.sh connect-ip 1 \
+              | tee "$RUNNER_TEMP/connect-ip-$scenario.out"
+            grep -q '^RESULT OK' "$RUNNER_TEMP/connect-ip-$scenario.out"
+          done

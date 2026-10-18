@@ -16,6 +16,7 @@ import { addView } from './views/add.js';
 import { settingsView } from './views/settings.js';
 import { serversView } from './views/servers.js';
 import { connTestView } from './views/conntest.js';
+import { networkView } from './views/network.js';
 import { terminalView } from './views/terminal.js';
 import { manageView } from './views/manage.js';
 import { shareView } from './views/share.js';
@@ -111,6 +112,7 @@ router.route('/servers', serversView);
 /* The pages a dialog can be opened over. Which one is drawn underneath is the
    page you were on, not a guess — see router.setHome. */
 const PAGES = {
+	'/network': networkView,
   '/': overview, '/conntest': connTestView, '/tunnels': dashboard,
   '/terminal': terminalView, '/manage': manageView, '/servers': serversView,
 };
@@ -147,6 +149,7 @@ router.route('/t/:name/edit',    over(editView));
 router.route('/t/:name/undo',    over(undoView));
 
 router.route('/add',         over(addView));
+router.route('/network', networkView);
 router.route('/settings',    over(settingsView));
 
 router.route('/alerts',      over(alertsView));

@@ -29,6 +29,7 @@ const ctBarSegments = 8
 // ctTransportNames are the compact names the tables and menus use. Keep
 // versions, security layers and optional obfuscation in menu descriptions.
 var ctTransportNames = map[string]string{
+	"xhttp-reality": "XHTTP REALITY", "trusttunnel": "TrustTunnel", "webtransport": "WebTransport", "tailcat": "Tailcat",
 	"awg": "AmneziaWG",
 	"tcp": "TCP", "tcpmux": "TCP MUX", "stealth": "Stealth", "pck": "PCK",
 	"ws": "WS", "wss": "WSS", "wsmux": "WS MUX", "wssmux": "WSS MUX",
