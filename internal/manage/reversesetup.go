@@ -193,6 +193,18 @@ func SetupServer() {
 // SetupClient runs the kharej side of a reverse tunnel: it dials the Iran
 // server and hands each connection to the real service.
 func SetupClient() {
+	switch tui.ChooseOpt("How Do You Want To Set Up This Side?", []tui.Option{
+		{Title: "Setup Link", Desc: "recommended — detect protocol from the Iran link"},
+		{Title: "Manual", Desc: "choose protocol and type the address, port and token"},
+	}) {
+	case 0:
+		setupClientFromLink("")
+	case 1:
+		setupClientManual()
+	}
+}
+
+func setupClientManual() {
 	tui.Clear()
 	tui.Title("Reverse Tunnel — Kharej")
 	fmt.Println()
@@ -204,18 +216,6 @@ func SetupClient() {
 	if transport == "reality" {
 		defer tui.QuickDefaults()()
 		tui.Info("Space/Enter keeps each suggestion; type a replacement to change it.")
-	}
-
-	switch tui.ChooseOpt("How Do You Want To Set Up This Side?", []tui.Option{
-		{Title: "Setup Link", Desc: "recommended — paste the Iran server's link"},
-		{Title: "Manual", Desc: "type the address, port and token"},
-	}) {
-	case 0:
-		setupClientFromLink(transport)
-		return
-	case 1:
-	default:
-		return
 	}
 
 	s := TunnelSpec{Role: "client", Transport: transport}
@@ -365,7 +365,7 @@ func setupClientFromLink(chosen string) {
 		tui.PressEnter()
 		return
 	}
-	if link.Tr != chosen {
+	if chosen != "" && link.Tr != chosen {
 		tui.Warn("This link is for a " + transportLabel(link.Tr) + " tunnel, not " + transportLabel(chosen) +
 			" — setting up " + transportLabel(link.Tr) + ", as the Iran server has it.")
 	}

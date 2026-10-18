@@ -193,7 +193,7 @@ func TestManagedHTTPSClientWizardCanBeCancelledBeforeSaving(t *testing.T) {
 	}
 	binary, cert, _ := managedWizardFixture(t)
 	name := "https-menu-cancel-" + randomToken(10)
-	input := []string{"4", "2", "2", "127.0.0.1", "8443", name, "shared-token", "3080", "6bf7a33e-7833-4e72-9219-506585657345", "localhost", "/private-path", binary, "", cert, "n", "1", "n", "n"}
+	input := []string{"2", "4", "2", "127.0.0.1", "8443", name, "shared-token", "3080", "6bf7a33e-7833-4e72-9219-506585657345", "localhost", "/private-path", binary, "", cert, "n", "1", "n", "n"}
 	restore := tui.SetInput(strings.NewReader(strings.Join(input, "\n") + "\n"))
 	defer restore()
 	out := capture(t, SetupClient)
@@ -367,8 +367,12 @@ func TestTheReverseWizardOrder(t *testing.T) {
 			`tui.Confirm("Create This Tunnel"`,
 		}},
 		{"func SetupClient", []string{
-			"chooseTransport()",
 			`"How Do You Want To Set Up This Side?"`,
+			`setupClientFromLink("")`,
+			"setupClientManual()",
+		}},
+		{"func setupClientManual", []string{
+			"chooseTransport()",
 			`tui.Prompt("Iran IP Or Domain: ")`,
 			`tui.Prompt("Tunnel Port: ")`,
 			`tui.PromptDefault("Tunnel Name"`,

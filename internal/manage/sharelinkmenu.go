@@ -53,8 +53,8 @@ func printShareLink(name string) bool {
 	}
 
 	fmt.Println()
-	if parsed.Kind == "direct" && parsed.PeerSide() == "kharej" {
-		tui.Warn("On The Kharej: Setup Kharej → Direct → Same Carrier → Setup Link.")
+	if parsed.PeerSide() == "kharej" {
+		tui.Warn("On The Kharej: Setup Kharej → Setup Link (Protocol Detected Automatically).")
 	} else {
 		tui.Warn("On The Other Server: sudo backpack → Manage → Set Up From A Link.")
 	}
