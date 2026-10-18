@@ -68,21 +68,22 @@ func (l *Link) assemble(session [16]byte, p []byte) []byte {
 }
 
 func (l *Link) sendMessage(b []byte) error {
+	var prefix [fragmentHeader]byte
 	if len(b) <= fragmentSize {
-		return l.send(append([]byte{2}, b...))
+		prefix[0] = 2
+		return l.sendParts(prefix[:1], b)
 	}
 	id := l.messageSeq.Add(1)
 	count := (len(b) + fragmentSize - 1) / fragmentSize
 	for index := 0; index < count; index++ {
 		offset := index * fragmentSize
-		p := make([]byte, fragmentHeader+min(fragmentSize, len(b)-offset))
+		p := prefix[:]
 		p[0] = 3
 		binary.BigEndian.PutUint64(p[1:9], id)
 		binary.BigEndian.PutUint16(p[9:11], uint16(index))
 		binary.BigEndian.PutUint16(p[11:13], uint16(count))
 		binary.BigEndian.PutUint32(p[13:17], uint32(len(b)))
-		copy(p[fragmentHeader:], b[offset:])
-		if err := l.send(p); err != nil {
+		if err := l.sendParts(p, b[offset:offset+min(fragmentSize, len(b)-offset)]); err != nil {
 			return err
 		}
 	}
