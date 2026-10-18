@@ -17,9 +17,10 @@ func ConnectionTest() {
 	tui.Clear()
 	tui.Title("Connection Test")
 	fmt.Println()
-	switch tui.ChooseOpt("This Server Is", []tui.Option{
+	switch tui.ChooseOpt("Start Or Review A Test", []tui.Option{
 		{Title: "Iran", Desc: "start here, get the link"},
 		{Title: "Kharej", Desc: "paste the Iran server's link"},
+		{Title: "History", Desc: "saved tests and comparison across runs"},
 	}) {
 	case 0:
 		connTestIranMenu()
@@ -30,6 +31,8 @@ func ConnectionTest() {
 		}
 		RunConnTestKharejTUI(raw)
 		tui.PressEnter()
+	case 2:
+		connTestHistoryMenu()
 	}
 }
 
@@ -88,6 +91,7 @@ func connTestIranMenu() {
 	})
 	board.abandon()
 	ctSuiteSummary(os.Stdout, paths)
+	ctSaveHistory("iran", preset, paths, ctx.Err() == nil)
 	if ctx.Err() != nil {
 		tui.Warn("Stopped.")
 	}
@@ -105,6 +109,7 @@ func RunConnTestKharejTUI(raw string) bool {
 		paths, err := runConnTestSuiteKharej(ctx, a.Routes, os.Stdout, board.update)
 		board.abandon()
 		ctSuiteSummary(os.Stdout, paths)
+		ctSaveHistory("kharej", ctHistoryPreset(paths), paths, err == nil && ctx.Err() == nil)
 		if err != nil {
 			tui.Error(err.Error())
 			return false
@@ -128,6 +133,13 @@ func RunConnTestKharejTUI(raw string) bool {
 		}
 		board.setAll(rows)
 	})
+	state := "done"
+	if err != nil || ctx.Err() != nil {
+		state = "stopped"
+	}
+	if title != "" {
+		ctSaveHistory("kharej", ctHistoryPreset([]ConnTestPath{{Best: best}}), []ConnTestPath{{Host: title, Family: ctFamily(title), State: state, Rows: results, Best: best}}, err == nil && ctx.Err() == nil)
+	}
 	if err != nil {
 		if board != nil {
 			board.abandon()

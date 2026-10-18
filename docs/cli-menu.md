@@ -532,3 +532,7 @@ FEC؛ و zero-copy (فقط روی tcp ساده).
 ---
 
 *Last verified against Backpack v1.11.0.*
+
+
+Connection Test also provides [saved history and repeated-run comparison](connection-test-history.md)
+from its History choice or `backpack test history|compare [--json]`.

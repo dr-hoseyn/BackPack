@@ -82,6 +82,8 @@ const usage = `backpack — non-interactive commands
   backpack proxy enable <socks5|http> <port> [--user U --pass P]
   backpack proxy disable | status [--json]
                                         the built-in proxy a tunnel's port forwards to
+  backpack test history [--json]       saved Connection Test runs
+  backpack test compare [--json]       compare repeated measurements
   backpack version [--json]
 
 Run backpack with no arguments for the interactive menu.
@@ -104,6 +106,8 @@ func Run(args []string) Result {
 	switch args[0] {
 	case "tunnel":
 		return runTunnel(args[1:])
+	case "test":
+		return runTestHistory(args[1:])
 	case "check":
 		return runCheck(args[1:])
 	case "diagnose":
@@ -455,7 +459,7 @@ func takeJSONFlag(args []string) (bool, []string) {
 // drifting — a command added below is routable immediately.
 func IsCommand(s string) bool {
 	switch s {
-	case "tunnel", "check", "version", "link", "proxy", "diagnose":
+	case "tunnel", "check", "version", "link", "proxy", "test", "diagnose":
 		return true
 	}
 	return false

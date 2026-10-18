@@ -120,6 +120,27 @@ func (s *Selector) Record(i int, result pathprobe.Result, err error, now time.Ti
 			p.failed = false
 		}
 	}
+	return s.selectLocked(now)
+}
+
+// Withdraw removes a locally dead helper immediately. Unlike a remote probe
+// failure, process exit is conclusive and must not wait for Failures or dwell.
+// A restarted helper still needs Recoveries verified transfers to return.
+func (s *Selector) Withdraw(i int, now time.Time) []Switch {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if i < 0 || i >= len(s.states) {
+		return nil
+	}
+	p := &s.states[i]
+	p.healthy, p.failed = false, true
+	p.successes = 0
+	p.failures = max(p.failures, s.policy.Failures)
+	p.checked = now
+	return s.selectLocked(now)
+}
+
+func (s *Selector) selectLocked(now time.Time) []Switch {
 	var switches []Switch
 	for class := range 2 {
 		best := -1

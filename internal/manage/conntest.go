@@ -331,22 +331,24 @@ func unGzipB64(s string) ([]byte, error) {
 
 // ConnTestResult is one tunnel's verdict.
 type ConnTestResult struct {
-	CaseID      string  `json:"case,omitempty"`
-	SNIDomain   string  `json:"sni,omitempty"`
-	Kind        string  `json:"k"` // "reverse" or "direct"
-	Transport   string  `json:"t"`
-	Status      string  `json:"s"` // ok, unstable, down, skipped
-	Detail      string  `json:"d,omitempty"`
-	Connect     float64 `json:"c,omitempty"` // seconds to the first echo
-	OK          int     `json:"o"`           // echoes that came back
-	Tried       int     `json:"n"`           // echoes sent
-	RTTms       int     `json:"r,omitempty"`
-	Mbps        float64 `json:"m,omitempty"`
-	UploadMbps  float64 `json:"upload_mbps,omitempty"`
-	SpeedStable bool    `json:"speed_stable,omitempty"`
-	Phase       string  `json:"phase,omitempty"`
-	HTTPSProbe  string  `json:"https_probe,omitempty"` // independent TCP/TLS preflight, never a tunnel verdict
-	TestPort    int     `json:"test_port,omitempty"`
+	CaseID         string  `json:"case,omitempty"`
+	SNIDomain      string  `json:"sni,omitempty"`
+	Kind           string  `json:"k"` // "reverse" or "direct"
+	Transport      string  `json:"t"`
+	Status         string  `json:"s"` // ok, unstable, down, skipped
+	Detail         string  `json:"d,omitempty"`
+	Connect        float64 `json:"c,omitempty"` // seconds to the first echo
+	OK             int     `json:"o"`           // echoes that came back
+	Tried          int     `json:"n"`           // echoes sent
+	RTTms          int     `json:"r,omitempty"`
+	JitterMs       float64 `json:"jitter_ms,omitempty"`
+	JitterMeasured bool    `json:"jitter_measured,omitempty"`
+	Mbps           float64 `json:"m,omitempty"`
+	UploadMbps     float64 `json:"upload_mbps,omitempty"`
+	SpeedStable    bool    `json:"speed_stable,omitempty"`
+	Phase          string  `json:"phase,omitempty"`
+	HTTPSProbe     string  `json:"https_probe,omitempty"` // independent TCP/TLS preflight, never a tunnel verdict
+	TestPort       int     `json:"test_port,omitempty"`
 	// Total is how many echoes the test sends each tunnel.
 	Total int `json:"z,omitempty"`
 }
@@ -1459,6 +1461,8 @@ func ctProbe(ctx context.Context, c *connTestCase, l3Echo int, report func(ConnT
 	}
 	if r.OK > 0 {
 		r.RTTms = int((rtt / time.Duration(r.OK)).Milliseconds())
+		r.JitterMs = float64(ctQuality(r, c.rtts).Jitter) / float64(time.Millisecond)
+		r.JitterMeasured = len(c.rtts) >= 2
 	}
 
 	switch {
