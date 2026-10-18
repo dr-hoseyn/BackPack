@@ -28,6 +28,7 @@ func (v *stringsFlag) Set(s string) error { *v = append(*v, s); return nil }
 
 type result struct {
 	Name          string          `json:"name"`
+	StartedAt     time.Time       `json:"started_at_utc"`
 	Endpoint      string          `json:"endpoint"`
 	Parallel      int             `json:"parallel"`
 	Seconds       float64         `json:"seconds"`
@@ -136,6 +137,7 @@ func runCase(parent context.Context, endpoint string, parallel int, duration tim
 		sm.sample()
 	}
 	start := time.Now()
+	r.StartedAt = start.UTC()
 	deadline := start.Add(duration)
 	ctx, cancel := context.WithDeadline(parent, deadline)
 	defer cancel()
