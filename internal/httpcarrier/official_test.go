@@ -9,8 +9,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/quic-go/quic-go/qlog"
 )
 
 // This is an independent protocol implementation: Backpack's clients must
@@ -80,14 +83,24 @@ func TestTrustTunnelOfficialEndpointInteroperability(t *testing.T) {
 	}
 	for _, mode := range []string{"h2", "h3", "auto"} {
 		t.Run(mode, func(t *testing.T) {
+			traceDir := t.TempDir()
+			t.Setenv("QLOGDIR", traceDir)
 			setup, stop := context.WithTimeout(ctx, 8*time.Second)
 			defer stop()
 			c, err := NewClient(ctx, "trusttunnel", mode, addr, "backpack", "separate-secret-123456", "", ct)
 			if err != nil {
 				t.Fatal(err)
 			}
+			c.h3.QUICConfig.Tracer = qlog.DefaultConnectionTracer
 			defer c.Close()
 			if err := exchange(setup, c, target, []byte("independent official endpoint verified bytes")); err != nil {
+				c.Close()
+				files, _ := filepath.Glob(filepath.Join(traceDir, "*"))
+				for _, file := range files {
+					body, _ := os.ReadFile(file)
+					lines := strings.Split(string(body), "\n")
+					t.Logf("QUIC trace tail: %s", strings.Join(lines[max(0, len(lines)-65):], "\n"))
+				}
 				body, _ := os.ReadFile(log.Name())
 				t.Fatalf("official %s: %v\n%s", mode, err, body)
 			}
