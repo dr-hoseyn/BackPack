@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestTheBarIsFilledByTheRealShare(t *testing.T) {
@@ -56,7 +57,7 @@ func TestTheVerdictIsGroupedAndListsWhatWorks(t *testing.T) {
 		{Kind: "direct", Transport: "quic", Status: ctDown, Total: 60},
 	})
 	order := []string{"Direct    PCK", "Direct    UDP", "Reverse   TCP", "Reverse   KCP FEC", "Direct    QUIC", "Works Steadily:",
-		"  Direct\n", "    PCK                    69ms         29.9", "    UDP                    73ms         28.0"}
+		"  Direct\n", "    PCK", "69ms", "29.9", "    UDP", "73ms", "28.0"}
 	at := 0
 	for _, want := range order {
 		i := strings.Index(table[at:], want)
@@ -107,8 +108,8 @@ func TestTheLiveTableRewritesOnlyWhatChanged(t *testing.T) {
 
 func TestConnTestManagedNamesKeepColumnsAligned(t *testing.T) {
 	rows := []ConnTestResult{}
-	for _, tr := range []string{"tcp", "naive", "xhttp", "reality"} {
-		rows = append(rows, ConnTestResult{Kind: "reverse", Transport: tr, Status: ctOK, RTTms: 26, Mbps: 60.3})
+	for tr := range ctTransportNames {
+		rows = append(rows, ConnTestResult{Kind: "reverse", Transport: tr, Status: ctOK, OK: 60, Tried: 60, RTTms: 26, Mbps: 60.3, UploadMbps: 41.2})
 	}
 	table := ConnTestTable(rows)
 	steady := strings.Split(table, "Works Steadily:")[1]
@@ -117,7 +118,7 @@ func TestConnTestManagedNamesKeepColumnsAligned(t *testing.T) {
 		if !strings.Contains(line, "26ms") {
 			continue
 		}
-		at := strings.Index(line, "26ms")
+		at := utf8.RuneCountInString(line[:strings.Index(line, "26ms")])
 		if column < 0 {
 			column = at
 		}
@@ -130,24 +131,100 @@ func TestConnTestManagedNamesKeepColumnsAligned(t *testing.T) {
 	}
 	for _, r := range rows {
 		line := strings.Replace(ctRow(r), "🟢", "  ", 1)
-		if strings.Index(line, "OK") != strings.Index(ctHeader, "STATUS") {
+		if utf8.RuneCountInString(line[:strings.Index(line, "OK")]) != strings.Index(ctHeader, "STATUS") {
 			t.Fatalf("header drifted: %q / %q", ctHeader, line)
 		}
 	}
 	measured := -1
-	for _, tr := range []string{"tcp", "naive", "xhttp", "reality"} {
+	for tr := range ctTransportNames {
 		table := ConnTestBestTable(ConnTestBest{Transport: "reverse " + tr, Mbps: 60.3})
 		for _, line := range strings.Split(table, "\n") {
 			if !strings.HasPrefix(line, "Transport") {
 				continue
 			}
-			at := strings.Index(line, "60.3 Mbps")
+			at := utf8.RuneCountInString(line[:strings.Index(line, "60.3 Mbps")])
 			if measured < 0 {
 				measured = at
 			}
 			if measured != at {
 				t.Fatalf("best settings column moved: %q", line)
 			}
+		}
+	}
+}
+
+func TestConnectionTestRowsReportLossFromAttemptsActuallyMade(t *testing.T) {
+	end := strings.Index(ctHeader, "LOSS") + len("LOSS")
+	for _, c := range []struct {
+		name, status string
+		tried, ok    int
+		want         string
+	}{
+		{"steady", ctOK, 60, 60, "0.0%"},
+		{"partial delivery", ctUnstable, 60, 52, "13.3%"},
+		{"interrupted after ten attempts", ctUnstable, 10, 8, "20.0%"},
+		{"all attempts failed", ctDown, 60, 0, "100.0%"},
+		{"could not connect", ctDown, 0, 0, "-"},
+		{"reply pending", ctTesting, 30, 29, "-"},
+		{"skipped", ctSkipped, 60, 0, "-"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			r := ConnTestResult{Kind: "reverse", Transport: "hysteria2", Status: c.status, Tried: c.tried, OK: c.ok, Total: 60}
+			table := ConnTestTable([]ConnTestResult{r})
+			plain := strings.NewReplacer("🟢", "  ", "🟡", "  ", "🔴", "  ", "⚪", "  ").Replace(table)
+			for _, line := range strings.Split(plain, "\n") {
+				if !strings.Contains(line, "Reverse   Hysteria2") {
+					continue
+				}
+				if got := strings.TrimSpace(line[end-6 : end]); got != c.want {
+					t.Fatalf("loss = %q, want %q in\n%s", got, c.want, table)
+				}
+				return
+			}
+			t.Fatal("result row missing")
+		})
+	}
+}
+
+func TestConnectionTestDiagnosticsKeepTheirOwnIndentation(t *testing.T) {
+	detail := "no probe from 10.10.10.10 arrived — a private source is often dropped on the way; a public one may pass (Manage → IP Spoofing Tester)"
+	table := ConnTestTable([]ConnTestResult{
+		{Kind: "spoof", Transport: ctSpoofToKharej, Status: ctDown, Tried: 20, Detail: detail},
+		{Kind: "reverse", Transport: "naive", Status: ctSkipped, Detail: "helper unavailable"},
+	})
+	if !strings.HasPrefix(table, "Summary: 1 down / 1 skipped\n") {
+		t.Fatal(table)
+	}
+	notes := strings.Split(table, "Notes:\n")[1]
+	var wrapped []string
+	for _, line := range strings.Split(notes, "\n") {
+		if utf8.RuneCountInString(line) > utf8.RuneCountInString(ctHeader) {
+			t.Fatalf("diagnostic exceeded the table: %q", line)
+		}
+		if strings.HasPrefix(line, "      ") {
+			wrapped = append(wrapped, strings.TrimSpace(line))
+		}
+	}
+	if got := strings.Join(wrapped, " "); got != detail+" helper unavailable" {
+		t.Fatalf("diagnostic text changed: %q", got)
+	}
+}
+
+func TestConnectionTestBestSettingsWrapWithinTheTable(t *testing.T) {
+	table := ConnTestBestTable(ConnTestBest{
+		Transport: "reverse hysteria2", Mbps: 1245.3, UploadMbps: 766.8, RTTms: 106,
+		JitterMs: 12, Preset: PresetAggressive, BDPKB: 16384, DirectMTU: 1400,
+		DirectBy: "direct hysteria2", PathMTU: 1440, MSS: 1400,
+	})
+	for _, line := range strings.Split(table, "\n") {
+		if utf8.RuneCountInString(line) > utf8.RuneCountInString(ctHeader) {
+			t.Fatalf("settings row exceeded the table: %q", line)
+		}
+	}
+	plain := strings.Join(strings.Fields(table), " ")
+	for _, want := range []string{"Reverse Hysteria2 / Salamander", "1245.3 Mbps", "4 streams; verified bytes", "measured by Direct Hysteria2 / Salamander (Auto MTU does this)"} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("wrapped settings lost %q:\n%s", want, table)
 		}
 	}
 }

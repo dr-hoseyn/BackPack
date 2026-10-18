@@ -355,8 +355,8 @@ func changeTunnelPort(name string, spec TunnelSpec) {
 			return
 		}
 	}
-	if err := EditTunnel(name, "", entered, nil); err != nil {
-		tui.Error("Failed: " + err.Error())
+	if err := EditTunnel(name, "", entered, nil, reviewSpec); err != nil {
+		editError(err)
 		tui.PressEnter()
 		return
 	}
@@ -369,17 +369,28 @@ func changeTunnelPort(name string, spec TunnelSpec) {
 
 // changeForwardedPorts prompts for and applies a new forwarded-ports list.
 func changeForwardedPorts(name string, spec TunnelSpec) {
-	fmt.Println()
-	tui.Info("Current: " + strings.Join(VisiblePorts(spec.Ports, spec.Token), ", "))
-	raw := tui.Prompt("Forwarded Ports (Full List, e.g. 443,8080): ")
-	ports := parsePorts(raw)
-	if len(ports) == 0 {
-		tui.Error("No valid ports.")
-		tui.PressEnter()
+	editor := forwardPortEditor{defaultHost: "127.0.0.1", reverse: true, allowEmpty: true, reviewNext: true}
+	editor.checkEntry = func(entry string) error {
+		if isBotRelayPort(entry, spec.Token) {
+			return fmt.Errorf("that target is reserved for the built-in relay; choose the service's port instead")
+		}
+		return nil
+	}
+	// The hidden relay and control channel must survive user port edits.
+	for _, p := range spec.Ports {
+		if isBotRelayPort(p, spec.Token) {
+			editor.reserved = append(editor.reserved, p)
+		}
+	}
+	if spec.BindAddr != "" {
+		editor.reserved = append(editor.reserved, spec.BindAddr+"=1")
+	}
+	ports, changed := editor.edit(VisiblePorts(spec.Ports, spec.Token))
+	if !changed {
 		return
 	}
-	if err := EditTunnel(name, "", "", ports); err != nil {
-		tui.Error("Failed: " + err.Error())
+	if err := EditTunnel(name, "", "", ports, reviewSpec); err != nil {
+		editError(err)
 		tui.PressEnter()
 		return
 	}
@@ -433,13 +444,13 @@ func changeTunnelTransport(name string, spec TunnelSpec) {
 		}
 		err = switchTransport(&spec, newTransport)
 		if err == nil {
-			err = applySpec(spec)
+			err = reviewSpec(spec)
 		}
 	} else {
-		err = ChangeTransport(name, newTransport)
+		err = ChangeTransport(name, newTransport, reviewSpec)
 	}
 	if err != nil {
-		tui.Error("Failed: " + err.Error())
+		editError(err)
 		tui.PressEnter()
 		return
 	}
@@ -482,8 +493,8 @@ func editManagedSettings(name string, spec TunnelSpec, chosen string) {
 		return
 	}
 	tui.StopIfInputGone()
-	if err := applySpec(spec); err != nil {
-		tui.Error("Failed: " + err.Error())
+	if err := reviewSpec(spec); err != nil {
+		editError(err)
 	} else {
 		tui.Success("HTTPS Settings Saved — Restarted.")
 		tui.Warn("Configure The Other Side With The Matching Settings.")
@@ -556,8 +567,8 @@ func toggleLoadBalance(name string, spec TunnelSpec) {
 	if !tui.Confirm(verb+" Load Balancing", false) {
 		return
 	}
-	if err := SetLoadBalance(name, want); err != nil {
-		tui.Error("Failed: " + err.Error())
+	if err := SetLoadBalance(name, want, reviewSpec); err != nil {
+		editError(err)
 		tui.PressEnter()
 		return
 	}
@@ -599,8 +610,8 @@ func editLimits(name string, spec TunnelSpec) {
 			return
 		}
 	}
-	if err := SetLimits(name, maxConns, bandwidth); err != nil {
-		tui.Error("Failed: " + err.Error())
+	if err := SetLimits(name, maxConns, bandwidth, reviewSpec); err != nil {
+		editError(err)
 		tui.PressEnter()
 		return
 	}
@@ -629,8 +640,8 @@ func editPckFlags(name string, spec TunnelSpec) {
 	if i > 0 {
 		flags = strings.Split(opts[i].Value, ",")
 	}
-	if err := SetPckFlags(name, flags); err != nil {
-		tui.Error("Failed: " + err.Error())
+	if err := SetPckFlags(name, flags, reviewSpec); err != nil {
+		editError(err)
 		tui.PressEnter()
 		return
 	}
@@ -656,8 +667,8 @@ func toggleAcceptUDP(name string, spec TunnelSpec) {
 	if !tui.Confirm(verb+" UDP Forwarding", false) {
 		return
 	}
-	if err := SetAcceptUDP(name, want); err != nil {
-		tui.Error("Failed: " + err.Error())
+	if err := SetAcceptUDP(name, want, reviewSpec); err != nil {
+		editError(err)
 		tui.PressEnter()
 		return
 	}
@@ -679,8 +690,8 @@ func editMSS(name string, spec TunnelSpec) {
 		tui.PressEnter()
 		return
 	}
-	if err := SetMSS(name, mss); err != nil {
-		tui.Error("Failed: " + err.Error())
+	if err := SetMSS(name, mss, reviewSpec); err != nil {
+		editError(err)
 		tui.PressEnter()
 		return
 	}
@@ -705,8 +716,8 @@ func toggleProxyProtocol(name string, spec TunnelSpec) {
 	if !tui.Confirm(verb+" Real Client IP", false) {
 		return
 	}
-	if err := SetProxyProtocol(name, want); err != nil {
-		tui.Error("Failed: " + err.Error())
+	if err := SetProxyProtocol(name, want, reviewSpec); err != nil {
+		editError(err)
 		tui.PressEnter()
 		return
 	}
@@ -730,8 +741,8 @@ func changeTunnelPreset(name string, spec TunnelSpec) {
 		return
 	}
 
-	if err := ChangePreset(name, newPreset); err != nil {
-		tui.Error("Failed: " + err.Error())
+	if err := ChangePreset(name, newPreset, reviewSpec); err != nil {
+		editError(err)
 		tui.PressEnter()
 		return
 	}
@@ -758,8 +769,8 @@ func changeFallbackAddrs(name string, spec TunnelSpec) {
 		}
 	}
 
-	if err := SetFallbackAddrs(name, addrs); err != nil {
-		tui.Error("Failed: " + err.Error())
+	if err := SetFallbackAddrs(name, addrs, reviewSpec); err != nil {
+		editError(err)
 		tui.PressEnter()
 		return
 	}
@@ -780,8 +791,8 @@ func changeClientHost(name string, spec TunnelSpec) {
 		tui.PressEnter()
 		return
 	}
-	if err := EditTunnel(name, host, "", nil); err != nil {
-		tui.Error("Failed: " + err.Error())
+	if err := EditTunnel(name, host, "", nil, reviewSpec); err != nil {
+		editError(err)
 		tui.PressEnter()
 		return
 	}
@@ -830,8 +841,8 @@ func editCertificate(name string, s TunnelSpec) {
 		return
 	}
 
-	if err := SetCertificate(name, s.ACMEDomain, s.ACMEEmail); err != nil {
-		tui.Error("Failed: " + err.Error())
+	if err := SetCertificate(name, s.ACMEDomain, s.ACMEEmail, reviewSpec); err != nil {
+		editError(err)
 		tui.PressEnter()
 		return
 	}

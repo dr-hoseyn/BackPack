@@ -1,8 +1,7 @@
 # Port mappings
 
-What `ports = [...]` accepts, in full. The syntax is the same on the reverse
-tunnel, the [direct tunnel](direct-tunnel.md) and the [layer-3
-tunnel](l3-direct-tunnel.md), so a list of mappings moves between them unchanged.
+What `ports = [...]` accepts on the reverse tunnel, the [direct
+tunnel](direct-tunnel.md) and the [layer-3 tunnel](l3-direct-tunnel.md).
 
 A mapping has two halves: **where this machine listens**, and **what the far end
 forwards it to**.
@@ -15,17 +14,53 @@ forwards it to**.
 Only the listening half is optional in its address — the port is always
 required. A mapping with no `=` uses the same port on both sides.
 
+## Managing mappings in the terminal
+
+See also [reviewing and undoing edits](safe-tunnel-edits.md) for the shared
+preview, safe restart and history flow used by both the terminal and panel.
+
+Open a tunnel's **Edit → Forwarded Ports** screen. Each numbered row shows
+**SOURCE (this server)** and **TARGET (kharej)** separately, including the
+resolved destination host. The screen follows BackPack's red, white and gray
+terminal theme.
+
+- **Add Mapping** asks for the source port first, then the target port or
+  address. For example, source `443` and target `8443` creates `443=8443`.
+- **Edit Mapping** asks for the row number, then the two fields. Enter keeps
+  an existing field; `0` cancels that edit.
+- **Delete Mapping** removes only the selected row after confirmation.
+  **Delete All Mappings** has its own confirmation.
+- Changes remain a draft until **Save And Apply** and its confirmation. Back,
+  Enter at the main forwarding menu, or closed input discards the draft without
+  writing or restarting. Canceling a field also leaves the list intact.
+
+Deleting the last mapping is supported on reverse and layer-3 tunnels. A
+direct layer-4 edge needs at least one mapping, so add its replacement before
+saving. Hidden relay mappings are retained automatically on reverse tunnels.
+Overlapping listeners, reserved tunnel/relay listeners, invalid ports and
+unsupported target ranges are rejected before saving.
+
+During setup, type **A** at the forwarded-ports prompt to use the same guided
+editor, or enter a comma-separated list directly. The guided editor collects
+mappings for the wizard; the wizard's final confirmation creates the tunnel.
+
+The default target host depends on the tunnel: **reverse and direct layer 4**
+use kharej's `127.0.0.1`; **layer 3** uses the peer's tunnel IP, such as
+`10.10.0.2`. On layer 3, a bare target `8443` therefore means
+`10.10.0.2:8443`, and the service must listen on that address or a wildcard.
+The tunnel/carrier port is separate from the source port users connect to.
+
 ## Every form
 
 | Mapping | Effect |
 |---|---|
-| `443` | listen on `:443`, forward to the far end's own `127.0.0.1:443` |
+| `443` | listen on `:443`, forward to port `443` on the default target host above |
 | `443=2096` | a different port at the far end |
-| `443=127.0.0.1:2096` | the same thing, written out |
+| `443=127.0.0.1:2096` | explicitly target the far end's loopback (reverse/direct layer 4) |
 | `443=10.0.0.5:8443` | an explicit host the far end can reach |
 | `443=10.0.0.1:80\|10.0.0.2:80` | two backends, health-checked and balanced |
 | `10000-10009` | a range, each port to the same port |
-| `10000-10009=20000-20009` | a range, preserving the offset |
+| `10000-10009=20000-20009` | a range, preserving the offset (direct layer 4 / layer 3) |
 | `127.0.0.1:443=2096` | bind the listener to one local address |
 | `85.11.12.13:443=127.0.0.1:2053` | bind to one public address |
 | `85.11.12.13:10000-10009` | a range bound to one local address |
@@ -34,7 +69,7 @@ required. A mapping with no `=` uses the same port on both sides.
 Several mappings are comma separated: `443,8080,2053-2060`.
 
 > **A bare port is not "any port".** `443` means the service must actually be
-> listening on `127.0.0.1:443` at the far end. If your panel is on 2096 there,
+> listening on port `443` at the default target host above. If your panel is on 2096 there,
 > say so: `443=127.0.0.1:2096`. Setup prints the resolved list before it builds
 > anything — read it.
 
@@ -104,7 +139,10 @@ configuration replaces it.
 
 Paired with a target range of the same width, the offset is preserved:
 `10000-10009=20000-20009` sends `10000` to `20000` and `10009` to `20009`.
-A range may carry a bind address, which applies to every port in it.
+This offset form is supported by direct layer-4 and layer-3 tunnels. Reverse
+tunnels accept a single target port/address per mapping, or an omitted target
+to use the same port for each listener. A range may carry a bind address, which
+applies to every port in it.
 
 Wide ranges cost a listener and a goroutine each, so they open a millisecond
 apart rather than all at once.

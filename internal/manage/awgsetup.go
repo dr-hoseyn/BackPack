@@ -223,6 +223,13 @@ func editAWG(t Tunnel) {
 	}
 	c := cfg.AWG
 	tui.Info("AmneziaWG · " + c.Interface + " · " + c.Address + " ↔ " + c.PeerAddress)
+	chosen := tui.ChooseOpt("Edit", []tui.Option{{Title: "Forwarding Settings", Desc: "ports and UDP"}, {Title: "Undo A Change", Desc: "preview and restore an earlier configuration"}})
+	if chosen != 0 {
+		if chosen == 1 {
+			editConfigHistory(t.Name)
+		}
+		return
+	}
 	c.Ports = parsePorts(tui.PromptDefault("Forwarded Ports (Targets Must Be Reachable Through The Peer Host Route)", strings.Join(c.Ports, ", ")))
 	c.AcceptUDP = tui.Confirm("Also Carry UDP", c.AcceptUDP)
 	body, err := awgBody(c)
@@ -231,9 +238,7 @@ func editAWG(t Tunnel) {
 		tui.PressEnter()
 		return
 	}
-	if tui.Confirm("Save And Restart This Tunnel", true) {
-		applyEdit(t, body)
-	}
+	applyEdit(t, body)
 }
 
 func applyAWGEdit(c config.AWGConfig, e DirectEdit) (config.AWGConfig, error) {

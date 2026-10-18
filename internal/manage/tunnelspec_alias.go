@@ -52,8 +52,6 @@ var (
 	isBotRelayPort     = tunnelspec.IsBotRelayPort
 	isTelegramPort     = tunnelspec.IsTelegramPort
 	applySpec          = tunnelspec.Apply
-	revertSpec         = tunnelspec.Revert
-	lastLogLine        = tunnelspec.LastLogLine
 	recordConfigChange = tunnelspec.RecordChange
 
 	ConfigHistory     = tunnelspec.ConfigHistory

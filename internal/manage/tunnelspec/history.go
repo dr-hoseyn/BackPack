@@ -108,7 +108,7 @@ func RecordChange(name string, prev []byte, note string) {
 	}
 	// The config directory holds tokens; the history holds the same tokens in
 	// the copies it keeps, so it is written no more readable than the configs.
-	_ = os.WriteFile(confHistPath(name), b, 0o600)
+	_ = app.WriteFileAtomic(confHistPath(name), b, 0o600)
 }
 
 // ConfigChangeTimes returns when a tunnel's configuration changed, oldest
@@ -128,7 +128,7 @@ func ConfigChangeTimes(name string) []int64 {
 // It goes through the same path an edit does, so a restored configuration that
 // will not start is reverted exactly like any other change that will not start —
 // the undo cannot itself strand the tunnel.
-func RestoreConfigFrom(name string, at time.Time) error {
+func RestoreConfigFrom(name string, at time.Time, revision ...string) error {
 	// Before the name reaches a path: see core.CheckName.
 	if err := core.CheckName(name); err != nil {
 		return err
@@ -137,10 +137,25 @@ func RestoreConfigFrom(name string, at time.Time) error {
 		if !c.At.Equal(at) {
 			continue
 		}
-		return applyRaw(name, []byte(c.Prev), "restored the configuration from "+
-			at.Format("2 Jan 15:04"))
+		expected := ""
+		if len(revision) > 0 {
+			expected = revision[0]
+		}
+		return ApplyBodyReviewed(name, c.Prev, "restored the configuration from "+at.Format("2 Jan 15:04"), expected)
 	}
 	return fmt.Errorf("no configuration from %s is kept for %q", at.Format("2 Jan 15:04"), name)
+}
+
+func PreviewConfigFrom(name string, at time.Time) (EditPreview, error) {
+	if err := core.CheckName(name); err != nil {
+		return EditPreview{}, err
+	}
+	for _, entry := range ConfigHistory(name) {
+		if entry.At.Equal(at) {
+			return PreviewBody(name, entry.Prev)
+		}
+	}
+	return EditPreview{}, fmt.Errorf("that configuration is no longer kept")
 }
 
 // RenameHistory moves a tunnel's superseded configurations to its new name.

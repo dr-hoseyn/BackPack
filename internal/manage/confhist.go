@@ -3,6 +3,7 @@ package manage
 import (
 	"fmt"
 
+	"github.com/backpack/backpack/internal/manage/tunnelspec"
 	"github.com/backpack/backpack/internal/tui"
 )
 
@@ -46,14 +47,20 @@ func editConfigHistory(name string) {
 		return
 	}
 	chosen := hist[idx]
+	preview, err := tunnelspec.PreviewConfigFrom(name, chosen.At)
+	if err != nil {
+		editError(err)
+		tui.PressEnter()
+		return
+	}
+	if !confirmConfigChanges(preview) {
+		return
+	}
 
 	fmt.Println()
 	tui.Warn("The Tunnel Restarts.")
 	fmt.Println()
-	if !tui.Confirm("Restore The Config From Before "+chosen.At.Format("2 Jan 15:04:05"), false) {
-		return
-	}
-	if err := RestoreConfigFrom(name, chosen.At); err != nil {
+	if err := RestoreConfigFrom(name, chosen.At, preview.Revision); err != nil {
 		tui.Error(err.Error())
 		tui.PressEnter()
 		return
