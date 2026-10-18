@@ -153,6 +153,7 @@ type ShareLink struct {
 	// Managed HTTPS links carry peer credentials, never executable paths or
 	// server private keys. The public TLS bundle is needed for private CAs.
 	InnerPort          string   `json:"hi,omitempty"`
+	InnerHost          string   `json:"hih,omitempty"` // non-default literal loopback address
 	HelperUser         string   `json:"hu,omitempty"`
 	HelperMode         string   `json:"hmode,omitempty"`
 	HelperTailcatKey   string   `json:"htkey,omitempty"`
@@ -701,6 +702,9 @@ func shareLinkOf(name, host string, cfg config.Config) (string, error) {
 	}
 	if cfg.Server.Managed() {
 		l.InnerPort = l.Port
+		if h, _, err := net.SplitHostPort(cfg.Server.BindAddr); err == nil && h != "127.0.0.1" {
+			l.InnerHost = h
+		}
 		var cert string
 
 		if cfg.Server.Connect.Enabled() {
@@ -828,7 +832,7 @@ func prepareManagedLink(s TunnelSpec, link ShareLink) error {
 	}
 	inner, _ := strconv.Atoi(link.InnerPort)
 	outer, _ := strconv.Atoi(link.Port)
-	if link.Kind != "reverse" || link.From != "iran" || !validPort(link.InnerPort) || !validPort(link.Port) || inner == outer || link.AcceptUDP && !config.SingProtocol(link.Tr) || len(link.Fallbacks) != 0 || len(link.Hosts) != 0 {
+	if link.Kind != "reverse" || link.From != "iran" || !validManagedLinkInnerHost(link) || !validPort(link.InnerPort) || !validPort(link.Port) || inner == outer || link.AcceptUDP && !config.SingProtocol(link.Tr) || len(link.Fallbacks) != 0 || len(link.Hosts) != 0 {
 		return fmt.Errorf("invalid managed HTTPS setup link; generate a new link on Iran")
 	}
 	if link.HelperCA != "" {
@@ -849,8 +853,20 @@ func prepareManagedLink(s TunnelSpec, link ShareLink) error {
 	return validateManagedSpec(s)
 }
 
+func managedLinkInnerHost(link ShareLink) string {
+	if link.InnerHost == "" {
+		return "127.0.0.1"
+	}
+	return link.InnerHost
+}
+
+func validManagedLinkInnerHost(link ShareLink) bool {
+	ip := net.ParseIP(managedLinkInnerHost(link))
+	return ip != nil && ip.IsLoopback()
+}
+
 func managedClientFromLink(s *TunnelSpec, link ShareLink, host string) {
-	s.Transport, s.RemoteAddr = "tcp", net.JoinHostPort("127.0.0.1", link.InnerPort)
+	s.Transport, s.RemoteAddr = "tcp", net.JoinHostPort(managedLinkInnerHost(link), link.InnerPort)
 	s.AcceptUDP, s.SimpleAuth, s.HealthFailover = false, false, false
 	s.FallbackAddrs, s.FallbackTransports = nil, nil
 	s.FallbackDwell = 0

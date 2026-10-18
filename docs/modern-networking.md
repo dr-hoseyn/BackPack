@@ -173,6 +173,12 @@ credentials and endpoints. The existing verified selector steers new streams;
 active streams stay on their original path. This is failover, not aggregation
 of a single stream's bandwidth.
 
+Managed Setup Links preserve the literal private loopback address as well as
+its port, including `::1`, for individual and combined carriers. Both peers
+must use the updated build for non-default private loopback addresses. Older
+links without this field retain `127.0.0.1`; public or DNS private targets are
+rejected.
+
 `xhttp-reality` combines XHTTP transport with REALITY security. It requires a
 verified cover, a matching private HTTP path, UUID, public key and Short ID.
 The server's private key remains local. RAW-only XTLS Vision is not enabled on
