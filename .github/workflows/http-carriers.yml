@@ -16,6 +16,8 @@ jobs:
           cache: true
       - name: Race, deadlines, HTTP fallback and bounded datagram reassembly
         run: go test -race ./internal/httpcarrier -count=5 -v -timeout 3m
+      - name: Reverse engines over each HTTP carrier and their combined pool
+        run: go test -race ./internal/e2e -run '^TestModernReverseCarriersAndMixedPool$' -count=1 -v -timeout 3m
       - name: Install separately pinned official helpers
         run: |
           set -euo pipefail

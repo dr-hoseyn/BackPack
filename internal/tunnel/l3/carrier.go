@@ -158,7 +158,7 @@ const (
 	// CarrierMasqueH2 is an explicit reliable HTTPS fallback for UDP-blocked paths.
 	CarrierMasqueH2 = "masque-h2"
 	// CarrierConnectIP sends complete IP packets using RFC 9484, without GRE/Noise.
-	CarrierConnectIP = "connect-ip"
+	CarrierConnectIP    = "connect-ip"
 	CarrierWebTransport = "webtransport"
 	// CarrierSNI is pck with a fake TLS ClientHello at the start of the flow,
 	// so a box that classifies by server name lets the rest through. See
@@ -229,7 +229,7 @@ func openBareCarrier(ctx context.Context, cfg Config) (DatagramCarrier, net.Addr
 	case CarrierMasqueH2:
 		return openMasqueH2(ctx, cfg)
 	case CarrierWebTransport:
-		return openWebTransport(ctx,cfg)
+		return openWebTransport(ctx, cfg)
 	case "hysteria2", "tuic":
 		return openSingCarrier(ctx, cfg)
 	case CarrierSNI:

@@ -4,6 +4,13 @@ All notable changes to Backpack are documented here.
 
 ## Unreleased
 
+- Add combined XHTTP/REALITY, restricted TrustTunnel HTTP/3 with HTTP/2
+  fallback, and native WebTransport streams and fragmented datagrams.
+- Add explicitly selected Tailcat paths using a separate checksum-pinned
+  experimental helper, authenticated peer keys and a required DERP region.
+- Pair the new carriers through Setup Links, preserve them across edits,
+  and expose custom 2..8 carrier combinations in Network tools.
+
 - Add Automatic Economy with at most three carriers, slower verified backup
   probes, stream probe counters and helper-tree resource measurements.
 - Add reviewed Automatic and Kharej pairing, shared Connection Test history,
