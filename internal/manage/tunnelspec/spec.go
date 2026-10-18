@@ -456,11 +456,9 @@ func (s Spec) writeHelpers(b *strings.Builder) {
 		_ = toml.NewEncoder(b).Encode(s.ShortClient)
 	}
 	if s.Role == "server" && s.SingServer.Enabled() {
-		b.WriteString("\n[server.sing]\n")
-		_ = toml.NewEncoder(b).Encode(s.SingServer)
+		writeSingTable(b, "server", s.SingServer)
 	} else if s.Role == "client" && s.SingClient.Enabled() {
-		b.WriteString("\n[client.sing]\n")
-		_ = toml.NewEncoder(b).Encode(s.SingClient)
+		writeSingTable(b, "client", s.SingClient)
 	}
 	if s.Role == "server" && s.NaiveServer.Enabled() {
 		b.WriteString("\n[server.naive]\n")
@@ -476,6 +474,14 @@ func (s Spec) writeHelpers(b *strings.Builder) {
 		b.WriteString("\n[client.xray]\n")
 		_ = toml.NewEncoder(b).Encode(s.XrayClient)
 	}
+}
+
+// A nested Realm table must stay underneath this role's sing table. Encoding
+// the struct alone would emit [realm] at the document root after inline keys.
+func writeSingTable(b *strings.Builder, role string, value any) {
+	var encoded strings.Builder
+	_ = toml.NewEncoder(&encoded).Encode(map[string]any{"sing": value})
+	b.WriteString("\n" + strings.ReplaceAll(encoded.String(), "[sing", "["+role+".sing"))
 }
 
 func (s Spec) validateXray() error {

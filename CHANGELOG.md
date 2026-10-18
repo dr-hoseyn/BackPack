@@ -2,6 +2,21 @@
 
 All notable changes to Backpack are documented here.
 
+## Unreleased
+
+- Add Automatic Economy with at most three carriers, slower verified backup
+  probes, stream probe counters and helper-tree resource measurements.
+- Add reviewed Automatic and Kharej pairing, shared Connection Test history,
+  comparisons and staged datagram-carrier diagnostics to the browser panel.
+- Add Hysteria2 Gecko/BBR profiles, optional ECH for managed Hysteria2/AnyTLS/TUIC,
+  Hysteria Realm pairing and a bounded standalone rendezvous service.
+- Add native RFC 9484 CONNECT-IP over verified HTTP/3 with peer-only TUN policy,
+  strict packet addresses, authenticated setup and traffic-based liveness.
+- Add up-to-one-hour bulk measurements, reconnecting soak reports and optional
+  30-minute Hy2/TUIC CI observations with a controlled helper restart.
+
+See [Network efficiency and modern carriers](docs/modern-networking.md).
+
 ## v1.12.0 — 2026-10-18 (dr-hoseyn fork)
 
 - Set up Kharej directly from a Setup Link: direction, protocol, helper

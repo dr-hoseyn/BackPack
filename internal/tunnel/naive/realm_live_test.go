@@ -63,7 +63,8 @@ func TestSingRealmOfficialServiceAndDiscoveredPayload(t *testing.T) {
 	if bin == "" {
 		t.Skip("set BP_SINGBOX_BINARY to pinned sing-box")
 	}
-	s, c := singFixture(t, "hysteria2")
+	s, c := singFixture(t, "hysteria2", "localhost")
+	s.Sing.ServerName, c.Sing.ServerName = "localhost", "localhost"
 	s.Sing.Binary, c.Sing.Binary = bin, bin
 	t.Setenv("SSL_CERT_FILE", c.Sing.CAFile)
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)

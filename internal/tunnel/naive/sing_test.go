@@ -17,9 +17,9 @@ import (
 	"golang.org/x/net/proxy"
 )
 
-func singFixture(t *testing.T, protocol string) (config.ServerConfig, config.ClientConfig) {
+func singFixture(t *testing.T, protocol string, extraNames ...string) (config.ServerConfig, config.ClientConfig) {
 	t.Helper()
-	c, cert, key := xhttpFixture(t)
+	c, cert, key := xhttpFixture(t, extraNames...)
 	x := config.SingServerConfig{Binary: c.Xray.Binary, Protocol: protocol, Listen: "127.0.0.1:62102", ServerName: c.Xray.ServerName, Password: "a-distinct-helper-password", Certificate: cert, Key: key}
 	y := config.SingClientConfig{Binary: x.Binary, Protocol: protocol, Server: x.Listen, ServerName: x.ServerName, Password: x.Password, CAFile: cert}
 	if protocol == "tuic" {

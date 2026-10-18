@@ -167,6 +167,13 @@ measurement window. Receiver-confirmed uploads, nonrepeating verification and
 bounded cancellation are retained. Bulk stops on a failed stream; soak measures
 reconnection. Tests in local namespaces do not establish results for Iranian ISPs.
 
+For reproducible sustained helper validation, manually dispatch **Protocol suite**
+with `sustained=true`. Separate disposable runners observe Hysteria2 and TUIC for
+thirty minutes, verify independent bulk directions, inject a helper restart at
+minute fifteen, and upload credential-free measurements. Resource roots cover
+both engine process trees; the echo/bulk backends are separate processes. This
+uses runner-local networking and must not be described as an Iran route result.
+
 <div dir="rtl">
 
 ## خلاصهٔ فارسی
