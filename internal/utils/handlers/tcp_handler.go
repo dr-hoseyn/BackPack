@@ -94,8 +94,17 @@ func transferData(from net.Conn, to net.Conn, logger *logrus.Logger, usage *web.
 	countBuffered()
 
 	bufp := getRelayBuffer()
-	defer putRelayBuffer(bufp)
-	buf := *bufp
+	if transferBuffered(from, to, *bufp, logger, usage, remotePort, sniffer) {
+		putRelayBuffer(bufp)
+	}
+}
+
+// transferBuffered reports whether the caller may reuse buf. A failed smux
+// write can return while its session send loop still holds the queued slice.
+// Leave that buffer untouched until the send loop releases its reference;
+// returning it to the pool would let another relay overwrite an in-flight frame.
+// Successful writes keep the normal allocation-free pool path.
+func transferBuffered(from net.Conn, to net.Conn, buf []byte, logger *logrus.Logger, usage *web.Usage, remotePort int, sniffer bool) bool {
 	for {
 		// Read data from the source connection
 		r, err := from.Read(buf)
@@ -112,7 +121,7 @@ func transferData(from net.Conn, to net.Conn, logger *logrus.Logger, usage *web.
 		// puts a different reader here.
 		if r > 0 {
 			if !writeAll(from, to, buf[:r], logger, usage, remotePort, sniffer) {
-				return
+				return false
 			}
 		}
 		if err != nil {
@@ -122,7 +131,7 @@ func transferData(from net.Conn, to net.Conn, logger *logrus.Logger, usage *web.
 				logger.Trace("unable to read from the connection: ", err)
 			}
 			finishDirection(from, to, err)
-			return
+			return true
 		}
 	}
 }

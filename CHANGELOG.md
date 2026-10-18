@@ -26,6 +26,8 @@ All notable changes to Backpack are documented here.
   failover; release closed native UDP associations from the parent registry.
 - Stop CONNECT-IP generations on failed/short TUN delivery, preserve the failure
   cause, and reuse the serialized packet-write batch.
+- Preserve queued TCPMux payloads after failed writes by withholding their relay
+  buffers from reuse; retain pooling after completed writes.
 
 See [Network efficiency and modern carriers](docs/modern-networking.md).
 
