@@ -253,9 +253,17 @@ func ctCaseToken(secret, kind, tr string) string {
 // tokens the kharej derives for itself.
 func ctConfig(l ConnTestLink) string {
 	l.V, l.Kind = 1, connTestKind
+	// The copied link already supplies the authenticated coordinator endpoint.
+	// fetchConnTestLink restores these fields before using any case. Repeating
+	// its random secret and address consumes the one-packet settings budget.
+	host := l.Host
+	l.Host, l.Coord, l.Tok = "", 0, ""
 	l.Cases = append([]ShareLink(nil), l.Cases...)
 	for i := range l.Cases {
 		l.Cases[i].Tok = ""
+		if l.Cases[i].Host == host {
+			l.Cases[i].Host = ""
+		}
 	}
 	raw, _ := json.Marshal(l)
 	return gzipB64(raw)
@@ -277,6 +285,9 @@ func fetchConnTestLink(ctx context.Context, a connTestAddr) (ConnTestLink, error
 			}
 			out.Host, out.Coord, out.Tok = a.Host, a.Coord, a.Tok
 			for i := range out.Cases {
+				if out.Cases[i].Host == "" {
+					out.Cases[i].Host = a.Host
+				}
 				out.Cases[i].Tok = ctCaseToken(a.Tok, out.Cases[i].Kind, ctLinkCaseKey(out, out.Cases[i]))
 			}
 			return out, nil

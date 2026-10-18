@@ -26,6 +26,8 @@ All notable changes to Backpack are documented here.
   and confirmed deletion while preserving carrier settings.
 - Keep Connection Test readable on narrow terminals and show measured echo
   loss for each transport.
+- Keep Connection Test settings inside one packet as the carrier list grows,
+  restoring the authenticated endpoint from the copied link.
 
 ## v1.10.0 — 2026-10-17 (dr-hoseyn fork)
 

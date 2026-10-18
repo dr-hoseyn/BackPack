@@ -90,6 +90,25 @@ func TestTheTestSettingsFitOnePacketAndCarryNoToken(t *testing.T) {
 	if len(reply) > 1200 {
 		t.Errorf("the settings are %d bytes; they have to fit one packet", len(reply))
 	}
+	// Exercise different port digit patterns and endpoint lengths without
+	// starting another set of engines. Compression must leave room for every
+	// supported case, rather than passing only for one random port allocation.
+	for variant := 0; variant < 64; variant++ {
+		candidate := s.link
+		candidate.Cases = append([]ShareLink(nil), s.link.Cases...)
+		candidate.Host = strings.Repeat("a", 63) + "." + strings.Repeat("b", 63) + ".example.com"
+		for i := range candidate.Cases {
+			c := &candidate.Cases[i]
+			c.Host = candidate.Host
+			c.Port = fmt.Sprint(20000 + (7919*(i+1)+2179*variant)%12000)
+			if c.Ports != "" {
+				c.Ports = fmt.Sprintf("127.0.0.1:%d=127.0.0.1:%d", 20000+(3571*(i+1)+1877*variant)%12000, candidate.TCP)
+			}
+		}
+		if size := len("config " + ctConfig(candidate)); size > 1200 {
+			t.Fatalf("settings port variant %d needs %d bytes", variant, size)
+		}
+	}
 	for _, c := range s.link.Cases {
 		if strings.Contains(reply, c.Tok) {
 			t.Errorf("the %s token travels in the settings", c.Tr)

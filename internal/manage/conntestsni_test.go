@@ -43,6 +43,9 @@ func TestConnectionTestSNICandidatesKeepIndependentPeerSettings(t *testing.T) {
 	tokens, ports := map[string]bool{}, map[string]bool{}
 	used := map[int]bool{}
 	for i, c := range peer.Cases {
+		if c.Host != link.Host {
+			t.Fatalf("peer lost the authenticated coordinator endpoint: %q", c.Host)
+		}
 		if c.SNI != link.Cases[i].SNI || c.Tok != link.Cases[i].Tok || tokens[c.Tok] {
 			t.Fatalf("peer lost a domain or reused a token: %+v", c)
 		}
