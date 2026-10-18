@@ -3,6 +3,7 @@ package manage
 import (
 	"encoding/pem"
 	"github.com/backpack/backpack/config"
+	"github.com/backpack/backpack/internal/tui"
 	"strings"
 	"testing"
 )
@@ -39,5 +40,17 @@ func TestSingAdvancedSetupLinkCarriesPublicECHAndRealmWithoutPrivateKey(t *testi
 	}
 	if strings.Contains(client.Render(), private) || strings.Contains(encoded, private) {
 		t.Fatal("private ECH key escaped")
+	}
+}
+
+func TestSingAdvancedWizardCanChangeGeckoToSalamander(t *testing.T) {
+	old := TunnelSpec{Role: "client", SingClient: config.SingClientConfig{Protocol: "hysteria2", ObfsPassword: "existing-obfuscation-secret", ObfsType: "gecko", GeckoMin: 600, GeckoMax: 1250}}
+	var next = old
+	restore := tui.SetInput(strings.NewReader("\n\n\n\nsalamander\n\nn\n\nn\n"))
+	defer restore()
+	ok := false
+	capture(t, func() { ok = configureSing(&next, old, "hysteria2", "peer.example:443", "peer.example") })
+	if !ok || next.SingClient.ObfsType != "salamander" || next.SingClient.GeckoMin != 0 || next.SingClient.GeckoMax != 0 || next.SingClient.ObfsPassword != old.SingClient.ObfsPassword {
+		t.Fatal("changing obfuscation kept incompatible Gecko bounds or lost the account secret")
 	}
 }

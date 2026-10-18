@@ -29,6 +29,11 @@ func configureSing(n *TunnelSpec, old TunnelSpec, protocol, public, host string)
 			client.ObfsPassword = managedSecret("Obfuscation Password (Empty = Disabled)", client.ObfsPassword, "")
 			if client.ObfsPassword != "" {
 				client.ObfsType = tui.PromptDefault("Obfuscation Type (salamander/gecko)", defaultString(client.ObfsType, "salamander"))
+			} else {
+				client.ObfsType = ""
+			}
+			if client.ObfsType != "gecko" {
+				client.GeckoMin, client.GeckoMax = 0, 0
 			}
 			client.BBRProfile = tui.PromptDefault("BBR Profile (standard/conservative/aggressive)", defaultString(client.BBRProfile, "standard"))
 			client.Realm = configureRealm(client.Realm)
@@ -73,6 +78,9 @@ func configureSing(n *TunnelSpec, old TunnelSpec, protocol, public, host string)
 		} else {
 			server.ObfsPassword = ""
 			server.ObfsType, server.GeckoMin, server.GeckoMax = "", 0, 0
+		}
+		if server.ObfsType != "gecko" {
+			server.GeckoMin, server.GeckoMax = 0, 0
 		}
 		server.BBRProfile = tui.PromptDefault("BBR Profile (standard/conservative/aggressive)", defaultString(server.BBRProfile, "standard"))
 		server.Realm = configureRealm(server.Realm)
