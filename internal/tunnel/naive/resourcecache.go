@@ -27,7 +27,7 @@ func (c *helperResourceCache) read(pid int32, now time.Time, sample func() (uint
 	if !c.measured {
 		interval = time.Second
 	}
-	if c.pid == pid && !c.at.IsZero() && !now.Before(c.at) && now.Sub(c.at) < interval {
+	if c.pid == pid && !c.at.IsZero() && now.Sub(c.at) < interval {
 		return c.rss, c.cpu, c.measured
 	}
 	c.rss, c.cpu, c.measured = sample()

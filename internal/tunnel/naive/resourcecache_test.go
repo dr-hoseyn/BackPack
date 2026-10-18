@@ -35,6 +35,8 @@ func TestHelperResourceCacheExpiryRestartAndFailedSamples(t *testing.T) {
 	calls := 0
 	good := func() (uint64, float64, bool) { calls++; return uint64(calls), float64(calls), true }
 	c.read(123, now, good)
+	// A reader may capture its monotonic timestamp before another wins the lock.
+	c.read(123, now.Add(-time.Millisecond), good)
 	c.read(123, now.Add(4*time.Second), good)
 	if calls != 1 {
 		t.Fatal("did not reuse a fresh sample")
