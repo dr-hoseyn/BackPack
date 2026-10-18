@@ -104,7 +104,7 @@ contribute to comparisons. Diagnostics keep the active tunnel running.
 See [modern networking](modern-networking.md) for probe accounting, optional
 protocol settings, pairing requirements and the limits of saved measurements.
 
-*CLI: Automatic; Setup Kharej → Setup Link; `backpack carrier diagnose`;
+*CLI: Automatic; Setup Kharej → Setup Link; `backpack diagnose -c FILE`;
 Connection Test → History.*
 
 ### Terminal — `#/terminal`
