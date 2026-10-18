@@ -13,6 +13,38 @@ go build -o tunnelbench ./tools/tunnelbench
   -parallel 1,8,32 -duration 15s -pid tcp=1234 -pid hy2=5678 -json > results.json
 ```
 
+For independent continuous upload/download and CPU/RSS during those transfers,
+use **bulk mode on both hosts**:
+
+```sh
+# Kharej: existing test tunnels forward to this private backend.
+./tunnelbench -serve 127.0.0.1:9001 -mode bulk
+# Iran: each target runs download, then upload, at each concurrency level.
+./tunnelbench -mode bulk -target hy2=127.0.0.1:18081 \
+  -parallel 1,8,32 -duration 15s -warmup 2s -io-timeout 5s \
+  -pid hy2=5678 -json > bulk-results.json
+```
+
+Bulk mode establishes all streams and negotiates fresh random verification material
+before starting. It generates a nonrepeating AES-CTR pseudorandom stream from
+each session's seed, avoiding repeated blocks that could inflate results on a
+compressing carrier. Writers stream continuously, with no per-block echo wait.
+Receivers check every byte; upload throughput counts the remote receiver's
+cumulative acknowledgements (every 50 ms), not locally queued writes. Download
+counts bytes checked locally. Warmup (0..30s, default 2s), connection setup and
+handshakes are excluded from throughput and CPU/RSS windows. ACK delivery can lag
+receipt by one reporting interval plus path delay. JSON identifies `mode`,
+`direction`, `warmup_seconds` and `verified_bulk_mbps`; the echo field stays zero.
+Use these bulk fields for capacity comparisons, not `verified_echo_mbps`.
+`-chunk` controls echo only; bulk always uses 32 KiB verification patterns.
+
+The I/O timeout bounds a stall in each direction; use the same value on every
+comparison. A corrupt payload, invalid ACK, stalled stream or failed handshake
+fails the bulk case with a nonzero exit. Each stream must carry verified traffic
+in the measured window. Bulk and echo backends are deliberately separate modes:
+a successful echo does not impersonate a bulk test. Ctrl+C interrupts handshakes,
+warmup and active transfers; the private backend caps a session at 15 minutes.
+
 Use a test tunnel and an unused port. The echo backend defaults to no listener;
 `-serve` binds exactly the supplied address. Keep it on loopback and forward to
 it through the tunnel. The benchmark itself generates sustained bidirectional

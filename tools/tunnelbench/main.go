@@ -27,6 +27,10 @@ func (v *stringsFlag) String() string     { return strings.Join(*v, ",") }
 func (v *stringsFlag) Set(s string) error { *v = append(*v, s); return nil }
 
 type result struct {
+	Mode             string          `json:"mode,omitempty"`
+	Direction        string          `json:"direction,omitempty"`
+	WarmupSeconds    float64         `json:"warmup_seconds,omitempty"`
+	BulkMbps         float64         `json:"verified_bulk_mbps,omitempty"`
 	Name             string          `json:"name"`
 	StartedAt        time.Time       `json:"started_at_utc"`
 	Endpoint         string          `json:"endpoint"`
@@ -214,7 +218,9 @@ func minTime(a, b time.Time) time.Time {
 	return b
 }
 
-func serve(ctx context.Context, l net.Listener) error {
+func serve(ctx context.Context, l net.Listener) error { return serveMode(ctx, l, false) }
+
+func serveMode(ctx context.Context, l net.Listener, bulk bool) error {
 	stop := context.AfterFunc(ctx, func() { l.Close() })
 	defer stop()
 	var wg sync.WaitGroup
@@ -239,7 +245,11 @@ func serve(ctx context.Context, l net.Listener) error {
 			stop := context.AfterFunc(ctx, func() { conn.Close() })
 			defer stop()
 			conn.SetDeadline(time.Now().Add(15 * time.Minute))
-			_, _ = io.Copy(conn, conn)
+			if bulk {
+				serveBulk(conn)
+			} else {
+				_, _ = io.Copy(conn, conn)
+			}
 		})
 	}
 }
@@ -250,6 +260,8 @@ func run(ctx context.Context, args []string, out, diagnostics io.Writer) error {
 	flags.Var(&targets, "target", "repeat name=host:port for each already configured TCP tunnel")
 	flags.Var(&pidArgs, "pid", "repeat name=PID to sample the local engine and all helper descendants")
 	listen := flags.String("serve", "", "run an echo backend, e.g. 127.0.0.1:9001")
+	mode := flags.String("mode", "echo", "echo or bulk; use the same mode on the backend")
+	warmup := flags.Duration("warmup", 2*time.Second, "bulk warmup excluded from throughput and resource measurements (0..30s)")
 	duration := flags.Duration("duration", 15*time.Second, "measurement time per target/concurrency")
 	concurrency := flags.String("parallel", "1,8,32", "comma-separated simultaneous connections")
 	chunk := flags.Int("chunk", 32<<10, "verified bytes per echo exchange")
@@ -261,6 +273,9 @@ func run(ctx context.Context, args []string, out, diagnostics io.Writer) error {
 	if flags.NArg() != 0 {
 		return errors.New("unexpected positional arguments")
 	}
+	if (*mode != "echo" && *mode != "bulk") || *warmup < 0 || *warmup > 30*time.Second {
+		return errors.New("mode must be echo or bulk; warmup must be 0..30s")
+	}
 	if *listen != "" {
 		if len(targets) > 0 || len(pidArgs) > 0 {
 			return errors.New("serve and measurement flags cannot be combined")
@@ -271,7 +286,7 @@ func run(ctx context.Context, args []string, out, diagnostics io.Writer) error {
 		}
 		defer l.Close()
 		fmt.Fprintln(diagnostics, "Echo backend:", l.Addr())
-		return serve(ctx, l)
+		return serveMode(ctx, l, *mode == "bulk")
 	}
 	if len(targets) == 0 || len(targets) > 16 || *duration < time.Second || *duration > 10*time.Minute || *chunk < 1 || *chunk > 1<<20 || *ioTimeout < 100*time.Millisecond || *ioTimeout > time.Minute {
 		return errors.New("provide 1..16 targets; duration 1s..10m; chunk 1..1048576; io-timeout 100ms..1m")
@@ -315,25 +330,40 @@ func run(ctx context.Context, args []string, out, diagnostics io.Writer) error {
 				return ctx.Err()
 			}
 			fmt.Fprintf(diagnostics, "Testing %s with %d connections...\n", name, n)
-			r, err := runCase(ctx, endpoints[name], n, *duration, *chunk, *ioTimeout, pids[name])
-			if err != nil {
-				return fmt.Errorf("%s: %w", name, err)
+			if *mode == "bulk" {
+				for _, direction := range []byte{'D', 'U'} {
+					r, err := runBulkCase(ctx, endpoints[name], n, *duration, *warmup, *ioTimeout, direction, pids[name])
+					if err != nil {
+						return fmt.Errorf("%s %c: %w", name, direction, err)
+					}
+					r.Name = name
+					results = append(results, r)
+				}
+			} else {
+				r, err := runCase(ctx, endpoints[name], n, *duration, *chunk, *ioTimeout, pids[name])
+				if err != nil {
+					return fmt.Errorf("%s: %w", name, err)
+				}
+				r.Name = name
+				results = append(results, r)
 			}
-			r.Name = name
-			results = append(results, r)
 		}
 	}
 	if *asJSON {
 		return json.NewEncoder(out).Encode(results)
 	}
-	fmt.Fprintln(out, "NAME CONNS VERIFIED-ECHO-Mbps FAILURES CPU%(100=1core) PEAK-RSS-MiB")
+	fmt.Fprintln(out, "NAME CONNS MODE/DIRECTION VERIFIED-Mbps FAILURES CPU%(100=1core) PEAK-RSS-MiB")
 	for _, r := range results {
 		cpu, rss := "unmeasured", "unmeasured"
 		if r.Resources != nil && r.Resources.Samples > 0 && r.Resources.Errors == 0 {
 			cpu = fmt.Sprintf("%.1f", r.Resources.CPUPercent)
 			rss = fmt.Sprintf("%.1f", float64(r.Resources.PeakRSS)/(1<<20))
 		}
-		fmt.Fprintf(out, "%s %d %.2f %d %s %s\n", r.Name, r.Parallel, r.Mbps, r.Failures, cpu, rss)
+		label, mbps := "echo", r.Mbps
+		if r.Mode == "bulk" {
+			label, mbps = r.Mode+"/"+r.Direction, r.BulkMbps
+		}
+		fmt.Fprintf(out, "%s %d %s %.2f %d %s %s\n", r.Name, r.Parallel, label, mbps, r.Failures, cpu, rss)
 	}
 	return nil
 }
