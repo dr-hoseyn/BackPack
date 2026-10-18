@@ -39,7 +39,8 @@ reused identities. These are **local** resources; run a corresponding measuremen
 on the other host to assess its engine/helper costs. Without `-pid`, CPU and RAM
 are explicitly unmeasured. This tool does not benchmark native UDP forwarding.
 
-JSON is a single array, suitable for storing and comparing runs. Connection or
+JSON is a single array, suitable for storing and comparing runs. Each case records
+its UTC start time so resource samples on both hosts can be correlated. Connection or
 argument failures exit nonzero; per-connection transfer failures remain explicit
 in each result's `failures` counter. Ctrl+C closes active sockets and the echo
 backend exits cleanly. Limits: 16 targets, 8 concurrency levels, 1..256 connections,
