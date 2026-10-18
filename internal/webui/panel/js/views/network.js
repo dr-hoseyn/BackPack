@@ -20,6 +20,11 @@ export function networkView(ctx) {
         <button class="btn" type="submit">Review required ports</button>
       </form><div id="autoResult" role="status" aria-live="polite"></div>
     </section>
+    <section class="tl-card"><h3>Pair from a Setup Link · Kharej</h3>
+      <form id="peerForm"><label>Private Setup Link<textarea name="link" required rows="3" autocomplete="off" spellcheck="false"></textarea></label>
+        <label>Local tunnel name · optional<input name="name" maxlength="40"></label><button class="btn" type="submit">Review peer settings</button></form>
+      <div id="peerResult" role="status" aria-live="polite"></div>
+    </section>
     <section class="tl-card"><h3>Carrier diagnosis · Kharej</h3>
       <p>Checks the configured TUIC or Hysteria2 path with temporary helpers. Your running tunnel stays active.</p>
       <form id="diagForm"><label>Local tunnel name<input name="name" required maxlength="64"></label>
@@ -35,6 +40,8 @@ export function networkView(ctx) {
   </div>`;
   let alive = true, plan = null;
   const auto = view.querySelector('#autoResult'), diag = view.querySelector('#diagResult'), history = view.querySelector('#testHistory');
+  const peer = view.querySelector('#peerResult');
+  let peerPlan = null;
   const error = (box, e) => { if (alive) box.textContent = e.message || 'The request failed. Try again.'; };
   view.querySelector('#autoForm').onsubmit = async event => {
     event.preventDefault();
@@ -75,6 +82,21 @@ export function networkView(ctx) {
       diag.innerHTML = (r.reports || []).map(report => `<h4>${esc(report.path)} · ${report.verified ? 'verified' : 'not verified'}</h4><dl>${(report.stages || []).map(s => `<div class="dr2"><dt>${esc(s.stage)} · ${esc(s.status)}</dt><dd>${esc(s.detail)}</dd></div>`).join('')}</dl>`).join('');
     } catch (e) { error(diag,e); } finally { if (alive) button.disabled=false; }
   };
+  view.querySelector('#peerForm').onsubmit = async event => {
+    event.preventDefault(); const form=event.currentTarget, button=form.querySelector('button');button.disabled=true;
+    try {
+      const r=await api.managedLink({action:'preview',...Object.fromEntries(new FormData(form))});
+      if (!alive) return; peerPlan=r.id;
+      peer.innerHTML=`<h4>${esc(r.preview.name)} · ${esc(r.preview.host)}</h4><p>${esc(r.preview.profile || r.preview.transport)}</p>
+        <ul>${(r.preview.paths || []).map(p=>`<li>${esc(p)}</li>`).join('')}</ul><button class="btn" id="createPeer">Create this peer</button>`;
+      peer.querySelector('button').onclick=async e=>{
+        e.currentTarget.disabled=true;
+        try {const result=await api.managedLink({action:'commit',id:peerPlan});peerPlan=null;
+          if (alive) {peer.textContent=`${result.name}: ${result.active ? 'service started; verify traffic through the tunnel' : 'created; inspect the service log'}.`;form.reset();}
+        } catch(e) {error(peer,e);}
+      };
+    } catch(e) {error(peer,e);} finally {if(alive) button.disabled=false;}
+  };
   async function loadHistory() {
     history.textContent='Loading saved measurements…';
     try {
@@ -90,5 +112,5 @@ export function networkView(ctx) {
   }
   view.querySelector('#loadHistory').onclick = loadHistory;
   loadHistory();
-  ctx.setTeardown(() => { alive=false; if (plan) api.automatic({action:'cancel',id:plan}).catch(() => {}); });
+  ctx.setTeardown(() => { alive=false; if (plan) api.automatic({action:'cancel',id:plan}).catch(() => {}); if(peerPlan) api.managedLink({action:'cancel',id:peerPlan}).catch(()=>{}); });
 }

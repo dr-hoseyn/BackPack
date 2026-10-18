@@ -30,6 +30,7 @@ const at = path => BASE + path;
 export const automatic = body => post('/api/automatic', body);
 export const connTestHistory = () => get('/api/conntest/history');
 export const carrierDiagnose = body => post('/api/carrier/diagnose', body);
+export const managedLink = body => post('/api/managed/link', body);
 
 /* A refusal that has one specific remedy says so in a header, and it is carried
    on the error rather than read back out of the sentence. The words are for a

@@ -438,7 +438,8 @@ export function addView(ctx) {
         show('.step3direct', direct);
         if (direct) suggestDirect(chosen.side);
 		const masqueBox = root.querySelector('#masqueSettings');
-		if (masqueBox) masqueBox.hidden = !(direct && ['masque', 'masque-h2'].includes(chosen.carrier));
+		if (masqueBox) masqueBox.querySelector('[name="masque.target"]')?.closest('.f3')?.toggleAttribute('hidden', chosen.carrier === 'connect-ip');
+		if (masqueBox) masqueBox.hidden = !(direct && ['masque', 'masque-h2', 'connect-ip'].includes(chosen.carrier));
 
         /* "server" is the Iran side, "client" the kharej side — the words the
            create endpoints use. */

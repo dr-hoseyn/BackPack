@@ -55,6 +55,7 @@ globalThis.fetch = async (url, opts = {}) => {
 // the run: a call nobody checks is how the ones this guards against got in.
 const node = { name: 'n1', host: '203.0.113.9', sshPort: '22', user: 'root', password: 'pw' };
 const samples = {
+	managedLink: [[{action:'preview',link:'backpack://invalid'}]],
   stats: [[]], tunnels: [[]],
   automatic: [[{action:"preview",ports:"443",profile:"economy"}]], connTestHistory: [[]], carrierDiagnose: [[{name:"t1",path:"hy2"}]],
   tunnelAction: ['start', 'stop', 'restart', 'delete'].map(a => ['t1', a])

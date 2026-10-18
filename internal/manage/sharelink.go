@@ -419,7 +419,7 @@ func MirrorForPeer(l ShareLink) PeerForm {
 		f.Transport = l.Tr
 		if managedTransport(l.Tr) {
 			f.ManagedLink = &l
-			f.Note = "Managed HTTPS setup links require the terminal and matching optional helpers."
+			f.Note = "Use Network tools / Pair from a Setup Link for managed HTTPS links; matching pinned helpers are required."
 		}
 		paired = append(paired, "transport")
 		f.SimpleAuth, f.MuxVersion = l.SimpleAuth, l.MuxVer

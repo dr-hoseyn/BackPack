@@ -40,8 +40,8 @@ func connectIPTemplate(authority string) *uritemplate.Template {
 	return uritemplate.MustNew("https://" + authority + "/.well-known/masque/ip/")
 }
 
-func connectIPTLS(cfg Config) (*tls.Config, error) {
-	_, host, err := resolveDatagramEndpoint(context.Background(), cfg.Addr)
+func connectIPTLS(ctx context.Context, cfg Config) (*tls.Config, error) {
+	_, host, err := resolveDatagramEndpoint(ctx, cfg.Addr)
 	if err != nil {
 		return nil, err
 	}
@@ -65,7 +65,7 @@ func connectIPTLS(cfg Config) (*tls.Config, error) {
 func dialConnectIP(ctx context.Context, cfg Config) (*connectIPSession, error) {
 	setup, cancel := context.WithTimeout(ctx, quicHandshakeTimeout)
 	defer cancel()
-	tlsCfg, err := connectIPTLS(cfg)
+	tlsCfg, err := connectIPTLS(setup, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -103,7 +103,7 @@ func dialConnectIP(ctx context.Context, cfg Config) (*connectIPSession, error) {
 
 func ipEnds(cfg Config) (netip.Addr, netip.Addr) {
 	local, _, _ := strings.Cut(cfg.LocalIP, "/")
-	return netip.MustParseAddr(local), netip.MustParseAddr(cfg.PeerIP)
+	return netip.MustParseAddr(local).Unmap(), netip.MustParseAddr(cfg.PeerIP).Unmap()
 }
 func configureConnectIP(ctx context.Context, c *connectip.Conn, cfg Config, server bool) error {
 	local, peer := ipEnds(cfg)
@@ -155,18 +155,18 @@ func acceptConnectIP(ctx context.Context, cfg Config, ready func(net.Addr)) (*co
 	}
 	srv.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), []byte(masqueAuthorization(cfg.Token))) != 1 {
-			http.Error(w, "unauthorized", 401)
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 		req, err := connectip.ParseProxyRequest(r, connectIPTemplate(r.Host))
 		if err != nil {
-			http.Error(w, "invalid CONNECT-IP request", 400)
+			http.Error(w, "invalid CONNECT-IP request", http.StatusBadRequest)
 			return
 		}
 		claimed.Lock()
 		if occupied {
 			claimed.Unlock()
-			http.Error(w, "tunnel already occupied", 409)
+			http.Error(w, "tunnel already occupied", http.StatusConflict)
 			return
 		}
 		occupied = true
@@ -264,6 +264,7 @@ func (t *Tunnel) runConnectIP(ctx context.Context) error {
 		return err
 	}
 	defer s.close()
+	t.stats.handshakes.Add(1)
 	t.setPeer(s.peer)
 	open := t.openDevice
 	if open == nil {

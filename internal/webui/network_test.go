@@ -14,7 +14,7 @@ func TestNetworkReadTokensCannotStartHelpersOrCreateTunnels(t *testing.T) {
 		t.Fatal(err)
 	}
 	mux := newServer().routes()
-	for _, path := range []string{"/api/automatic", "/api/carrier/diagnose"} {
+	for _, path := range []string{"/api/automatic", "/api/carrier/diagnose", "/api/managed/link"} {
 		w := httptest.NewRecorder()
 		mux.ServeHTTP(w, req("POST", path, secret))
 		if w.Code != 403 {

@@ -144,7 +144,7 @@ them both ends have to agree on. This says what exists.
 | `binary` | `string` | Binary is the absolute path to the pinned sing-box executable. |
 | `ca_file` | `string` | CAFile optionally adds a private PEM trust anchor; TLS verification stays on. |
 | `ech_config` | `string` | ECHConfig contains public PEM ECH CONFIGS. TLS verification remains enabled. |
-| `gecko_max` | `int` | _(undocumented — add a comment above the field in `config/sing.go`)_ |
+| `gecko_max` | `int` | GeckoMax bounds the maximum Gecko on-wire packet size; zero uses 1200. |
 | `gecko_min` | `int` | GeckoMin/Max bound on-wire padded packets (512..1400); zero uses 512/1200. |
 | `native_udp` | `bool` | NativeUDP carries reverse forwarded UDP as native datagrams (Hysteria2/TUIC only); paired. |
 | `obfs_password` | `string` | ObfsPassword enables Hysteria2 Salamander when nonempty; must match the server. |

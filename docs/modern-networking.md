@@ -31,7 +31,9 @@ they are not CPU utilization. Failed samples and in-process carriers are unmeasu
 Open **Connection Test → Saved tests, Automatic setup and diagnostics** in the
 panel. Automatic previews reserve listener ports for two minutes without creating
 files or services. Review the required TCP/UDP ports, then create and copy the
-private Setup Link to Kharej. Optional REALITY/ShadowTLS covers are verified before
+private Setup Link to Kharej. In Network tools on Kharej, use Pair from a Setup
+Link, review the peer settings, then create it. Existing peers retain their
+reviewed edit flow. Optional REALITY/ShadowTLS covers are verified before
 inclusion. Firewall rules remain under operator control. A competing process can
 still win a port between reservation release and helper startup.
 
@@ -164,3 +166,25 @@ for example `--duration 30m --parallel 4 --json`. Each direction gets its own
 measurement window. Receiver-confirmed uploads, nonrepeating verification and
 bounded cancellation are retained. Bulk stops on a failed stream; soak measures
 reconnection. Tests in local namespaces do not establish results for Iranian ISPs.
+
+<div dir="rtl">
+
+## خلاصهٔ فارسی
+
+حالت Economy حداکثر سه حامل می‌سازد و تست مسیر پشتیبان سالم را کم‌تکرارتر می‌کند؛
+مصرف واقعی تست و منابع helper در آمار دیده می‌شود. در Network tools پنل، تونل
+Automatic را ابتدا با فهرست پورت‌ها بازبینی و سپس ایجاد کنید؛ سمت خارج لینک را
+بازبینی و جفت‌سازی می‌کند. تاریخچهٔ تست‌های پنل و ترمینال مشترک است و عیب‌یابی
+مرحله‌ای، تونل فعال را ری‌استارت نمی‌کند.
+
+Gecko برای Hysteria2 و ECH اختیاری برای Hysteria2، AnyTLS و TUIC اضافه شده است.
+کلید خصوصی ECH فقط روی سرور می‌ماند؛ لینک فقط تنظیم عمومی را می‌برد. Realm برای
+کشف همتا پشت NAT است و به حساب مستقل، STUN و مسیر UDP سالم نیاز دارد. سرویس
+مستقل آن با فرمان `backpack realm run -c FILE` اجرا می‌شود. CONNECT-IP بستهٔ
+کامل IP را روی HTTP/3 می‌برد، فقط آدرس همتای تنظیم‌شده را می‌پذیرد و مسیر پیش‌فرض
+یا DNS میزبان را تغییر نمی‌دهد. هر دو سر باید نسخهٔ دارای این قابلیت‌ها را داشته
+باشند. تست یک‌ساعته و نتایج CI جای اندازه‌گیری مسیر واقعی اپراتورها را نمی‌گیرند.
+
+</div>
+
+*Last verified against Backpack v1.12.0 with this PR's additions, 2026-10-18.*

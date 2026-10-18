@@ -238,6 +238,8 @@ type server struct {
 	automaticID   string
 	automaticBusy bool
 	diagnosticMu  sync.Mutex
+	managedLinkMu sync.Mutex
+	managedLink   *managedLinkPlan
 	// terminals counts the open root shells; see terminal.go.
 	terminals terminalCount
 
@@ -479,6 +481,7 @@ func (s *server) routes() *http.ServeMux {
 	mux.HandleFunc("/api/conntest/history", s.requireReadAuth(s.handleConnTestHistory))
 	mux.HandleFunc("/api/automatic", s.requireAuth(s.handleAutomatic))
 	mux.HandleFunc("/api/carrier/diagnose", s.requireAuth(s.handleCarrierDiagnose))
+	mux.HandleFunc("/api/managed/link", s.requireAuth(s.handleManagedLink))
 	mux.HandleFunc("/api/manage", s.requireAuth(s.handleManage))
 	mux.HandleFunc("/api/manage/refresh", s.requireAuth(s.handleAutoRefresh))
 	mux.HandleFunc("/api/manage/proxy", s.requireAdmin(s.handleProxy))

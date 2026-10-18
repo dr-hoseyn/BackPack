@@ -77,6 +77,9 @@ func singIdentity(binary, protocol, name, password, uuid, obfs, ss string) error
 
 func ValidateSingClient(c *config.ClientConfig) error {
 	x := c.Sing
+	if x.Realm.Enabled() && x.Realm.Token == c.Token {
+		return errors.New("Realm account token must differ from the Reverse tunnel token")
+	}
 	if !x.Enabled() {
 		return nil
 	}
@@ -119,6 +122,9 @@ func validateSingClientIdentity(x config.SingClientConfig) error {
 
 func ValidateSingServer(c *config.ServerConfig) error {
 	x := c.Sing
+	if x.Realm.Enabled() && x.Realm.Token == c.Token {
+		return errors.New("Realm account token must differ from the Reverse tunnel token")
+	}
 	if !x.Enabled() {
 		return nil
 	}

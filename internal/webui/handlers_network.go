@@ -9,9 +9,69 @@ import (
 	"time"
 )
 
+type managedLinkPlan struct {
+	id, raw, name string
+	expires       time.Time
+}
+
+func (s *server) handleManagedLink(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var request struct {
+		Action string `json:"action"`
+		ID     string `json:"id"`
+		Link   string `json:"link"`
+		Name   string `json:"name"`
+	}
+	if err := decodeJSON(w, r, &request); err != nil {
+		http.Error(w, "invalid managed Setup Link request", http.StatusBadRequest)
+		return
+	}
+	s.managedLinkMu.Lock()
+	defer s.managedLinkMu.Unlock()
+	switch request.Action {
+	case "preview":
+		preview, err := manage.PreviewManagedPeer(request.Link, request.Name)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		id := manage.NewToken()
+		s.managedLink = &managedLinkPlan{id: id, raw: request.Link, name: preview.Name, expires: time.Now().Add(2 * time.Minute)}
+		time.AfterFunc(2*time.Minute, func() {
+			s.managedLinkMu.Lock()
+			if s.managedLink != nil && s.managedLink.id == id {
+				s.managedLink = nil
+			}
+			s.managedLinkMu.Unlock()
+		})
+		writeJSON(w, map[string]any{"id": id, "preview": preview})
+	case "commit":
+		p := s.managedLink
+		if p == nil || request.ID == "" || request.ID != p.id || time.Now().After(p.expires) {
+			http.Error(w, "link preview expired; review it again", http.StatusConflict)
+			return
+		}
+		s.managedLink = nil
+		result, err := manage.CreateManagedPeer(p.raw, p.name)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, map[string]any{"name": result.Name, "service": result.Service, "active": result.Active})
+	case "cancel":
+		s.managedLink = nil
+		writeJSON(w, map[string]any{"cancelled": true})
+	default:
+		http.Error(w, "action must be preview, commit or cancel", http.StatusBadRequest)
+	}
+}
+
 func (s *server) handleConnTestHistory(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	runs, err := manage.LoadConnTestHistory()
@@ -24,7 +84,7 @@ func (s *server) handleConnTestHistory(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) handleAutomatic(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	var request struct {
@@ -33,13 +93,13 @@ func (s *server) handleAutomatic(w http.ResponseWriter, r *http.Request) {
 		manage.AutomaticRequest
 	}
 	if err := decodeJSON(w, r, &request); err != nil {
-		http.Error(w, "invalid Automatic request", 400)
+		http.Error(w, "invalid Automatic request", http.StatusBadRequest)
 		return
 	}
 	s.automaticMu.Lock()
 	if s.automaticBusy {
 		s.automaticMu.Unlock()
-		http.Error(w, "another Automatic operation is in progress", 409)
+		http.Error(w, "another Automatic operation is in progress", http.StatusConflict)
 		return
 	}
 	s.automaticBusy = true
@@ -51,7 +111,7 @@ func (s *server) handleAutomatic(w http.ResponseWriter, r *http.Request) {
 		defer cancel()
 		plan, err := manage.PrepareAutomatic(ctx, request.AutomaticRequest)
 		if err != nil {
-			http.Error(w, err.Error(), 400)
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		id := manage.NewToken()
@@ -82,7 +142,7 @@ func (s *server) handleAutomatic(w http.ResponseWriter, r *http.Request) {
 		plan := s.automaticPlan
 		if plan == nil || request.ID == "" || request.ID != s.automaticID {
 			s.automaticMu.Unlock()
-			http.Error(w, "preview expired; prepare it again", 409)
+			http.Error(w, "preview expired; prepare it again", http.StatusConflict)
 			return
 		}
 		s.automaticPlan = nil
@@ -95,19 +155,19 @@ func (s *server) handleAutomatic(w http.ResponseWriter, r *http.Request) {
 		}
 		name, service, link, active, err := plan.Commit()
 		if err != nil {
-			http.Error(w, err.Error(), 400)
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		w.Header().Set("Cache-Control", "no-store")
 		writeJSON(w, map[string]any{"name": name, "service": service, "link": link, "active": active})
 	default:
-		http.Error(w, "action must be preview, commit or cancel", 400)
+		http.Error(w, "action must be preview, commit or cancel", http.StatusBadRequest)
 	}
 }
 
 func (s *server) handleCarrierDiagnose(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	var request struct {
@@ -115,15 +175,15 @@ func (s *server) handleCarrierDiagnose(w http.ResponseWriter, r *http.Request) {
 		Path string `json:"path"`
 	}
 	if err := decodeJSON(w, r, &request); err != nil || !manage.ValidName(request.Name) {
-		http.Error(w, "provide a valid local tunnel name", 400)
+		http.Error(w, "provide a valid local tunnel name", http.StatusBadRequest)
 		return
 	}
 	if _, ok := manage.Find(request.Name); !ok {
-		http.Error(w, "tunnel not found", 404)
+		http.Error(w, "tunnel not found", http.StatusNotFound)
 		return
 	}
 	if !s.diagnosticMu.TryLock() {
-		http.Error(w, "a carrier diagnostic is already running", 409)
+		http.Error(w, "a carrier diagnostic is already running", http.StatusConflict)
 		return
 	}
 	defer s.diagnosticMu.Unlock()
@@ -131,7 +191,7 @@ func (s *server) handleCarrierDiagnose(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	reports, err := manage.DiagnoseDatagramConfig(ctx, app.ConfigPath(request.Name), request.Path)
 	if err != nil {
-		http.Error(w, err.Error(), 400)
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	writeJSON(w, map[string]any{"reports": reports})

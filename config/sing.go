@@ -7,6 +7,7 @@ type SingClientConfig struct {
 	ObfsType string `toml:"obfs_type,omitempty"`
 	// GeckoMin/Max bound on-wire padded packets (512..1400); zero uses 512/1200.
 	GeckoMin int `toml:"gecko_min,omitempty"`
+	// GeckoMax bounds the maximum Gecko on-wire packet size; zero uses 1200.
 	GeckoMax int `toml:"gecko_max,omitempty"`
 	// ECHConfig contains public PEM ECH CONFIGS. TLS verification remains enabled.
 	ECHConfig string `toml:"ech_config,omitempty"`
