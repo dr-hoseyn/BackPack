@@ -45,6 +45,27 @@ them both ends have to agree on. This says what exists.
 | `pck_gateway_mac` | `string` | PckGatewayMAC is the next hop's hardware address, used when frames are injected at the link layer. Empty means read it from the kernel's neighbour table, which is where it already is. Set it only where that lookup is wrong — some virtualised networks answer ARP with an address the hypervisor then rewrites. |
 | `pck_interface` | `string` | PckInterface pins the carrier to a named egress device. Empty — the normal case — lets the route to the peer choose, which is right on every host with one uplink and on most with several. |
 
+## [[client.paths]]
+
+| Key | Type | Description |
+|---|---|---|
+| `naive` | `NaiveClientConfig` | Naive contains the paired public endpoint, credentials and local helper path. |
+| `name` | `string` | Name matches the paired server path; it is used in health reports. |
+| `short` | `ShortClientConfig` | Short contains the paired bounded-request endpoint and local trust file. |
+| `sing` | `SingClientConfig` | Sing contains the paired sing-box endpoint and verified identity. |
+| `xray` | `XrayClientConfig` | Xray contains the paired XHTTP/REALITY endpoint and verified identity. |
+
+## [[server.paths]]
+
+| Key | Type | Description |
+|---|---|---|
+| `endpoint` | `string` | Endpoint optionally overrides the public host:port exported to the peer. Empty uses the setup link's public host and this path's listener port. |
+| `naive` | `NaiveServerConfig` | Naive is this path's optional Naive listener and local TLS material. |
+| `name` | `string` | Name is the stable path identity, unique within this tunnel. |
+| `short` | `ShortServerConfig` | Short is this path's optional bounded-request HTTPS listener. |
+| `sing` | `SingServerConfig` | Sing is this path's optional Hysteria2, TUIC, AnyTLS or ShadowTLS listener. |
+| `xray` | `XrayServerConfig` | Xray is this path's optional XHTTP or REALITY listener. |
+
 ## [awg.obfuscation]
 
 | Key | Type | Description |
@@ -94,18 +115,41 @@ them both ends have to agree on. This says what exists.
 | `server` | `string` | Server is the HTTP/2 proxy's host:port, reached from the outside client toward the Iran server. |
 | `username` | `string` | Username authenticates the HTTP/2 proxy independently of the reverse tunnel token. |
 
+## [client.path_policy]
+
+| Key | Type | Description |
+|---|---|---|
+| `failures` | `int` | Failures is consecutive failures before a healthy path is withdrawn; 0 uses 2. |
+| `improvement` | `int` | Improvement is minimum score improvement in percent for a healthy switch; 0 uses 20. |
+| `min_dwell` | `int` | MinDwell is minimum seconds before leaving a healthy path; 0 uses 30. |
+| `probe_bytes` | `int` | ProbeBytes is verified in each direction; 0 uses 16384, range 1024..65536. |
+| `probe_interval` | `int` | ProbeInterval is seconds between verified transfers per path; 0 uses 5. |
+| `probe_timeout` | `int` | ProbeTimeout is the total seconds for a verified transfer; 0 uses 5. |
+| `recoveries` | `int` | Recoveries is verified successes required for a failed path to return; 0 uses 2. |
+
+## [client.short]
+
+| Key | Type | Description |
+|---|---|---|
+| `ca_file` | `string` | CAFile is an optional private PEM trust anchor; empty uses system roots. |
+| `server` | `string` | Server is the public HTTPS host:port. The certificate verifies this host. |
+| `server_name` | `string` | ServerName optionally selects the verified TLS name when Server is an IP. |
+
 ## [client.sing]
 
 | Key | Type | Description |
 |---|---|---|
 | `binary` | `string` | Binary is the absolute path to the pinned sing-box executable. |
 | `ca_file` | `string` | CAFile optionally adds a private PEM trust anchor; TLS verification stays on. |
+| `native_udp` | `bool` | NativeUDP carries reverse forwarded UDP as native datagrams (Hysteria2/TUIC only); paired. |
 | `obfs_password` | `string` | ObfsPassword enables Hysteria2 Salamander when nonempty; must match the server. |
 | `password` | `string` | Password authenticates this helper separately from the reverse token. |
 | `protocol` | `string` | Protocol is hysteria2, anytls, shadowtls (v3 with SS2022), or tuic (v5). |
 | `server` | `string` | Server is the public helper endpoint, as a hostname or IP and port. |
 | `server_name` | `string` | ServerName is the identity verified by TLS, including the cover for ShadowTLS. |
 | `shadowsocks_key` | `string` | ShadowsocksKey is a canonical base64 32-byte SS2022 key for ShadowTLS only. |
+| `udp_bandwidth_mbps` | `int` | UDPBandwidthMbps caps native UDP separately, dropping excess packets; 0 is unlimited. |
+| `udp_max_flows` | `int` | UDPMaxFlows caps native associations on this machine; 0 uses 128, maximum 4096. |
 | `uuid` | `string` | UUID identifies the TUIC account; unused for the other protocols. |
 
 ## [client.xray]
@@ -150,6 +194,7 @@ them both ends have to agree on. This says what exists.
 | `local_addr` | `string` | LocalAddr binds the connections that reach the server to a chosen source address, which on a machine with more than one uplink is what decides which of them the tunnel leaves by. An address on its own is enough; the port is the kernel's to pick. Needs no privilege. |
 | `log_format` | `string` | LogFormat is "" for human-readable output or "json" for machine parsing. |
 | `log_level` | `string` | LogLevel is one of trace, debug, info, warn, error or fatal. info is the default; trace on a busy tunnel writes a line per connection. |
+| `mptcp` | `bool` | MPTCP requests Multipath TCP on native tcp/stealth/tcpmux tunnel sockets. |
 | `mss` | `int` | MSS clamps the TCP maximum segment size on the tunnel's connections. Set it when the path cannot carry full-sized packets: that failure looks like a tunnel that connects and then stalls on the first real transfer. See docs/mss-clamp.md. |
 | `mux_framesize` | `int` | MaxFrameSize caps one smux frame, in bytes. Filled from a preset. |
 | `mux_recievebuffer` | `int` | MaxReceiveBuffer is the per-session receive window, in bytes. Filled from a preset. (The spelling is a typo that shipped; it cannot be corrected without breaking every existing config.) |
@@ -158,11 +203,14 @@ them both ends have to agree on. This says what exists.
 | `mux_version` | `int` | MuxVersion is the smux protocol version. Negotiated with the peer, so the two ends may differ and the lower wins. |
 | `naive` | `NaiveClientConfig` | Naive optionally reaches the loopback reverse target through a tunnel-owned official Chromium Naive helper; experimental and disabled when empty. |
 | `nodelay` | `bool` | Nodelay disables Nagle's algorithm on the tunnel's sockets. Off unless set; every preset sets it. It trades a little bandwidth for latency, which is what an interactive session wants and a bulk transfer does not notice. |
+| `path_policy` | `PathPolicy` | PathPolicy tunes verified probing, hysteresis and failover for Paths only. |
+| `paths` | `[]ManagedClientPath` | Paths keeps paired managed carriers warm and selects verified healthy paths. |
 | `pprof` | `bool` | PPROF exposes Go's profiling endpoint on loopback. Off by default, and loopback-only on purpose: its heap dump contains this tunnel's token. |
 | `preset` | `string` | Preset records which performance profile the tuning values came from — balance, turbo or aggressive. A label: the engine reads the values, never this. |
 | `proxy` | `string` | Proxy routes the connection to the tunnel server through a local or nearby proxy, for a client that cannot open an arbitrary outbound connection itself. One URL: "socks5://127.0.0.1:1080" or "http://user:pass@10.0.0.1:8080". Empty means dial the server directly. |
 | `remote_addr` | `string` | RemoteAddr is the server's address and port, as the client dials it. The port must match the server's bind_addr. |
 | `retry_interval` | `int` | RetryInterval is how many seconds to wait before dialling again after a failed attempt. |
+| `short` | `ShortClientConfig` | Short selects bounded HTTPS requests for this TCP Reverse tunnel. |
 | `simple_auth` | `bool` | SimpleAuth authorises a wss tunnel by the raw token instead of a proof bound to the TLS session. It exists for one deployment the binding otherwise makes impossible: a TLS-terminating reverse proxy — typically NGINX — in front of the tunnel, which holds a different TLS session from the client so a bound proof can never match. It is off by default because it hands the token to whoever terminates the TLS; turn it on only when a trusted proxy is doing so, and set it on both ends. |
 | `sing` | `SingClientConfig` | Sing selects a restricted managed Hysteria2, AnyTLS, ShadowTLS or TUIC carrier. |
 | `skip_optz` | `bool` | SkipOptz stops the engine applying its own socket and sysctl tuning at start, for a machine whose tuning is managed elsewhere. |
@@ -294,6 +342,17 @@ them both ends have to agree on. This says what exists.
 | `password` | `string` | Password is the proxy account's secret, separate from server.token. |
 | `username` | `string` | Username is the proxy account accepted from the official Naive client. |
 
+## [server.short]
+
+| Key | Type | Description |
+|---|---|---|
+| `acme_domain` | `string` | ACMEDomain enables automatic TLS-ALPN certificate issuance/renewal on 443. |
+| `acme_email` | `string` | ACMEEmail is an optional contact for certificate renewal problems. |
+| `certificate` | `string` | Certificate is the static PEM chain; excluded when ACME is selected. |
+| `key` | `string` | Key is its local PEM private key; never exported in setup links. |
+| `listen` | `string` | Listen is the public TCP host:port, distinct from the private reverse port. |
+| `server_name` | `string` | ServerName is the certificate's public hostname or IP. |
+
 ## [server.sing]
 
 | Key | Type | Description |
@@ -303,11 +362,14 @@ them both ends have to agree on. This says what exists.
 | `handshake` | `string` | Handshake is the explicit ShadowTLS cover endpoint; no wildcard SNI routing. |
 | `key` | `string` | Key is the PEM private key, which remains on this server. |
 | `listen` | `string` | Listen is the public helper bind address, separate from the reverse port. |
+| `native_udp` | `bool` | NativeUDP selects native reverse UDP rather than reliable stream forwarding; paired. |
 | `obfs_password` | `string` | ObfsPassword enables Hysteria2 Salamander; empty keeps ordinary QUIC framing. |
 | `password` | `string` | Password is the helper account secret, independent of the reverse token. |
 | `protocol` | `string` | Protocol is hysteria2, anytls, shadowtls, or tuic. |
 | `server_name` | `string` | ServerName is the TLS identity, or the verified cover identity for ShadowTLS. |
 | `shadowsocks_key` | `string` | ShadowsocksKey is the base64 32-byte SS2022 key, required for ShadowTLS v3. |
+| `udp_bandwidth_mbps` | `int` | UDPBandwidthMbps caps native UDP in Mbit/s; 0 is unlimited. |
+| `udp_max_flows` | `int` | UDPMaxFlows caps native forwarded flows; 0 uses 128, maximum 4096. |
 | `uuid` | `string` | UUID is the canonical TUIC v5 account identity. |
 
 ## [server.xray]
@@ -344,6 +406,7 @@ them both ends have to agree on. This says what exists.
 | `log_format` | `string` | LogFormat is "" for human-readable output or "json" for machine parsing. |
 | `log_level` | `string` | LogLevel is one of trace, debug, info, warn, error or fatal. info is the default; trace on a busy tunnel writes a line per connection. |
 | `max_connections` | `int` | MaxConnections caps simultaneous forwarded connections (0 = unlimited). |
+| `mptcp` | `bool` | MPTCP requests Multipath TCP on native tcp/stealth/tcpmux tunnel sockets. Unsupported kernels and peers fall back to TCP; host routing is unchanged. |
 | `mss` | `int` | MSS clamps the TCP maximum segment size on the tunnel's connections. Set it when the path cannot carry full-sized packets: that failure looks like a tunnel that connects and then stalls on the first real transfer. See docs/mss-clamp.md. |
 | `mux_con` | `int` | MuxCon is how many concurrent streams one multiplexed session may carry before the next connection waits. |
 | `mux_framesize` | `int` | MaxFrameSize caps one smux frame, in bytes. Filled from a preset. |
@@ -353,10 +416,12 @@ them both ends have to agree on. This says what exists.
 | `mux_version` | `int` | MuxVersion is the smux protocol version. Negotiated with the peer, so the two ends may differ and the lower wins. |
 | `naive` | `NaiveServerConfig` | Naive optionally wraps the loopback TCP reverse listener in HTTP/2 with a tunnel-owned sing-box helper; experimental and disabled when empty. |
 | `nodelay` | `bool` | Nodelay disables Nagle's algorithm on the tunnel's sockets. Off unless set; every preset sets it. It trades a little bandwidth for latency, which is what an interactive session wants and what a bulk transfer does not notice. |
+| `paths` | `[]ManagedServerPath` | Paths keeps 2..8 independent managed public carriers alive for one Reverse engine. |
 | `ports` | `[]string` | Ports are the forwarded ports this server exposes, as "443", "8080=127.0.0.1:80", "443-450" or "10.0.0.5:443". See docs/port-mappings.md for every form. |
 | `pprof` | `bool` | PPROF exposes Go's profiling endpoint on 127.0.0.1:6060. Off by default and loopback-only: its heap dump contains this tunnel's token. |
 | `preset` | `string` | Preset records which performance profile the tuning values came from — balance, turbo or aggressive. A label: the engine reads the values, never this. Set by hand only if you want the menu to stop offering to change them. |
 | `proxy_protocol` | `bool` | ProxyProtocol prefixes each forwarded connection with a PROXY protocol header, so the service behind the tunnel sees the user's real address rather than the tunnel's. The service has to be configured to expect it. |
+| `short` | `ShortServerConfig` | Short selects the in-process managed Short HTTPS wrapper for TCP Reverse. |
 | `simple_auth` | `bool` | SimpleAuth authorises a wss tunnel by the raw token instead of a proof bound to the TLS session. It exists for one deployment the binding otherwise makes impossible: a TLS-terminating reverse proxy — typically NGINX — in front of the tunnel, which holds a different TLS session from the client so a bound proof can never match. It is off by default because it hands the token to whoever terminates the TLS; turn it on only when a trusted proxy is doing so, and set it on both ends. |
 | `sing` | `SingServerConfig` | Sing selects a restricted managed Hysteria2, AnyTLS, ShadowTLS or TUIC carrier. |
 | `skip_optz` | `bool` | SkipOptz stops the engine applying its own socket and sysctl tuning at start. For a machine whose tuning is managed elsewhere. |
@@ -397,4 +462,4 @@ them both ends have to agree on. This says what exists.
 
 ---
 
-*Generated from `config/` on 2026-10-17. Last verified against Backpack v1.10.0.*
+*Generated from `config/` on 2026-10-18. Last verified against Backpack v1.11.0.*

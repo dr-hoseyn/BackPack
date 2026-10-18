@@ -23,6 +23,14 @@ func ctProbeHTTPS(parent context.Context, spec TunnelSpec) string {
 		return "not-applicable" // these protocols are not standalone HTTPS/H2 services
 	}
 	endpoint, serverName, caFile := spec.XrayClient.Server, spec.XrayClient.ServerName, spec.XrayClient.CAFile
+	alpn, minimumTLS := "h2", uint16(tls.VersionTLS12)
+	if spec.ShortClient.Enabled() {
+		endpoint, serverName, caFile = spec.ShortClient.Server, spec.ShortClient.ServerName, spec.ShortClient.CAFile
+		if serverName == "" {
+			serverName, _, _ = net.SplitHostPort(endpoint)
+		}
+		alpn, minimumTLS = "http/1.1", tls.VersionTLS13
+	}
 	if spec.NaiveClient.Enabled() {
 		endpoint, caFile = spec.NaiveClient.Server, spec.NaiveClient.CAFile
 		serverName, _, _ = net.SplitHostPort(endpoint) // Naive uses the IP endpoint, without a DNS SNI
@@ -41,21 +49,24 @@ func ctProbeHTTPS(parent context.Context, spec TunnelSpec) string {
 				return "tcp-ok" // only authenticated tunnel traffic can prove REALITY
 			}
 			result = "tls-failed"
-			ca, caErr := os.ReadFile(caFile)
-			roots := x509.NewCertPool()
-			if caErr != nil || !roots.AppendCertsFromPEM(ca) {
-				conn.Close()
-				stopAttempt()
-				return result
+			var roots *x509.CertPool
+			if caFile != "" {
+				ca, caErr := os.ReadFile(caFile)
+				roots = x509.NewCertPool()
+				if caErr != nil || !roots.AppendCertsFromPEM(ca) {
+					conn.Close()
+					stopAttempt()
+					return result
+				}
 			}
 			stopClose := context.AfterFunc(attempt, func() { conn.Close() })
-			client := tls.Client(conn, &tls.Config{ServerName: serverName, RootCAs: roots, NextProtos: []string{"h2"}, MinVersion: tls.VersionTLS12})
+			client := tls.Client(conn, &tls.Config{ServerName: serverName, RootCAs: roots, NextProtos: []string{alpn}, MinVersion: minimumTLS})
 			err = client.HandshakeContext(attempt)
 			conn.Close()
 			stopClose()
 			stopAttempt()
 			if err == nil {
-				if client.ConnectionState().NegotiatedProtocol == "h2" {
+				if client.ConnectionState().NegotiatedProtocol == alpn {
 					return "tls-ok"
 				}
 				return result
@@ -84,7 +95,7 @@ func ctValidHTTPSProbe(tr, probe string) bool {
 	case "tcp-ok":
 		return tr == "reality"
 	case "tls-ok", "tls-failed":
-		return tr == "naive" || tr == "xhttp"
+		return tr == "naive" || tr == "xhttp" || tr == "short-https"
 	}
 	return false
 }
@@ -98,9 +109,9 @@ func ctHTTPSProbeLabel(probe string) string {
 	case "tcp-ok":
 		return "public TCP reachable; REALITY authentication requires tunnel traffic"
 	case "tls-failed":
-		return "TCP reachable; certificate/TLS/HTTP2 probe failed"
+		return "TCP reachable; certificate/TLS/ALPN probe failed"
 	case "tls-ok":
-		return "TCP + verified TLS/HTTP2 passed; this is not a tunnel traffic check"
+		return "TCP + verified TLS/ALPN passed; this is not a tunnel traffic check"
 	}
 	return "not reported by peer"
 }

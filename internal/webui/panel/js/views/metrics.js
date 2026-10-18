@@ -238,6 +238,7 @@ function dropSection(root, heading) {
 }
 
 function fill(root, t) {
+  fillManaged(root, t);
   const v = values(t);
   for (const row of $$('.dr2', root)) {
     const k = row.querySelector('.k2')?.textContent.trim();
@@ -252,6 +253,36 @@ function fill(root, t) {
   if (!t.fallbackAddrs?.length) dropSection(root, 'Failover');
   if (!t.pool) dropSection(root, 'Connection pool');
   if (!t.kcp) dropSection(root, 'KCP link quality');
+}
+
+function fillManaged(root, t) {
+  let box = root.querySelector('[data-managed-metrics]');
+  if (!t.managedPaths && !t.nativeUDP) { box?.remove(); return; }
+  if (!box) {
+    box = document.createElement('section');
+    box.dataset.managedMetrics = '';
+    root.querySelector('.mbody')?.append(box);
+  }
+  const row = (key, value) => `<div class="dr2"><dt class="k2">${esc(key)}</dt><dd class="v2">${esc(String(value))}</dd></div>`;
+  let html = '';
+  const paths = t.managedPaths;
+  if (paths) {
+    html += '<h4>Verified managed paths</h4><dl>'
+      + row('New TCP connections', paths.active || 'No verified path')
+      + row('Native UDP', paths.native_udp_active || 'No verified native path');
+    for (const p of paths.paths || []) {
+      const state = p.healthy ? 'healthy' : p.helper_ready ? 'unverified or failed' : 'helper unavailable';
+      html += row(`${p.name} · ${p.protocol}`, `${state} · ${Number(p.rtt_ms || 0).toFixed(1)} ms · ${Number(p.mbps || 0).toFixed(2)} Mbit/s · ${Number(p.failure_percent || 0).toFixed(1)}% probe failures`);
+    }
+    html += '</dl>';
+  }
+  const udp = t.nativeUDP;
+  if (udp) html += '<h4>Native reverse UDP</h4><dl>'
+    + row('Authenticated association', udp.connected ? 'Connected' : 'Waiting or unavailable')
+    + row('Active UDP flows', udp.flows || 0)
+    + row('Datagrams sent / received / dropped', `${udp.sent || 0} / ${udp.received || 0} / ${udp.dropped || 0}`)
+    + '</dl>';
+  box.innerHTML = html;
 }
 
 /* The top of the screen: which series, the chart, then the figures.

@@ -22,15 +22,21 @@ import (
 // and bounded restart/shutdown. Readiness here means the helper accepts local
 // connections; only traffic through the reverse engine proves tunnel health.
 type Helper struct {
-	cancel context.CancelFunc
-	done   chan struct{}
-	addr   string
-	dir    string
-	once   sync.Once
+	cancel      context.CancelFunc
+	done        chan struct{}
+	addr        string
+	dir         string
+	once        sync.Once
+	proxyScheme string
 }
 
-func (h *Helper) ProxyURL() string { return "socks5://" + h.addr }
-func (h *Helper) Close()           { h.once.Do(h.cancel); <-h.done }
+func (h *Helper) ProxyURL() string {
+	if h.proxyScheme != "" {
+		return h.proxyScheme + "://" + h.addr
+	}
+	return "socks5://" + h.addr
+}
+func (h *Helper) Close() { h.once.Do(h.cancel); <-h.done }
 
 func StartClient(ctx context.Context, c *config.ClientConfig, log *logrus.Logger) (*Helper, error) {
 	if err := ValidateClient(c); err != nil {

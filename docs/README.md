@@ -95,4 +95,4 @@ Reference pages: what each part of Backpack **is**, and every setting it has.
 
 ---
 
-*Last verified against Backpack v1.10.0.*
+*Last verified against Backpack v1.11.0.*

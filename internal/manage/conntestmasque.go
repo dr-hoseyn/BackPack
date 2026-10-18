@@ -14,7 +14,7 @@ import (
 
 // Certificate and key are generated on Kharej. Only the public trust anchor and
 // loopback target port cross the coordinator, authenticated by the test token.
-func ctMasqueListener(ctx context.Context, link ConnTestLink, dir, name string, used map[int]bool) (config.MasqueConfig, error) {
+func ctMasqueListener(ctx context.Context, link ConnTestLink, dir, name string, used map[int]bool, carrier ...string) (config.MasqueConfig, error) {
 	cert, key, ca, err := ctCertificate(dir, name, "conntest.backpack.invalid")
 	if err != nil {
 		return config.MasqueConfig{}, err
@@ -26,7 +26,11 @@ func ctMasqueListener(ctx context.Context, link ConnTestLink, dir, name string, 
 	settings := ctCarrierSettings{CA: ca, TargetPort: port, ServerName: "conntest.backpack.invalid"}
 	body, _ := json.Marshal(settings)
 	raw := gzipB64(body)
-	reply, err := ctAskContext(ctx, link.Host, link.Coord, "masque-cert "+link.Tok+" "+raw)
+	command := "masque-cert"
+	if len(carrier) != 0 && carrier[0] == "masque-h2" {
+		command = "masque-h2-cert"
+	}
+	reply, err := ctAskContext(ctx, link.Host, link.Coord, command+" "+link.Tok+" "+raw)
 	if err != nil || reply != "ok" {
 		return config.MasqueConfig{}, fmt.Errorf("could not announce MASQUE trust anchor: %v", err)
 	}

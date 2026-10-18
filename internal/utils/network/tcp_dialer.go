@@ -198,6 +198,7 @@ func attemptTcpDialer(
 	}
 
 	// Dial by name, so every address it resolves to gets a turn.
+	dialer.SetMultipathTCP(out != nil && out.MPTCP)
 	conn, err := dialer.DialContext(ctx, "tcp", remoteAddress)
 	if err != nil {
 		return nil, err

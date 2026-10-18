@@ -80,6 +80,9 @@ func ValidateSingClient(c *config.ClientConfig) error {
 	if !x.Enabled() {
 		return nil
 	}
+	if err := validateNativeUDP(x.Protocol, x.NativeUDP, x.UDPMaxFlows, x.UDPBandwidthMbps); err != nil {
+		return err
+	}
 	if c.Naive.Enabled() || c.Xray.Enabled() || c.Transport != config.TCP || len(c.FallbackTransports) != 0 || c.Proxy != "" || c.LocalAddr != "" || c.Interface != "" || c.SOMark != 0 || len(c.FallbackAddrs) != 0 || c.HealthFailover || c.LoadBalance {
 		return errors.New("sing-box requires TCP reverse without other helpers, routing overrides or fallbacks")
 	}
@@ -115,6 +118,12 @@ func ValidateSingServer(c *config.ServerConfig) error {
 	x := c.Sing
 	if !x.Enabled() {
 		return nil
+	}
+	if err := validateNativeUDP(x.Protocol, x.NativeUDP, x.UDPMaxFlows, x.UDPBandwidthMbps); err != nil {
+		return err
+	}
+	if x.NativeUDP && (!c.ForwardsUDP() || c.MaxConnections != 0 || c.BandwidthMbps != 0) {
+		return errors.New("native_udp requires accept_udp=true and its separate udp_max_flows/udp_bandwidth_mbps limits; remove the stream-wide max_connections/bandwidth_mbps limits")
 	}
 	if c.Naive.Enabled() || c.Xray.Enabled() || c.Transport != config.TCP || len(c.FallbackTransports) != 0 {
 		return errors.New("sing-box requires TCP reverse without other helpers or transport fallbacks")
@@ -191,14 +200,18 @@ func singRoute(target, network, outbound string) (map[string]any, error) {
 	if ip.To4() != nil {
 		bits = "/32"
 	}
-	return map[string]any{"rules": []any{map[string]any{"ip_cidr": []string{ip.String() + bits}, "port": []int{port}, "network": network, "action": "route", "outbound": outbound}, map[string]any{"action": "reject"}}}, nil
+	var networks any = network
+	if network == "both" {
+		networks = []string{"tcp", "udp"}
+	}
+	return map[string]any{"rules": []any{map[string]any{"ip_cidr": []string{ip.String() + bits}, "port": []int{port}, "network": networks, "action": "route", "outbound": outbound}, map[string]any{"action": "reject"}}}, nil
 }
 
 func SingClientJSON(x config.SingClientConfig, socks, target, network string) ([]byte, error) {
 	if err := validateSingClientIdentity(x); err != nil {
 		return nil, err
 	}
-	if network != "tcp" && (network != "udp" || !config.SingDatagram(x.Protocol)) {
+	if network != "tcp" && ((network != "udp" && network != "both") || !config.SingDatagram(x.Protocol)) {
 		return nil, errors.New("native datagrams require Hysteria2 or TUIC")
 	}
 	h, p, err := hostPort(socks, true)
@@ -239,7 +252,7 @@ func SingServerJSON(x config.SingServerConfig, ready, target, network string) ([
 	if err := validateSingServerIdentity(x); err != nil {
 		return nil, err
 	}
-	if network != "tcp" && (network != "udp" || !config.SingDatagram(x.Protocol)) {
+	if network != "tcp" && ((network != "udp" && network != "both") || !config.SingDatagram(x.Protocol)) {
 		return nil, errors.New("native datagrams require Hysteria2 or TUIC")
 	}
 	h, p, err := xrayEndpoint(x.Listen)
@@ -295,7 +308,11 @@ func StartSingClient(ctx context.Context, c *config.ClientConfig, log *logrus.Lo
 	if err := ValidateSingClient(c); err != nil {
 		return nil, err
 	}
-	return StartSingProxy(ctx, c.Sing, c.RemoteAddr, "tcp", log)
+	network := "tcp"
+	if c.Sing.NativeUDP {
+		network = "both"
+	}
+	return StartSingProxy(ctx, c.Sing, c.RemoteAddr, network, log)
 }
 
 func StartSingProxy(ctx context.Context, x config.SingClientConfig, target, network string, log *logrus.Logger) (*Helper, error) {
@@ -315,7 +332,11 @@ func StartSingServer(ctx context.Context, c *config.ServerConfig, log *logrus.Lo
 	if err := ValidateSingServer(c); err != nil {
 		return nil, err
 	}
-	return StartSingListener(ctx, c.Sing, c.BindAddr, "tcp", log)
+	network := "tcp"
+	if c.Sing.NativeUDP {
+		network = "both"
+	}
+	return StartSingListener(ctx, c.Sing, c.BindAddr, network, log)
 }
 
 func StartSingListener(ctx context.Context, x config.SingServerConfig, target, network string, log *logrus.Logger) (*Helper, error) {

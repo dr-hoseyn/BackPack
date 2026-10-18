@@ -286,7 +286,7 @@ func askL3CarrierExtras(cfg *l3Spec, side directSide) bool {
 		return true
 	}
 
-	if cfg.Carrier == "masque" {
+	if cfg.Carrier == "masque" || cfg.Carrier == "masque-h2" {
 		cfg.Masque.Target = strings.TrimSpace(tui.PromptDefault("MASQUE Private UDP Target (Same On Both Ends)", cfg.Masque.TargetAddr()))
 		cfg.Masque.ServerName = strings.TrimSpace(tui.PromptDefault("TLS Server Name (Certificate Hostname)", cfg.Masque.ServerName))
 		if side == sideKharej {
@@ -387,8 +387,8 @@ func setupL3FromLink(chosen string) {
 		}
 		form.Sing = cfg.Sing
 	}
-	if link.Tr == "masque" {
-		cfg := l3Spec{Carrier: "masque", Masque: form.Masque}
+	if link.Tr == "masque" || link.Tr == "masque-h2" {
+		cfg := l3Spec{Carrier: link.Tr, Masque: form.Masque}
 		if !askL3CarrierExtras(&cfg, sideKharej) {
 			return
 		}

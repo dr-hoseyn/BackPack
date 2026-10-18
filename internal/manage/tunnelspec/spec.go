@@ -9,18 +9,25 @@ import (
 	"github.com/backpack/backpack/config"
 	"github.com/backpack/backpack/internal/app"
 	"github.com/backpack/backpack/internal/manage/core"
+	"github.com/backpack/backpack/internal/tunnel/adaptive"
 	"github.com/backpack/backpack/internal/tunnel/naive"
 )
 
 // Spec is the full description of a tunnel used to render a TOML config.
 type Spec struct {
-	Name      string
-	Role      string // "server" (Iran/edge that exposes ports) or "client" (kharej/origin)
-	Transport string // tcp, tcpmux, udp, kcp, ws, wss, wsmux, wssmux
+	ServerPaths []config.ManagedServerPath `json:"-"`
+	ClientPaths []config.ManagedClientPath `json:"-"`
+	PathPolicy  config.PathPolicy
+	MPTCP       bool
+	Name        string
+	Role        string // "server" (Iran/edge that exposes ports) or "client" (kharej/origin)
+	Transport   string // tcp, tcpmux, udp, kcp, ws, wss, wsmux, wssmux
 
 	// Preserve experimental helper settings across ordinary tunnel edits.
 	// They include credentials and must not enter generic JSON responses.
 	SingServer  config.SingServerConfig  `json:"-"`
+	ShortServer config.ShortServerConfig `json:"-"`
+	ShortClient config.ShortClientConfig `json:"-"`
 	SingClient  config.SingClientConfig  `json:"-"`
 	NaiveServer config.NaiveServerConfig `json:"-"`
 	NaiveClient config.NaiveClientConfig `json:"-"`
@@ -174,6 +181,9 @@ func monitorBind(configured string) string {
 
 // writeTuning emits the throughput/latency knobs shared by server and client.
 func (s Spec) writeTuning(p func(string, ...any)) {
+	if s.MPTCP {
+		p("mptcp = true\n")
+	}
 	if s.SkipOptz {
 		p("skip_optz = true\n")
 	}
@@ -419,6 +429,28 @@ func (s Spec) Render() string {
 }
 
 func (s Spec) writeHelpers(b *strings.Builder) {
+	if s.Role == "server" && len(s.ServerPaths) != 0 {
+		var encoded strings.Builder
+		_ = toml.NewEncoder(&encoded).Encode(map[string]any{"paths": s.ServerPaths})
+		text := strings.ReplaceAll(encoded.String(), "[[paths]]", "[[server.paths]]")
+		b.WriteString("\n" + strings.ReplaceAll(text, "[paths.", "[server.paths."))
+	} else if s.Role == "client" && len(s.ClientPaths) != 0 {
+		if s.PathPolicy != (config.PathPolicy{}) {
+			b.WriteString("\n[client.path_policy]\n")
+			_ = toml.NewEncoder(b).Encode(s.PathPolicy)
+		}
+		var encoded strings.Builder
+		_ = toml.NewEncoder(&encoded).Encode(map[string]any{"paths": s.ClientPaths})
+		text := strings.ReplaceAll(encoded.String(), "[[paths]]", "[[client.paths]]")
+		b.WriteString("\n" + strings.ReplaceAll(text, "[paths.", "[client.paths."))
+	}
+	if s.Role == "server" && s.ShortServer.Enabled() {
+		b.WriteString("\n[server.short]\n")
+		_ = toml.NewEncoder(b).Encode(s.ShortServer)
+	} else if s.Role == "client" && s.ShortClient.Enabled() {
+		b.WriteString("\n[client.short]\n")
+		_ = toml.NewEncoder(b).Encode(s.ShortClient)
+	}
 	if s.Role == "server" && s.SingServer.Enabled() {
 		b.WriteString("\n[server.sing]\n")
 		_ = toml.NewEncoder(b).Encode(s.SingServer)
@@ -475,6 +507,24 @@ func (s Spec) validateNaive() error {
 }
 
 func (s Spec) validateHelpers() error {
+	if len(s.ServerPaths) != 0 || len(s.ClientPaths) != 0 || s.PathPolicy != (config.PathPolicy{}) {
+		var cfg config.Config
+		if _, err := toml.Decode(s.Render(), &cfg); err != nil {
+			return err
+		}
+		if err := adaptive.Validate(&cfg); err != nil {
+			return err
+		}
+	}
+	if s.ShortServer.Enabled() || s.ShortClient.Enabled() {
+		var cfg config.Config
+		if _, err := toml.Decode(s.Render(), &cfg); err != nil {
+			return err
+		}
+		if err := naive.ValidateShort(&cfg); err != nil {
+			return err
+		}
+	}
 	if s.SingServer.Enabled() || s.SingClient.Enabled() {
 		if (s.Role != "server" || !s.SingServer.Enabled() || s.SingClient.Enabled()) && (s.Role != "client" || !s.SingClient.Enabled() || s.SingServer.Enabled()) {
 			return fmt.Errorf("sing-box settings do not match tunnel role")

@@ -2,7 +2,30 @@
 
 All notable changes to Backpack are documented here.
 
-## Unreleased
+## v1.11.0 — 2026-10-18 (dr-hoseyn fork)
+
+- Add managed adaptive paths with authenticated upload/download probes, warm
+  helpers, hysteresis, idle-pool retirement and independent native UDP selection.
+  New connections follow the selected path; active forwards retain ownership.
+- Add opt-in native Reverse UDP for Hysteria2/TUIC, with Noise authentication,
+  replay protection, periodic rekey, bounded flows, drop-based rate limiting,
+  paired setup and separate datagram health/metrics.
+- Add explicit MASQUE HTTP/2 CONNECT-UDP Capsule fallback for L3, retaining
+  verified TLS and Noise while accepting reliable-TCP head-of-line blocking.
+- Integrate Short HTTPS with managed setup, public-trust pairing, per-tunnel
+  services, static certificate reload and optional DNS ACME TLS-ALPN renewal.
+- Add opt-in Linux MPTCP to native TCP, stealth and tcpmux tunnel sockets.
+  Unsupported peers/kernels retain TCP fallback; no host routes are changed.
+- Exercise independent HTTP/2 interoperability, real helper UDP, active-flow
+  preservation, private configuration round trips and isolated MPTCP path outage.
+  Both peers need v1.11.0 or later for the new paired modes.
+
+- Review terminal and panel edits before applying; reject stale revisions and
+  restore the previous configuration/service state when startup fails.
+- Edit forwarded ports with separate source/target fields, explicit clearing
+  and confirmed deletion while preserving carrier settings.
+- Keep Connection Test readable on narrow terminals and show measured echo
+  loss for each transport.
 
 ## v1.10.0 — 2026-10-17 (dr-hoseyn fork)
 

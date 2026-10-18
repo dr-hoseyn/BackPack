@@ -21,6 +21,9 @@ func reportReadiness(ctx context.Context, ready bool) {
 	}
 }
 
+// ReportReadiness lets a group report whether any of its owned helpers is ready.
+func ReportReadiness(ctx context.Context, ready bool) { reportReadiness(ctx, ready) }
+
 // StartWithRetry keeps the reverse engine stopped until its helper starts.
 // Retrying the whole start also covers preflight failures and occupied ports,
 // which happen before the child supervisor exists. Cancellation ends the wait.

@@ -14,6 +14,7 @@ import (
 	"github.com/backpack/backpack/config"
 	"github.com/backpack/backpack/internal/app"
 	"github.com/backpack/backpack/internal/tui"
+	"github.com/backpack/backpack/internal/tunnel/adaptive"
 	"github.com/backpack/backpack/internal/tunnel/naive"
 	"github.com/backpack/backpack/internal/utils/network"
 )
@@ -72,15 +73,23 @@ func cliTransportGroups() []transportGroup {
 			{"AnyTLS", "TLS with padding and connection reuse — TCP", "anytls"},
 			{"ShadowTLS v3 / SS2022", "verified TLS cover and encrypted inner stream — TCP", "shadowtls"},
 			{"TUIC v5", "QUIC with BBR — requires UDP", "tuic"},
+			{"Short HTTPS", "bounded fresh HTTPS requests — TCP only, lower throughput", "short-https"},
+			{"Adaptive Managed Paths", "warm carriers, verified traffic probes and automatic failover", "managed-paths"},
 		},
 	})
 }
 
 func managedTransport(value string) bool {
-	return value == "naive" || value == "xhttp" || value == "reality" || config.SingProtocol(value)
+	return value == "managed-paths" || value == "short-https" || value == "naive" || value == "xhttp" || value == "reality" || config.SingProtocol(value)
 }
 
 func selectedTransport(s TunnelSpec) string {
+	if len(s.ServerPaths) != 0 || len(s.ClientPaths) != 0 {
+		return "managed-paths"
+	}
+	if s.ShortServer.Enabled() || s.ShortClient.Enabled() {
+		return "short-https"
+	}
 	if s.SingServer.Enabled() {
 		return s.SingServer.Protocol
 	}
@@ -100,6 +109,18 @@ func selectedTransport(s TunnelSpec) string {
 }
 
 func managedEndpoint(s TunnelSpec) string {
+	if s.Role == "server" && len(s.ServerPaths) != 0 {
+		return pathServerEndpoint(s.ServerPaths[0])
+	}
+	if s.Role == "client" && len(s.ClientPaths) != 0 {
+		return pathClientEndpoint(s.ClientPaths[0])
+	}
+	if s.Role == "server" && s.ShortServer.Enabled() {
+		return s.ShortServer.Listen
+	}
+	if s.Role == "client" && s.ShortClient.Enabled() {
+		return s.ShortClient.Server
+	}
 	if s.Role == "server" && s.SingServer.Enabled() {
 		return s.SingServer.Listen
 	}
@@ -125,6 +146,8 @@ func managedEndpoint(s TunnelSpec) string {
 }
 
 func clearManagedTransport(s *TunnelSpec) {
+	s.ServerPaths, s.ClientPaths, s.PathPolicy = nil, nil, config.PathPolicy{}
+	s.ShortServer, s.ShortClient = config.ShortServerConfig{}, config.ShortClientConfig{}
 	s.SingServer, s.SingClient = config.SingServerConfig{}, config.SingClientConfig{}
 	s.NaiveServer, s.NaiveClient = config.NaiveServerConfig{}, config.NaiveClientConfig{}
 	s.XrayServer, s.XrayClient = config.XrayServerConfig{}, config.XrayClientConfig{}
@@ -216,6 +239,12 @@ func validateManagedSpec(s TunnelSpec) error {
 	if _, err := toml.Decode(s.Render(), &c); err != nil {
 		return err
 	}
+	if err := adaptive.Validate(&c); err != nil {
+		return err
+	}
+	if err := naive.ValidateShort(&c); err != nil {
+		return err
+	}
 	if err := naive.Validate(&c); err != nil {
 		return err
 	}
@@ -262,14 +291,19 @@ func setupManagedCarrierWithProbe(s *TunnelSpec, chosen, public, host string, pr
 	n := *s
 	wasManaged := managedTransport(selectedTransport(n))
 	internal := "3080"
-	if wasManaged {
+	internalTarget := n.BindAddr
+	if n.Role == "client" {
+		internalTarget = n.RemoteAddr
+	}
+	internalIP := net.ParseIP(addrHost(internalTarget, ""))
+	if wasManaged || internalIP != nil && internalIP.IsLoopback() {
 		if n.Role == "server" {
 			internal = addrPort(n.BindAddr)
 		} else {
 			internal = addrPort(n.RemoteAddr)
 		}
 	}
-	tui.Info("TCP Forwarding Only. Set The Same Internal Port And Security Token On Both Sides.")
+	tui.Info("Set The Same Private TCP Reverse Target And Security Token On Both Sides. UDP Support Depends On The Carrier.")
 	if chosen == "reality" && n.Role == "server" && !wasManaged {
 		internal = realityInternalPort(public, n.Ports)
 	}
@@ -279,6 +313,7 @@ func setupManagedCarrierWithProbe(s *TunnelSpec, chosen, public, host string, pr
 		return false
 	}
 	n.Transport = "tcp"
+	n.MPTCP = false
 	n.AcceptUDP, n.SimpleAuth, n.LoadBalance, n.HealthFailover = false, false, false, false
 	n.FallbackAddrs, n.FallbackTransports = nil, nil
 	n.FallbackDwell, n.SOMark = 0, 0
@@ -290,13 +325,31 @@ func setupManagedCarrierWithProbe(s *TunnelSpec, chosen, public, host string, pr
 		n.RemoteAddr = net.JoinHostPort("127.0.0.1", internal)
 	}
 	clearManagedTransport(&n)
-	if config.SingProtocol(chosen) {
+	if chosen == "managed-paths" {
+		if !configureManagedPaths(&n, *s, public, host, probe) {
+			return false
+		}
+	} else if chosen == "short-https" {
+		if !configureShort(&n, *s, public, host) {
+			return false
+		}
+	} else if config.SingProtocol(chosen) {
 		if !configureSing(&n, *s, chosen, public, host) {
 			return false
 		}
 		if n.Role == "server" {
-			tui.Info("UDP forwarding in Reverse uses reliable streams. Direct Hysteria2/TUIC carries native datagrams.")
 			n.AcceptUDP = tui.Confirm("Also Carry UDP On Forwarded Ports", s.AcceptUDP)
+			if n.AcceptUDP && config.SingDatagram(chosen) {
+				n.SingServer.NativeUDP = tui.Confirm("Use Native Datagrams For Reverse UDP (Matching Build Required On Kharej)", s.SingServer.NativeUDP)
+			} else {
+				n.SingServer.NativeUDP = false
+			}
+			if n.SingServer.NativeUDP {
+				tui.Info("Reverse UDP Uses Native Datagrams. Pair native_udp On Kharej; Outage Packets Are Dropped.")
+			} else {
+				n.SingServer.UDPMaxFlows, n.SingServer.UDPBandwidthMbps = 0, 0
+				tui.Info("Native Reverse UDP Is Disabled. Any Enabled UDP Forwarding Uses Reliable Streams.")
+			}
 		}
 	} else if chosen == "reality" {
 		if !configureReality(&n, *s, public, probe) {

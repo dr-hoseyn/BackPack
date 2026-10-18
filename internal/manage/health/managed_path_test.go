@@ -38,3 +38,26 @@ func TestManagedPathDoesNotDiagnoseTheInnerLoopbackAsTheHTTPSPath(t *testing.T) 
 		}
 	}
 }
+
+func TestManagedHealthRequiresVerifiedCarriersAndIndependentNativeUDPHealth(t *testing.T) {
+	for _, healthy := range []bool{false, true} {
+		snap := metrics.Snapshot{ManagedPaths: &metrics.ManagedPathsStats{}, NativeUDP: &metrics.NativeUDPStats{Connected: healthy}}
+		if healthy {
+			snap.ManagedPaths.Active = "verified-primary"
+			snap.ManagedPaths.NativeUDPActive = "verified-native"
+		}
+		checks := verifiedManagedChecks("test", snap)
+		if len(checks) != 2 {
+			t.Fatal("missing independent TCP/UDP checks")
+		}
+		want := CheckWarn
+		if healthy {
+			want = CheckOK
+		}
+		for _, c := range checks {
+			if c.Level != want {
+				t.Fatalf("false managed health: %+v", c)
+			}
+		}
+	}
+}
