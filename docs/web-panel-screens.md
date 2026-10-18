@@ -211,4 +211,4 @@ hash همه‌جا درست reload می‌شود. هر صفحه‌ای در ای
 
 ---
 
-*Last verified against Backpack v1.12.0.*
+*Last verified against Backpack v1.13.0.*

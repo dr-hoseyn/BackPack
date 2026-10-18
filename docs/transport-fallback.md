@@ -123,4 +123,4 @@ timeout رد نشود.
 
 ---
 
-*Last verified against Backpack v1.12.0.*
+*Last verified against Backpack v1.13.0.*

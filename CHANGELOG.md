@@ -2,7 +2,7 @@
 
 All notable changes to Backpack are documented here.
 
-## Unreleased
+## v1.13.0 — 2026-10-18 (dr-hoseyn fork)
 
 - Add combined XHTTP/REALITY, restricted TrustTunnel HTTP/3 with HTTP/2
   fallback, and native WebTransport streams and fragmented datagrams.
@@ -36,7 +36,24 @@ All notable changes to Backpack are documented here.
 - Preserve queued TCPMux payloads after failed writes by withholding their relay
   buffers from reuse; retain pooling after completed writes.
 
+- Preserve literal private IPv6/custom loopback targets in individual and
+  combined Setup Links; reject non-loopback destinations.
+- Keep expanded Connection Test settings within the 1,200-byte packet budget
+  and align carrier trust, mode and independent probe diagnostics.
+- Isolate WSS proof fixtures across recycled test ports while preserving
+  production downgrade protection.
+
 See [Network efficiency and modern carriers](docs/modern-networking.md).
+
+<div dir="rtl">
+
+نسخهٔ v1.13.0 بهینه‌سازی مصرف منابع، رفع مشکلات اتصال و جفت‌سازی، پنل هماهنگ‌تر
+و حامل‌های XHTTP+REALITY، TrustTunnel، WebTransport و Tailcat+DERP آزمایشی را
+اضافه می‌کند. تنظیمات جدید را روی هر دو سمت با همین نسخه استفاده کنید. TrustTunnel
+در این نسخه حامل محدود Reverse است؛ محدودیت EOF در endpoint رسمی و شیوهٔ
+آزمایش آن در مستندات شبکه توضیح داده شده است.
+
+</div>
 
 ## v1.12.0 — 2026-10-18 (dr-hoseyn fork)
 

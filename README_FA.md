@@ -1,12 +1,14 @@
 # فورک dr-hoseyn
 
-این فورک بر پایهٔ BackPack اصلی v1.9.0 است و بهبودهای PRهای #104، #98 و #108 را دارد. نسخهٔ v1.12.0 و آپدیت‌های داخلی از مخزن `dr-hoseyn/BackPack` دریافت می‌شوند. حالت مدیریت‌شدهٔ Short HTTPS برای TCP معکوس در دسترس است.
+این فورک بر پایهٔ BackPack اصلی v1.9.0 است و بهبودهای PRهای #104، #98 و #108 را دارد. نسخهٔ v1.13.0 و آپدیت‌های داخلی از مخزن `dr-hoseyn/BackPack` دریافت می‌شوند. حالت مدیریت‌شدهٔ Short HTTPS برای TCP معکوس در دسترس است.
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/dr-hoseyn/BackPack/main/install.sh)
 ```
 
 نصاب روی لینوکس glibc و معماری amd64/arm64 ابزارهای NaiveProxy، sing-box و Xray را هم خودکار نصب می‌کند. برای نصب فقط خود BackPack از `BP_HELPERS=` استفاده کن.
+
+نسخهٔ v1.13.0، [بهینه‌سازی شبکه و حامل‌های جدید](docs/modern-networking.md) را اضافه می‌کند: حالت Economy، راه‌اندازی و جفت‌سازی در پنل، XHTTP+REALITY، حامل Reverse مخصوص TrustTunnel، WebTransport برای Reverse/Direct و Tailcat+DERP آزمایشی با انتخاب صریح. مصرف منابع، بازیابی اتصال، ویرایش امن و جفت‌سازی IPv6 داخلی هم بهبود یافته‌اند. برای تنظیمات جفت‌شدهٔ جدید هر دو سمت را ارتقا بده. Tailcat به helper اختیاری جداگانه و انتخاب نقشه و منطقهٔ DERP نیاز دارد.
 
 نسخهٔ v1.12.0، [راه‌اندازی Automatic](docs/automatic-setup.md) را کنار Reverse و Direct اضافه می‌کند: در ایران پورت‌های انتقالی را وارد کن و در خارج از **Setup Kharej → Setup Link** لینک را بده؛ پروتکل‌ها و تنظیمات جفت‌شده خودکار تشخیص داده می‌شوند. [تاریخچهٔ Connection Test](docs/connection-test-history.md)، [عیب‌یابی مرحله‌ای TUIC و Hysteria2](docs/carrier-diagnostics.md)، بازیابی سریع‌تر helper، نام‌های کوتاه پروتکل‌ها و [سنجش آپلود، دانلود، CPU و رم](tools/tunnelbench/README.md) هم اضافه شده‌اند. برای استفادهٔ کامل، هر دو سمت را به v1.12.0 ارتقا بده.
 
