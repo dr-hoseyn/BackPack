@@ -188,6 +188,15 @@ closed. Reverse UDP forwarding, if enabled, uses the existing Reverse stream
 engine; this carrier does not expose the general-purpose TrustTunnel VPN's
 arbitrary UDP/ICMP proxy endpoints.
 
+Independent compatibility tests use the pinned official TrustTunnel v1.1.0
+endpoint and verify exact random payload bytes in H2, H3 and automatic modes.
+That endpoint intermittently omits the trailing H3 FIN after echoing the full
+payload; packet traces show the data arriving and the client's FIN being
+acknowledged. Those interoperability tests therefore verify a fixed payload
+length and close the stream explicitly. Backpack-to-Backpack tests separately
+require directional EOF and delivery of the final bytes. Do not infer the
+official endpoint's EOF behavior from Backpack's server tests.
+
 `webtransport` Reverse uses authenticated HTTP/3 sessions with independently
 half-closed streams and the `backpack-stream-v1` application protocol. Both
 ends need Backpack; this stream profile is not a generic browser proxy. A new

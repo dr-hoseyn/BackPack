@@ -1,10 +1,14 @@
 package httpcarrier
 
 import (
+	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/exec"
@@ -93,7 +97,7 @@ func TestTrustTunnelOfficialEndpointInteroperability(t *testing.T) {
 			}
 			c.h3.QUICConfig.Tracer = qlog.DefaultConnectionTracer
 			defer c.Close()
-			if err := exchange(setup, c, target, []byte("independent official endpoint verified bytes")); err != nil {
+			if err := exchangeOfficialPayload(setup, c, target); err != nil {
 				c.Close()
 				files, _ := filepath.Glob(filepath.Join(traceDir, "*"))
 				for _, file := range files {
@@ -106,4 +110,50 @@ func TestTrustTunnelOfficialEndpointInteroperability(t *testing.T) {
 			}
 		})
 	}
+}
+
+// The upstream v1.1.0 endpoint can echo all bytes but omit its final QUIC FIN.
+// qlog confirms receipt of the complete DATA frame and acknowledgement of our
+// FIN in that case. Verify independent implementation payload interoperability
+// without treating that upstream EOF behavior as Backpack's stream contract.
+// TestCarriersTransferConcurrentStreamsAndDirectionalEOF separately requires
+// directional EOF against Backpack's H2/H3 servers, including the final bytes.
+func exchangeOfficialPayload(ctx context.Context, c *Client, target string) error {
+	payload := make([]byte, 96<<10)
+	if _, err := rand.Read(payload); err != nil {
+		return err
+	}
+	s, err := c.DialStream(ctx, target)
+	if err != nil {
+		return fmt.Errorf("CONNECT setup: %w", err)
+	}
+	defer s.Close()
+	stop := context.AfterFunc(ctx, func() { s.Close() })
+	defer stop()
+	written := make(chan error, 1)
+	go func() {
+		n, err := s.Write(payload)
+		if err == nil && n != len(payload) {
+			err = io.ErrShortWrite
+		}
+		if err == nil {
+			err = s.(interface{ CloseWrite() error }).CloseWrite()
+		}
+		written <- err
+	}()
+	got := make([]byte, len(payload))
+	_, readErr := io.ReadFull(s, got)
+	if readErr != nil {
+		s.Close()
+	}
+	if err := <-written; err != nil {
+		return fmt.Errorf("upload and FIN: %w", err)
+	}
+	if readErr != nil {
+		return fmt.Errorf("verified download: %w", readErr)
+	}
+	if !bytes.Equal(got, payload) {
+		return errors.New("official endpoint changed the echoed bytes")
+	}
+	return nil
 }
