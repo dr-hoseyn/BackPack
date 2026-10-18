@@ -413,4 +413,4 @@ See `internal/tunnel/l3/bench_gate_test.go`.
 
 ---
 
-*Last verified against Backpack v1.11.0.*
+*Last verified against Backpack v1.12.0.*

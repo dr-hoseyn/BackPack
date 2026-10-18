@@ -7,6 +7,9 @@ Reference pages: what each part of Backpack **is**, and every setting it has.
 - Looking for the **overview and install**? → [main README](../README.md)
 
 ### Start here
+- [Automatic setup](automatic-setup.md) - forwarded ports on Iran, one detected Setup Link on Kharej
+- [Connection Test history](connection-test-history.md) - compare compatible completed measurements
+- [TUIC and Hysteria2 diagnostics](carrier-diagnostics.md) - observed stages and authenticated payload checks
 - [The CLI menu — complete reference](cli-menu.md) — every option in every menu,
   including the advanced Fine Tune settings
 - [Server layout (file locations)](server-layout.md)
@@ -95,4 +98,4 @@ Reference pages: what each part of Backpack **is**, and every setting it has.
 
 ---
 
-*Last verified against Backpack v1.11.0.*
+*Last verified against Backpack v1.12.0.*

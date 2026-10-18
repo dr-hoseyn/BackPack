@@ -1,12 +1,14 @@
 # dr-hoseyn fork
 
-This fork combines upstream BackPack v1.9.0 with PRs [#104](https://github.com/AminMGMT/BackPack/pull/104), [#98](https://github.com/AminMGMT/BackPack/pull/98), and [#108](https://github.com/AminMGMT/BackPack/pull/108). Fork release **v1.11.0** installs and updates from `dr-hoseyn/BackPack`. Managed Short HTTPS is available for Reverse TCP. The source also includes [advanced XHTTP settings](docs/xhttp-advanced.md) and [managed AmneziaWG setup](docs/amneziawg.md).
+This fork combines upstream BackPack v1.9.0 with PRs [#104](https://github.com/AminMGMT/BackPack/pull/104), [#98](https://github.com/AminMGMT/BackPack/pull/98), and [#108](https://github.com/AminMGMT/BackPack/pull/108). Fork release **v1.12.0** installs and updates from `dr-hoseyn/BackPack`. Managed Short HTTPS is available for Reverse TCP. The source also includes [advanced XHTTP settings](docs/xhttp-advanced.md) and [managed AmneziaWG setup](docs/amneziawg.md).
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/dr-hoseyn/BackPack/main/install.sh)
 ```
 
 On Linux glibc amd64/arm64, the installer now includes the pinned NaiveProxy, sing-box and Xray helpers automatically. Set `BP_HELPERS=` explicitly to install BackPack alone.
+
+Version v1.12.0 adds [Automatic setup](docs/automatic-setup.md) beside Reverse and Direct: enter forwarded ports on Iran, then paste its link under **Setup Kharej → Setup Link**. Protocols and paired settings are detected automatically. It also adds [Connection Test history](docs/connection-test-history.md), [staged TUIC/Hysteria2 diagnostics](docs/carrier-diagnostics.md), faster helper-exit recovery, compact labels and [verified bulk CPU/RAM benchmarks](tools/tunnelbench/README.md). Upgrade both peers to v1.12.0 for the complete new setup and diagnostics.
 
 Version v1.10.0 adds [managed Hysteria2, AnyTLS, ShadowTLS v3 + SS2022 and TUIC v5](docs/managed-protocols.md), including native Hysteria2/TUIC datagrams, plus [managed AmneziaWG setup](docs/amneziawg.md). Upgrade both peers to v1.10.0 or later before using the new paired modes.
 

@@ -2,6 +2,45 @@
 
 All notable changes to Backpack are documented here.
 
+## v1.12.0 — 2026-10-18 (dr-hoseyn fork)
+
+- Set up Kharej directly from a Setup Link: direction, protocol, helper
+  credentials and private trust are inferred before asking manual questions.
+- Add Automatic beside Reverse and Direct. Enter forwarded ports on Iran;
+  Backpack prepares independent free listeners, credentials, verified private
+  certificates and a paired link using up to eight compatible managed carriers.
+  Unavailable helpers or unverified covers are explained and omitted. Required
+  inbound firewall ports are shown before creation; firewall rules are not changed.
+- Withdraw exited helpers promptly from TCP and native UDP path selection,
+  preserving active forwards and rejecting stale probe results after restart.
+- Keep private, bounded Connection Test history and compare compatible completed
+  measurements with `backpack test history` and `backpack test compare`.
+- Add `backpack diagnose -c CONFIG [--path NAME] [--json]` for staged TUIC and
+  Hysteria2 diagnostics on Kharej. Separate observed UDP/QUIC, verified TLS,
+  helper startup, token-bound authentication, payload and native datagram checks.
+  A timeout alone does not identify filtering or prove incorrect credentials.
+- Shorten protocol labels and remove slash separators in terminal choices and
+  result tables while retaining the underlying protocol identifiers.
+- Reduce native UDP sender allocations without changing authenticated wire
+  bytes, fragmentation or replay behavior.
+- Add verified continuous upload/download benchmarks with process-tree CPU/RSS,
+  nonrepeating payloads, remote receiver-confirmed upload counts, excluded warmup
+  and bounded cancellation. Echo and bulk rates remain explicitly distinct.
+
+Use v1.12.0 on both peers for the complete Automatic setup and standalone managed
+carrier diagnostics. Automatic includes compatible managed Reverse carriers;
+Direct/L3/AmneziaWG and native packet engines retain their separate setup flows.
+
+<div dir="rtl">
+
+نسخهٔ v1.12.0 راه‌اندازی خارج با تشخیص خودکار از لینک، گزینهٔ Automatic کنار
+Reverse و Direct، بازیابی سریع‌تر مسیرها، تاریخچهٔ Connection Test، عیب‌یابی
+مرحله‌ای TUIC و Hysteria2 و سنجش واقعی آپلود، دانلود، CPU و رم را اضافه می‌کند.
+برای استفادهٔ کامل از قابلیت‌های جدید، هر دو سمت را ارتقا دهید. فایروال خودکار
+تغییر نمی‌کند و پورت‌های موردنیاز پیش از ساخت نمایش داده می‌شوند.
+
+</div>
+
 ## v1.11.0 — 2026-10-18 (dr-hoseyn fork)
 
 - Add managed adaptive paths with authenticated upload/download probes, warm

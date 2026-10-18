@@ -18,7 +18,7 @@ long form. For *how to set a tunnel up*, use the
 |---|--------|--------------|
 | 0 | **Connection Test** | Runs every reverse transport and direct carrier between this server and another for real — started on the Iran server, joined on the kharej with the link it prints — and shows which ones carry traffic steadily, which drop, and which never come up, with round trip and speed. Nothing is installed; the test tunnels are gone when it ends. |
 | 1 | **Setup Iran** | Create the **Iran-side** tunnel that exposes ports. Asks the direction first — reverse or direct. |
-| 2 | **Setup Kharej** | Create the **kharej-side** tunnel that holds the real service. Asks the direction first. |
+| 2 | **Setup Kharej** | Create the **kharej-side** tunnel that holds the real service. Accepts a Setup Link directly, or opens manual setup. |
 | 3 | **Manage** | Everything about existing tunnels, plus the diagnostics. [↓](#3-manage) |
 | 4 | **Backup & Restore** | The whole configuration as one `.tar.gz`. [↓](#4-backup--restore) |
 | 5 | **Web Panel** | The monitoring dashboard — port, login, certificate. [↓](#5-web-panel) |
@@ -111,9 +111,11 @@ The questions, in the order they are asked. `[Y/n]` marks the default.
 
 ### Setup Iran
 
-Both setup entries ask **Reverse or Direct** before anything else. The table
-below is the reverse flow; the direct flow is much shorter and is listed after
-it.
+Iran offers **Reverse**, **Direct**, **Automatic** and **AmneziaWG**.
+[Automatic](automatic-setup.md) asks for forwarded ports and prepares the
+compatible managed paths and paired link. The table below describes manual
+Reverse setup; Direct is listed after it. Kharej accepts a Setup Link before
+asking for a direction or transport.
 
 Set up the **Iran server first**; its summary shows a setup link the kharej
 server pastes.
@@ -204,9 +206,10 @@ once it is up and corrects the interface itself.
 
 ### Setup Kharej
 
-After the transport (the same one as Iran), **How Do You Want To Set Up This
-Side?** — **Setup Link** (paste the line; only the name is asked) or
-**Manual**:
+Choose **Setup Link** to infer the tunnel kind, protocol and paired settings
+from Iran's link. A missing public address or certificate/key belonging to this
+machine is requested only when needed. Choose **Manual Setup** to select the
+direction and carrier yourself. The table below describes manual Reverse setup:
 
 | Prompt | Notes |
 |---|---|
@@ -531,7 +534,7 @@ FEC؛ و zero-copy (فقط روی tcp ساده).
 
 ---
 
-*Last verified against Backpack v1.11.0.*
+*Last verified against Backpack v1.12.0.*
 
 
 Connection Test also provides [saved history and repeated-run comparison](connection-test-history.md)

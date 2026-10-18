@@ -1,8 +1,10 @@
 # Verified managed paths
 
-Requires BackPack v1.11.0 or later on **both** machines. Choose
-**Reverse → HTTPS → Managed adaptive paths** in the terminal. Configure two to
-eight independent public carriers on Iran and export its Setup Link to Kharej.
+Requires BackPack v1.11.0 or later on **both** machines. With v1.12.0, choose
+[**Automatic**](automatic-setup.md) beside Reverse and Direct for generated
+settings, then use **Setup Kharej → Setup Link** on the other machine. The detailed
+editor remains under **Reverse → HTTPS → Adaptive Managed Paths**. Configure two
+to eight independent public carriers on Iran and export its Setup Link to Kharej.
 Names identify paths in metrics and must be unique ASCII identities of at most
 32 characters. Public listeners must not overlap. An optional `endpoint` exports
 a different public host:port when the listener uses a wildcard or a frontend.
@@ -146,4 +148,4 @@ certificate renewal still require validation in your deployment.
 
 </div>
 
-*Last verified against Backpack v1.11.0, 2026-10-18.*
+*Last verified against Backpack v1.12.0, 2026-10-18.*

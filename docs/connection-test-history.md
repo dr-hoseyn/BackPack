@@ -47,4 +47,4 @@ are not saved by this terminal-only feature.
 
 </div>
 
-*Last verified against Backpack v1.11.0, 2026-10-18.*
+*Last verified against Backpack v1.12.0, 2026-10-18.*
