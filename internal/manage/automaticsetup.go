@@ -118,7 +118,30 @@ func automaticUDPConflict(ports []string) string {
 	return ""
 }
 
-func buildAutomaticSpec(name, host, private, cert, key, cover string, carriers, endpoints, ports []string) (TunnelSpec, error) {
+type automaticTLSMaterial struct {
+	Cert, Key                      string
+	XHTTPName, XHTTPCert, XHTTPKey string
+}
+
+func automaticCertificates(name, host string, xhttp bool) (automaticTLSMaterial, error) {
+	var material automaticTLSMaterial
+	var err error
+	material.Cert, material.Key, err = EnsureSelfSignedCert(name+"-https", host)
+	if err != nil {
+		return material, err
+	}
+	// Xray's verified XHTTP contract requires a DNS identity. The dial address
+	// can remain an IP: pair a private DNS SAN and its trust file explicitly,
+	// without requiring public DNS or weakening certificate verification.
+	if xhttp && net.ParseIP(host) != nil {
+		material.XHTTPName = name + ".backpack.invalid"
+		material.XHTTPCert, material.XHTTPKey, err = EnsureSelfSignedCert(name+"-xhttp", material.XHTTPName)
+	}
+	return material, err
+}
+
+func buildAutomaticSpec(name, host, private string, material automaticTLSMaterial, cover string, carriers, endpoints, ports []string) (TunnelSpec, error) {
+	cert, key := material.Cert, material.Key
 	s := TunnelSpec{Name: name, Role: "server", Transport: "tcp", BindAddr: private, Token: randomToken(64), Ports: ports}
 	ApplyPreset(&s, PresetBalance)
 	if len(carriers) < 2 || len(carriers) > 8 || len(endpoints) != len(carriers) {
@@ -139,6 +162,12 @@ func buildAutomaticSpec(name, host, private, cert, key, cover string, carriers, 
 			x := config.XrayServerConfig{Binary: managedHelperPath("xray"), Listen: endpoints[i], Mode: carrier, UUID: id, ServerName: host}
 			if carrier == "xhttp" {
 				x.Path, x.Certificate, x.Key = "/"+randomToken(24), cert, key
+				if net.ParseIP(host) != nil {
+					if material.XHTTPName == "" || material.XHTTPCert == "" || material.XHTTPKey == "" {
+						return TunnelSpec{}, fmt.Errorf("IP-based Automatic XHTTP requires a paired private DNS identity and certificate")
+					}
+					x.ServerName, x.Certificate, x.Key = material.XHTTPName, material.XHTTPCert, material.XHTTPKey
+				}
 			} else {
 				x.Target = cover
 				x.ServerName = addrHost(cover, "")
@@ -302,12 +331,12 @@ func setupAutomaticIran() {
 		return
 	}
 	name := freeName("automatic-" + addrPort(private))
-	cert, key, err := EnsureSelfSignedCert(name+"-https", host)
+	material, err := automaticCertificates(name, host, xray)
 	if err != nil {
 		fail(err)
 		return
 	}
-	s, err := buildAutomaticSpec(name, host, private, cert, key, cover, carriers, endpoints, ports)
+	s, err := buildAutomaticSpec(name, host, private, material, cover, carriers, endpoints, ports)
 	if err == nil {
 		err = validateManagedSpec(s)
 	}

@@ -41,7 +41,7 @@ func TestManagedHTTPSChoicesReachBothReverseWizards(t *testing.T) {
 	}
 }
 
-func managedWizardFixture(t *testing.T) (binary, cert, key string) {
+func managedWizardFixture(t *testing.T, extraDNSNames ...string) (binary, cert, key string) {
 	t.Helper()
 	dir := t.TempDir()
 	binary, cert, key = filepath.Join(dir, "helper"), filepath.Join(dir, "cert.pem"), filepath.Join(dir, "key.pem")
@@ -52,7 +52,7 @@ func managedWizardFixture(t *testing.T) (binary, cert, key string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	template := x509.Certificate{SerialNumber: big.NewInt(11), DNSNames: []string{"localhost"}, IPAddresses: []net.IP{net.ParseIP("127.0.0.1")}, NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour)}
+	template := x509.Certificate{SerialNumber: big.NewInt(11), DNSNames: append([]string{"localhost"}, extraDNSNames...), IPAddresses: []net.IP{net.ParseIP("127.0.0.1")}, NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour)}
 	der, err := x509.CreateCertificate(rand.Reader, &template, &template, &priv.PublicKey, priv)
 	if err != nil {
 		t.Fatal(err)

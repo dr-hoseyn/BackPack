@@ -11,6 +11,8 @@ All notable changes to Backpack are documented here.
   certificates and a paired link using up to eight compatible managed carriers.
   Unavailable helpers or unverified covers are explained and omitted. Required
   inbound firewall ports are shown before creation; firewall rules are not changed.
+  IP-only setup pairs a generated private DNS certificate identity for XHTTP,
+  without requiring a public domain or disabling TLS verification.
 - Withdraw exited helpers promptly from TCP and native UDP path selection,
   preserving active forwards and rejecting stale probe results after restart.
 - Keep private, bounded Connection Test history and compare compatible completed

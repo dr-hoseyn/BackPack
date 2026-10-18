@@ -15,6 +15,11 @@ generated credentials, verified private certificate trust and the Balance preset
 No certificate private key is exported. Keep the setup link private: it contains
 the paired account secrets.
 
+A public domain is not required. For an IP endpoint, XHTTP gets its own generated
+private DNS certificate identity and public trust in the link while continuing
+to dial the actual IP. Other carriers retain certificates covering the IP; TLS
+verification stays enabled on every path.
+
 On Kharej choose **Setup Link** directly. Direction and protocol are inferred for
 Reverse, Automatic, Direct and AmneziaWG links. Local certificate/key paths needed
 by a Direct listener still belong to that machine and must be provided there.

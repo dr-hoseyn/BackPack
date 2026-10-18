@@ -8,7 +8,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/backpack/backpack/config"
 	"github.com/backpack/backpack/internal/tui"
+	"github.com/backpack/backpack/internal/tunnel/naive"
 )
 
 func TestAutomaticBundlePairsEveryCompatibleCarrier(t *testing.T) {
@@ -18,7 +20,7 @@ func TestAutomaticBundlePairsEveryCompatibleCarrier(t *testing.T) {
 	for i := range carriers {
 		endpoints = append(endpoints, fmt.Sprintf("0.0.0.0:%d", 24000+i))
 	}
-	s, err := buildAutomaticSpec("automatic-test", "localhost", "127.0.0.1:23000", cert, key, "cover.example:443", carriers, endpoints, []string{"25000=127.0.0.1:443"})
+	s, err := buildAutomaticSpec("automatic-test", "localhost", "127.0.0.1:23000", automaticTLSMaterial{Cert: cert, Key: key}, "cover.example:443", carriers, endpoints, []string{"25000=127.0.0.1:443"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,6 +76,56 @@ func TestAutomaticBundlePairsEveryCompatibleCarrier(t *testing.T) {
 		if strings.Contains(path.HelperCA, "PRIVATE") || strings.Contains(path.HelperCA, string(private)) {
 			t.Fatal("private TLS key exported")
 		}
+	}
+}
+
+func TestAutomaticIPPairsXHTTPPrivateDNSWithoutRequiringADomain(t *testing.T) {
+	const identity = "automatic-ip.backpack.invalid"
+	binary, cert, key := managedWizardFixture(t, identity)
+	var requests []string
+	original := EnsureSelfSignedCert
+	EnsureSelfSignedCert = func(name, host string) (string, string, error) {
+		requests = append(requests, name+"="+host)
+		return cert, key, nil
+	}
+	defer func() { EnsureSelfSignedCert = original }()
+	material, err := automaticCertificates("automatic-ip", "127.0.0.1", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(requests, ",") != "automatic-ip-https=127.0.0.1,automatic-ip-xhttp="+identity {
+		t.Fatal("IP and private DNS certificates were not generated independently", requests)
+	}
+	carriers := []string{"short-https", "xhttp"}
+	endpoints := []string{"0.0.0.0:24000", "0.0.0.0:24001"}
+	s, err := buildAutomaticSpec("automatic-ip", "127.0.0.1", "127.0.0.1:23000", material, "", carriers, endpoints, []string{"25000=127.0.0.1:443"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.ServerPaths[1].Xray.Binary = binary
+	if runtime.GOOS == "linux" {
+		if err := validateManagedSpec(s); err != nil {
+			t.Fatal(err)
+		}
+	}
+	link, err := DecodeShareLink(pendingReverseLink(s, "127.0.0.1", linkExtras{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := reverseClientFromLink(link, "127.0.0.1")
+	x := client.ClientPaths[1].Xray
+	if x.Server != "127.0.0.1:24001" || x.ServerName != identity {
+		t.Fatalf("peer lost IP endpoint or private verified name: %+v", x)
+	}
+	x.Binary, x.CAFile = binary, cert
+	c := config.ClientConfig{Transport: config.TCP, RemoteAddr: s.BindAddr, Token: s.Token, Xray: x}
+	if runtime.GOOS == "linux" {
+		if err := naive.ValidateXrayClient(&c); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := buildAutomaticSpec("automatic-ip", "127.0.0.1", s.BindAddr, automaticTLSMaterial{Cert: cert, Key: key}, "", carriers, endpoints, s.Ports); err == nil {
+		t.Fatal("IP XHTTP accepted without its verified DNS identity")
 	}
 }
 
