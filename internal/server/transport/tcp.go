@@ -53,23 +53,26 @@ type TcpTransport struct {
 }
 
 type TcpConfig struct {
-	PathProbe     bool
-	MPTCP         bool
-	BindAddr      string
-	Token         string
-	SnifferLog    string
-	Ports         []string
-	Nodelay       bool
-	Sniffer       bool
-	KeepAlive     time.Duration
-	Heartbeat     time.Duration // in seconds
-	ChannelSize   int
-	WebPort       int
-	AcceptUDP     bool
-	MSS           int
-	SO_RCVBUF     int
-	SO_SNDBUF     int
-	ProxyProtocol bool
+	PathProbe bool
+	// DiagnosticProbe accepts authenticated standalone probes without enabling
+	// adaptive pool watching or assignment ACKs on ordinary managed clients.
+	DiagnosticProbe bool
+	MPTCP           bool
+	BindAddr        string
+	Token           string
+	SnifferLog      string
+	Ports           []string
+	Nodelay         bool
+	Sniffer         bool
+	KeepAlive       time.Duration
+	Heartbeat       time.Duration // in seconds
+	ChannelSize     int
+	WebPort         int
+	AcceptUDP       bool
+	MSS             int
+	SO_RCVBUF       int
+	SO_SNDBUF       int
+	ProxyProtocol   bool
 	// MaxConnections caps simultaneous forwarded connections (0 = unlimited).
 	MaxConnections int
 	// BandwidthMbps caps total tunnel throughput (0 = unlimited).
@@ -300,7 +303,7 @@ func (s *TcpTransport) admitTunnelConn(g *tcpGen, raw net.Conn) {
 	}
 
 	switch {
-	case ann.signal == utils.SG_PathProbe && s.config.PathProbe:
+	case ann.signal == utils.SG_PathProbe && (s.config.PathProbe || s.config.DiagnosticProbe):
 		if err := pathprobe.Serve(conn, s.config.Token, ann.payload); err != nil {
 			s.logger.Debugf("managed path probe ended: %v", err)
 		}
