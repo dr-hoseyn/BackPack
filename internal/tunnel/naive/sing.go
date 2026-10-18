@@ -93,6 +93,9 @@ func ValidateSingClient(c *config.ClientConfig) error {
 }
 
 func validateSingClientIdentity(x config.SingClientConfig) error {
+	if err := validateSingAdvanced(x.Protocol, x.ObfsType, x.ObfsPassword, x.GeckoMin, x.GeckoMax, "", x.ECHConfig, x.BBRProfile, x.Realm, false); err != nil {
+		return err
+	}
 	if _, _, err := xrayEndpoint(x.Server); err != nil {
 		return fmt.Errorf("sing-box server: %w", err)
 	}
@@ -148,6 +151,9 @@ func ValidateSingServer(c *config.ServerConfig) error {
 }
 
 func validateSingServerIdentity(x config.SingServerConfig) error {
+	if err := validateSingAdvanced(x.Protocol, x.ObfsType, x.ObfsPassword, x.GeckoMin, x.GeckoMax, x.ECHKey, x.ECHConfig, x.BBRProfile, x.Realm, true); err != nil {
+		return err
+	}
 	if _, _, err := xrayEndpoint(x.Listen); err != nil {
 		return fmt.Errorf("sing-box listen: %w", err)
 	}
@@ -227,11 +233,22 @@ func SingClientJSON(x config.SingClientConfig, socks, target, network string) ([
 		return nil, err
 	}
 	out := map[string]any{"type": x.Protocol, "tag": "tunnel", "server": server, "server_port": port, "password": x.Password, "tls": tls}
+	if x.ECHConfig != "" {
+		tls["ech"] = map[string]any{"enabled": true, "config": []string{x.ECHConfig}}
+	}
+	if x.Realm.Enabled() {
+		out["realm"] = singRealm(x.Realm)
+		delete(out, "server")
+		delete(out, "server_port")
+	}
+	if x.BBRProfile != "" {
+		out["bbr_profile"] = x.BBRProfile
+	}
 	outs := []any{out}
 	switch x.Protocol {
 	case "hysteria2":
 		if x.ObfsPassword != "" {
-			out["obfs"] = map[string]any{"type": "salamander", "password": x.ObfsPassword}
+			out["obfs"] = singObfs(x.ObfsType, x.ObfsPassword, x.GeckoMin, x.GeckoMax)
 		}
 	case "tuic":
 		out["uuid"], out["congestion_control"], out["udp_relay_mode"], out["zero_rtt_handshake"] = x.UUID, "bbr", "native", false
@@ -267,14 +284,23 @@ func SingServerJSON(x config.SingServerConfig, ready, target, network string) ([
 			return nil, err
 		}
 		in["tls"] = map[string]any{"enabled": true, "certificate": []string{string(cert)}, "key": []string{string(key)}}
+		if x.ECHKey != "" {
+			in["tls"].(map[string]any)["ech"] = map[string]any{"enabled": true, "key": []string{x.ECHKey}}
+		}
 		in["users"] = []any{map[string]any{"name": "backpack", "password": x.Password}}
 	}
 	switch x.Protocol {
 	case "hysteria2":
 		// Adaptive BBR avoids inventing a bandwidth ceiling for an unknown path.
 		in["ignore_client_bandwidth"] = true
+		if x.BBRProfile != "" {
+			in["bbr_profile"] = x.BBRProfile
+		}
+		if x.Realm.Enabled() {
+			in["realm"] = singRealm(x.Realm)
+		}
 		if x.ObfsPassword != "" {
-			in["obfs"] = map[string]any{"type": "salamander", "password": x.ObfsPassword}
+			in["obfs"] = singObfs(x.ObfsType, x.ObfsPassword, x.GeckoMin, x.GeckoMax)
 		}
 	case "tuic":
 		in["users"] = []any{map[string]any{"name": "backpack", "uuid": x.UUID, "password": x.Password}}

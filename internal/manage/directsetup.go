@@ -286,8 +286,14 @@ func askL3CarrierExtras(cfg *l3Spec, side directSide) bool {
 		return true
 	}
 
-	if cfg.Carrier == "masque" || cfg.Carrier == "masque-h2" {
-		cfg.Masque.Target = strings.TrimSpace(tui.PromptDefault("MASQUE Private UDP Target (Same On Both Ends)", cfg.Masque.TargetAddr()))
+	if cfg.Carrier == "masque" || cfg.Carrier == "masque-h2" || cfg.Carrier == "connect-ip" {
+		if cfg.Carrier != "connect-ip" {
+			cfg.Masque.Target = strings.TrimSpace(tui.PromptDefault("MASQUE Private UDP Target (Same On Both Ends)", cfg.Masque.TargetAddr()))
+		} else {
+			off := false
+			cfg.AutoMTU = &off
+			cfg.MTU, cfg.FECData, cfg.FECParity = 1280, 0, 0
+		}
 		cfg.Masque.ServerName = strings.TrimSpace(tui.PromptDefault("TLS Server Name (Certificate Hostname)", cfg.Masque.ServerName))
 		if side == sideKharej {
 			cfg.Masque.CertFile = strings.TrimSpace(tui.Prompt("TLS Certificate File: "))
@@ -387,7 +393,7 @@ func setupL3FromLink(chosen string) {
 		}
 		form.Sing = cfg.Sing
 	}
-	if link.Tr == "masque" || link.Tr == "masque-h2" {
+	if link.Tr == "masque" || link.Tr == "masque-h2" || link.Tr == "connect-ip" {
 		cfg := l3Spec{Carrier: link.Tr, Masque: form.Masque}
 		if !askL3CarrierExtras(&cfg, sideKharej) {
 			return

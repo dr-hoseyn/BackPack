@@ -33,6 +33,8 @@ type ManagedClientPath struct {
 
 // PathPolicy governs new TCP connections; active forwards remain on their path.
 type PathPolicy struct {
+	// StandbyInterval slows verified probes on healthy unselected paths; 0 keeps ProbeInterval.
+	StandbyInterval int `toml:"standby_interval,omitempty"`
 	// ProbeInterval is seconds between verified transfers per path; 0 uses 5.
 	ProbeInterval int `toml:"probe_interval,omitempty"`
 	// ProbeTimeout is the total seconds for a verified transfer; 0 uses 5.

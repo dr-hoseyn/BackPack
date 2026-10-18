@@ -271,6 +271,11 @@ func setupAutomaticIran() {
 		}
 	}
 	carriers := automaticCarriers(sing, xray, cover)
+	profile := "full"
+	if tui.Confirm("Use Economy (Up To Three Carriers, Reduced Backup Probes)", true) {
+		profile = "economy"
+		carriers = economicalCarriers(carriers)
+	}
 	if len(carriers) < 2 {
 		fail(fmt.Errorf("install Backpack's pinned sing-box or Xray helper first; Automatic needs at least two compatible carriers"))
 		return
@@ -337,6 +342,7 @@ func setupAutomaticIran() {
 		return
 	}
 	s, err := buildAutomaticSpec(name, host, private, material, cover, carriers, endpoints, ports)
+	s.PathProfile = profile
 	if err == nil {
 		err = validateManagedSpec(s)
 	}

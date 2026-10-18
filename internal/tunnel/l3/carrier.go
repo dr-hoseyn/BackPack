@@ -157,6 +157,8 @@ const (
 	CarrierMasque = "masque"
 	// CarrierMasqueH2 is an explicit reliable HTTPS fallback for UDP-blocked paths.
 	CarrierMasqueH2 = "masque-h2"
+	// CarrierConnectIP sends complete IP packets using RFC 9484, without GRE/Noise.
+	CarrierConnectIP = "connect-ip"
 	// CarrierSNI is pck with a fake TLS ClientHello at the start of the flow,
 	// so a box that classifies by server name lets the rest through. See
 	// carrier_sni.go.
@@ -173,7 +175,7 @@ func KnownCarrier(name string) bool { return knownCarrier(name) }
 // refused before anything is created rather than after.
 func knownCarrier(name string) bool {
 	switch name {
-	case CarrierUDP, CarrierPck, CarrierXdi, CarrierSpoof, CarrierQuic, CarrierSNI, CarrierMasque, CarrierMasqueH2, "hysteria2", "tuic":
+	case CarrierUDP, CarrierPck, CarrierXdi, CarrierSpoof, CarrierQuic, CarrierSNI, CarrierMasque, CarrierMasqueH2, CarrierConnectIP, "hysteria2", "tuic":
 		return true
 	}
 	return false

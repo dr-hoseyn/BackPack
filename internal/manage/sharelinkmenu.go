@@ -125,7 +125,7 @@ func setupFromLink() {
 		}
 		form.Sing = cfg.Sing
 	}
-	if form.Carrier == "masque" || form.Carrier == "masque-h2" {
+	if form.Carrier == "masque" || form.Carrier == "masque-h2" || form.Carrier == "connect-ip" {
 		side := sideIran
 		if form.Side == "kharej" {
 			side = sideKharej

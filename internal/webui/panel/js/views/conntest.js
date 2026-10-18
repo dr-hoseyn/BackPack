@@ -279,6 +279,7 @@ export function connTestView(ctx) {
   view.innerHTML = `<div class="tl-page ct">
     <div class="sech2 tl-head"><h2>Connection test</h2><span class="cnt" id="ctState">—</span><span class="sp"></span></div>
     <p class="tl-sub">Which transports actually survive the route between this Iran server and a kharej — measured, not guessed.</p>
+	<a class="btn" href="#/network">Saved tests, Automatic setup and diagnostics</a>
     <div id="ctSteps"></div>
     <div id="ctPaths" class="ct-paths" aria-label="IP path comparison"></div>
     <div class="ct-duo">

@@ -18,6 +18,7 @@ import (
 	"github.com/backpack/backpack/internal/monitor"
 	"github.com/backpack/backpack/internal/shorthttps"
 	"github.com/backpack/backpack/internal/telegram"
+	"github.com/backpack/backpack/internal/tunnel/naive"
 	"github.com/backpack/backpack/internal/utils"
 	"github.com/backpack/backpack/internal/webui"
 )
@@ -33,12 +34,15 @@ var logger = utils.NewLogger("info")
 //   - Menu mode:    `backpack`  (no arguments)
 //     Opens the interactive management CLI on the VPS.
 func main() {
-	if len(os.Args) > 1 && (os.Args[1] == "short-https" || os.Args[1] == "awg") {
+	if len(os.Args) > 1 && (os.Args[1] == "short-https" || os.Args[1] == "awg" || os.Args[1] == "realm") {
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 		run := shorthttps.Run
 		if os.Args[1] == "awg" {
 			run = amneziawg.Run
+		}
+		if os.Args[1] == "realm" {
+			run = naive.RunRealm
 		}
 		if err := run(ctx, os.Args[2:], os.Stdout); err != nil {
 			fmt.Fprintln(os.Stderr, err)

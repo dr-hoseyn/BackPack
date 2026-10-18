@@ -52,6 +52,9 @@ func count(v ...bool) int {
 }
 
 func Validate(c *config.Config) error {
+	if profile := c.Server.PathProfile; profile != "" && (len(c.Server.Paths) == 0 || (profile != "economy" && profile != "full")) {
+		return errors.New("path_profile requires managed paths and must be economy or full")
+	}
 	s, cl := len(c.Server.Paths), len(c.Client.Paths)
 	if s == 0 && cl == 0 {
 		if c.Client.PathPolicy != (config.PathPolicy{}) {

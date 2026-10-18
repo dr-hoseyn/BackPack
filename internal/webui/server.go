@@ -232,7 +232,12 @@ type server struct {
 	// one thing at a time in the background. Values rather than pointers so a
 	// server built as a literal in a test has them too. See handlers_conntest.go
 	// and handlers_manage.go.
-	conntest conntestRunner
+	conntest      conntestRunner
+	automaticMu   sync.Mutex
+	automaticPlan *manage.AutomaticPlan
+	automaticID   string
+	automaticBusy bool
+	diagnosticMu  sync.Mutex
 	// terminals counts the open root shells; see terminal.go.
 	terminals terminalCount
 
@@ -471,6 +476,9 @@ func (s *server) routes() *http.ServeMux {
 	// The Connection Test and Manage sections: the menu's tools, from the
 	// browser. See handlers_conntest.go and handlers_manage.go.
 	mux.HandleFunc("/api/conntest", s.requireAuth(s.handleConnTest))
+	mux.HandleFunc("/api/conntest/history", s.requireReadAuth(s.handleConnTestHistory))
+	mux.HandleFunc("/api/automatic", s.requireAuth(s.handleAutomatic))
+	mux.HandleFunc("/api/carrier/diagnose", s.requireAuth(s.handleCarrierDiagnose))
 	mux.HandleFunc("/api/manage", s.requireAuth(s.handleManage))
 	mux.HandleFunc("/api/manage/refresh", s.requireAuth(s.handleAutoRefresh))
 	mux.HandleFunc("/api/manage/proxy", s.requireAdmin(s.handleProxy))

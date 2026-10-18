@@ -3,6 +3,17 @@ package config
 // SingClientConfig carries the reverse engine through a restricted sing-box
 // helper. The helper is a carrier, never a general-purpose proxy.
 type SingClientConfig struct {
+	// ObfsType is salamander (legacy default) or gecko; Hysteria2 only.
+	ObfsType string `toml:"obfs_type,omitempty"`
+	// GeckoMin/Max bound on-wire padded packets (512..1400); zero uses 512/1200.
+	GeckoMin int `toml:"gecko_min,omitempty"`
+	GeckoMax int `toml:"gecko_max,omitempty"`
+	// ECHConfig contains public PEM ECH CONFIGS. TLS verification remains enabled.
+	ECHConfig string `toml:"ech_config,omitempty"`
+	// Realm optionally discovers the listening Hysteria2 peer through an HTTPS rendezvous.
+	Realm HysteriaRealm `toml:"realm,omitempty"`
+	// BBRProfile is standard, conservative or aggressive; empty uses standard.
+	BBRProfile string `toml:"bbr_profile,omitempty"`
 	// NativeUDP carries reverse forwarded UDP as native datagrams (Hysteria2/TUIC only); paired.
 	NativeUDP bool `toml:"native_udp,omitempty"`
 	// UDPMaxFlows caps native associations on this machine; 0 uses 128, maximum 4096.
@@ -34,6 +45,20 @@ func (s SingClientConfig) Enabled() bool { return s != (SingClientConfig{}) }
 // SingServerConfig owns one public helper and only permits the paired local
 // reverse target. ShadowTLS delegates to an SS2022 inbound inside the helper.
 type SingServerConfig struct {
+	// ObfsType selects salamander (legacy default) or gecko for Hysteria2.
+	ObfsType string `toml:"obfs_type,omitempty"`
+	// GeckoMin is the minimum padded packet size; zero uses 512.
+	GeckoMin int `toml:"gecko_min,omitempty"`
+	// GeckoMax is the maximum padded packet size; zero uses 1200.
+	GeckoMax int `toml:"gecko_max,omitempty"`
+	// ECHKey is private PEM ECH KEYS, retained only in the server configuration.
+	ECHKey string `toml:"ech_key,omitempty" json:"-"`
+	// ECHConfig is the matching public PEM ECH CONFIGS exported to the peer.
+	ECHConfig string `toml:"ech_config,omitempty"`
+	// Realm registers this listener with an existing HTTPS rendezvous service.
+	Realm HysteriaRealm `toml:"realm,omitempty"`
+	// BBRProfile selects standard, conservative or aggressive for Hysteria2.
+	BBRProfile string `toml:"bbr_profile,omitempty"`
 	// NativeUDP selects native reverse UDP rather than reliable stream forwarding; paired.
 	NativeUDP bool `toml:"native_udp,omitempty"`
 	// UDPMaxFlows caps native forwarded flows; 0 uses 128, maximum 4096.

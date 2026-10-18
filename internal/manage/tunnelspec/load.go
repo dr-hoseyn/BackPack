@@ -24,6 +24,7 @@ func LoadServer(name string) (Spec, error) {
 	return Spec{
 		Role:               "server",
 		ServerPaths:        sc.Paths,
+		PathProfile:        sc.PathProfile,
 		MPTCP:              sc.MPTCP,
 		Name:               name,
 		Transport:          string(sc.Transport),

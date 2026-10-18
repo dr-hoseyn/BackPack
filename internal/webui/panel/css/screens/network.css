@@ -1,0 +1,18 @@
+/* Existing panel tokens, with the listener manifest as the review boundary. */
+.panel .network-tools{max-width:1100px;margin-inline:auto}
+.panel .network-tools h3{font-size:15px;font-weight:640;margin-bottom:12px}
+.panel .network-tools h4{font-size:12.5px;margin:12px 0 6px}
+.panel .network-tools p,.panel .network-tools li,.panel .network-tools summary{font-size:12px;line-height:1.65;color:var(--tx2)}
+.panel .network-tools form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin:16px 0}
+.panel .network-tools label{display:grid;gap:7px;font-size:11px;color:var(--dim);line-height:1.5}
+.panel .network-tools input,.panel .network-tools select,.panel .network-tools textarea{width:100%;min-width:0;padding:10px 12px;background:var(--field,var(--sunk));border:1px solid var(--ln);border-radius:9px;font-size:12.5px;color:var(--tx)}
+.panel .network-tools textarea{font-family:monospace;overflow-wrap:anywhere;resize:vertical}
+.panel .network-tools button{justify-self:start;cursor:pointer;padding:9px 14px;border:1px solid var(--ln);border-radius:9px;background:var(--sunk);font-size:12px;min-height:40px}
+.panel .network-tools button:disabled{opacity:.55;cursor:wait}
+.panel .network-tools :is(button,input,select,textarea,a):focus-visible{outline:2px solid var(--tx2);outline-offset:3px}
+.panel .network-tools #autoResult:not(:empty){border-top:1px solid var(--ln);padding-top:12px}
+.panel .network-tools ul{padding-inline-start:20px;margin:10px 0}
+.panel .network-tools article,.panel .network-tools details{padding:10px 0;border-top:1px solid var(--ln)}
+.panel .network-tools dd{font-size:12px;line-height:1.6;overflow-wrap:anywhere}
+.panel .network-tools a{color:var(--tx2);font-size:12px;text-underline-offset:4px}
+@media(max-width:600px){.panel .network-tools form{grid-template-columns:1fr}.panel .network-tools .tl-head{flex-wrap:wrap}}

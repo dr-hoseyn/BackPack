@@ -219,7 +219,7 @@ func (c *Config) Validate() error {
 			return err
 		}
 	}
-	if c.Carrier == CarrierMasque || c.Carrier == CarrierMasqueH2 {
+	if c.Carrier == CarrierMasque || c.Carrier == CarrierMasqueH2 || c.Carrier == CarrierConnectIP {
 		if err := c.Masque.Validate(c.Mode == ModeListen); err != nil {
 			return fmt.Errorf("l3: %w", err)
 		}
@@ -278,6 +278,14 @@ func (c *Config) Validate() error {
 	}
 	if c.MTU == 0 {
 		c.MTU = defaultMTU
+		if c.Carrier == CarrierConnectIP {
+			c.MTU = 1280
+		}
+	}
+	if c.Carrier == CarrierConnectIP {
+		if c.MTU != 1280 || c.GREKey != 0 || c.FEC.Enabled() || c.Multipath.Enabled() || c.AutoMTU {
+			return fmt.Errorf("connect-ip requires MTU 1280 without GRE key, FEC, multipath or Noise auto-MTU")
+		}
 	}
 	if c.MTU < minMTU || c.MTU > maxMTU {
 		return fmt.Errorf("l3: mtu %d is outside the workable range %d..%d", c.MTU, minMTU, maxMTU)

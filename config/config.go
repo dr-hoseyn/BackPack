@@ -275,6 +275,8 @@ type PckConfig struct {
 
 // ServerConfig represents the configuration for the server.
 type ServerConfig struct {
+	// PathProfile selects economy or full for the peer's initial managed probe policy.
+	PathProfile string `toml:"path_profile,omitempty"`
 	// Paths keeps 2..8 independent managed public carriers alive for one Reverse engine.
 	Paths []ManagedServerPath `toml:"paths"`
 	// Short selects the in-process managed Short HTTPS wrapper for TCP Reverse.

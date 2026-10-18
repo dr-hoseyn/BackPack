@@ -126,6 +126,7 @@ them both ends have to agree on. This says what exists.
 | `probe_interval` | `int` | ProbeInterval is seconds between verified transfers per path; 0 uses 5. |
 | `probe_timeout` | `int` | ProbeTimeout is the total seconds for a verified transfer; 0 uses 5. |
 | `recoveries` | `int` | Recoveries is verified successes required for a failed path to return; 0 uses 2. |
+| `standby_interval` | `int` | StandbyInterval slows verified probes on healthy unselected paths; 0 keeps ProbeInterval. |
 
 ## [client.short]
 
@@ -139,12 +140,18 @@ them both ends have to agree on. This says what exists.
 
 | Key | Type | Description |
 |---|---|---|
+| `bbr_profile` | `string` | BBRProfile is standard, conservative or aggressive; empty uses standard. |
 | `binary` | `string` | Binary is the absolute path to the pinned sing-box executable. |
 | `ca_file` | `string` | CAFile optionally adds a private PEM trust anchor; TLS verification stays on. |
+| `ech_config` | `string` | ECHConfig contains public PEM ECH CONFIGS. TLS verification remains enabled. |
+| `gecko_max` | `int` | _(undocumented — add a comment above the field in `config/sing.go`)_ |
+| `gecko_min` | `int` | GeckoMin/Max bound on-wire padded packets (512..1400); zero uses 512/1200. |
 | `native_udp` | `bool` | NativeUDP carries reverse forwarded UDP as native datagrams (Hysteria2/TUIC only); paired. |
 | `obfs_password` | `string` | ObfsPassword enables Hysteria2 Salamander when nonempty; must match the server. |
+| `obfs_type` | `string` | ObfsType is salamander (legacy default) or gecko; Hysteria2 only. |
 | `password` | `string` | Password authenticates this helper separately from the reverse token. |
 | `protocol` | `string` | Protocol is hysteria2, anytls, shadowtls (v3 with SS2022), or tuic (v5). |
+| `realm` | `HysteriaRealm` | Realm optionally discovers the listening Hysteria2 peer through an HTTPS rendezvous. |
 | `server` | `string` | Server is the public helper endpoint, as a hostname or IP and port. |
 | `server_name` | `string` | ServerName is the identity verified by TLS, including the cover for ShadowTLS. |
 | `shadowsocks_key` | `string` | ShadowsocksKey is a canonical base64 32-byte SS2022 key for ShadowTLS only. |
@@ -353,19 +360,36 @@ them both ends have to agree on. This says what exists.
 | `listen` | `string` | Listen is the public TCP host:port, distinct from the private reverse port. |
 | `server_name` | `string` | ServerName is the certificate's public hostname or IP. |
 
+## [server.sing.realm] / [client.sing.realm]
+
+| Key | Type | Description |
+|---|---|---|
+| `ip_version` | `int` | IPVersion restricts discovery to 4 or 6; zero allows either. |
+| `realm_id` | `string` | RealmID identifies the shared 1..64 character slot. |
+| `server_url` | `string` | ServerURL is the HTTPS rendezvous endpoint with normal system trust. |
+| `stun_servers` | `string` | STUNServers lists one to eight explicit host:port endpoints, comma-separated. |
+| `token` | `string` | Token authenticates this registration independently of the tunnel. |
+
 ## [server.sing]
 
 | Key | Type | Description |
 |---|---|---|
+| `bbr_profile` | `string` | BBRProfile selects standard, conservative or aggressive for Hysteria2. |
 | `binary` | `string` | Binary is the absolute path to the pinned sing-box executable. |
 | `certificate` | `string` | Certificate is the verified PEM certificate chain; unused for ShadowTLS. |
+| `ech_config` | `string` | ECHConfig is the matching public PEM ECH CONFIGS exported to the peer. |
+| `ech_key` | `string` | ECHKey is private PEM ECH KEYS, retained only in the server configuration. |
+| `gecko_max` | `int` | GeckoMax is the maximum padded packet size; zero uses 1200. |
+| `gecko_min` | `int` | GeckoMin is the minimum padded packet size; zero uses 512. |
 | `handshake` | `string` | Handshake is the explicit ShadowTLS cover endpoint; no wildcard SNI routing. |
 | `key` | `string` | Key is the PEM private key, which remains on this server. |
 | `listen` | `string` | Listen is the public helper bind address, separate from the reverse port. |
 | `native_udp` | `bool` | NativeUDP selects native reverse UDP rather than reliable stream forwarding; paired. |
 | `obfs_password` | `string` | ObfsPassword enables Hysteria2 Salamander; empty keeps ordinary QUIC framing. |
+| `obfs_type` | `string` | ObfsType selects salamander (legacy default) or gecko for Hysteria2. |
 | `password` | `string` | Password is the helper account secret, independent of the reverse token. |
 | `protocol` | `string` | Protocol is hysteria2, anytls, shadowtls, or tuic. |
+| `realm` | `HysteriaRealm` | Realm registers this listener with an existing HTTPS rendezvous service. |
 | `server_name` | `string` | ServerName is the TLS identity, or the verified cover identity for ShadowTLS. |
 | `shadowsocks_key` | `string` | ShadowsocksKey is the base64 32-byte SS2022 key, required for ShadowTLS v3. |
 | `udp_bandwidth_mbps` | `int` | UDPBandwidthMbps caps native UDP in Mbit/s; 0 is unlimited. |
@@ -416,6 +440,7 @@ them both ends have to agree on. This says what exists.
 | `mux_version` | `int` | MuxVersion is the smux protocol version. Negotiated with the peer, so the two ends may differ and the lower wins. |
 | `naive` | `NaiveServerConfig` | Naive optionally wraps the loopback TCP reverse listener in HTTP/2 with a tunnel-owned sing-box helper; experimental and disabled when empty. |
 | `nodelay` | `bool` | Nodelay disables Nagle's algorithm on the tunnel's sockets. Off unless set; every preset sets it. It trades a little bandwidth for latency, which is what an interactive session wants and what a bulk transfer does not notice. |
+| `path_profile` | `string` | PathProfile selects economy or full for the peer's initial managed probe policy. |
 | `paths` | `[]ManagedServerPath` | Paths keeps 2..8 independent managed public carriers alive for one Reverse engine. |
 | `ports` | `[]string` | Ports are the forwarded ports this server exposes, as "443", "8080=127.0.0.1:80", "443-450" or "10.0.0.5:443". See docs/port-mappings.md for every form. |
 | `pprof` | `bool` | PPROF exposes Go's profiling endpoint on 127.0.0.1:6060. Off by default and loopback-only: its heap dump contains this tunnel's token. |

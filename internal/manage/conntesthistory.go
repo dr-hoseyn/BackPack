@@ -20,6 +20,14 @@ func LoadConnTestHistory() ([]testhistory.Run, error) {
 }
 
 func ctSaveHistory(side, preset string, paths []ConnTestPath, complete bool) {
+	if err := SaveConnTestHistory(side, preset, paths, complete); err != nil {
+		tui.Warn("Could not save test history: " + err.Error())
+	}
+}
+
+// SaveConnTestHistory is shared by browser and terminal tests. Callers report
+// persistence failures without changing the traffic measurement verdict.
+func SaveConnTestHistory(side, preset string, paths []ConnTestPath, complete bool) error {
 	r := testhistory.Run{At: time.Now().UTC(), Side: side, Preset: preset, Complete: complete}
 	for _, p := range paths {
 		if net.ParseIP(p.Host) == nil {
@@ -35,11 +43,9 @@ func ctSaveHistory(side, preset string, paths []ConnTestPath, complete bool) {
 		r.Paths = append(r.Paths, path)
 	}
 	if len(r.Paths) == 0 {
-		return
+		return nil
 	}
-	if err := (testhistory.Store{Dir: ConnTestHistoryRoot}).Save(r); err != nil {
-		tui.Warn("Could not save test history: " + err.Error())
-	}
+	return (testhistory.Store{Dir: ConnTestHistoryRoot}).Save(r)
 }
 func ctHistoryPreset(paths []ConnTestPath) string {
 	for _, p := range paths {

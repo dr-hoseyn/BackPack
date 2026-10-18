@@ -66,7 +66,7 @@ func bulkReceive(c net.Conn, payload []byte, timeout time.Duration, received *at
 // bulk receiver. Each session has a fresh random verification pattern. Upload
 // counts come from receiver acknowledgements, never from the sender's buffers.
 func serveBulk(c net.Conn) {
-	limit := time.AfterFunc(15*time.Minute, func() { c.Close() })
+	limit := time.AfterFunc(2*time.Hour, func() { c.Close() })
 	defer limit.Stop()
 	c.SetDeadline(time.Now().Add(20 * time.Second))
 	head := make([]byte, len(bulkMagic)+1+bulkBlock)

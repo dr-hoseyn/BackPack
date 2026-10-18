@@ -27,6 +27,10 @@ const BASE = document.documentElement.dataset.base || '';
    the panel actually answers. */
 const at = path => BASE + path;
 
+export const automatic = body => post('/api/automatic', body);
+export const connTestHistory = () => get('/api/conntest/history');
+export const carrierDiagnose = body => post('/api/carrier/diagnose', body);
+
 /* A refusal that has one specific remedy says so in a header, and it is carried
    on the error rather than read back out of the sentence. The words are for a
    person; rewording them must not quietly take the button away. */

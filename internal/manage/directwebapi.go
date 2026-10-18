@@ -136,6 +136,7 @@ func DirectCarriers() []map[string]string {
 			"desc": "a real QUIC session on UDP — indistinguishable from HTTP/3, and needs no root"},
 		{"value": "masque", "family": "https", "label": ctName("masque"), "needsRoot": "",
 			"desc": "authenticated CONNECT-UDP over HTTP/3; requires a TLS certificate on Kharej"},
+		{"value": "connect-ip", "family": "https", "label": "CONNECT-IP", "needsRoot": "1", "desc": "RFC 9484 native IP over authenticated HTTP/3; verified TLS, peer-only routes"},
 		{"value": "masque-h2", "family": "https", "label": ctName("masque-h2"), "needsRoot": "",
 			"desc": "verified HTTP/2 CONNECT-UDP Capsules over TCP; reliable fallback for blocked UDP, with head-of-line delay"},
 
@@ -517,7 +518,12 @@ func (n NewDirectTunnel) spec() (l3Spec, error) {
 					"because the peer forges the source of every packet it sends")
 		}
 	}
-	if carrier == "masque" || carrier == "masque-h2" {
+	if carrier == "connect-ip" {
+		off := false
+		spec.AutoMTU = &off
+		spec.MTU, spec.FECData, spec.FECParity = 1280, 0, 0
+	}
+	if carrier == "masque" || carrier == "masque-h2" || carrier == "connect-ip" {
 		if err := spec.Masque.Validate(side == sideKharej); err != nil {
 			return l3Spec{}, err
 		}

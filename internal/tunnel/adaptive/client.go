@@ -22,11 +22,14 @@ import (
 )
 
 type clientPath struct {
-	name   string
-	helper *naive.Helper // guarded by ClientPaths.mu
-	ready  atomic.Bool
-	epoch  atomic.Uint64
-	wake   chan struct{}
+	name          string
+	helper        *naive.Helper // guarded by ClientPaths.mu
+	ready         atomic.Bool
+	epoch         atomic.Uint64
+	wake          chan struct{}
+	probeSent     atomic.Uint64
+	probeReceived atomic.Uint64
+	probeAttempts atomic.Uint64
 }
 type proxyConnection struct {
 	conn net.Conn
@@ -179,6 +182,7 @@ func (c *ClientPaths) dial(ctx context.Context, i int) (*net.TCPConn, error) {
 }
 
 func (c *ClientPaths) probe(i int) (pathprobe.Result, error) {
+	c.paths[i].probeAttempts.Add(1)
 	ctx, cancel := context.WithTimeout(c.ctx, time.Duration(c.policy.ProbeTimeout)*time.Second)
 	defer cancel()
 	started := time.Now()
@@ -192,7 +196,7 @@ func (c *ClientPaths) probe(i int) (pathprobe.Result, error) {
 	if deadline, ok := ctx.Deadline(); ok {
 		raw.SetDeadline(deadline)
 	}
-	conn := naive.WrapDuplex(raw)
+	conn := naive.WrapDuplex(&probeCountingConn{Conn: raw, sent: &c.paths[i].probeSent, received: &c.paths[i].probeReceived})
 	request, nonce, err := pathprobe.Request(c.cfg.Token, c.policy.ProbeBytes)
 	if err != nil {
 		return pathprobe.Result{}, err
@@ -236,7 +240,7 @@ func (c *ClientPaths) probeLoop(i int) {
 		epoch := c.paths[i].epoch.Load()
 		result, err := c.probe(i)
 		c.recordProbe(i, epoch, result, err)
-		t := time.NewTimer(time.Duration(c.policy.ProbeInterval) * time.Second)
+		t := time.NewTimer(c.selector.ProbeDelay(i))
 		select {
 		case <-c.ctx.Done():
 			t.Stop()
@@ -265,6 +269,13 @@ func (c *ClientPaths) recordProbe(i int, epoch uint64, result pathprobe.Result, 
 		changes = c.selector.Record(i, result, err, time.Now())
 	}
 	for _, change := range changes {
+		// A backup promoted during its slow wait must be checked promptly.
+		if change.New >= 0 {
+			select {
+			case c.paths[change.New].wake <- struct{}{}:
+			default:
+			}
+		}
 		name := func(i int) string {
 			if i < 0 {
 				return "none"

@@ -152,6 +152,8 @@ func sectionOf(name string) string {
 		return "[direct]"
 	case "L3Config":
 		return "[l3]"
+	case "HysteriaRealm":
+		return "[server.sing.realm] / [client.sing.realm]"
 	case "SingL3Config":
 		return "[l3] native sing-box datagrams"
 	case "MasqueConfig":

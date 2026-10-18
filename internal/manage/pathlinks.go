@@ -35,6 +35,7 @@ func pathClientEndpoint(p config.ManagedClientPath) string {
 }
 
 func managedPathsLink(l ShareLink, server config.ServerConfig) (string, error) {
+	l.PathProfile = server.PathProfile
 	l.Tr, l.InnerPort = "managed-paths", l.Port
 	for _, p := range server.Paths {
 		child := server
@@ -80,6 +81,9 @@ func managedPathsLink(l ShareLink, server config.ServerConfig) (string, error) {
 }
 
 func decodeManagedPaths(l ShareLink) ([]ShareLink, error) {
+	if l.PathProfile != "" && l.PathProfile != "economy" && l.PathProfile != "full" {
+		return nil, errors.New("unknown managed path profile")
+	}
 	if l.Kind != "reverse" || l.From != "iran" || !validPort(l.InnerPort) || len(l.PathLinks) < 2 || len(l.PathLinks) > 8 || len(l.Fallbacks) != 0 || len(l.Hosts) != 0 {
 		return nil, errors.New("invalid managed paths setup link")
 	}
@@ -103,6 +107,9 @@ func decodeManagedPaths(l ShareLink) ([]ShareLink, error) {
 }
 
 func managedPathsClientFromLink(s *TunnelSpec, l ShareLink, host string) {
+	if l.PathProfile == "economy" {
+		s.PathPolicy = economyPathPolicy()
+	}
 	s.ClientPaths = nil
 	paths, err := decodeManagedPaths(l)
 	if err != nil {

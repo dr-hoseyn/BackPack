@@ -300,7 +300,7 @@ func applyDirectLink(link ShareLink, o LinkApplyOptions) (LinkApplied, error) {
 			return LinkApplied{}, fmt.Errorf("native sing-box carrier requires --sing-cert and --sing-key on Kharej, or Setup from a link in the terminal")
 		}
 	}
-	if link.Tr == "masque" || link.Tr == "masque-h2" {
+	if link.Tr == "masque" || link.Tr == "masque-h2" || link.Tr == "connect-ip" {
 		form.Masque.CertFile, form.Masque.KeyFile = o.MasqueCert, o.MasqueKey
 		if form.Masque.CertFile == "" || form.Masque.KeyFile == "" {
 			return LinkApplied{}, fmt.Errorf("MASQUE needs the TLS files on Kharej: add --masque-cert /path/fullchain.pem --masque-key /path/privkey.pem, or use Setup from a link in the menu")

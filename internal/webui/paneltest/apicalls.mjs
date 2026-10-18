@@ -56,6 +56,7 @@ globalThis.fetch = async (url, opts = {}) => {
 const node = { name: 'n1', host: '203.0.113.9', sshPort: '22', user: 'root', password: 'pw' };
 const samples = {
   stats: [[]], tunnels: [[]],
+  automatic: [[{action:"preview",ports:"443",profile:"economy"}]], connTestHistory: [[]], carrierDiagnose: [[{name:"t1",path:"hy2"}]],
   tunnelAction: ['start', 'stop', 'restart', 'delete'].map(a => ['t1', a])
     .concat([['t1', 'delete', { alsoFarEnd: '1' }]]),
   adoptCandidates: [['t1', 'n1']], adoptTunnel: [['t1', 'n1', 'p1']], unlinkTunnel: [['t1']],

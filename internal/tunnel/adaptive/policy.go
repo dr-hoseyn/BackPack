@@ -45,7 +45,22 @@ func policyDefaults(p config.PathPolicy) (config.PathPolicy, error) {
 	if p.Improvement == 0 {
 		p.Improvement = 20
 	}
+	if p.StandbyInterval < 0 || p.StandbyInterval > 3600 || (p.StandbyInterval > 0 && p.StandbyInterval < p.ProbeInterval) {
+		return p, errors.New("standby_interval must be zero or probe_interval..3600 seconds")
+	}
 	return p, nil
+}
+
+// ProbeDelay retains fast outage/recovery detection on selected and unhealthy
+// paths. Only verified healthy backups use the optional slower interval.
+func (s *Selector) ProbeDelay(i int) time.Duration {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	seconds := s.policy.ProbeInterval
+	if s.policy.StandbyInterval > 0 && i >= 0 && i < len(s.states) && s.states[i].healthy && i != s.selected[0] && i != s.selected[1] {
+		seconds = s.policy.StandbyInterval
+	}
+	return time.Duration(seconds) * time.Second
 }
 
 type pathState struct {

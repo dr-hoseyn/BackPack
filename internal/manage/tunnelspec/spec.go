@@ -15,6 +15,7 @@ import (
 
 // Spec is the full description of a tunnel used to render a TOML config.
 type Spec struct {
+	PathProfile string
 	ServerPaths []config.ManagedServerPath `json:"-"`
 	ClientPaths []config.ManagedClientPath `json:"-"`
 	PathPolicy  config.PathPolicy
@@ -278,6 +279,9 @@ func (s Spec) Render() string {
 
 	if s.Role == "server" {
 		b.WriteString("[server]\n")
+		if s.PathProfile != "" {
+			p("path_profile = %q\n", s.PathProfile)
+		}
 		p("bind_addr = %q\n", s.BindAddr)
 		p("transport = %q\n", s.Transport)
 		if s.Preset != "" {

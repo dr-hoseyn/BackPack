@@ -23,6 +23,10 @@ export function addView(ctx) {
     pick: '.dlg',
     bind: async (root, close) => {
       dialogSubtitle(root, store.get().stats, 'this server’s end — the other is built from its setup link');
+	  const automaticLink = document.createElement('a');
+	  automaticLink.href = '#/network'; automaticLink.className = 'btn';
+	  automaticLink.textContent = 'Automatic setup and carrier diagnostics';
+	  root.querySelector('.dlg-body, .dbody, form, .dlg')?.prepend(automaticLink);
       let opts = { families: [], presets: [] };
       try { opts = await api.tunnelOptions(); } catch (e) { oops(e); }
 

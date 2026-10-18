@@ -16,6 +16,7 @@ import { addView } from './views/add.js';
 import { settingsView } from './views/settings.js';
 import { serversView } from './views/servers.js';
 import { connTestView } from './views/conntest.js';
+import { networkView } from './views/network.js';
 import { terminalView } from './views/terminal.js';
 import { manageView } from './views/manage.js';
 import { shareView } from './views/share.js';
@@ -147,6 +148,7 @@ router.route('/t/:name/edit',    over(editView));
 router.route('/t/:name/undo',    over(undoView));
 
 router.route('/add',         over(addView));
+router.route('/network', networkView);
 router.route('/settings',    over(settingsView));
 
 router.route('/alerts',      over(alertsView));

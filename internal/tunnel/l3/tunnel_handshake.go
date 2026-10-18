@@ -297,6 +297,10 @@ func (t *Tunnel) noteForeignTag(from net.Addr) {
 // Up reports whether the tunnel has a session: a handshake has completed and
 // its keys are in use.
 func (t *Tunnel) Up() bool {
+	if t.cfg.Carrier == CarrierConnectIP {
+		last := t.connectIPLast.Load()
+		return last != 0 && time.Since(time.Unix(0, last)) < 20*time.Second
+	}
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	return t.current != nil

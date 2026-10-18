@@ -151,21 +151,32 @@ type ShareLink struct {
 
 	// Managed HTTPS links carry peer credentials, never executable paths or
 	// server private keys. The public TLS bundle is needed for private CAs.
-	InnerPort       string   `json:"hi,omitempty"`
-	HelperUser      string   `json:"hu,omitempty"`
-	HelperPassword  string   `json:"hp,omitempty"`
-	HelperUUID      string   `json:"hid,omitempty"`
-	HelperSNI       string   `json:"hn,omitempty"`
-	HelperPath      string   `json:"hpa,omitempty"`
-	HelperHost      string   `json:"hh,omitempty"`
-	HelperPublicKey string   `json:"hk,omitempty"`
-	HelperShortID   string   `json:"hsid,omitempty"`
-	HelperCA        string   `json:"hca,omitempty"`
-	HelperObfs      string   `json:"hob,omitempty"`
-	HelperSSKey     string   `json:"hss,omitempty"`
-	HelperNativeUDP bool     `json:"hnu,omitempty"`
-	PathLinks       []string `json:"mpl,omitempty"`
-	AWGPeer         string   `json:"awgp,omitempty"`
+	InnerPort        string   `json:"hi,omitempty"`
+	HelperUser       string   `json:"hu,omitempty"`
+	HelperPassword   string   `json:"hp,omitempty"`
+	HelperUUID       string   `json:"hid,omitempty"`
+	HelperSNI        string   `json:"hn,omitempty"`
+	HelperPath       string   `json:"hpa,omitempty"`
+	HelperHost       string   `json:"hh,omitempty"`
+	HelperPublicKey  string   `json:"hk,omitempty"`
+	HelperShortID    string   `json:"hsid,omitempty"`
+	HelperCA         string   `json:"hca,omitempty"`
+	HelperObfs       string   `json:"hob,omitempty"`
+	HelperObfsType   string   `json:"hot,omitempty"`
+	HelperGeckoMin   int      `json:"hgmin,omitempty"`
+	HelperGeckoMax   int      `json:"hgmax,omitempty"`
+	HelperECH        string   `json:"hech,omitempty"`
+	HelperRealmURL   string   `json:"hrurl,omitempty"`
+	HelperRealmToken string   `json:"hrtok,omitempty"`
+	HelperRealmID    string   `json:"hrid,omitempty"`
+	HelperRealmSTUN  string   `json:"hrstun,omitempty"`
+	HelperRealmIP    int      `json:"hrip,omitempty"`
+	HelperBBR        string   `json:"hbbr,omitempty"`
+	HelperSSKey      string   `json:"hss,omitempty"`
+	HelperNativeUDP  bool     `json:"hnu,omitempty"`
+	PathLinks        []string `json:"mpl,omitempty"`
+	PathProfile      string   `json:"mpp,omitempty"`
+	AWGPeer          string   `json:"awgp,omitempty"`
 }
 
 // Encode renders a link as the string an operator copies.
@@ -433,7 +444,7 @@ func MirrorForPeer(l ShareLink) PeerForm {
 			f.Sing.Target, f.Sing.ServerName = l.SingTarget, l.SingServerName
 			f.Sing.Binary = managedHelperPath("sing-box")
 		}
-		if l.Tr == "masque" || l.Tr == "masque-h2" {
+		if l.Tr == "masque" || l.Tr == "masque-h2" || l.Tr == "connect-ip" {
 			f.Masque.Target, f.Masque.ServerName = l.MasqueTarget, l.MasqueServerName
 			paired = append(paired, "masque.target", "masque.serverName")
 		}
@@ -624,7 +635,7 @@ func shareLinkOf(name, host string, cfg config.Config) (string, error) {
 		if config.SingDatagram(l.Tr) {
 			l.SingTarget, l.SingServerName = cfg.L3.SingL3Config.TargetAddr(), cfg.L3.SingL3Config.ServerName
 		}
-		if l.Tr == "masque" || l.Tr == "masque-h2" {
+		if l.Tr == "masque" || l.Tr == "masque-h2" || l.Tr == "connect-ip" {
 			l.MasqueTarget = cfg.L3.MasqueConfig.TargetAddr()
 			l.MasqueServerName = cfg.L3.MasqueConfig.ServerName
 		}
@@ -694,6 +705,9 @@ func shareLinkOf(name, host string, cfg config.Config) (string, error) {
 			l.Tr, l.Port, l.HelperPassword, l.HelperSNI = x.Protocol, addrPort(x.Listen), x.Password, x.ServerName
 			l.HelperUUID, l.HelperObfs, l.HelperSSKey = x.UUID, x.ObfsPassword, x.ShadowsocksKey
 			l.HelperNativeUDP = x.NativeUDP
+			l.HelperObfsType, l.HelperGeckoMin, l.HelperGeckoMax = x.ObfsType, x.GeckoMin, x.GeckoMax
+			l.HelperECH, l.HelperBBR = x.ECHConfig, x.BBRProfile
+			l.HelperRealmURL, l.HelperRealmToken, l.HelperRealmID, l.HelperRealmSTUN, l.HelperRealmIP = x.Realm.ServerURL, x.Realm.Token, x.Realm.RealmID, x.Realm.STUNServers, x.Realm.IPVersion
 			cert = x.Certificate
 		} else if cfg.Server.Naive.Enabled() {
 			x := cfg.Server.Naive
@@ -832,6 +846,9 @@ func managedClientFromLink(s *TunnelSpec, link ShareLink, host string) {
 		s.SingClient = config.SingClientConfig{Binary: managedHelperPath("sing-box"), Protocol: link.Tr, Server: public, ServerName: link.HelperSNI,
 			Password: link.HelperPassword, UUID: link.HelperUUID, ObfsPassword: link.HelperObfs, ShadowsocksKey: link.HelperSSKey, CAFile: managedLinkCAPath(link.HelperCA)}
 		s.SingClient.NativeUDP = link.HelperNativeUDP
+		s.SingClient.ObfsType, s.SingClient.GeckoMin, s.SingClient.GeckoMax = link.HelperObfsType, link.HelperGeckoMin, link.HelperGeckoMax
+		s.SingClient.ECHConfig, s.SingClient.BBRProfile = link.HelperECH, link.HelperBBR
+		s.SingClient.Realm = config.HysteriaRealm{ServerURL: link.HelperRealmURL, Token: link.HelperRealmToken, RealmID: link.HelperRealmID, STUNServers: link.HelperRealmSTUN, IPVersion: link.HelperRealmIP}
 	} else if link.Tr == "naive" {
 		s.NaiveClient = config.NaiveClientConfig{Binary: managedHelperPath("naive"), Server: public,
 			Username: link.HelperUser, Password: link.HelperPassword, CAFile: managedLinkCAPath(link.HelperCA)}

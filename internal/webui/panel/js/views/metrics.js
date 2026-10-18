@@ -273,6 +273,8 @@ function fillManaged(root, t) {
     for (const p of paths.paths || []) {
       const state = p.healthy ? 'healthy' : p.helper_ready ? 'unverified or failed' : 'helper unavailable';
       html += row(`${p.name} Â· ${p.protocol}`, `${state} Â· ${Number(p.rtt_ms || 0).toFixed(1)} ms Â· ${Number(p.mbps || 0).toFixed(2)} Mbit/s Â· ${Number(p.failure_percent || 0).toFixed(1)}% probe failures`);
+      html += row(`${p.name} probe traffic`, `${Number(((p.probe_sent_bytes || 0) + (p.probe_received_bytes || 0)) / 1048576).toFixed(2)} MiB · ${p.probe_attempts || 0} attempts · ${p.probe_interval_seconds || 5}s cadence`);
+      html += row(`${p.name} helper resources`, p.helper_resources_measured ? `${Number(p.helper_rss_bytes / 1048576).toFixed(1)} MiB RSS · ${Number(p.helper_cpu_seconds).toFixed(2)} CPU seconds` : 'Not measured (or in-process carrier)');
     }
     html += '</dl>';
   }

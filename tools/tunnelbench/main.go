@@ -42,6 +42,7 @@ type result struct {
 	Mbps             float64         `json:"verified_echo_mbps"`
 	Failures         uint64          `json:"failures"`
 	Resources        *resourceResult `json:"local_resources,omitempty"`
+	Soak             *soakResult     `json:"soak,omitempty"`
 }
 type resourceResult struct {
 	CPUSeconds float64 `json:"cpu_seconds"`
@@ -244,7 +245,7 @@ func serveMode(ctx context.Context, l net.Listener, bulk bool) error {
 			defer func() { conn.Close(); <-slots }()
 			stop := context.AfterFunc(ctx, func() { conn.Close() })
 			defer stop()
-			conn.SetDeadline(time.Now().Add(15 * time.Minute))
+			conn.SetDeadline(time.Now().Add(24 * time.Hour))
 			if bulk {
 				serveBulk(conn)
 			} else {
@@ -260,7 +261,7 @@ func run(ctx context.Context, args []string, out, diagnostics io.Writer) error {
 	flags.Var(&targets, "target", "repeat name=host:port for each already configured TCP tunnel")
 	flags.Var(&pidArgs, "pid", "repeat name=PID to sample the local engine and all helper descendants")
 	listen := flags.String("serve", "", "run an echo backend, e.g. 127.0.0.1:9001")
-	mode := flags.String("mode", "echo", "echo or bulk; use the same mode on the backend")
+	mode := flags.String("mode", "echo", "echo, bulk or soak; soak uses an echo backend")
 	warmup := flags.Duration("warmup", 2*time.Second, "bulk warmup excluded from throughput and resource measurements (0..30s)")
 	duration := flags.Duration("duration", 15*time.Second, "measurement time per target/concurrency")
 	concurrency := flags.String("parallel", "1,8,32", "comma-separated simultaneous connections")
@@ -273,8 +274,8 @@ func run(ctx context.Context, args []string, out, diagnostics io.Writer) error {
 	if flags.NArg() != 0 {
 		return errors.New("unexpected positional arguments")
 	}
-	if (*mode != "echo" && *mode != "bulk") || *warmup < 0 || *warmup > 30*time.Second {
-		return errors.New("mode must be echo or bulk; warmup must be 0..30s")
+	if (*mode != "echo" && *mode != "bulk" && *mode != "soak") || *warmup < 0 || *warmup > 30*time.Second {
+		return errors.New("mode must be echo, bulk or soak; warmup must be 0..30s")
 	}
 	if *listen != "" {
 		if len(targets) > 0 || len(pidArgs) > 0 {
@@ -288,8 +289,8 @@ func run(ctx context.Context, args []string, out, diagnostics io.Writer) error {
 		fmt.Fprintln(diagnostics, "Echo backend:", l.Addr())
 		return serveMode(ctx, l, *mode == "bulk")
 	}
-	if len(targets) == 0 || len(targets) > 16 || *duration < time.Second || *duration > 10*time.Minute || *chunk < 1 || *chunk > 1<<20 || *ioTimeout < 100*time.Millisecond || *ioTimeout > time.Minute {
-		return errors.New("provide 1..16 targets; duration 1s..10m; chunk 1..1048576; io-timeout 100ms..1m")
+	if len(targets) == 0 || len(targets) > 16 || *duration < time.Second || *duration > time.Hour || *chunk < 1 || *chunk > 1<<20 || *ioTimeout < 100*time.Millisecond || *ioTimeout > time.Minute {
+		return errors.New("provide 1..16 targets; duration 1s..1h; chunk 1..1048576; io-timeout 100ms..1m")
 	}
 	var levels []int
 	if len(strings.Split(*concurrency, ",")) > 8 {
@@ -330,7 +331,18 @@ func run(ctx context.Context, args []string, out, diagnostics io.Writer) error {
 				return ctx.Err()
 			}
 			fmt.Fprintf(diagnostics, "Testing %s with %d connections...\n", name, n)
-			if *mode == "bulk" {
+			if *mode == "soak" {
+				if n != 1 {
+					return errors.New("soak uses --parallel 1; each probe opens a fresh connection")
+				}
+				r, err := runSoak(ctx, endpoints[name], *duration, *ioTimeout, *chunk, pids[name])
+				r.Name = name
+				results = append(results, r)
+				if err != nil {
+					_ = json.NewEncoder(out).Encode(results)
+					return fmt.Errorf("%s: %w", name, err)
+				}
+			} else if *mode == "bulk" {
 				for _, direction := range []byte{'D', 'U'} {
 					r, err := runBulkCase(ctx, endpoints[name], n, *duration, *warmup, *ioTimeout, direction, pids[name])
 					if err != nil {
@@ -354,6 +366,10 @@ func run(ctx context.Context, args []string, out, diagnostics io.Writer) error {
 	}
 	fmt.Fprintln(out, "NAME CONNS MODE/DIRECTION VERIFIED-Mbps FAILURES CPU%(100=1core) PEAK-RSS-MiB")
 	for _, r := range results {
+		if r.Soak != nil {
+			fmt.Fprintf(out, "%s soak %.1fs: %d/%d verified probes; %.2f%% unanswered; RTT p95 %.2f ms; jitter %.2f ms; recovery max %.2fs; complete=%t\n", r.Name, r.Seconds, r.Soak.Received, r.Soak.Attempted, r.Soak.LossPercent, r.Soak.P95RTTMillis, r.Soak.JitterMillis, r.Soak.MaxRecoverySeconds, r.Soak.Complete)
+			continue
+		}
 		cpu, rss := "unmeasured", "unmeasured"
 		if r.Resources != nil && r.Resources.Samples > 0 && r.Resources.Errors == 0 {
 			cpu = fmt.Sprintf("%.1f", r.Resources.CPUPercent)
