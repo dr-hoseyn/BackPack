@@ -1,6 +1,6 @@
 # Managed paths and datagram fallback
 
-Status: accepted; implemented as unreleased, opt-in modes.
+Status: accepted; implemented as opt-in modes in v1.11.0.
 
 The next transport work has five acceptance boundaries:
 

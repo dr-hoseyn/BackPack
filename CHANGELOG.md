@@ -2,7 +2,7 @@
 
 All notable changes to Backpack are documented here.
 
-## Unreleased
+## v1.11.0 — 2026-10-18 (dr-hoseyn fork)
 
 - Add managed adaptive paths with authenticated upload/download probes, warm
   helpers, hysteresis, idle-pool retirement and independent native UDP selection.
@@ -18,7 +18,14 @@ All notable changes to Backpack are documented here.
   Unsupported peers/kernels retain TCP fallback; no host routes are changed.
 - Exercise independent HTTP/2 interoperability, real helper UDP, active-flow
   preservation, private configuration round trips and isolated MPTCP path outage.
-  Both peers need this build for the new paired modes.
+  Both peers need v1.11.0 or later for the new paired modes.
+
+- Review terminal and panel edits before applying; reject stale revisions and
+  restore the previous configuration/service state when startup fails.
+- Edit forwarded ports with separate source/target fields, explicit clearing
+  and confirmed deletion while preserving carrier settings.
+- Keep Connection Test readable on narrow terminals and show measured echo
+  loss for each transport.
 
 ## v1.10.0 — 2026-10-17 (dr-hoseyn fork)
 

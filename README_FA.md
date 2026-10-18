@@ -1,6 +1,6 @@
 # فورک dr-hoseyn
 
-این فورک بر پایهٔ BackPack اصلی v1.9.0 است و بهبودهای PRهای #104، #98 و #108 را دارد. نسخهٔ v1.10.0 و آپدیت‌های داخلی از مخزن `dr-hoseyn/BackPack` دریافت می‌شوند. قابلیت Short HTTPS IP آزمایشی است.
+این فورک بر پایهٔ BackPack اصلی v1.9.0 است و بهبودهای PRهای #104، #98 و #108 را دارد. نسخهٔ v1.11.0 و آپدیت‌های داخلی از مخزن `dr-hoseyn/BackPack` دریافت می‌شوند. حالت مدیریت‌شدهٔ Short HTTPS برای TCP معکوس در دسترس است.
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/dr-hoseyn/BackPack/main/install.sh)
@@ -10,6 +10,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/dr-hoseyn/BackPack/main/inst
 
 نسخهٔ v1.10.0، [Hysteria2، AnyTLS، ShadowTLS v3 + SS2022 و TUIC v5](docs/managed-protocols.md) را به حالت معکوس اضافه می‌کند. Hysteria2 و TUIC برای UDP بومی هم در دسترس‌اند و [راه‌اندازی مدیریت‌شدهٔ AmneziaWG](docs/amneziawg.md) به منو، سرویس و پنل متصل شده است. برای حالت‌های جفت‌شدهٔ جدید، هر دو سمت را به v1.10.0 یا بالاتر ارتقا بده.
 
+نسخهٔ v1.11.0، [انتخاب خودکار مسیرهای تست‌شده](docs/managed-paths.md)، UDP بومی معکوس برای Hysteria2 و TUIC، [جایگزین MASQUE روی HTTP/2](docs/masque.md)، [Short HTTPS مدیریت‌شده](docs/short-https.md) و [MPTCP اختیاری لینوکس](docs/mptcp.md) را اضافه می‌کند. بازبینی تغییرات پیش از اعمال، بازگردانی هنگام خطا، ویرایش امن‌تر پورت‌ها و نمایش خواناتر Connection Test هم اضافه شده‌اند. برای حالت‌های جفت‌شدهٔ جدید، هر دو سمت باید v1.11.0 یا بالاتر باشند.
 
 <div dir="rtl">
 

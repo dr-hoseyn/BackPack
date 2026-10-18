@@ -96,7 +96,7 @@ and port. Local listener readiness is not authenticated tunnel health.
 
 ## Native UDP in Reverse mode
 
-Requires this next-protocols build on both machines. For Hysteria2 or TUIC,
+Requires BackPack v1.11.0 or later on both machines. For Hysteria2 or TUIC,
 set `accept_udp = true` in `[server]` and **`native_udp = true` in both
 `[server.sing]` and `[client.sing]`**. The wizard offers this explicitly and
 Setup Links carry the paired flag. Leave it false to retain stream UDP.
@@ -214,4 +214,4 @@ Direct → UDP → Hysteria2 یا TUIC استفاده کن؛ این حالت ب�
 
 ---
 
-*Last verified against Backpack v1.10.0, 2026-10-17.*
+*Last verified against Backpack v1.11.0, 2026-10-17.*

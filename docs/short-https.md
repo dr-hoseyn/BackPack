@@ -1,8 +1,8 @@
 # Short HTTPS
 
-Requires this next-protocols build on both machines for managed mode.
+Requires BackPack v1.11.0 or later on both machines for managed mode.
 
-*Last verified against Backpack v1.10.0 source plus next-protocols changes, 2026-10-18.*
+*Last verified against Backpack v1.11.0, 2026-10-18.*
 
 `backpack short-https` is an **experimental, standalone TCP port relay** for
 paths that allow short HTTPS exchanges but stop established connections after

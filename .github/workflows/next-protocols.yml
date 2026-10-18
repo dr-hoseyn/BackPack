@@ -1,7 +1,7 @@
 name: Next protocol regression tests
 on:
   push:
-    branches: [codex/next-protocols]
+    branches: [main, codex/next-protocols]
   pull_request:
   workflow_dispatch:
 permissions:

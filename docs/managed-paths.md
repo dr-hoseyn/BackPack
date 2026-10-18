@@ -1,6 +1,6 @@
 # Verified managed paths
 
-Requires this next-protocols build on **both** machines. Choose
+Requires BackPack v1.11.0 or later on **both** machines. Choose
 **Reverse → HTTPS → Managed adaptive paths** in the terminal. Configure two to
 eight independent public carriers on Iran and export its Setup Link to Kharej.
 Names identify paths in metrics and must be unique ASCII identities of at most
@@ -141,4 +141,4 @@ certificate renewal still require validation in your deployment.
 
 </div>
 
-*Last verified against Backpack v1.10.0 source plus next-protocols changes, 2026-10-18.*
+*Last verified against Backpack v1.11.0, 2026-10-18.*
