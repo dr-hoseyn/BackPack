@@ -102,8 +102,9 @@ export function networkView(ctx) {
     try {
       const r = await api.connTestHistory(); if (!alive) return;
       history.innerHTML = `${r.warning ? `<p>${esc(r.warning)}</p>` : ''}<p>${(r.runs || []).length} saved runs</p>
-        ${(r.comparison || []).map(s => `<article><h4>${esc(s.transport)} · ${esc(s.host)} · ${esc(s.family)} · ${esc(s.preset)}</h4>
-          <p>${s.steady}/${s.runs} steady samples · ${number(s.loss_pct)}% unanswered probes · RTT ${number(s.rtt_ms)} ms</p>
+        ${(r.comparison || []).map(s => `<article><h4>${esc(s.side)} · ${esc(s.kind)} · ${esc(s.transport)} · ${esc(s.family)} · ${esc(s.preset)}</h4>
+          <p>${esc(s.host)} → ${esc(s.peer || 'peer unknown')}${s.sni ? ` · SNI ${esc(s.sni)}` : ''}</p>
+          <p>${s.steady}/${s.runs} steady samples · ${number(s.loss_pct)}% unanswered probes · RTT ${number(s.rtt_ms)} ms · ${s.jitter_samples ? `jitter ${number(s.jitter_ms)} ms` : 'jitter not measured'}</p>
           <p>${s.speed_samples ? `Download ${number(s.median_download_mbps)} / upload ${number(s.median_upload_mbps)} Mb/s` : 'Throughput not measured'}</p></article>`).join('')}
         ${(r.runs || []).map(run => `<details><summary>${esc(new Date(run.at).toLocaleString())} · ${esc(run.side)} · ${run.complete ? 'complete' : 'partial'}</summary>
           <ul>${(run.paths || []).map(p => `<li>${esc(p.family)} ${esc(p.host)} · ${esc(p.state)} · ${(p.rows || []).length} measurements</li>`).join('')}</ul></details>`).join('')}

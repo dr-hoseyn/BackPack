@@ -60,7 +60,7 @@ func ctHistoryPreset(paths []ConnTestPath) string {
 func ConnTestHistoryTable(runs []testhistory.Run, compare bool) string {
 	var b strings.Builder
 	if len(runs) == 0 {
-		return "No saved Connection Tests yet. New terminal tests are saved automatically.\n"
+		return "No saved Connection Tests yet. New terminal and panel tests are saved automatically.\n"
 	}
 	if !compare {
 		fmt.Fprintln(&b, "Saved Connection Tests (newest first; times in UTC):")

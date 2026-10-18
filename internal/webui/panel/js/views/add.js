@@ -14,7 +14,7 @@ import { NUMERIC } from '../lib/numeric.js';
 import * as api from '../api.js';
 import { setupLinkHTML, bindSetupLink } from '../ui/setuplink.js';
 import * as store from '../store.js';
-import { openScreen } from '../ui/screen.js';
+import { openScreen, closeScreen } from '../ui/screen.js';
 import { oops, toast } from '../ui/toast.js';
 import { go } from '../router.js';
 
@@ -24,9 +24,9 @@ export function addView(ctx) {
     bind: async (root, close) => {
       dialogSubtitle(root, store.get().stats, 'this server’s end — the other is built from its setup link');
 	  const automaticLink = document.createElement('a');
-	  automaticLink.href = '#/network'; automaticLink.className = 'btn';
+	  automaticLink.href = '#/network'; automaticLink.className = 'network-entry';
 	  automaticLink.textContent = 'Automatic setup and carrier diagnostics';
-	  root.querySelector('.dlg-body, .dbody, form, .dlg')?.prepend(automaticLink);
+	  root.querySelector('.body5')?.prepend(automaticLink);
       let opts = { families: [], presets: [] };
       try { opts = await api.tunnelOptions(); } catch (e) { oops(e); }
 
@@ -1123,7 +1123,7 @@ export function addView(ctx) {
         return { r, name: payload.name };
       }
 
-      ctx.setTeardown(close);
+      ctx.setTeardown(closeScreen);
     },
   }).catch(oops);
 }

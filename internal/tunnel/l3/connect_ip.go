@@ -182,6 +182,9 @@ func acceptConnectIP(ctx context.Context, cfg Config, ready func(net.Addr)) (*co
 			return
 		}
 		if err := configureConnectIP(r.Context(), conn, cfg, true); err != nil {
+			claimed.Lock()
+			occupied = false
+			claimed.Unlock()
 			conn.Close()
 			return
 		}
