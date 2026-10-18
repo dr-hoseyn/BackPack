@@ -7,7 +7,7 @@ import (
 
 func TestEconomyPairsReducedPolicy(t *testing.T) {
 	binary, cert, key := managedWizardFixture(t)
-	available := automaticCarriers(true, true, "cover.example:443")
+	available := automaticCarriers(true, true, true, "cover.example:443")
 	carriers := economicalCarriers(available)
 	if len(carriers) != 3 || carriers[0] != "hysteria2" {
 		t.Fatal("economic carrier diversity")
@@ -43,5 +43,16 @@ func TestEconomyPairsReducedPolicy(t *testing.T) {
 	}
 	if !strings.Contains(s.Render(), `path_profile = "economy"`) {
 		t.Fatal("server edits lose profile")
+	}
+}
+
+func TestEconomyWithoutNaiveKeepsIndependentTCPBackup(t *testing.T) {
+	carriers := automaticCarriers(true, false, false, "")
+	if strings.Contains(strings.Join(carriers, ","), "naive") {
+		t.Fatal("offered an absent Naive helper")
+	}
+	selected := economicalCarriers(carriers)
+	if strings.Join(selected, ",") != "hysteria2,anytls,short-https" {
+		t.Fatal("missing independent TCP backup", selected)
 	}
 }

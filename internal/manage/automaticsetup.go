@@ -21,10 +21,13 @@ import (
 // Automatic uses the existing verified adaptive engine. Only carriers that
 // can independently reach the same private Reverse listener belong in this
 // pool; native L3/Direct engines cannot be mixed into it.
-func automaticCarriers(sing, xray bool, cover string) []string {
+func automaticCarriers(sing, xray, naive bool, cover string) []string {
 	carriers := []string{"short-https"}
 	if sing {
-		carriers = append(carriers, "naive", "hysteria2", "anytls", "tuic")
+		if naive {
+			carriers = append(carriers, "naive")
+		}
+		carriers = append(carriers, "hysteria2", "anytls", "tuic")
 	}
 	if xray {
 		carriers = append(carriers, "xhttp")
@@ -270,7 +273,7 @@ func setupAutomaticIran() {
 			}
 		}
 	}
-	carriers := automaticCarriers(sing, xray, cover)
+	carriers := automaticCarriers(sing, xray, automaticExecutable(managedHelperPath("naive")), cover)
 	profile := "full"
 	if tui.Confirm("Use Economy (Up To Three Carriers, Reduced Backup Probes)", true) {
 		profile = "economy"

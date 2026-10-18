@@ -122,16 +122,7 @@ func PrepareAutomatic(ctx context.Context, r AutomaticRequest) (*AutomaticPlan, 
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	carriers := automaticCarriers(sing, xray, cover)
-	if !automaticExecutable(managedHelperPath("naive")) {
-		var filtered []string
-		for _, c := range carriers {
-			if c != "naive" {
-				filtered = append(filtered, c)
-			}
-		}
-		carriers = filtered
-	}
+	carriers := automaticCarriers(sing, xray, automaticExecutable(managedHelperPath("naive")), cover)
 	if r.Profile == "economy" {
 		carriers = economicalCarriers(carriers)
 	}

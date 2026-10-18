@@ -15,7 +15,7 @@ import (
 
 func TestAutomaticBundlePairsEveryCompatibleCarrier(t *testing.T) {
 	binary, cert, key := managedWizardFixture(t)
-	carriers := automaticCarriers(true, true, "cover.example:443")
+	carriers := automaticCarriers(true, true, true, "cover.example:443")
 	var endpoints []string
 	for i := range carriers {
 		endpoints = append(endpoints, fmt.Sprintf("0.0.0.0:%d", 24000+i))
@@ -130,10 +130,10 @@ func TestAutomaticIPPairsXHTTPPrivateDNSWithoutRequiringADomain(t *testing.T) {
 }
 
 func TestAutomaticAvailabilityAndPortReservations(t *testing.T) {
-	if got := automaticCarriers(false, true, ""); strings.Join(got, ",") != "short-https,xhttp" {
+	if got := automaticCarriers(false, true, true, ""); strings.Join(got, ",") != "short-https,xhttp" {
 		t.Fatal(got)
 	}
-	if got := automaticCarriers(true, false, ""); len(got) != 5 {
+	if got := automaticCarriers(true, false, true, ""); len(got) != 5 {
 		t.Fatal(got)
 	}
 	for _, tc := range []struct {
