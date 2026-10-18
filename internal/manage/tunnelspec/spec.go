@@ -3,6 +3,7 @@ package tunnelspec
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -11,6 +12,10 @@ import (
 	"github.com/backpack/backpack/internal/manage/core"
 	"github.com/backpack/backpack/internal/tunnel/naive"
 )
+
+// Tests redirect config files to a temporary directory without touching the
+// machine's installed tunnels. Production keeps the shared application path.
+var configPath = app.ConfigPath
 
 // Spec is the full description of a tunnel used to render a TOML config.
 type Spec struct {
@@ -476,10 +481,11 @@ func (s Spec) Save() (string, error) {
 	if err := s.validateHelpers(); err != nil {
 		return "", err
 	}
-	if err := os.MkdirAll(app.ConfigDir, 0755); err != nil {
+	path := configPath(s.Name)
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return "", err
 	}
-	if err := app.WriteFileAtomic(app.ConfigPath(s.Name), []byte(s.Render()), app.TunnelConfigMode); err != nil {
+	if err := app.WriteFileAtomic(path, []byte(s.Render()), app.TunnelConfigMode); err != nil {
 		return "", err
 	}
 	if err := core.WriteUnit(s.Name); err != nil {

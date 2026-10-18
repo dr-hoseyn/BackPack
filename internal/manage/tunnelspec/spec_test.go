@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"github.com/BurntSushi/toml"
 	"github.com/backpack/backpack/config"
-	"github.com/backpack/backpack/internal/app"
 	"github.com/backpack/backpack/internal/tunnel/naive"
 	"strings"
 	"testing"
@@ -46,6 +45,7 @@ func TestClampIsWrittenOnlyWhenSet(t *testing.T) {
 // Ordinary edits must keep the helper that carries the reverse connection,
 // including credentials and certificate paths that generic JSON cannot expose.
 func TestNaiveLoadEditRoundTrip(t *testing.T) {
+	dir := withTempTunnelConfigs(t)
 	binary, certificate, key := naiveSpecFiles(t)
 	for _, role := range []string{"server", "client"} {
 		t.Run(role, func(t *testing.T) {
@@ -58,10 +58,7 @@ func TestNaiveLoadEditRoundTrip(t *testing.T) {
 			if err := s.validateNaive(); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.MkdirAll(app.ConfigDir, 0755); err != nil {
-				t.Fatal(err)
-			}
-			file, err := os.CreateTemp(app.ConfigDir, "naive-edit-*.toml")
+			file, err := os.CreateTemp(dir, "naive-edit-*.toml")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -117,11 +114,9 @@ func TestNaiveLoadEditRoundTrip(t *testing.T) {
 // Refuse edits that would bypass or misdirect the helper before Save writes a
 // tunnel config or invokes systemd. Both role-specific validators are exercised.
 func TestNaiveIncompatibleEditPreservesExistingConfig(t *testing.T) {
+	dir := withTempTunnelConfigs(t)
 	binary, certificate, key := naiveSpecFiles(t)
-	if err := os.MkdirAll(app.ConfigDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	file, err := os.CreateTemp(app.ConfigDir, "naive-invalid-edit-*.toml")
+	file, err := os.CreateTemp(dir, "naive-invalid-edit-*.toml")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,12 +182,10 @@ func TestNaiveIncompatibleEditPreservesExistingConfig(t *testing.T) {
 }
 
 func TestXrayLoadEditPreservesSettingsAndRejectsBypass(t *testing.T) {
+	dir := withTempTunnelConfigs(t)
 	binary, certificate, key := naiveSpecFiles(t)
 	private, err := ecdh.X25519().GenerateKey(rand.Reader)
 	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(app.ConfigDir, 0755); err != nil {
 		t.Fatal(err)
 	}
 	for _, mode := range []string{"xhttp", "reality"} {
@@ -219,7 +212,7 @@ func TestXrayLoadEditPreservesSettingsAndRejectsBypass(t *testing.T) {
 				if err := s.validateXray(); err != nil {
 					t.Fatal(err)
 				}
-				file, err := os.CreateTemp(app.ConfigDir, "xray-edit-*.toml")
+				file, err := os.CreateTemp(dir, "xray-edit-*.toml")
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -390,6 +383,16 @@ func TestManagedCarrierCloseInterruptsBothDirections(t *testing.T) {
 			t.Fatal("close waited on an IO mutex")
 		}
 	}
+}
+
+// These tests are sequential because they override the package's config path.
+func withTempTunnelConfigs(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	old := configPath
+	configPath = func(name string) string { return filepath.Join(dir, name+".toml") }
+	t.Cleanup(func() { configPath = old })
+	return dir
 }
 
 func naiveSpecFiles(t *testing.T) (binary, certificate, key string) {
