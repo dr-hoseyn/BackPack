@@ -6,29 +6,9 @@ import (
 	"github.com/backpack/backpack/internal/tui"
 )
 
-// The two ways into setup.
-//
-// The menu used to offer "Setup Server" and "Setup Client". Those names were
-// already a little confusing — in a reverse tunnel the Iran machine is the
-// server — and with a direct tunnel they become actively wrong, because there
-// the Iran machine is the one that dials. A name that means the opposite of
-// what it says is worse than a name nobody recognises.
-//
-// So the entries are geographic, which is the thing that does not change with
-// the direction: Iran exposes the ports either way, kharej holds the real
-// service either way. Only who reaches out first differs, and that is asked
-// rather than encoded in the name.
-//
-// The order is deliberate. An operator always knows which machine they are
-// sitting on; they may not yet know which direction they need. Asking the
-// certain question first means the uncertain one arrives with the two options
-// described side by side, at the moment it can be answered.
-//
-// # What this does not do
-//
-// It dispatches. SetupServer and SetupClient are called unchanged, so a
-// reverse tunnel is built by exactly the code that has always built one — this
-// adds a question in front of them and nothing else.
+// Setup starts with geography, which has the same meaning for every engine.
+// Iran publishes forwarded ports; Kharej holds their backend services. A setup
+// link carries its own engine and carrier, so Kharej can apply it directly.
 
 // SetupIran is the entry point for the Iran server: the machine users connect
 // to, which exposes the forwarded ports in both directions.
@@ -41,20 +21,37 @@ func SetupIran() {
 		setupDirectFor(sideIran)
 	case directionAWG:
 		setupAWG(sideIran)
+	case directionAutomatic:
+		setupAutomaticIran()
 	}
 }
 
 // SetupKharej is the entry point for the server abroad: the machine that holds
 // the real service.
 func SetupKharej() {
+	// A link already names the engine, carrier and every paired setting.
+	// Ask for it before asking questions it can answer.
+	switch tui.ChooseOpt("Setup Kharej", []tui.Option{
+		{Title: "Setup Link", Desc: "recommended — detect the tunnel and protocols from the Iran link"},
+		{Title: "Manual Setup", Desc: "choose the tunnel type and enter settings"},
+	}) {
+	case 0:
+		setupFromLink()
+		return
+	case 1:
+	default:
+		return
+	}
 	switch askDirection("Kharej") {
 	case directionReverse:
 		// The kharej side of a reverse tunnel is, in the config, the client.
-		SetupClient()
+		setupClientManual()
 	case directionDirect:
 		setupDirectFor(sideKharej)
 	case directionAWG:
 		setupAWG(sideKharej)
+	case directionAutomatic:
+		setupFromLink()
 	}
 }
 
@@ -65,10 +62,11 @@ const (
 	directionReverse
 	directionDirect
 	directionAWG
+	directionAutomatic
 )
 
 // askDirection is the one question that decides which engine builds the
-// tunnel. Both options are described by the situation that calls for them,
+// tunnel. Options are described by the situation that calls for them,
 // because "reverse" and "direct" mean nothing to somebody setting up their
 // first tunnel.
 func askDirection(machine string) tunnelDirection {
@@ -85,6 +83,7 @@ func askDirection(machine string) tunnelDirection {
 			Title: "Direct",
 			Desc:  "Iran dials kharej — when inbound to Iran is blocked",
 		},
+		{Title: "Automatic", Desc: "enter forwarded ports — verified paths, pairing and failover are automatic"},
 		{Title: "AmneziaWG", Desc: "independent native IP tunnel — UDP, Linux and TUN required"},
 	}) {
 	case 0:
@@ -92,6 +91,8 @@ func askDirection(machine string) tunnelDirection {
 	case 1:
 		return directionDirect
 	case 2:
+		return directionAutomatic
+	case 3:
 		return directionAWG
 	}
 	return directionCancelled

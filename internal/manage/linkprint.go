@@ -56,7 +56,7 @@ func printLinkBlock(link, menuPath string) {
 	}
 	command := InstallCommand(link)
 	if command == "" {
-		menuPath = "sudo backpack → Setup Kharej → Reverse → HTTPS → Same Protocol → Setup Link"
+		menuPath = "sudo backpack → Setup Kharej → Setup Link"
 	}
 	fmt.Println()
 	tui.Info("Setup Link (" + menuPath + "):")
