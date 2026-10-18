@@ -2,11 +2,13 @@ package webui
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 
 	"github.com/backpack/backpack/internal/manage"
+	"github.com/backpack/backpack/internal/manage/tunnelspec"
 	"github.com/backpack/backpack/internal/node"
 )
 
@@ -118,7 +120,8 @@ func (s *server) handleTunnelSettings(w http.ResponseWriter, r *http.Request) {
 
 // tunnelEditRequest is the Edit form: which tunnel, and what to change.
 type tunnelEditRequest struct {
-	Name string `json:"name"`
+	Name     string `json:"name"`
+	Revision string `json:"revision"`
 	manage.TunnelEdit
 
 	// Direct carries the direct form's own fields. Separate from the embedded
@@ -145,6 +148,22 @@ func (s *server) handleTunnelEdit(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing name", http.StatusBadRequest)
 		return
 	}
+	if req.Revision != "" {
+		var direct *manage.DirectEdit
+		if t, ok := manage.Find(req.Name); ok && manage.IsDirectKind(t) {
+			direct = &req.Direct
+		}
+		if err := manage.ApplySettingsReviewed(req.Name, req.TunnelEdit, direct, req.Revision); err != nil {
+			status := http.StatusBadRequest
+			if errors.Is(err, tunnelspec.ErrSettingsChanged) {
+				status = http.StatusConflict
+			}
+			http.Error(w, err.Error(), status)
+			return
+		}
+		writeJSON(w, s.afterEdit(req.Name, r))
+		return
+	}
 	if t, ok := manage.Find(req.Name); ok && manage.IsDirectKind(t) {
 		if err := manage.EditDirectSettings(req.Name, req.Direct); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -158,6 +177,28 @@ func (s *server) handleTunnelEdit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, s.afterEdit(req.Name, r))
+}
+
+func (s *server) handleTunnelPreview(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST only", http.StatusMethodNotAllowed)
+		return
+	}
+	var req tunnelEditRequest
+	if err := decodeJSON(w, r, &req); err != nil {
+		http.Error(w, "could not read the form", http.StatusBadRequest)
+		return
+	}
+	var direct *manage.DirectEdit
+	if t, ok := manage.Find(req.Name); ok && manage.IsDirectKind(t) {
+		direct = &req.Direct
+	}
+	preview, err := manage.SettingsPreview(req.Name, req.TunnelEdit, direct)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, preview)
 }
 
 // alsoOnNode drives the same service on the other server.

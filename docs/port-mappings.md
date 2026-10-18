@@ -16,6 +16,9 @@ required. A mapping with no `=` uses the same port on both sides.
 
 ## Managing mappings in the terminal
 
+See also [reviewing and undoing edits](safe-tunnel-edits.md) for the shared
+preview, safe restart and history flow used by both the terminal and panel.
+
 Open a tunnel's **Edit → Forwarded Ports** screen. Each numbered row shows
 **SOURCE (this server)** and **TARGET (kharej)** separately, including the
 resolved destination host. The screen follows BackPack's red, white and gray

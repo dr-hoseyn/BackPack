@@ -59,7 +59,16 @@ const samples = {
   tunnelAction: ['start', 'stop', 'restart', 'delete'].map(a => ['t1', a])
     .concat([['t1', 'delete', { alsoFarEnd: '1' }]]),
   adoptCandidates: [['t1', 'n1']], adoptTunnel: [['t1', 'n1', 'p1']], unlinkTunnel: [['t1']],
-  restartAll: [[]], tunnelSettings: [['t1']], tunnelEdit: [[{}]], tunnelOptions: [[]],
+  restartAll: [[]], tunnelSettings: [['t1']], tunnelOptions: [[]],
+  tunnelEdit: [
+    [{ name: 't1', ports: '443=8443', revision: 'reviewed-config-revision' }],
+    [{ name: 't1', direct: { ports: '443=8443' }, revision: 'reviewed-config-revision' }],
+    [{ name: 't1', clearPorts: true, revision: 'reviewed-config-revision' }],
+  ],
+  tunnelPreview: [
+    [{ name: 't1', ports: '443=8443' }],
+    [{ name: 't1', direct: { mtu: 1300 } }],
+  ],
   nodes: [[]], fleetDrift: [[]], nodesCached: [[]],
   nodeRemove: [['n1']], nodeAdd: [[node]], nodeCredentials: [[node]],
   nodeUpgrade: [['n1']], nodeRefresh: [['n1']], nodeRolloutPlan: [[]], nodeUpgradeAll: [[]],
@@ -70,7 +79,8 @@ const samples = {
   tunnelCreate: [[{}]], directOptions: [[]], directDefaults: [['iran']], directCreate: [[{}]],
   health: [[]], linkTestStatus: [[]], linkTestRun: [['t1']],
   logs: [['t1'], ['t1', 'peer']], history: [['t1'], ['t1', 30]],
-  confHistory: [['t1']], confRestore: [['t1', 1790000000]],
+  confHistory: [['t1']], confPreview: [['t1', '1790000000000000000']],
+  confRestore: [['t1', 1790000000], ['t1', '1790000000000000000', 'reviewed-config-revision']],
   backupImport: [[new Blob(['{}'])]], autoBackup: [[]], setAutoBackup: [[true], [false]],
   sessions: [[]], sessionRevoke: [['s1']], sessionRevokeOthers: [[]],
   setPassword: [[{ password: 'a-new-password' }]],
