@@ -26,14 +26,15 @@ import (
 // ctBarSegments is how many segments a bar has.
 const ctBarSegments = 8
 
-// ctTransportNames are the names the menus use.
+// ctTransportNames are the compact names the tables and menus use. Keep
+// versions, security layers and optional obfuscation in menu descriptions.
 var ctTransportNames = map[string]string{
 	"awg": "AmneziaWG",
 	"tcp": "TCP", "tcpmux": "TCP MUX", "stealth": "Stealth", "pck": "PCK",
 	"ws": "WS", "wss": "WSS", "wsmux": "WS MUX", "wssmux": "WSS MUX",
 	"kcp": "KCP FEC", "quic": "QUIC", "udp": "UDP", "xdi": "xDi", "sni": "SNI",
-	"hysteria2": "Hysteria2 / Salamander", "anytls": "AnyTLS", "shadowtls": "ShadowTLS v3 / SS2022", "tuic": "TUIC v5",
-	"masque": "MASQUE / HTTP3", "masque-h2": "MASQUE / HTTP2 fallback", "short-https": "Short HTTPS", "naive": "Naive / HTTP2", "xhttp": "XHTTP / TLS", "reality": "REALITY / Vision",
+	"hysteria2": "Hy2", "anytls": "AnyTLS", "shadowtls": "ShadowTLS", "tuic": "TUIC",
+	"masque": "MASQUE H3", "masque-h2": "MASQUE H2", "short-https": "Short HTTPS", "naive": "Naive H2", "xhttp": "XHTTP", "reality": "REALITY",
 	ctSpoofToKharej: "Iran→Kharej", ctSpoofToIran: "Kharej→Iran",
 }
 

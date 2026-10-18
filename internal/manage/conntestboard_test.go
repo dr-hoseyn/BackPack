@@ -74,7 +74,7 @@ func TestConnTestTableExplainsLocalFailuresWithoutClaimingFiltering(t *testing.T
 		{Kind: "reverse", Transport: "xhttp", Status: ctDown, Detail: "test stopped"},
 		{Kind: "reverse", Transport: "reality", Status: ctUnstable, Detail: "bulk transfer failed"},
 	})
-	for _, want := range []string{"Naive / HTTP2", "XHTTP / TLS", "REALITY / Vision", "helper unavailable", "test stopped", "bulk transfer failed"} {
+	for _, want := range []string{"Naive H2", "XHTTP", "REALITY", "helper unavailable", "test stopped", "bulk transfer failed"} {
 		if !strings.Contains(table, want) {
 			t.Errorf("table is missing %q", want)
 		}
@@ -173,7 +173,7 @@ func TestConnectionTestRowsReportLossFromAttemptsActuallyMade(t *testing.T) {
 			table := ConnTestTable([]ConnTestResult{r})
 			plain := strings.NewReplacer("🟢", "  ", "🟡", "  ", "🔴", "  ", "⚪", "  ").Replace(table)
 			for _, line := range strings.Split(plain, "\n") {
-				if !strings.Contains(line, "Reverse   Hysteria2") {
+				if !strings.Contains(line, "Reverse   Hy2") {
 					continue
 				}
 				if got := strings.TrimSpace(line[end-6 : end]); got != c.want {
@@ -222,7 +222,7 @@ func TestConnectionTestBestSettingsWrapWithinTheTable(t *testing.T) {
 		}
 	}
 	plain := strings.Join(strings.Fields(table), " ")
-	for _, want := range []string{"Reverse Hysteria2 / Salamander", "1245.3 Mbps", "4 streams; verified bytes", "measured by Direct Hysteria2 / Salamander (Auto MTU does this)"} {
+	for _, want := range []string{"Reverse Hy2", "1245.3 Mbps", "4 streams; verified bytes", "measured by Direct Hy2 (Auto MTU does this)"} {
 		if !strings.Contains(plain, want) {
 			t.Fatalf("wrapped settings lost %q:\n%s", want, table)
 		}
