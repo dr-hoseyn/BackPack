@@ -186,12 +186,13 @@ func TestConnectionTestLiveTableFitsNamesLossAndProgressInEightyColumns(t *testi
 	b.rows = []ConnTestResult{
 		{Kind: "reverse", Transport: "hysteria2", Status: ctOK, Tried: 60, OK: 60, Total: 60},
 		{Kind: "reverse", Transport: "shadowtls", Status: ctUnstable, Tried: 60, OK: 52, Total: 60},
+		{Kind: "direct", Transport: "masque-h2", Status: ctOK, Tried: 60, OK: 60, Total: 60},
 	}
 	b.draw()
 	screen := &ctTestScreen{}
 	screen.resize(80, 24)
 	screen.feed(output.String())
-	for _, want := range []string{"Hysteria2 / Salamander", "ShadowTLS v3 / SS2022", "LOSS", "0.0%", "13.3%", "100%", "87%"} {
+	for _, want := range []string{"Hysteria2 / Salamander", "ShadowTLS v3 / SS2022", "MASQUE / HTTP2 fallback", "LOSS", "0.0%", "13.3%", "100%", "87%"} {
 		if !strings.Contains(screen.text(), want) {
 			t.Fatalf("%q hidden in an 80-column terminal:\n%s", want, screen.text())
 		}
@@ -204,13 +205,21 @@ func TestConnectionTestNarrowTableKeepsFullNamesStatusAndLossVisible(t *testing.
 	b.rows = []ConnTestResult{
 		{Kind: "reverse", Transport: "hysteria2", Status: ctUnstable, Tried: 60, OK: 52, Total: 60},
 		{Kind: "direct", Transport: "hysteria2", Status: ctDown, Tried: 60, Total: 60},
+		{Kind: "direct", Transport: "masque-h2", Status: ctOK, Tried: 60, OK: 60, Total: 60},
 	}
 	b.draw()
 	screen := &ctTestScreen{}
 	screen.resize(50, 18)
 	screen.feed(output.String())
-	for _, want := range []string{"R Hysteria2 / Salamander UNSTABLE", "D Hysteria2 / Salamander DOWN", "13.3%", "100.0%", "R reverse / D direct / S spoof"} {
-		if !strings.Contains(screen.text(), want) {
+	// Column padding follows the longest supported protocol label. Ignore
+	// padding, while retaining line breaks so wrapped rows still fail.
+	lines := strings.Split(screen.text(), "\n")
+	for i, line := range lines {
+		lines[i] = strings.Join(strings.Fields(line), " ")
+	}
+	visible := strings.Join(lines, "\n")
+	for _, want := range []string{"R Hysteria2 / Salamander UNSTABLE", "D Hysteria2 / Salamander DOWN", "D MASQUE / HTTP2 fallback OK", "13.3%", "100.0%", "R reverse / D direct / S spoof"} {
+		if !strings.Contains(visible, want) {
 			t.Fatalf("%q hidden in a narrow terminal:\n%s", want, screen.text())
 		}
 	}
