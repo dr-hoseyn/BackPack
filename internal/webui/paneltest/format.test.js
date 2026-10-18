@@ -82,8 +82,8 @@ test('kindLabel names the direction and the carrier', () => {
   assert.equal(kindLabel({ direction: 'direct', carrier: 'pck' }), 'direct pck');
   assert.equal(kindLabel({ transport: 'wss' }), 'reverse wss');
   assert.equal(kindLabel({ direction: 'reverse' }), 'reverse ');
-  assert.equal(kindLabel({ transport: 'tcp', transportLabel: 'REALITY / Vision' }), 'reverse REALITY / Vision');
-  assert.equal(kindLabel({ direction: 'direct', carrier: 'masque', transportLabel: 'Direct MASQUE (HTTP/3)' }), 'Direct MASQUE (HTTP/3)');
+  assert.equal(kindLabel({ transport: 'tcp', transportLabel: 'REALITY' }), 'reverse REALITY');
+  assert.equal(kindLabel({ direction: 'direct', carrier: 'masque', transportLabel: 'Direct MASQUE H3' }), 'Direct MASQUE H3');
 });
 
 test('flag renders a two-letter country and nothing else', () => {

@@ -80,7 +80,7 @@ func TestConnectionTestStartupGroupsSharedWarningsAndExplainsIPv6Skips(t *testin
 	text := out.String()
 	t.Log("\n" + text)
 	for _, want := range []string{fmt.Sprintf("%d ready / 3 skipped", len(connTestReverse)+4), fmt.Sprintf("%d ready / 9 skipped", len(connTestReverse)-2), "not network failures",
-		"[IPv4, IPv6] Naive / HTTP2", "XHTTP / TLS, REALITY / Vision", "These tests use IPv4 packets",
+		"[IPv4, IPv6] Naive H2", "XHTTP, REALITY", "These tests use IPv4 packets",
 		"Direct PCK", "Direct xDi", "Direct SNI", "IP spoofing", "both servers", "also updates the BackPack binary"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("missing %q:\n%s", want, text)

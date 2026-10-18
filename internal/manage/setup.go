@@ -66,14 +66,14 @@ var transportGroups = []transportGroup{
 func cliTransportGroups() []transportGroup {
 	return append(append([]transportGroup(nil), transportGroups...), transportGroup{
 		"HTTPS", "encrypted reverse TCP — Linux, matching versions on both sides", []transportEntry{
-			{"Naive / HTTP2", "HTTPS proxy — certificate or a private trust file", "naive"},
-			{"XHTTP / TLS", "HTTP/2 streaming — certificate or a private trust file", "xhttp"},
-			{"REALITY / Vision", "TLS cover endpoint — no local certificate required", "reality"},
-			{"Hysteria2 / Salamander", "QUIC with optional obfuscation — requires UDP", "hysteria2"},
-			{"AnyTLS", "TLS with padding and connection reuse — TCP", "anytls"},
-			{"ShadowTLS v3 / SS2022", "verified TLS cover and encrypted inner stream — TCP", "shadowtls"},
-			{"TUIC v5", "QUIC with BBR — requires UDP", "tuic"},
-			{"Short HTTPS", "bounded fresh HTTPS requests — TCP only, lower throughput", "short-https"},
+			{ctName("naive"), "HTTP/2 HTTPS proxy — certificate or a private trust file", "naive"},
+			{ctName("xhttp"), "HTTP/2 streaming over TLS — certificate or a private trust file", "xhttp"},
+			{ctName("reality"), "Vision with a TLS cover endpoint — no local certificate required", "reality"},
+			{ctName("hysteria2"), "Hysteria2 with optional Salamander obfuscation — requires UDP", "hysteria2"},
+			{ctName("anytls"), "TLS with padding and connection reuse — TCP", "anytls"},
+			{ctName("shadowtls"), "ShadowTLS v3 with SS2022 — verified TLS cover and encrypted inner stream, TCP", "shadowtls"},
+			{ctName("tuic"), "TUIC v5 with BBR — requires UDP", "tuic"},
+			{ctName("short-https"), "bounded fresh HTTPS requests — TCP only, lower throughput", "short-https"},
 			{"Adaptive Managed Paths", "warm carriers, verified traffic probes and automatic failover", "managed-paths"},
 		},
 	})

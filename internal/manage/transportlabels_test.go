@@ -26,7 +26,7 @@ func TestManagedAndDirectProtocolLabelsPreserveEngineTransports(t *testing.T) {
 			}
 			LoadSpec = func(string) (TunnelSpec, error) { return spec, nil }
 			tunnel := Tunnel{Name: "wrapped", Role: role, Transport: "tcp"}
-			want := map[string]string{"naive": "Naive / HTTP2", "xhttp": "XHTTP / TLS", "reality": "REALITY / Vision"}[mode]
+			want := map[string]string{"naive": "Naive H2", "xhttp": "XHTTP", "reality": "REALITY"}[mode]
 			if got := TunnelTransportLabel(tunnel); got != want || tunnel.Transport != "tcp" {
 				t.Fatalf("%s/%s: label %q, engine transport %s", role, mode, got, tunnel.Transport)
 			}
@@ -34,7 +34,7 @@ func TestManagedAndDirectProtocolLabelsPreserveEngineTransports(t *testing.T) {
 	}
 	LoadSpec = func(string) (TunnelSpec, error) { return TunnelSpec{}, errors.New("no config") }
 	for carrier, want := range map[string]string{
-		"masque": "Direct MASQUE (HTTP/3)", "sni": "Direct SNI Spoofing", "xdi": "Direct xDi", "pck": "Direct PCK", "quic": "Direct Quic",
+		"masque": "Direct MASQUE H3", "sni": "Direct SNI Spoofing", "xdi": "Direct xDi", "pck": "Direct PCK", "quic": "Direct Quic",
 	} {
 		if got := TunnelTransportLabel(Tunnel{Transport: "l3/" + carrier}); got != want {
 			t.Fatalf("%s: %q", carrier, got)

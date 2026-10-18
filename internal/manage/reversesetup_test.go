@@ -29,13 +29,14 @@ func TestManagedHTTPSChoicesReachBothReverseWizards(t *testing.T) {
 	for i, want := range []string{"naive", "xhttp", "reality"} {
 		restore := tui.SetInput(strings.NewReader(fmt.Sprintf("%d\n%d\n", len(transportGroups)+1, i+1)))
 		var got string
-		capture(t, func() { got = chooseTransport() })
+		menu := capture(t, func() { got = chooseTransport() })
 		restore()
 		if got != want {
 			t.Fatalf("HTTPS choice %d selected %q, want %s", i+1, got, want)
 		}
-		if transportLabel(got) == strings.ToUpper(got) {
-			t.Fatalf("missing display label for %s", got)
+		label := []string{"Naive H2", "XHTTP", "REALITY"}[i]
+		if transportLabel(got) != label || !strings.Contains(menu, label) {
+			t.Fatalf("missing display label %q for %s", label, got)
 		}
 	}
 }
@@ -197,7 +198,7 @@ func TestManagedHTTPSClientWizardCanBeCancelledBeforeSaving(t *testing.T) {
 	restore := tui.SetInput(strings.NewReader(strings.Join(input, "\n") + "\n"))
 	defer restore()
 	out := capture(t, SetupClient)
-	if !strings.Contains(out, "Reverse XHTTP / TLS (Kharej)") || !strings.Contains(out, "127.0.0.1:8443") || strings.Contains(out, "Optional Connection Settings") || !strings.Contains(out, "How Do You Want To Set Up This Side?") {
+	if !strings.Contains(out, "Reverse XHTTP (Kharej)") || !strings.Contains(out, "127.0.0.1:8443") || strings.Contains(out, "Optional Connection Settings") || !strings.Contains(out, "How Do You Want To Set Up This Side?") {
 		t.Fatalf("incorrect managed wizard flow:\n%s", out)
 	}
 	if _, err := os.Stat("/etc/backpack/" + name + ".toml"); !os.IsNotExist(err) {

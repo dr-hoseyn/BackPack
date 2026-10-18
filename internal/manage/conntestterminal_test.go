@@ -192,7 +192,7 @@ func TestConnectionTestLiveTableFitsNamesLossAndProgressInEightyColumns(t *testi
 	screen := &ctTestScreen{}
 	screen.resize(80, 24)
 	screen.feed(output.String())
-	for _, want := range []string{"Hysteria2 / Salamander", "ShadowTLS v3 / SS2022", "MASQUE / HTTP2 fallback", "LOSS", "0.0%", "13.3%", "100%", "87%"} {
+	for _, want := range []string{"Hy2", "ShadowTLS", "MASQUE H2", "LOSS", "0.0%", "13.3%", "100%", "87%"} {
 		if !strings.Contains(screen.text(), want) {
 			t.Fatalf("%q hidden in an 80-column terminal:\n%s", want, screen.text())
 		}
@@ -218,7 +218,7 @@ func TestConnectionTestNarrowTableKeepsFullNamesStatusAndLossVisible(t *testing.
 		lines[i] = strings.Join(strings.Fields(line), " ")
 	}
 	visible := strings.Join(lines, "\n")
-	for _, want := range []string{"R Hysteria2 / Salamander UNSTABLE", "D Hysteria2 / Salamander DOWN", "D MASQUE / HTTP2 fallback OK", "13.3%", "100.0%", "R reverse / D direct / S spoof"} {
+	for _, want := range []string{"R Hy2 UNSTABLE", "D Hy2 DOWN", "D MASQUE H2 OK", "13.3%", "100.0%", "R reverse / D direct / S spoof"} {
 		if !strings.Contains(visible, want) {
 			t.Fatalf("%q hidden in a narrow terminal:\n%s", want, screen.text())
 		}

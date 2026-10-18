@@ -214,7 +214,7 @@ func selectRealityCover(current config.XrayServerConfig, binary string, probe re
 }
 
 func configureReality(n *TunnelSpec, old TunnelSpec, public string, probe realitySetupProbe) bool {
-	tui.Title("REALITY / Vision")
+	tui.Title(ctName("reality"))
 	tui.Warn("Space/Enter keeps each suggestion. Type a replacement and Enter to change it.")
 	if n.Role == "client" {
 		tui.Info("The Iran setup link fills UUID, SNI, Short ID and public key automatically. Manual values must match Iran.")

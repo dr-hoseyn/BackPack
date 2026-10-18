@@ -134,13 +134,13 @@ func DirectCarriers() []map[string]string {
 			"desc": "plain and simple — use it where the path does not interfere"},
 		{"value": "quic", "family": "udp", "label": "Quic", "needsRoot": "",
 			"desc": "a real QUIC session on UDP — indistinguishable from HTTP/3, and needs no root"},
-		{"value": "masque", "family": "https", "label": "MASQUE (HTTP/3)", "needsRoot": "",
-			"desc": "authenticated CONNECT-UDP over HTTPS; requires a TLS certificate on Kharej"},
-		{"value": "masque-h2", "family": "https", "label": "MASQUE (HTTP/2 fallback)", "needsRoot": "",
-			"desc": "verified CONNECT-UDP Capsules over TCP; reliable fallback for blocked UDP, with head-of-line delay"},
+		{"value": "masque", "family": "https", "label": ctName("masque"), "needsRoot": "",
+			"desc": "authenticated CONNECT-UDP over HTTP/3; requires a TLS certificate on Kharej"},
+		{"value": "masque-h2", "family": "https", "label": ctName("masque-h2"), "needsRoot": "",
+			"desc": "verified HTTP/2 CONNECT-UDP Capsules over TCP; reliable fallback for blocked UDP, with head-of-line delay"},
 
-		{"value": "hysteria2", "family": "udp", "label": "Hysteria2 / Salamander", "needsRoot": "", "cliOnly": "1", "desc": "native datagrams through the managed sing-box helper; verified TLS"},
-		{"value": "tuic", "family": "udp", "label": "TUIC v5", "needsRoot": "", "cliOnly": "1", "desc": "native QUIC datagrams through the managed sing-box helper; verified TLS"},
+		{"value": "hysteria2", "family": "udp", "label": ctName("hysteria2"), "needsRoot": "", "cliOnly": "1", "desc": "Hysteria2 with optional Salamander obfuscation; native datagrams through the managed sing-box helper; verified TLS"},
+		{"value": "tuic", "family": "udp", "label": ctName("tuic"), "needsRoot": "", "cliOnly": "1", "desc": "TUIC v5 native QUIC datagrams through the managed sing-box helper; verified TLS"},
 		// cliOnly keeps a carrier out of the panel without taking it away.
 		//
 		// These two are the ones whose answers depend on the route rather than
