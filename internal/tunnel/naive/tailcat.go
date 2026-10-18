@@ -91,8 +91,8 @@ func validateTailcat(binary string, t config.TailcatConfig, server bool) error {
 	if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || u.Fragment != "" {
 		return errors.New("Tailcat requires an explicit verified HTTPS DERP map URL")
 	}
-	if t.DERPRegion < 0 || t.DERPRegion > 65535 {
-		return errors.New("Tailcat DERP region must be 0..65535")
+	if t.DERPRegion < 1 || t.DERPRegion > 65535 {
+		return errors.New("Tailcat requires an explicit DERP region ID in 1..65535")
 	}
 	return nil
 }

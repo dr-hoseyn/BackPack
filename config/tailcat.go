@@ -17,6 +17,6 @@ type TailcatConfig struct {
 	PreSharedKey string `toml:"pre_shared_key" json:"-"`
 	// DERPMapURL explicitly chooses a verified HTTPS relay map; no public default is assumed.
 	DERPMapURL string `toml:"derp_map_url"`
-	// DERPRegion optionally pins a region from the selected map; zero lets the helper select it.
+	// DERPRegion is the required region ID from the selected map, in 1..65535.
 	DERPRegion int `toml:"derp_region,omitempty"`
 }

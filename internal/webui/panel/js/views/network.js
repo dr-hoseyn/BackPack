@@ -19,6 +19,7 @@ export function networkView(ctx) {
         <label>Carriers (optional, comma-separated)<input name="carriers" maxlength="180" placeholder="trusttunnel,webtransport,xhttp-reality"></label>
         <p class="hint">Leave empty for automatic selection. Combine 2–8 carriers; Economy permits up to three. Available types: trusttunnel, webtransport, xhttp-reality, xhttp, reality, hysteria2, anytls, tuic, naive, shadowtls, short-https and experimental tailcat. Helper-based types require their installed binaries; REALITY and ShadowTLS require a verified cover.</p>
         <label>Tailcat HTTPS DERP map (only when selecting tailcat)<input name="derpMapURL" maxlength="2048" placeholder="https://relay.example.com/derpmap.json"></label>
+        <label>Tailcat region ID from that map<input name="derpRegion" type="number" min="1" max="65535" placeholder="Required for Tailcat"></label>
         <label>Verified cover endpoint · optional<input name="cover" placeholder="your-cover.example:443"></label>
         <button class="tl-btn" type="submit">Review required ports</button>
       </form><div id="autoResult" role="status" aria-live="polite"></div>
@@ -75,7 +76,9 @@ export function networkView(ctx) {
       await release(api.automatic, previous);
       if (!alive) return;
       auto.textContent = 'Checking helpers, cover and available ports…';
-      const r = await api.automatic({ action: 'preview', ...Object.fromEntries(new FormData(form)) });
+      const values = Object.fromEntries(new FormData(form));
+      values.derpRegion = Number(values.derpRegion || 0);
+      const r = await api.automatic({ action: 'preview', ...values });
       if (!alive) { api.automatic({action:'cancel',id:r.id}).catch(() => {}); return; }
       const id = r.id; plan = id;
       const p = r.preview;

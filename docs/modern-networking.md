@@ -162,8 +162,6 @@ schemes are outside this mode. HTTP/3 requires UDP; it does not silently switch 
 TCP. Existing L3 forwarding and service management remain available. The outer
 path must accommodate QUIC overhead in addition to the inner packet.
 
-## Sustained measurement
-
 ## Additional HTTP carriers and explicit combinations
 
 Reverse HTTPS setup now offers `xhttp-reality`, `trusttunnel`, `webtransport`
@@ -207,7 +205,7 @@ sing-box helper remains at its existing path. Both peers need this optional
 helper. Tailcat uses WireGuard's point-to-point data plane and an explicitly
 chosen HTTPS DERP map for rendezvous/relay. No inbound listener is opened at its
 advertised pairing endpoint. Select it explicitly in the carrier list and fill
-the DERP map URL; it is never added by default. Use a relay you operate or whose
+the DERP map URL and its region ID; it is never added by default. Use a relay you operate or whose
 availability and bandwidth policy you have evaluated.
 
 Tailcat's server stores its private key, a distinct provisioned client private
@@ -221,7 +219,7 @@ authenticated payload probe supplies that evidence.
 
 An example custom pool is `trusttunnel,webtransport,xhttp-reality` with a verified
 cover. To add NAT traversal, select Full and explicitly add `tailcat` plus your
-DERP map. HTTP/3 carriers share a dependency on UDP reachability, so retaining
+DERP map and region ID. HTTP/3 carriers share a dependency on UDP reachability, so retaining
 an HTTP/2/TCP path is useful. These combinations require live route measurement;
 runner-local transfers do not establish performance on Iranian networks.
 

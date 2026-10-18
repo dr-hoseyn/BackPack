@@ -17,6 +17,7 @@ import (
 type AutomaticRequest struct {
 	Carriers   string `json:"carriers"`
 	DERPMapURL string `json:"derpMapURL"`
+	DERPRegion int    `json:"derpRegion"`
 	Name       string `json:"name"`
 	Host       string `json:"host"`
 	Ports      string `json:"ports"`
@@ -43,6 +44,7 @@ type AutomaticPreview struct {
 type AutomaticPlan struct {
 	Preview                    AutomaticPreview
 	private, cover, derpMapURL string
+	derpRegion                 int
 	carriers, endpoints        []string
 	mu                         sync.Mutex
 	closed                     bool
@@ -131,6 +133,11 @@ func PrepareAutomatic(ctx context.Context, r AutomaticRequest) (*AutomaticPlan, 
 		if err != nil {
 			return nil, err
 		}
+		for _, carrier := range carriers {
+			if carrier == "tailcat" && (r.DERPRegion < 1 || r.DERPRegion > 65535) {
+				return nil, errors.New("Tailcat requires the explicit DERP region ID from its map")
+			}
+		}
 	} else {
 		carriers = modernAutomaticCarriers(carriers)
 	}
@@ -152,7 +159,7 @@ func PrepareAutomatic(ctx context.Context, r AutomaticRequest) (*AutomaticPlan, 
 			return nil, fmt.Errorf("forwarded UDP port already in use: %s", busy)
 		}
 	}
-	p := &AutomaticPlan{Preview: AutomaticPreview{Name: r.Name, Host: r.Host, Ports: ports, Profile: r.Profile, Expires: time.Now().Add(2 * time.Minute)}, cover: cover, carriers: carriers, derpMapURL: r.DERPMapURL}
+	p := &AutomaticPlan{Preview: AutomaticPreview{Name: r.Name, Host: r.Host, Ports: ports, Profile: r.Profile, Expires: time.Now().Add(2 * time.Minute)}, cover: cover, carriers: carriers, derpMapURL: r.DERPMapURL, derpRegion: r.DERPRegion}
 	used := map[int]bool{}
 	for _, port := range ReservedPorts() {
 		used[port] = true
@@ -232,6 +239,7 @@ func (p *AutomaticPlan) Commit() (name, service, link string, active bool, err e
 	for i := range s.ServerPaths {
 		if s.ServerPaths[i].Sing.Protocol == "tailcat" {
 			s.ServerPaths[i].Sing.Tailcat.DERPMapURL = p.derpMapURL
+			s.ServerPaths[i].Sing.Tailcat.DERPRegion = p.derpRegion
 		}
 	}
 	s.PathProfile = p.Preview.Profile

@@ -20,7 +20,7 @@ func configureTailcat(n *TunnelSpec, old TunnelSpec, public string) bool {
 		x.Tailcat.DiscoKey = tui.PromptDefault("Server Discovery Public Key", x.Tailcat.DiscoKey)
 		x.Tailcat.PreSharedKey = managedSecret("Paired Pre-Shared Key", x.Tailcat.PreSharedKey, "")
 		x.Tailcat.DERPMapURL = tui.PromptDefault("Verified HTTPS DERP Map URL", x.Tailcat.DERPMapURL)
-		x.Tailcat.DERPRegion = tui.PromptInt("DERP Region (0 = Automatic)", x.Tailcat.DERPRegion)
+		x.Tailcat.DERPRegion = tui.PromptInt("DERP Region ID From The Selected Map (Required)", x.Tailcat.DERPRegion)
 		n.SingClient = x
 		return true
 	}
@@ -41,7 +41,7 @@ func configureTailcat(n *TunnelSpec, old TunnelSpec, public string) bool {
 		}
 	}
 	x.Tailcat.DERPMapURL = tui.PromptDefault("Verified HTTPS DERP Map URL (Explicitly Choose Your Relay)", x.Tailcat.DERPMapURL)
-	x.Tailcat.DERPRegion = tui.PromptInt("DERP Region (0 = Automatic)", x.Tailcat.DERPRegion)
+	x.Tailcat.DERPRegion = tui.PromptInt("DERP Region ID From The Selected Map (Required)", x.Tailcat.DERPRegion)
 	n.SingServer = x
 	return true
 }

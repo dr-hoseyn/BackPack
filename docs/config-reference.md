@@ -407,7 +407,7 @@ them both ends have to agree on. This says what exists.
 |---|---|---|
 | `client_key` | `string` | ClientKey provisions the one authorized client, server only. Setup links carry this client's key; the server's own private key never leaves it. |
 | `derp_map_url` | `string` | DERPMapURL explicitly chooses a verified HTTPS relay map; no public default is assumed. |
-| `derp_region` | `int` | DERPRegion optionally pins a region from the selected map; zero lets the helper select it. |
+| `derp_region` | `int` | DERPRegion is the required region ID from the selected map, in 1..65535. |
 | `disco_key` | `string` | DiscoKey is the server's derived discovery public key, client only. |
 | `pre_shared_key` | `string` | PreSharedKey is a canonical base64 32-byte key shared by this pair. |
 | `private_key` | `string` | PrivateKey is this peer's canonical base64 X25519 private key. |

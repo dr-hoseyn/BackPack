@@ -28,6 +28,7 @@ func TestModernCarrierBundlePairsAndPreservesIndependentIdentities(t *testing.T)
 		if p.Sing.Enabled() {
 			p.Sing.Binary = bin
 			p.Sing.Tailcat.DERPMapURL = "https://relay.example/derpmap.json"
+			p.Sing.Tailcat.DERPRegion = 901
 		}
 	}
 	if err := validateManagedSpec(s); err != nil {

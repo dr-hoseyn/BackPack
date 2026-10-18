@@ -156,8 +156,8 @@ func TestTailcatOfficialLocalDERPAndAuthenticatedPayload(t *testing.T) {
 	defer mapServer.Close()
 	mapURL := "https://localhost:" + addrPortOnly(mapServer.Listener.Addr().String()) + "/derpmap.json"
 	backend := modernBackend(t)
-	s := config.ServerConfig{Transport: config.TCP, BindAddr: backend.Addr().String(), Sing: config.SingServerConfig{Protocol: "tailcat", Binary: binary, Listen: "127.0.0.1:62102", Tailcat: config.TailcatConfig{PrivateKey: serverKey, ClientKey: clientKey, PreSharedKey: psk, DERPMapURL: mapURL}}}
-	c := config.ClientConfig{Transport: config.TCP, RemoteAddr: s.BindAddr, Sing: config.SingClientConfig{Protocol: "tailcat", Binary: binary, Server: s.Sing.Listen, Tailcat: config.TailcatConfig{PrivateKey: clientKey, PublicKey: public, DiscoKey: disco, PreSharedKey: psk, DERPMapURL: mapURL}}}
+	s := config.ServerConfig{Transport: config.TCP, BindAddr: backend.Addr().String(), Sing: config.SingServerConfig{Protocol: "tailcat", Binary: binary, Listen: "127.0.0.1:62102", Tailcat: config.TailcatConfig{PrivateKey: serverKey, ClientKey: clientKey, PreSharedKey: psk, DERPMapURL: mapURL, DERPRegion: 901}}}
+	c := config.ClientConfig{Transport: config.TCP, RemoteAddr: s.BindAddr, Sing: config.SingClientConfig{Protocol: "tailcat", Binary: binary, Server: s.Sing.Listen, Tailcat: config.TailcatConfig{PrivateKey: clientKey, PublicKey: public, DiscoKey: disco, PreSharedKey: psk, DERPMapURL: mapURL, DERPRegion: 901}}}
 	ready := singFreeAddr(t, false)
 	body, err := SingServerJSON(s.Sing, ready, s.BindAddr, "tcp")
 	if err != nil {
