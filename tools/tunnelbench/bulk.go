@@ -192,7 +192,10 @@ func runBulkCase(parent context.Context, endpoint string, parallel int, duration
 	errorsCh := make(chan error, parallel)
 	recordError := func(err error) {
 		if ctx.Err() == nil {
-			errorsCh <- err
+			select {
+			case errorsCh <- err:
+			case <-ctx.Done():
+			}
 		}
 	}
 	for i, c := range conns {
@@ -209,7 +212,12 @@ func runBulkCase(parent context.Context, endpoint string, parallel int, duration
 			}
 			var attempted atomic.Uint64
 			writer := make(chan error, 1)
-			go func() { writer <- bulkWrite(c, patterns[i], timeout, &attempted) }()
+			go func() {
+				err := bulkWrite(c, patterns[i], timeout, &attempted)
+				recordError(err)
+				c.Close()
+				writer <- err
+			}()
 			defer func() { c.Close(); <-writer }()
 			var ack [8]byte
 			var previous uint64

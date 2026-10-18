@@ -106,3 +106,47 @@ func TestBulkCancellationInterruptsHandshake(t *testing.T) {
 	}
 	<-done
 }
+
+func TestBulkUploadWriterStallFailsEvenWhenReceiverKeepsSendingZeroACKs(t *testing.T) {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		c, err := l.Accept()
+		if err != nil {
+			return
+		}
+		defer c.Close()
+		c.SetDeadline(time.Now().Add(2 * time.Second))
+		head := make([]byte, len(bulkMagic)+1+bulkBlock)
+		if _, err = io.ReadFull(c, head); err != nil {
+			return
+		}
+		if _, err = io.WriteString(c, bulkAck); err != nil {
+			return
+		}
+		var start [1]byte
+		if _, err = io.ReadFull(c, start[:]); err != nil {
+			return
+		}
+		// Never consume the upload. An active ACK reader must not mask the
+		// sender's write deadline and turn this into a successful partial run.
+		var ack [8]byte
+		for {
+			if _, err = c.Write(ack[:]); err != nil {
+				return
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}()
+	start := time.Now()
+	_, err = runBulkCase(t.Context(), l.Addr().String(), 1, 3*time.Second, 0, 80*time.Millisecond, 'U', nil)
+	if err == nil || time.Since(start) > time.Second {
+		t.Fatalf("writer stall was hidden: %v", err)
+	}
+	<-done
+}
