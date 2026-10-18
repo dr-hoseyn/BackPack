@@ -30,7 +30,7 @@ func ctSaveHistory(side, preset string, paths []ConnTestPath, complete bool) {
 			path.Peer = p.Kharej
 		}
 		for _, m := range p.Rows {
-			path.Rows = append(path.Rows, testhistory.Measurement{Kind: m.Kind, Transport: m.Transport, SNI: m.SNIDomain, Status: m.Status, Sent: m.Tried, Received: m.OK, RTTms: float64(m.RTTms), JitterMs: m.JitterMs, Download: m.Mbps, Upload: m.UploadMbps, SpeedStable: m.SpeedStable})
+			path.Rows = append(path.Rows, testhistory.Measurement{Kind: m.Kind, Transport: m.Transport, SNI: m.SNIDomain, Status: m.Status, Sent: m.Tried, Received: m.OK, RTTms: float64(m.RTTms), JitterMs: m.JitterMs, JitterMeasured: m.JitterMeasured, Download: m.Mbps, Upload: m.UploadMbps, SpeedStable: m.SpeedStable})
 		}
 		r.Paths = append(r.Paths, path)
 	}
@@ -81,7 +81,12 @@ func ConnTestHistoryTable(runs []testhistory.Run, compare bool) string {
 		if s.SNI != "" {
 			fmt.Fprintf(&b, " SNI=%s", s.SNI)
 		}
-		fmt.Fprintf(&b, "\n  steady %d/%d runs; loss %.2f%% (%d/%d echoes); RTT %.2f ms; jitter %.2f ms", s.Steady, s.Runs, s.Loss, s.Received, s.Sent, s.RTTms, s.JitterMs)
+		fmt.Fprintf(&b, "\n  steady %d/%d runs; loss %.2f%% (%d/%d echoes); RTT %.2f ms", s.Steady, s.Runs, s.Loss, s.Received, s.Sent, s.RTTms)
+		if s.JitterSamples > 0 {
+			fmt.Fprintf(&b, "; jitter %.2f ms (%d samples)", s.JitterMs, s.JitterSamples)
+		} else {
+			fmt.Fprint(&b, "; jitter not measured")
+		}
 		if s.SpeedSamples > 0 {
 			fmt.Fprintf(&b, "; down %.2f / up %.2f Mb/s (%d speed samples)", s.Download, s.Upload, s.SpeedSamples)
 		} else {

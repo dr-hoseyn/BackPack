@@ -33,8 +33,10 @@ representative hours before choosing a carrier; the program does not schedule
 network traffic automatically.
 
 Existing stored configurations and coordinator links are unchanged. New peers
-include per-protocol jitter in the result; older peers omit it. Web panel runs
+include per-protocol jitter in the result; older peers omit it, and their jitter is shown as unmeasured. Web panel runs
 are not saved by this terminal-only feature.
+
+<div dir="rtl">
 
 ## خلاصهٔ فارسی
 
@@ -42,3 +44,7 @@ are not saved by this terminal-only feature.
 مشاهده و مقایسه‌اند. حداکثر ۱۰۰ اجرا نگهداری می‌شود. تست لغوشده در مقایسه حساب
 نمی‌شود؛ مسیر، خانوادهٔ IP، تنظیمات و دامنهٔ SNI متفاوت جدا می‌مانند. نسبت اجراهای
 موفق، درصد آپ‌تایم نیست. لینک اتصال، رمز و خطای خام ذخیره نمی‌شوند.
+
+</div>
+
+*Last verified against Backpack v1.11.0, 2026-10-18.*

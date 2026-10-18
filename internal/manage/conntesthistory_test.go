@@ -11,7 +11,7 @@ func TestConnectionTestHistoryStoresMeasurementsWithoutPrivateDiagnostics(t *tes
 	previous := ConnTestHistoryRoot
 	ConnTestHistoryRoot = t.TempDir()
 	defer func() { ConnTestHistoryRoot = previous }()
-	ctSaveHistory("iran", "turbo", []ConnTestPath{{Host: "192.0.2.1", Family: "IPv4", State: "done", Error: "private-path-error", Rows: []ConnTestResult{{Kind: "reverse", Transport: "tcp", Status: ctOK, Tried: 10, OK: 10, RTTms: 10, JitterMs: 1, Mbps: 100, UploadMbps: 50, Detail: "secret-token-in-diagnostic", HTTPSProbe: "private-probe"}}}}, true)
+	ctSaveHistory("iran", "turbo", []ConnTestPath{{Host: "192.0.2.1", Family: "IPv4", State: "done", Error: "private-path-error", Rows: []ConnTestResult{{Kind: "reverse", Transport: "tcp", Status: ctOK, Tried: 10, OK: 10, RTTms: 10, JitterMs: 1, JitterMeasured: true, Mbps: 100, UploadMbps: 50, Detail: "secret-token-in-diagnostic", HTTPSProbe: "private-probe"}}}}, true)
 	runs, err := LoadConnTestHistory()
 	if err != nil || len(runs) != 1 {
 		t.Fatalf("history: %v %v", runs, err)

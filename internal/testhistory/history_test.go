@@ -12,7 +12,7 @@ import (
 )
 
 func sample() Run {
-	return Run{Version: 1, At: time.Now().UTC(), Side: "iran", Preset: "turbo", Complete: true, Paths: []Path{{Host: "192.0.2.1", Peer: "198.51.100.1", Family: "IPv4", State: "done", Rows: []Measurement{{Kind: "reverse", Transport: "tcp", Status: "ok", Sent: 10, Received: 10, RTTms: 20, JitterMs: 2, Download: 100, Upload: 50}}}}}
+	return Run{Version: 1, At: time.Now().UTC(), Side: "iran", Preset: "turbo", Complete: true, Paths: []Path{{Host: "192.0.2.1", Peer: "198.51.100.1", Family: "IPv4", State: "done", Rows: []Measurement{{Kind: "reverse", Transport: "tcp", Status: "ok", Sent: 10, Received: 10, RTTms: 20, JitterMs: 2, JitterMeasured: true, Download: 100, Upload: 50}}}}}
 }
 func TestConcurrentRunsRemainDistinctAndHistoryRetentionIsBounded(t *testing.T) {
 	store := Store{Dir: filepath.Join(t.TempDir(), "history")}
@@ -149,5 +149,14 @@ func TestEmptyStoreAndCredentialFreeSchema(t *testing.T) {
 		if strings.Contains(string(body), fmt.Sprintf("%q:", name)) {
 			t.Fatalf("unexpected sensitive field %s", name)
 		}
+	}
+}
+
+func TestOlderPeerWithoutJitterIsNotReportedAsZeroJitter(t *testing.T) {
+	r := sample()
+	r.Paths[0].Rows[0].JitterMeasured = false
+	out := Compare([]Run{r})
+	if len(out) != 1 || out[0].JitterSamples != 0 {
+		t.Fatal("unknown jitter became a measured zero")
 	}
 }

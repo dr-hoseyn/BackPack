@@ -25,17 +25,18 @@ var filename = regexp.MustCompile(`^[0-9]{8}T[0-9]{6}\.[0-9]{9}Z-[a-f0-9]{16}\.j
 var identity = regexp.MustCompile(`^[A-Za-z0-9.@_-]{0,253}$`)
 
 type Measurement struct {
-	Kind        string  `json:"kind"`
-	Transport   string  `json:"transport"`
-	SNI         string  `json:"sni,omitempty"`
-	Status      string  `json:"status"`
-	Sent        int     `json:"sent"`
-	Received    int     `json:"received"`
-	RTTms       float64 `json:"rtt_ms"`
-	JitterMs    float64 `json:"jitter_ms"`
-	Download    float64 `json:"download_mbps"`
-	Upload      float64 `json:"upload_mbps"`
-	SpeedStable bool    `json:"speed_stable"`
+	Kind           string  `json:"kind"`
+	Transport      string  `json:"transport"`
+	SNI            string  `json:"sni,omitempty"`
+	Status         string  `json:"status"`
+	Sent           int     `json:"sent"`
+	Received       int     `json:"received"`
+	RTTms          float64 `json:"rtt_ms"`
+	JitterMs       float64 `json:"jitter_ms"`
+	JitterMeasured bool    `json:"jitter_measured"`
+	Download       float64 `json:"download_mbps"`
+	Upload         float64 `json:"upload_mbps"`
+	SpeedStable    bool    `json:"speed_stable"`
 }
 type Path struct {
 	Host   string        `json:"host"`
@@ -193,24 +194,25 @@ func (s Store) Load() ([]Run, error) {
 }
 
 type Summary struct {
-	Side         string  `json:"side"`
-	Preset       string  `json:"preset"`
-	Host         string  `json:"host"`
-	Peer         string  `json:"peer,omitempty"`
-	Family       string  `json:"family"`
-	Kind         string  `json:"kind"`
-	Transport    string  `json:"transport"`
-	SNI          string  `json:"sni,omitempty"`
-	Runs         int     `json:"runs"`
-	Steady       int     `json:"steady"`
-	Sent         int     `json:"sent"`
-	Received     int     `json:"received"`
-	Loss         float64 `json:"loss_pct"`
-	RTTms        float64 `json:"rtt_ms"`
-	JitterMs     float64 `json:"jitter_ms"`
-	Download     float64 `json:"median_download_mbps"`
-	Upload       float64 `json:"median_upload_mbps"`
-	SpeedSamples int     `json:"speed_samples"`
+	Side          string  `json:"side"`
+	Preset        string  `json:"preset"`
+	Host          string  `json:"host"`
+	Peer          string  `json:"peer,omitempty"`
+	Family        string  `json:"family"`
+	Kind          string  `json:"kind"`
+	Transport     string  `json:"transport"`
+	SNI           string  `json:"sni,omitempty"`
+	Runs          int     `json:"runs"`
+	Steady        int     `json:"steady"`
+	Sent          int     `json:"sent"`
+	Received      int     `json:"received"`
+	Loss          float64 `json:"loss_pct"`
+	RTTms         float64 `json:"rtt_ms"`
+	JitterMs      float64 `json:"jitter_ms"`
+	Download      float64 `json:"median_download_mbps"`
+	Upload        float64 `json:"median_upload_mbps"`
+	SpeedSamples  int     `json:"speed_samples"`
+	JitterSamples int     `json:"jitter_samples"`
 }
 
 // Compare groups only the same peer, IP family, side, preset, direction,
@@ -220,8 +222,9 @@ type Summary struct {
 func Compare(runs []Run) []Summary {
 	type group struct {
 		Summary
-		down, up    []float64
-		rtt, jitter float64
+		down, up     []float64
+		rtt, jitter  float64
+		jitterEchoes int
 	}
 	groups := map[[8]string]*group{}
 	for _, r := range runs {
@@ -249,7 +252,11 @@ func Compare(runs []Run) []Summary {
 				g.Sent += m.Sent
 				g.Received += m.Received
 				g.rtt += m.RTTms * float64(m.Received)
-				g.jitter += m.JitterMs * float64(m.Received)
+				if m.JitterMeasured {
+					g.jitter += m.JitterMs * float64(m.Received)
+					g.jitterEchoes += m.Received
+					g.JitterSamples++
+				}
 				if m.Status == "ok" && m.Download > 0 && m.Upload > 0 {
 					g.down = append(g.down, m.Download)
 					g.up = append(g.up, m.Upload)
@@ -272,7 +279,10 @@ func Compare(runs []Run) []Summary {
 		}
 		if g.Received > 0 {
 			g.RTTms = g.rtt / float64(g.Received)
-			g.JitterMs = g.jitter / float64(g.Received)
+
+		}
+		if g.jitterEchoes > 0 {
+			g.JitterMs = g.jitter / float64(g.jitterEchoes)
 		}
 		g.Download = median(g.down)
 		g.Upload = median(g.up)
