@@ -34,6 +34,9 @@ func payload(n int, nonce []byte, label string) []byte {
 }
 
 type Result struct {
+	// Authenticated is true only after the peer's token-bound proof verifies.
+	// It remains available when the subsequent payload transfer fails.
+	Authenticated  bool
 	RTT            time.Duration
 	BytesPerSecond float64
 }
@@ -60,6 +63,7 @@ func Check(conn net.Conn, token string, request []byte, started time.Time) (Resu
 	if !hmac.Equal(proof, mac(token, "server", request)) {
 		return result, errors.New("path probe server proof refused")
 	}
+	result.Authenticated = true
 	result.RTT = time.Since(started)
 	if result.RTT < time.Microsecond {
 		result.RTT = time.Microsecond

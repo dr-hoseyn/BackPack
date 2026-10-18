@@ -16,7 +16,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/BurntSushi/toml"
 	"github.com/backpack/backpack/config"
+	"github.com/backpack/backpack/internal/manage"
 )
 
 func TestSingReverseEnginesCarryConcurrentTCPUDPAndDirectionalEOF(t *testing.T) {
@@ -91,6 +93,25 @@ func TestSingReverseEnginesCarryConcurrentTCPUDPAndDirectionalEOF(t *testing.T) 
 			tun := runPair(t, s, c, entry, internal)
 			if err := tun.waitReady(25 * time.Second); err != nil {
 				t.Fatal(err)
+			}
+			if protocol == "tuic" {
+				// Standalone diagnostics share this live managed listener. They
+				// must not opt its ordinary client into adaptive assignment ACKs
+				// or take over its control seat. Traffic below must still work.
+				path := filepath.Join(t.TempDir(), "diagnostic-client.toml")
+				f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, 0600)
+				if err != nil {
+					t.Fatal(err)
+				}
+				err = toml.NewEncoder(f).Encode(config.Config{Client: *c})
+				f.Close()
+				if err != nil {
+					t.Fatal(err)
+				}
+				reports, err := manage.DiagnoseDatagramConfig(t.Context(), path, "")
+				if err != nil || len(reports) != 1 || !reports[0].Verified {
+					t.Fatalf("live TUIC diagnostic: %+v %v", reports, err)
+				}
 			}
 			payload := randomPayload(t, 1<<20)
 			results := make(chan error, 4)

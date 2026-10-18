@@ -75,6 +75,8 @@ const usage = `backpack — non-interactive commands
   backpack tunnel list [--json]         every tunnel and its state
   backpack tunnel status <name> [--json]  one tunnel: state, peer, and what it has carried
   backpack check -c <file>              validate a config without starting it
+  backpack diagnose -c <file> [--path NAME] [--json]
+                                        stage TUIC/Hysteria2 checks from Kharej
   backpack link apply [--name N] [--host IP] '<setup link>'
                                         build and start the tunnel a setup link describes
   backpack proxy enable <socks5|http> <port> [--user U --pass P]
@@ -104,6 +106,8 @@ func Run(args []string) Result {
 		return runTunnel(args[1:])
 	case "check":
 		return runCheck(args[1:])
+	case "diagnose":
+		return runDiagnose(args[1:])
 	case "link":
 		return runLink(args[1:])
 	case "proxy":
@@ -451,7 +455,7 @@ func takeJSONFlag(args []string) (bool, []string) {
 // drifting — a command added below is routable immediately.
 func IsCommand(s string) bool {
 	switch s {
-	case "tunnel", "check", "version", "link", "proxy":
+	case "tunnel", "check", "version", "link", "proxy", "diagnose":
 		return true
 	}
 	return false
