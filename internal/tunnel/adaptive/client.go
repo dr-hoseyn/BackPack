@@ -25,6 +25,8 @@ type clientPath struct {
 	name   string
 	helper *naive.Helper // guarded by ClientPaths.mu
 	ready  atomic.Bool
+	epoch  atomic.Uint64
+	wake   chan struct{}
 }
 type proxyConnection struct {
 	conn net.Conn
@@ -74,14 +76,26 @@ func StartClient(parent context.Context, cfg *config.ClientConfig, log *logrus.L
 	c := &ClientPaths{ctx: ctx, cancel: cancel, listener: l, selector: selector, policy: policy, cfg: *cfg, log: log, paths: make([]clientPath, len(cfg.Paths)), connections: map[string]*proxyConnection{}}
 	for i, p := range cfg.Paths {
 		c.paths[i].name = p.Name
+		c.paths[i].wake = make(chan struct{}, 1)
 		child := clientConfig(*cfg, p)
 		pathCtx := naive.WithReadiness(ctx, func(value bool) {
 			c.mu.Lock()
-			defer c.mu.Unlock()
-			c.paths[i].ready.Store(value)
+			changed := c.paths[i].ready.Swap(value) != value
+			if changed {
+				c.paths[i].epoch.Add(1)
+			}
 			anyReady := false
 			for j := range c.paths {
 				anyReady = anyReady || c.paths[j].ready.Load()
+			}
+			c.mu.Unlock()
+			if !value && changed {
+				c.record(i, pathprobe.Result{}, nil)
+			} else if changed {
+				select {
+				case c.paths[i].wake <- struct{}{}:
+				default:
+				}
 			}
 			naive.ReportReadiness(parent, anyReady)
 		})
@@ -213,22 +227,44 @@ func (c *ClientPaths) probe(i int) (pathprobe.Result, error) {
 
 func (c *ClientPaths) probeLoop(i int) {
 	for c.ctx.Err() == nil {
+		// Consume readiness already visible before this probe. A later helper
+		// restart wakes the wait, rather than costing another probe interval.
+		select {
+		case <-c.paths[i].wake:
+		default:
+		}
+		epoch := c.paths[i].epoch.Load()
 		result, err := c.probe(i)
-		c.record(i, result, err)
+		c.recordProbe(i, epoch, result, err)
 		t := time.NewTimer(time.Duration(c.policy.ProbeInterval) * time.Second)
 		select {
 		case <-c.ctx.Done():
 			t.Stop()
 			return
 		case <-t.C:
+		case <-c.paths[i].wake:
+			t.Stop()
 		}
 	}
 }
 
 func (c *ClientPaths) record(i int, result pathprobe.Result, err error) {
+	c.recordProbe(i, c.paths[i].epoch.Load(), result, err)
+}
+
+func (c *ClientPaths) recordProbe(i int, epoch uint64, result pathprobe.Result, err error) {
 	c.recordMu.Lock()
 	defer c.recordMu.Unlock()
-	for _, change := range c.selector.Record(i, result, err, time.Now()) {
+	if epoch != c.paths[i].epoch.Load() {
+		return // a response from the previous helper cannot revive its path
+	}
+	var changes []Switch
+	if !c.paths[i].ready.Load() {
+		changes = c.selector.Withdraw(i, time.Now())
+	} else {
+		changes = c.selector.Record(i, result, err, time.Now())
+	}
+	for _, change := range changes {
 		name := func(i int) string {
 			if i < 0 {
 				return "none"
