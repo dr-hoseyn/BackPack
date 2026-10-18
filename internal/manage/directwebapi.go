@@ -355,6 +355,13 @@ func directBodyFromSpec(spec l3Spec) (name, body string, err error) {
 	if _, err := toml.Decode(body, &check); err != nil {
 		return "", "", fmt.Errorf("the form produced a config that does not parse: %w", err)
 	}
+	engine, err := l3.ConfigFromTable(check.L3)
+	if err != nil {
+		return "", "", err
+	}
+	if err := engine.Validate(); err != nil {
+		return "", "", fmt.Errorf("the form produced an invalid tunnel: %w", err)
+	}
 	return spec.Name, body, nil
 }
 
@@ -518,8 +525,12 @@ func (n NewDirectTunnel) spec() (l3Spec, error) {
 	}
 	if carrier == "connect-ip" {
 		off := false
-		spec.AutoMTU = &off
-		spec.MTU, spec.FECData, spec.FECParity = 1280, 0, 0
+		if n.AutoMTU == nil {
+			spec.AutoMTU = &off
+		}
+		if n.MTU == 0 {
+			spec.MTU = 1280
+		}
 	}
 	if carrier == "masque" || carrier == "masque-h2" || carrier == "connect-ip" {
 		if err := spec.Masque.Validate(side == sideKharej); err != nil {

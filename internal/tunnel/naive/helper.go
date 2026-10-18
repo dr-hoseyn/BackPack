@@ -30,6 +30,7 @@ type Helper struct {
 	once        sync.Once
 	proxyScheme string
 	pid         atomic.Int32
+	resources   helperResourceCache
 }
 
 func (h *Helper) ProxyURL() string {

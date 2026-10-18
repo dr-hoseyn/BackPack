@@ -30,7 +30,14 @@ func (s *server) handleManagedLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.managedLinkMu.Lock()
-	defer s.managedLinkMu.Unlock()
+	if s.managedLinkBusy {
+		s.managedLinkMu.Unlock()
+		http.Error(w, "another pairing operation is in progress", http.StatusConflict)
+		return
+	}
+	s.managedLinkBusy = true
+	s.managedLinkMu.Unlock()
+	defer func() { s.managedLinkMu.Lock(); s.managedLinkBusy = false; s.managedLinkMu.Unlock() }()
 	switch request.Action {
 	case "preview":
 		preview, err := manage.PreviewManagedPeer(request.Link, request.Name)
@@ -39,7 +46,9 @@ func (s *server) handleManagedLink(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		id := manage.NewToken()
+		s.managedLinkMu.Lock()
 		s.managedLink = &managedLinkPlan{id: id, raw: request.Link, name: preview.Name, expires: time.Now().Add(2 * time.Minute)}
+		s.managedLinkMu.Unlock()
 		time.AfterFunc(2*time.Minute, func() {
 			s.managedLinkMu.Lock()
 			if s.managedLink != nil && s.managedLink.id == id {
@@ -48,22 +57,26 @@ func (s *server) handleManagedLink(w http.ResponseWriter, r *http.Request) {
 			s.managedLinkMu.Unlock()
 		})
 		writeJSON(w, map[string]any{"id": id, "preview": preview})
-	case "commit":
+	case "commit", "cancel":
+		s.managedLinkMu.Lock()
 		p := s.managedLink
 		if p == nil || request.ID == "" || request.ID != p.id || time.Now().After(p.expires) {
+			s.managedLinkMu.Unlock()
 			http.Error(w, "link preview expired; review it again", http.StatusConflict)
 			return
 		}
 		s.managedLink = nil
+		s.managedLinkMu.Unlock()
+		if request.Action == "cancel" {
+			writeJSON(w, map[string]any{"cancelled": true})
+			return
+		}
 		result, err := manage.CreateManagedPeer(p.raw, p.name)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		writeJSON(w, map[string]any{"name": result.Name, "service": result.Service, "active": result.Active})
-	case "cancel":
-		s.managedLink = nil
-		writeJSON(w, map[string]any{"cancelled": true})
 	default:
 		http.Error(w, "action must be preview, commit or cancel", http.StatusBadRequest)
 	}

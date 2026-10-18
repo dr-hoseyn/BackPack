@@ -15,6 +15,13 @@ All notable changes to Backpack are documented here.
 - Add up-to-one-hour bulk measurements, reconnecting soak reports and optional
   30-minute Hy2/TUIC CI observations with a controlled helper restart.
 
+- Coalesce helper resource reads with PID-scoped caching; invalidate on stop or
+  replacement and retry failed samples promptly.
+- Serialize panel setup operations, scope cancellation to its preview ID, and
+  keep in-flight commits independent of browser navigation.
+- Restore MASQUE-H2/CONNECT-IP certificate fields, hide incompatible native
+  tuning controls, and validate Direct creation with the runtime engine.
+
 See [Network efficiency and modern carriers](docs/modern-networking.md).
 
 ## v1.12.0 — 2026-10-18 (dr-hoseyn fork)

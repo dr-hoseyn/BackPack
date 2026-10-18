@@ -1,12 +1,26 @@
 package naive
 
-import "github.com/shirou/gopsutil/v4/process"
+import (
+	"time"
+
+	"github.com/shirou/gopsutil/v4/process"
+)
 
 // Resources samples the current helper tree. RSS counts shared pages in each
 // process; CPU is cumulative seconds for this process tree, not utilization.
 // Never include command lines, generated configuration or environment values.
 func (h *Helper) Resources() (rss uint64, cpu float64, measured bool) {
 	pid := h.pid.Load()
+	rss, cpu, measured = h.resources.read(pid, time.Now(), func() (uint64, float64, bool) {
+		return sampleHelperResources(pid)
+	})
+	if pid != h.pid.Load() {
+		return 0, 0, false
+	}
+	return
+}
+
+func sampleHelperResources(pid int32) (rss uint64, cpu float64, measured bool) {
 	if pid <= 0 {
 		return
 	}
@@ -39,5 +53,5 @@ func (h *Helper) Resources() (rss uint64, cpu float64, measured bool) {
 		}
 		queue = append(queue, children...)
 	}
-	return rss, cpu, len(queue) == 0 && pid == h.pid.Load()
+	return rss, cpu, len(queue) == 0
 }

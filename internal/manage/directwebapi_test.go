@@ -154,3 +154,36 @@ func TestOnlyTheKharejSideIsOfferedAToken(t *testing.T) {
 		t.Errorf("the Iran side was given no addressing: %v", d)
 	}
 }
+
+func TestConnectIPPanelCreationRejectsIgnoredTuning(t *testing.T) {
+	base := NewDirectTunnel{Side: "iran", Carrier: "connect-ip", Name: "native-validation", Token: "paired-native-token", PeerAddr: "203.0.113.10", TunnelPort: "443", Ports: "34567=443"}
+	_, body, err := directBody(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg := decode(t, body); cfg.L3.MTU != 1280 || cfg.L3.AutoMTUEnabled() {
+		t.Fatal("wrong native defaults")
+	}
+	for name, change := range map[string]func(*NewDirectTunnel){
+		"mtu":       func(n *NewDirectTunnel) { n.MTU = 1400 },
+		"gre":       func(n *NewDirectTunnel) { n.GREKey = 7 },
+		"fec":       func(n *NewDirectTunnel) { n.FEC = true },
+		"auto mtu":  func(n *NewDirectTunnel) { on := true; n.AutoMTU = &on },
+		"multipath": func(n *NewDirectTunnel) { n.Paths = 2 },
+	} {
+		t.Run(name, func(t *testing.T) {
+			n := base
+			change(&n)
+			if _, _, err := directBody(n); err == nil {
+				t.Fatal("panel accepted an option rejected by the engine")
+			}
+		})
+	}
+}
+
+func TestDirectPanelValidatesEngineBeforeWriting(t *testing.T) {
+	_, _, err := directBodyFromSpec(l3Spec{Side: sideIran, Carrier: "udp", Addr: "203.0.113.10:443", Token: "paired-token", LocalIP: "10.90.0.1/30", PeerIP: "10.90.0.2", MTU: 99999})
+	if err == nil {
+		t.Fatal("syntactically valid TOML bypassed runtime validation")
+	}
+}

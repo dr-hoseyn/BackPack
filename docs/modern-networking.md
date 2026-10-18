@@ -26,7 +26,10 @@ Metrics show stream probe bytes, attempts, cadence, helper-tree RSS and cumulati
 CPU seconds. Probe counters include framing and partial failures, exclude outer
 TLS/QUIC and native UDP verification, and reset on engine restart. RSS includes
 shared pages per process. Helper CPU counters reset after helper restart;
-they are not CPU utilization. Failed samples and in-process carriers are unmeasured.
+they are not CPU utilization. Resource samples are shared across concurrent readers
+and cached for up to five seconds per helper PID; failed samples retry after one
+second. A stopped or replaced helper never reuses another PID's sample.
+Failed samples and in-process carriers are unmeasured.
 
 Open **Connection Test → Saved tests, Automatic setup and diagnostics** in the
 panel. Automatic previews reserve listener ports for two minutes without creating
@@ -39,7 +42,13 @@ still win a port between reservation release and helper startup.
 
 Browser tests now use the same private, bounded history and comparison rules as
 terminal tests. Cancelled runs remain partial. History-write errors do not change
-measurement verdicts. Carrier diagnosis uses temporary helpers on Kharej without
+measurement verdicts. Each setup form serializes preview, commit and cancel;
+replacing a preview releases its previous reservation, and stale cancellation
+IDs cannot remove another review. Navigating away does not cancel a commit.
+Direct creation validates the generated configuration with the runtime engine
+before writing it. Unsupported native CONNECT-IP tuning is rejected explicitly,
+and all three HTTP carriers share the correctly sided TLS fields.
+Carrier diagnosis uses temporary helpers on Kharej without
 restarting its active tunnel. Read tokens cannot create tunnels or start helpers.
 
 ## Gecko, ECH and Hysteria Realm

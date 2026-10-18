@@ -42,36 +42,62 @@ export function networkView(ctx) {
   const auto = view.querySelector('#autoResult'), diag = view.querySelector('#diagResult'), history = view.querySelector('#testHistory');
   const peer = view.querySelector('#peerResult');
   let peerPlan = null;
+  const pending = new Set();
+  async function operate(form, box, work) {
+    if (!alive || pending.has(form)) return;
+    pending.add(form);
+    const button = form.querySelector('button');
+    button.disabled = true;
+    box.querySelectorAll('button').forEach(b => { b.disabled = true; });
+    try { await work(); } catch (e) { error(box, e); }
+    finally {
+      pending.delete(form);
+      if (alive) {
+        button.disabled = false;
+        box.querySelectorAll('button').forEach(b => { b.disabled = false; });
+      }
+    }
+  }
+  async function release(call, id) {
+    if (!id) return;
+    try { await call({action:'cancel', id}); }
+    catch (e) { if (e.status !== 409) throw e; } // Expired or superseded preview.
+  }
   const error = (box, e) => { if (alive) box.textContent = e.message || 'The request failed. Try again.'; };
   view.querySelector('#autoForm').onsubmit = async event => {
     event.preventDefault();
-    const form = event.currentTarget, button = form.querySelector('button');
-    button.disabled = true; auto.textContent = 'Checking helpers, cover and available ports…';
-    try {
+    const form = event.currentTarget;
+    return operate(form, auto, async () => {
+      const previous = plan; plan = null;
+      await release(api.automatic, previous);
+      if (!alive) return;
+      auto.textContent = 'Checking helpers, cover and available ports…';
       const r = await api.automatic({ action: 'preview', ...Object.fromEntries(new FormData(form)) });
       if (!alive) { api.automatic({action:'cancel',id:r.id}).catch(() => {}); return; }
-      plan = r.id;
+      const id = r.id; plan = id;
       const p = r.preview;
       auto.innerHTML = `<h4>${esc(p.name)} · ${esc(p.profile)}</h4><p>${esc(p.host)} · ${esc((p.ports || []).join(', '))}</p>
         <ul>${(p.listeners || []).map(l => `<li>${esc(l.protocol)} · allow inbound ${esc(l.network)} ${esc(l.port)}</li>`).join('')}</ul>
         ${(p.warnings || []).map(w => `<p>${esc(w)}</p>`).join('')}
         <p>Review expires at ${esc(new Date(p.expires).toLocaleTimeString())}.</p>
         <button class="tl-btn" id="createAutomatic">Create this tunnel</button> <button class="tl-btn" id="cancelAutomatic">Cancel</button>`;
-      auto.querySelector('#cancelAutomatic').onclick = async () => {
-        try { await api.automatic({action:'cancel',id:plan}); plan=null; if (alive) auto.textContent='Preview cancelled.'; } catch (e) { error(auto,e); }
-      };
-      auto.querySelector('#createAutomatic').onclick = async e => {
-        e.currentTarget.disabled = true;
-        try {
-          const r = await api.automatic({action:'commit',id:plan}); plan=null;
-          if (!alive) return;
-          auto.innerHTML = `<p>${esc(r.name)}: ${r.active ? 'service started; pair Kharej to verify the tunnel' : 'created; service is not active, inspect its log'}.</p>
-            <label>Private Setup Link · paste into Setup Kharej<textarea readonly rows="4" id="automaticLink"></textarea></label>
-            <p>This link contains account secrets. Share it only with the other server.</p>`;
-          auto.querySelector('textarea').value = r.link;
-        } catch (e) { error(auto,e); }
-      };
-    } catch (e) { error(auto,e); } finally { if (alive) button.disabled=false; }
+      auto.querySelector('#cancelAutomatic').onclick = () => operate(form, auto, async () => {
+        if (plan !== id) return;
+        plan = null;
+        await release(api.automatic, id);
+        if (alive) auto.textContent = 'Preview cancelled.';
+      });
+      auto.querySelector('#createAutomatic').onclick = () => operate(form, auto, async () => {
+        if (plan !== id) return;
+        plan = null; // A committing operation must not be cancelled by navigation.
+        const result = await api.automatic({action:'commit', id});
+        if (!alive) return;
+        auto.innerHTML = `<p>${esc(result.name)}: ${result.active ? 'service started; pair Kharej to verify the tunnel' : 'created; service is not active, inspect its log'}.</p>
+          <label>Private Setup Link · paste into Setup Kharej<textarea readonly rows="4" id="automaticLink"></textarea></label>
+          <p>This link contains account secrets. Share it only with the other server.</p>`;
+        auto.querySelector('textarea').value = result.link;
+      });
+    });
   };
   view.querySelector('#diagForm').onsubmit = async event => {
     event.preventDefault(); const form = event.currentTarget, button = form.querySelector('button');
@@ -82,20 +108,27 @@ export function networkView(ctx) {
       diag.innerHTML = (r.reports || []).map(report => `<h4>${esc(report.path)} · ${report.verified ? 'verified' : 'not verified'}</h4><dl>${(report.stages || []).map(s => `<div class="dr2"><dt>${esc(s.stage)} · ${esc(s.status)}</dt><dd>${esc(s.detail)}</dd></div>`).join('')}</dl>`).join('');
     } catch (e) { error(diag,e); } finally { if (alive) button.disabled=false; }
   };
-  view.querySelector('#peerForm').onsubmit = async event => {
-    event.preventDefault(); const form=event.currentTarget, button=form.querySelector('button');button.disabled=true;
-    try {
-      const r=await api.managedLink({action:'preview',...Object.fromEntries(new FormData(form))});
-      if (!alive) { api.managedLink({action:'cancel',id:r.id}).catch(() => {}); return; } peerPlan=r.id;
-      peer.innerHTML=`<h4>${esc(r.preview.name)} · ${esc(r.preview.host)}</h4><p>${esc(r.preview.profile || r.preview.transport)}</p>
-        <ul>${(r.preview.paths || []).map(p=>`<li>${esc(p)}</li>`).join('')}</ul><button class="tl-btn" id="createPeer">Create this peer</button>`;
-      peer.querySelector('button').onclick=async e=>{
-        e.currentTarget.disabled=true;
-        try {const result=await api.managedLink({action:'commit',id:peerPlan});peerPlan=null;
-          if (alive) {peer.textContent=`${result.name}: ${result.active ? 'service started; verify traffic through the tunnel' : 'created; inspect the service log'}.`;form.reset();}
-        } catch(e) {error(peer,e);}
-      };
-    } catch(e) {error(peer,e);} finally {if(alive) button.disabled=false;}
+  view.querySelector('#peerForm').onsubmit = event => {
+    event.preventDefault(); const form = event.currentTarget;
+    return operate(form, peer, async () => {
+      const previous = peerPlan; peerPlan = null;
+      await release(api.managedLink, previous);
+      if (!alive) return;
+      const r = await api.managedLink({action:'preview', ...Object.fromEntries(new FormData(form))});
+      if (!alive) { api.managedLink({action:'cancel', id:r.id}).catch(() => {}); return; }
+      const id = r.id; peerPlan = id;
+      peer.innerHTML = `<h4>${esc(r.preview.name)} · ${esc(r.preview.host)}</h4><p>${esc(r.preview.profile || r.preview.transport)}</p>
+        <ul>${(r.preview.paths || []).map(p => `<li>${esc(p)}</li>`).join('')}</ul><button class="tl-btn" id="createPeer">Create this peer</button>`;
+      peer.querySelector('button').onclick = () => operate(form, peer, async () => {
+        if (peerPlan !== id) return;
+        peerPlan = null;
+        const result = await api.managedLink({action:'commit', id});
+        if (alive) {
+          peer.textContent = `${result.name}: ${result.active ? 'service started; verify traffic through the tunnel' : 'created; inspect the service log'}.`;
+          form.reset();
+        }
+      });
+    });
   };
   async function loadHistory() {
     history.textContent='Loading saved measurements…';

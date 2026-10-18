@@ -243,9 +243,10 @@ func (s L3Spec) Render() string {
 	// CONNECT-IP carries raw IP and does not use Backpack GRE framing.
 	if s.Carrier != "connect-ip" {
 		writeKV(&b, "encap", quote("gre"))
-		if s.GREKey != 0 {
-			writeKV(&b, "gre_key", fmt.Sprint(s.GREKey))
-		}
+	}
+	// Preserve an explicit key so startup validation can reject it for native IP.
+	if s.GREKey != 0 {
+		writeKV(&b, "gre_key", fmt.Sprint(s.GREKey))
 	}
 
 	b.WriteString("\n# The two ends of the private network. The other machine has these\n")

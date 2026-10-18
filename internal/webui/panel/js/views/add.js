@@ -11,6 +11,7 @@
 import { $$, el, esc, dialogSubtitle } from '../lib/dom.js';
 import { isUp } from '../lib/tstate.js';
 import { NUMERIC } from '../lib/numeric.js';
+import { directConditionMatches } from '../lib/direct-conditions.js';
 import * as api from '../api.js';
 import { setupLinkHTML, bindSetupLink } from '../ui/setuplink.js';
 import * as store from '../store.js';
@@ -455,10 +456,7 @@ export function addView(ctx) {
           const when = n.dataset.when;
           if (when === 'server' || when === 'client' || when === 'tls') return;
           const row = n.closest('.f3, .tg3, .f, .row') || n;
-          const ok = when.split('-').every(part => {
-            if (part === 'server' || part === 'client') return chosen.side === part;
-            return chosen.carrier === part;
-          });
+          const ok = directConditionMatches(when, chosen.side, chosen.carrier);
           row.hidden = !ok;
         });
         /* Groups that were moved out of .step3rev / .step3direct carry the mode

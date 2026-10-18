@@ -232,14 +232,15 @@ type server struct {
 	// one thing at a time in the background. Values rather than pointers so a
 	// server built as a literal in a test has them too. See handlers_conntest.go
 	// and handlers_manage.go.
-	conntest      conntestRunner
-	automaticMu   sync.Mutex
-	automaticPlan *manage.AutomaticPlan
-	automaticID   string
-	automaticBusy bool
-	diagnosticMu  sync.Mutex
-	managedLinkMu sync.Mutex
-	managedLink   *managedLinkPlan
+	conntest        conntestRunner
+	automaticMu     sync.Mutex
+	automaticPlan   *manage.AutomaticPlan
+	automaticID     string
+	automaticBusy   bool
+	diagnosticMu    sync.Mutex
+	managedLinkMu   sync.Mutex
+	managedLink     *managedLinkPlan
+	managedLinkBusy bool
 	// terminals counts the open root shells; see terminal.go.
 	terminals terminalCount
 
