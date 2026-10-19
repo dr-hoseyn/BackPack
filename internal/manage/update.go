@@ -488,9 +488,8 @@ func extractBinaryTo(archive, dest string) error {
 
 // ApplyUpdate downloads the latest release and installs it safely:
 // a full snapshot is taken first, the new binary is put in place, every service
-// is restarted and health-checked, and if anything fails to come back up the
-// snapshot is rolled back automatically — so a broken release can never leave
-// the server without working tunnels.
+// is restarted and health-checked. Configured forwarded payload checks must
+// pass before installation and after restart; a regression restores the snapshot.
 func ApplyUpdate(logf func(string)) error {
 	if logf == nil {
 		logf = func(string) {}
@@ -547,6 +546,11 @@ func ApplyUpdate(logf func(string)) error {
 		// beside the thing it describes proves the download is intact, not that
 		// it is the publisher's.
 		logf("Checksum verified (this build pins no release key, so the checksum list itself is unverified).")
+	}
+
+	healthPolicy, err := prepareUpdateHealth(logf)
+	if err != nil {
+		return err
 	}
 
 	// Snapshot BEFORE touching anything, so we can always get back.
@@ -610,20 +614,10 @@ func ApplyUpdate(logf func(string)) error {
 	ok, failed, later := RestartForNewBinary(logf)
 	logf(fmt.Sprintf("Restarted %d tunnels (%d failed).", ok, failed))
 
-	// Health check: every tunnel that has a unit must come back active.
-	logf("Checking health...")
-	if bad := unhealthyAfterUpdate(later); len(bad) > 0 {
-		logf("Health check FAILED for: " + strings.Join(bad, ", "))
-		logf("Rolling back to the previous version...")
-		if rerr := backup.RestoreSnapshot(snap, logf); rerr != nil {
-			return fmt.Errorf("update failed AND rollback failed: %v (rollback: %v) — "+
-				"restore manually from %s", strings.Join(bad, ", "), rerr, snap.Dir)
-		}
-		return fmt.Errorf("update to %s failed health check (%s) — rolled back to %s",
-			tag, strings.Join(bad, ", "), snap.Meta.Version)
+	if err := finishUpdateHealth(snap, healthPolicy, later, logf); err != nil {
+		return fmt.Errorf("update to %s: %w", tag, err)
 	}
 
-	logf("Health check passed.")
 	logf("Update complete — now running " + tag + ".")
 	restartLast(later, logf)
 	return nil

@@ -10,6 +10,21 @@ permissions:
   contents: read
 
 jobs:
+  update-health:
+    name: Update payload verification and rollback
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Verify bounded payload probes and policy validation
+        run: go test -race ./internal/updatehealth -count=3 -v -timeout 1m
+      - name: Keep services active while cutting real TCP and Stealth tunnels
+        run: go test -race ./internal/manage -run '^TestUpdateHealth' -count=3 -v -timeout 2m
+
   history:
     name: Connection Test history and comparison
     runs-on: ubuntu-latest

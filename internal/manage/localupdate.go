@@ -209,6 +209,11 @@ func ApplyLocalUpdate(u LocalUpdate, logf func(string)) error {
 		logf("No SHA256SUMS beside the archive — installing it unverified.")
 	}
 
+	healthPolicy, err := prepareUpdateHealth(logf)
+	if err != nil {
+		return err
+	}
+
 	logf("Taking a safety snapshot...")
 	snap, err := backup.TakeSnapshot("pre-update")
 	if err != nil {
@@ -247,21 +252,12 @@ func ApplyLocalUpdate(u LocalUpdate, logf func(string)) error {
 	ok, failed, later := RestartForNewBinary(logf)
 	logf(fmt.Sprintf("Restarted %d tunnels (%d failed).", ok, failed))
 
-	logf("Checking health...")
-	if bad := unhealthyAfterUpdate(later); len(bad) > 0 {
-		logf("Health check FAILED for: " + strings.Join(bad, ", "))
-		logf("Rolling back to the previous version...")
-		if rerr := backup.RestoreSnapshot(snap, logf); rerr != nil {
-			return fmt.Errorf("update failed AND rollback failed: %v (rollback: %v) — "+
-				"restore manually from %s", strings.Join(bad, ", "), rerr, snap.Dir)
-		}
+	if err := finishUpdateHealth(snap, healthPolicy, later, logf); err != nil {
 		// The archive stays. It is what the operator would reach for to try
 		// again, and deleting the file that failed would leave them with a
 		// rolled-back server and nothing to retry from.
-		return fmt.Errorf("the update failed its health check (%s) — rolled back to %s. "+
-			"%s was left in place", strings.Join(bad, ", "), snap.Meta.Version, u.Path)
+		return fmt.Errorf("%w. %s was left in place", err, u.Path)
 	}
-	logf("Health check passed.")
 
 	// Only now, with the new version running and every tunnel healthy.
 	if err := os.Remove(u.Path); err != nil {
