@@ -182,7 +182,16 @@ func ctSpeedDirection(parent context.Context, dial func(context.Context) (net.Co
 			previous, last = now, count
 			elapsed := now.Sub(started)
 			stable := ctSpeedConverged(samples)
-			if elapsed >= ctSpeedMinimum && stable || elapsed >= ctSpeedMaximum {
+			allStreamsAdvanced := true
+			for i := range streams {
+				if streams[i].Load() == streamBaseline[i] {
+					allStreamsAdvanced = false
+				}
+			}
+			// Aggregate goodput can converge while one flow is recovering
+			// from loss. Give every stream the existing maximum window before
+			// rejecting it for carrying no verified bytes.
+			if elapsed >= ctSpeedMinimum && stable && allStreamsAdvanced || elapsed >= ctSpeedMaximum {
 				select {
 				case err := <-failures:
 					return 0, false, err

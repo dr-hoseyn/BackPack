@@ -4,9 +4,60 @@ import (
 	"context"
 	"net"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
+
+func TestConnectionTestSpeedWaitsForEveryStreamBeforeConverging(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		pause time.Duration
+		ok    bool
+	}{{"recovers within budget", 5 * time.Second, true}, {"stalls beyond budget", 7 * time.Second, false}} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+			var servers sync.WaitGroup
+			defer servers.Wait()
+			var opened atomic.Int32
+			mbps, _, err := ctSpeedDirection(ctx, func(context.Context) (net.Conn, error) {
+				client, server := net.Pipe()
+				var pause time.Duration
+				if opened.Add(1) == 1 {
+					pause = tc.pause
+				}
+				servers.Add(1)
+				go func() {
+					defer servers.Done()
+					defer server.Close()
+					ctServeSpeedOrEcho(&ctInitiallyQuietSpeedConn{Conn: server, pause: pause})
+				}()
+				return client, nil
+			}, 'D')
+			if tc.ok && (err != nil || mbps <= 0) {
+				t.Fatalf("a stream that recovers within the measurement window must carry verified traffic: %.2f, %v", mbps, err)
+			}
+			if !tc.ok && (err == nil || mbps != 0) {
+				t.Fatalf("an unverified stream must still fail: %.2f, %v", mbps, err)
+			}
+		})
+	}
+}
+
+type ctInitiallyQuietSpeedConn struct {
+	net.Conn
+	pause time.Duration
+	once  sync.Once
+}
+
+func (c *ctInitiallyQuietSpeedConn) Write(p []byte) (int, error) {
+	if len(p) == ctSpeedBlock {
+		c.once.Do(func() { time.Sleep(c.pause) })
+		time.Sleep(10 * time.Millisecond)
+	}
+	return c.Conn.Write(p)
+}
 
 // Every stream connects and negotiates within its own 3s limits. The varying
 // payload rate makes sampling run to its maximum, exercising both complete

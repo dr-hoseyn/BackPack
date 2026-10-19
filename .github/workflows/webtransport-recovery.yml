@@ -20,6 +20,8 @@ jobs:
           cache: true
       - name: Verify HTTP carriers and bounded reassembly under the race detector
         run: go test -race ./internal/httpcarrier -count=1 -timeout 3m
+      - name: Require progress from every speed stream before early completion
+        run: go test -race ./internal/manage -run '^TestConnectionTestSpeedWaitsForEveryStreamBeforeConverging$' -count=1 -timeout 40s
       - name: Prepare real network fixtures
         run: |
           sudo apt-get update -qq
