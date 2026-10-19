@@ -1,0 +1,35 @@
+name: Verify published v1.13.0 assets
+
+on:
+  push:
+    branches: [codex/verify-v1.13.0-assets]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Download the published assets from the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download v1.13.0 --repo "$GITHUB_REPOSITORY" --dir release
+      - name: Verify signature, every archive and build provenance
+        run: |
+          set -euo pipefail
+          go run ./.github/scripts/verify-published-release.go release v1.13.0 a43e19eb271ce0c5ff0d52f3d779e809f4c223dd | tee release-verification.txt
+          cmp install.sh release/install.sh
+          test "$(git ls-remote --tags origin 'refs/tags/v1.13.0^{}' | cut -f1)" = a43e19eb271ce0c5ff0d52f3d779e809f4c223dd
+      - uses: actions/upload-artifact@v7
+        with:
+          name: v1.13.0-independent-verification
+          path: release-verification.txt
+          retention-days: 30
