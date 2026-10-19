@@ -328,7 +328,17 @@ func (p *PacketConn) reassemble(peer string, b []byte, now time.Time) []byte {
 	a := p.fragments[k]
 	if a == nil {
 		if len(p.fragments) >= 32 {
-			return nil
+			// A lost fragment must not pin every slot until expiry and block
+			// all fresh packets. Retire the oldest incomplete packet so the
+			// bounded cache can keep carrying traffic after a loss burst.
+			var oldest fragmentKey
+			var expires time.Time
+			for key, pending := range p.fragments {
+				if expires.IsZero() || pending.expires.Before(expires) {
+					oldest, expires = key, pending.expires
+				}
+			}
+			delete(p.fragments, oldest)
 		}
 		a = &assembly{body: make([]byte, length), expires: now.Add(5 * time.Second)}
 		p.fragments[k] = a

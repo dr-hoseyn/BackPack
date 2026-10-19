@@ -172,6 +172,10 @@ func TestTheKCPConnectionTestAcrossAnIPv6OnlyPath(t *testing.T) {
 	testConnectionTestAcrossIPv6(t, "reverse/kcp")
 }
 
+func TestTheWebTransportConnectionTestAcrossAnIPv6OnlyPath(t *testing.T) {
+	testConnectionTestAcrossIPv6(t, "direct/webtransport")
+}
+
 func testConnectionTestAcrossIPv6(t *testing.T, only string) {
 	t.Helper()
 	if os.Getenv("BP_L3_LIVE") == "" {
@@ -230,8 +234,9 @@ func testConnectionTestAcrossIPv6(t *testing.T, only string) {
 		}
 	}
 	if only != "" {
-		if rows[0].Kind != "reverse" || rows[0].Transport != "kcp" || rows[0].Mbps <= 0 || rows[0].UploadMbps <= 0 {
-			t.Errorf("KCP must carry verified traffic in both directions: %+v", rows[0])
+		kind, transport, _ := strings.Cut(only, "/")
+		if rows[0].Kind != kind || rows[0].Transport != transport || rows[0].Mbps <= 0 || rows[0].UploadMbps <= 0 {
+			t.Errorf("%s must carry verified traffic in both directions: %+v", only, rows[0])
 		}
 		t.Log(string(out))
 		return

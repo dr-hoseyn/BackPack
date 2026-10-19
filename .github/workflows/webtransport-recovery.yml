@@ -1,0 +1,32 @@
+name: WebTransport fragment recovery
+
+on:
+  push:
+    branches: [codex/fix-webtransport-fragment-recovery]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  recovery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Verify HTTP carriers and bounded reassembly under the race detector
+        run: go test -race ./internal/httpcarrier -count=1 -timeout 3m
+      - name: Require progress from every speed stream before early completion
+        run: go test -race ./internal/manage -run '^TestConnectionTestSpeedWaitsForEveryStreamBeforeConverging$' -count=1 -timeout 40s
+      - name: Prepare real network fixtures
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq iproute2 iputils-ping netcat-openbsd bc openssl iptables
+      - name: Repeat four-stream WebTransport traffic across an IPv6-only path
+        run: |
+          sudo env PATH="$PATH" GOMODCACHE="$(go env GOMODCACHE)" GOCACHE="$(go env GOCACHE)" BP_L3_LIVE=1 \
+            go test ./internal/manage -run '^TestTheWebTransportConnectionTestAcrossAnIPv6OnlyPath$' -count=5 -v -timeout 10m
