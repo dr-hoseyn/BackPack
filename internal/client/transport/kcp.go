@@ -308,7 +308,12 @@ func (c *KcpTransport) poolMaintainer() {
 
 // control is this generation's control loop. See controlLoop.
 func (c *KcpTransport) control() controlLoop {
-	return c.lifecycle.control(controlwire.Net(c.state.Conn()), c.config.KeepAlive, c.tunnelDialer, c.Restart)
+	loop := c.lifecycle.control(controlwire.Net(c.state.Conn()), c.config.KeepAlive, c.tunnelDialer, c.Restart)
+	// KCP's Write queues work for its packet sender. Closing its owned socket
+	// immediately can discard SG_Closed and leave the server's client seat and
+	// mux sessions alive. Match the server's bounded goodbye flush window.
+	loop.farewellFlush = 300 * time.Millisecond
+	return loop
 }
 
 func (c *KcpTransport) tunnelDialer() {

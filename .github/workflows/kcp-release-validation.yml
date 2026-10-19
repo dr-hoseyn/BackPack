@@ -1,0 +1,25 @@
+name: KCP release validation
+
+on:
+  push:
+    branches: [codex/kcp-release-validation]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  churn:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Verify queued goodbye delivery and bounded shutdown
+        run: go test -race ./internal/client/transport -run '^TestKCPClientGoodbye' -count=5 -timeout 1m -v
+      - name: Repeat KCP client churn under the race detector
+        if: always()
+        run: go test -race ./internal/e2e -run '^TestAServerOutlivesItsClientsWithoutLeaking/kcp$' -count=20 -timeout 12m -v
