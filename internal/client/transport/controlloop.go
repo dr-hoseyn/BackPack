@@ -40,6 +40,9 @@ type controlLoop struct {
 	asked func()
 	// echoBeats answers every heartbeat: the websocket servers listen for it.
 	echoBeats bool
+	// farewellFlush lets datagram senders put a queued goodbye on the wire
+	// before closing their socket. Stream transports need no extra delay.
+	farewellFlush time.Duration
 }
 
 // control builds the loop for the generation that is starting now.
@@ -66,7 +69,9 @@ func (l *lifecycle) control(link controlwire.Link, keepAlive time.Duration, dial
 func (c controlLoop) run() {
 	// Let a healthy channel carry the goodbye, but interrupt a stalled write
 	// promptly instead of leaving shutdown behind the full write timeout.
-	stop := context.AfterFunc(c.ctx, func() { time.AfterFunc(100*time.Millisecond, c.link.Close) })
+	stop := context.AfterFunc(c.ctx, func() {
+		time.AfterFunc(c.farewellFlush+100*time.Millisecond, c.link.Close)
+	})
 	defer stop()
 	defer c.link.Close()
 	done := make(chan struct{})
@@ -83,7 +88,9 @@ func (c controlLoop) run() {
 			// generation whenever the tunnel was ended without a restart — a
 			// reload, a fallback chain moving on — and over a datagram
 			// carrier nothing else ever closes it.
-			_ = c.link.Send(utils.SG_Closed)
+			if c.link.Send(utils.SG_Closed) == nil && c.farewellFlush > 0 {
+				time.Sleep(c.farewellFlush)
+			}
 			c.link.Close()
 			return
 
