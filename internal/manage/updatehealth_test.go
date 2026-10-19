@@ -26,6 +26,8 @@ func TestUpdateHealthRequiresTheNamedTunnelsLocalForwardedEntry(t *testing.T) {
 		want                           bool
 	}{
 		{"reverse", "tcp", "server", "18080=8080", true},
+		{"raw-udp-has-no-tcp-entry", "udp", "server", "18080=8080", false},
+		{"kcp-has-stream-entry", "kcp", "server", "18080=8080", true},
 		{"reverse-client", "tcp", "client", "18080=8080", false},
 		{"direct-edge", "direct/tcp", "iran", "127.0.0.1:18080=8080", true},
 		{"direct-origin", "direct/tcp", "kharej", "18080=8080", false},

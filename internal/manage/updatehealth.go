@@ -78,6 +78,11 @@ func validateUpdateHealthRoutes(p updatehealth.Policy, tunnels []Tunnel) error {
 }
 
 func healthCheckUsesForwardedPort(c updatehealth.Check, t Tunnel) bool {
+	// A raw Reverse UDP mapping owns a UDP socket only. An unrelated HTTP
+	// service using the same numeric TCP port must never verify that tunnel.
+	if t.Transport == "udp" {
+		return false
+	}
 	// Reverse clients and Direct origins have no local entry listener. The
 	// same port number on such a machine could belong to an unrelated service.
 	if strings.HasPrefix(t.Transport, "direct/") {

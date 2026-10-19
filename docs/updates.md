@@ -66,8 +66,8 @@ Online and offline Update use this policy in the same way:
 
 This also works on L3/AmneziaWG sides with local forwarded ports; their mapping
 must target the **far peer's tunnel address**, not this machine's loopback.
-Reverse clients and Direct Kharej origins have no local entry listener and
-cannot use this check. A TCP/HTTP check does not verify native UDP forwarding,
+Reverse clients and Direct Kharej origins have no local entry listener; raw
+Reverse UDP owns no TCP entry. These cannot use this check. A TCP/HTTP check does not verify native UDP forwarding,
 every load-balanced backend, or both ends' installed versions.
 
 The policy is local to this server, survives config edits and is included in
