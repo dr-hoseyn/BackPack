@@ -92,8 +92,8 @@ func TestPayloadProbeRejectsWrongPartialOversizedRedirectAndUntrustedTLS(t *test
 			w.Header().Set("Content-Length", "100")
 			io.WriteString(w, "healthy\n")
 		}},
-		{"unavailable", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(503) }},
-		{"redirect", func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, "/ok", 302) }},
+		{"unavailable", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusServiceUnavailable) }},
+		{"redirect", func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, "/ok", http.StatusFound) }},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			s := httptest.NewServer(test.h)
@@ -140,7 +140,7 @@ func TestPayloadVerificationRetriesRecoveryAndDoesNotHideABrokenTunnel(t *testin
 	var attempts atomic.Int32
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/broken" || attempts.Add(1) == 1 {
-			w.WriteHeader(503)
+			w.WriteHeader(http.StatusServiceUnavailable)
 			return
 		}
 		io.WriteString(w, "ok")

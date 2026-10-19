@@ -27,7 +27,7 @@ jobs:
       - name: Install and restore actual binary and config files in a private mount namespace
         run: |
           sudo env PATH="$PATH" GOMODCACHE="$(go env GOMODCACHE)" GOCACHE="$(go env GOCACHE)" \
-            timeout -k 5s 2m unshare --mount --fork -- \
+            timeout -k 5s 2m unshare --mount --net --fork -- \
             bash .github/scripts/test-update-health-install.sh
 
   history:

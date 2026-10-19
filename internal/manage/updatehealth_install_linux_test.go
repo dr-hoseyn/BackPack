@@ -37,6 +37,14 @@ func TestUpdateHealthLocalUpdateRestoresBinaryAndConfiguration(t *testing.T) {
 	if err != nil || selfNS == initNS || os.Geteuid() != 0 {
 		t.Fatal("refusing install test outside a private root mount namespace")
 	}
+	selfNet, err := os.Readlink("/proc/self/ns/net")
+	if err != nil {
+		t.Fatal(err)
+	}
+	initNet, err := os.Readlink("/proc/1/ns/net")
+	if err != nil || selfNet == initNet {
+		t.Fatal("refusing install test outside a private network namespace")
+	}
 	// Each destination must be a bind mount prepared by the wrapper, not just
 	// a path inherited from the runner or the developer's machine.
 	mounts, err := os.ReadFile("/proc/self/mountinfo")
@@ -57,12 +65,15 @@ func TestUpdateHealthLocalUpdateRestoresBinaryAndConfiguration(t *testing.T) {
 	const payload = "backpack-health-install-ok\n"
 	var baselineBroken atomic.Bool
 	var configChanged atomic.Bool
-	var originalConfig string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		installed, _ := os.ReadFile(app.BinPath)
 		if string(installed) == newBinary {
 			if configChanged.CompareAndSwap(false, true) {
-				if err := os.WriteFile(app.ConfigPath(name), []byte(originalConfig+"\n# changed by failed upgrade\n"), 0600); err != nil {
+				before, err := os.ReadFile(app.ConfigPath(name))
+				if err != nil {
+					t.Error(err)
+				}
+				if err := os.WriteFile(app.ConfigPath(name), append(before, []byte("\n# changed by failed upgrade\n")...), 0600); err != nil {
 					t.Error(err)
 				}
 			}
@@ -77,7 +88,7 @@ func TestUpdateHealthLocalUpdateRestoresBinaryAndConfiguration(t *testing.T) {
 	}))
 	defer server.Close()
 	_, port, _ := net.SplitHostPort(strings.TrimPrefix(server.URL, "http://"))
-	originalConfig = "[server]\nbind_addr = \"127.0.0.1:19001\"\ntransport = \"tcp\"\ntoken = \"install-test-token\"\nports = [\"" + port + "=8080\"]\n"
+	originalConfig := "[server]\nbind_addr = \"127.0.0.1:19001\"\ntransport = \"tcp\"\ntoken = \"install-test-token\"\nports = [\"" + port + "=8080\"]\n"
 	if err := os.WriteFile(app.ConfigPath(name), []byte(originalConfig), 0600); err != nil {
 		t.Fatal(err)
 	}
