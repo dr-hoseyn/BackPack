@@ -1,9 +1,11 @@
 package e2e
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"runtime"
+	"runtime/pprof"
 	"sync"
 	"testing"
 	"time"
@@ -66,12 +68,16 @@ func TestAServerOutlivesItsClientsWithoutLeaking(t *testing.T) {
 				visit(i)
 			}
 			after := settle()
+			t.Logf("resources after first and eighth client: %+v -> %+v", base, after)
 
 			// A small allowance for what is between generations when the count
 			// is taken. A leak of two goroutines or two descriptors per client
 			// is past it after seven clients; the leaks this was written for
 			// were thirty and more per client.
 			if after.goroutines > base.goroutines+12 {
+				var stacks bytes.Buffer
+				_ = pprof.Lookup("goroutine").WriteTo(&stacks, 2)
+				t.Logf("goroutines still running:\n%s", stacks.String())
 				t.Errorf("goroutines grew from %d to %d over seven clients", base.goroutines, after.goroutines)
 			}
 			if after.openFiles > base.openFiles+8 {
