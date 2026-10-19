@@ -87,25 +87,60 @@ func TestWebTransportReassemblyIsBoundedAndDropsMissingFragments(t *testing.T) {
 		return b
 	}
 	for i := range 1000 {
-		if got := p.reassemble("peer", frame(uint32(i), 0), now); got != nil {
+		if got := p.reassemble("peer", frame(uint32(i), 0), now.Add(time.Duration(i)*time.Nanosecond)); got != nil {
 			t.Fatal("partial packet delivered")
 		}
 	}
 	if len(p.fragments) != 32 {
 		t.Fatalf("unbounded packet assemblies: %d", len(p.fragments))
 	}
-	if got := p.reassemble("peer", frame(0, 0), now); got != nil {
+	at := now.Add(time.Microsecond)
+	if got := p.reassemble("peer", frame(999, 0), at); got != nil {
 		t.Fatal("duplicate completed a packet")
 	}
-	if got := p.reassemble("another-peer", frame(0, 1), now); got != nil {
+	if got := p.reassemble("another-peer", frame(999, 1), at); got != nil {
 		t.Fatal("cross-peer fragment accepted")
 	}
-	got := p.reassemble("peer", frame(0, 1), now)
+	got := p.reassemble("peer", frame(999, 1), at)
 	if len(got) != 2000 || got[0] != 1 || got[1000] != 2 {
 		t.Fatal("out-of-order reconstruction failed")
 	}
 	p.reassemble("peer", frame(1001, 0), now.Add(6*time.Second))
 	if len(p.fragments) != 1 {
 		t.Fatal("expired partial packets retained")
+	}
+}
+
+// Missing fragments must not reserve every slot for the entire five-second
+// expiry. Fresh complete packets must still make progress after a loss burst.
+func TestWebTransportReassemblyRecoversWhenLostFragmentsFillCapacity(t *testing.T) {
+	p := newPackets(context.Background())
+	defer p.cancel()
+	now := time.Now()
+	frame := func(id uint32, index byte) []byte {
+		b := make([]byte, fragmentHeader+fragmentPayload)
+		b[0], b[1], b[2] = 1, 2, index
+		binary.BigEndian.PutUint32(b[4:8], id)
+		binary.BigEndian.PutUint16(b[8:10], 2000)
+		for i := fragmentHeader; i < len(b); i++ {
+			b[i] = index + 1
+		}
+		return b
+	}
+	for i := range 32 {
+		if got := p.reassemble("peer", frame(uint32(i), 0), now.Add(time.Duration(i)*time.Nanosecond)); got != nil {
+			t.Fatal("incomplete packet delivered")
+		}
+	}
+	at := now.Add(time.Millisecond)
+	if got := p.reassemble("peer", frame(32, 1), at); got != nil {
+		t.Fatal("incomplete fresh packet delivered")
+	}
+	got := p.reassemble("peer", frame(32, 0), at)
+	if len(got) != 2000 || !bytes.Equal(got[:1000], bytes.Repeat([]byte{1}, 1000)) || !bytes.Equal(got[1000:], bytes.Repeat([]byte{2}, 1000)) {
+		t.Fatal("lost fragments blocked a fresh complete packet until expiry")
+	}
+	if len(p.fragments) > 32 {
+		t.Fatalf("unbounded packet assemblies: %d", len(p.fragments))
 	}
 }
