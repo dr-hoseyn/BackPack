@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Add optional end-to-end HTTP payload checks to online and offline updates via
+  `/etc/backpack/update-health.json`. A healthy baseline is required before
+  installation; persistent post-restart failure restores the previous snapshot
+  even when systemd still reports the tunnel active. Checks use the named
+  tunnel's local forwarded entry and an exact expected response, with bounded
+  retries and explicit reporting for tunnels without a payload check.
+
 All notable changes to Backpack are documented here.
 
 ## v1.13.0 — 2026-10-18 (dr-hoseyn fork)

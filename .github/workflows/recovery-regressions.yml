@@ -10,6 +10,26 @@ permissions:
   contents: read
 
 jobs:
+  update-health:
+    name: Update payload verification and rollback
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Verify bounded payload probes and policy validation
+        run: go test -race ./internal/updatehealth -count=3 -v -timeout 1m
+      - name: Keep services active while cutting real TCP and Stealth tunnels
+        run: go test -race ./internal/manage -run '^TestUpdateHealth' -count=3 -v -timeout 2m
+      - name: Install and restore actual binary and config files in a private mount namespace
+        run: |
+          sudo env PATH="$PATH" GOMODCACHE="$(go env GOMODCACHE)" GOCACHE="$(go env GOCACHE)" \
+            timeout -k 5s 2m unshare --mount --net --fork -- \
+            bash .github/scripts/test-update-health-install.sh
+
   history:
     name: Connection Test history and comparison
     runs-on: ubuntu-latest
