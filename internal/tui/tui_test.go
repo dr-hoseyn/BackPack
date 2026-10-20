@@ -179,3 +179,16 @@ func TestAFinalLineWithoutANewlineIsStillRead(t *testing.T) {
 		t.Errorf("ChooseOpt = %d, want 1 — a final line without a newline was ignored", got)
 	}
 }
+
+func TestInputEndedDistinguishesBackFromAHeadlessAgent(t *testing.T) {
+	for _, input := range []string{"0\n", ""} {
+		restore := SetInput(strings.NewReader(input))
+		if got := ChooseOpt("after test", []Option{{Title: "setup"}}); got != -1 {
+			t.Errorf("input %q: got %d, want Back", input, got)
+		}
+		if InputEnded() != (input == "") {
+			t.Errorf("input %q: EOF must be distinguishable from an explicit Back choice", input)
+		}
+		restore()
+	}
+}

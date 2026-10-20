@@ -25,6 +25,7 @@ const PRESETS = [
 
 const ACTIVE = ['starting', 'waiting', 'running'];
 const KINDS = [
+	{ k: 'awg', label: 'AmneziaWG', note: 'independent WireGuard tunnel with obfuscation' },
   { k: 'reverse', label: 'Reverse', note: 'kharej dials in' },
   { k: 'direct', label: 'Direct', note: 'Iran dials out · layer 3' },
   { k: 'spoof', label: 'IP spoofing', note: 'forged source, both ways' },
@@ -173,6 +174,32 @@ function settled(v) {
 
 const title = s => (s ? s[0].toUpperCase() + s.slice(1) : 'Turbo');
 
+function setupPane(v) {
+  if (v.suiteActive) return '<div class="tl-note">Automatic setup becomes available after both IP paths finish.</div>';
+  if (!v.root) return '<div class="tl-note">Automatic setup needs Backpack running as root on both servers.</div>';
+  const s = v.setup;
+  if (!s) return '<div class="tl-note">Preparing automatic setup. Keep the kharej test open.</div>';
+  if (s.state === 'done') return `<div class="tl-note"><b>Tunnel connected on both servers.</b><br>
+    Iran: ${esc(s.iran)} · Kharej: ${esc(s.kharej)}</div>`;
+  if (s.state === 'failed' || s.state === 'expired') return `<div class="tl-note wr">${esc(s.error || 'Setup ended. Run a new test.')}</div>`;
+  if (s.state !== 'waiting') return `<div class="tl-note"><b>Setting up both servers…</b><br>${esc(s.state === 'verifying'
+    ? 'Checking that the tunnel reaches its peer.' : 'Sending settings and starting the tunnel services.')}</div>`;
+  const choices = (v.rows || []).filter(r => r.status === 'ok' && (s.choices || []).some(c => c.kind === r.kind && c.transport === r.tr && (c.sni || '') === (r.sni || '')))
+    .sort((a, b) => (b.mbps || 0) - (a.mbps || 0));
+  if (!choices.length) return '<div class="tl-note">No tested tunnel passed all traffic checks.</div>';
+  return `<div class="ct-setup">
+    <b>Set up both servers</b>
+    <span class="tl-meta">Enter the ports once. The servers exchange their settings automatically.</span>
+    <label class="tl-f ct-field"><span>Tested tunnel</span><select id="ctSetupTunnel">${choices.map(r =>
+      `<option value="${esc(keyOf(r))}" ${v.best?.tr === `${r.kind} ${r.tr}` ? 'selected' : ''}>${esc(title(r.kind))} ${esc(r.name)} ${esc(r.sni || '')} · ${(r.mbps || 0).toFixed(1)} Mb/s</option>`).join('')}</select></label>
+    <label class="tl-f ct-field"><span>Forwarded ports</span><input id="ctSetupPorts" placeholder="443 or 443=127.0.0.1:2096" autocomplete="off"></label>
+    <label class="tl-meta"><input id="ctSetupUDP" type="checkbox"> Carry UDP as well as TCP</label>
+    <button class="tl-btn solid" id="ctSetup" data-host="${esc(v.host || '')}" ${s.ready ? '' : 'disabled'}>${ICON.play}Connect both servers</button>
+    <span class="tl-meta">${s.ready ? 'Kharej is ready. Automatic setup is available for 15 minutes after the test.'
+      : 'Waiting for the kharej setup agent. Keep the test open there; both servers need the updated version.'}</span>
+  </div>`;
+}
+
 function bestPane(v) {
   const b = v.best;
   const finished = v.finished ? new Date(v.finished * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
@@ -212,8 +239,7 @@ function bestPane(v) {
       ${cell('Heartbeat', b.hb, 's')}
       ${b.fd ? cell('FEC', `${b.fd}+${b.fp}`) : ''}
     </div>
-    <div class="tl-note">Build it from <b>Tunnels → Add tunnel</b>. The tuning values below the recommendations apply to the transport shown above. The suggested preset is the one this path's
-      speed and round trip call for; the test itself ran on ${esc(title(v.preset))}.</div>
+    ${setupPane(v)}
     ${foot}</div>`;
 }
 
@@ -294,6 +320,7 @@ export function connTestView(ctx) {
   const steps = $('#ctSteps', view), stateEl = $('#ctState', view);
   const left = $('#ctLeft', view), rHead = $('#ctRHead', view), list = $('#ctList', view), rFoot = $('#ctRFoot', view);
   let last = null, fresh = false, timer = null, tick = null, alive = true;
+  let setupRequestId = '';
   let leftSig = '', rightMode = '', headSig = '';
   let selectedPath = -1, pathsSig = '';
   const rows = new Map();
@@ -322,12 +349,14 @@ export function connTestView(ctx) {
   };
 
   const paintLeft = (v, st) => {
-    const sig = JSON.stringify([fresh, st, v.command, v.error, v.historyWarning, v.kharej, v.best, v.host, v.suiteActive, st === 'idle' || fresh ? v.root : 0]);
+    const sig = JSON.stringify([fresh, st, v.command, v.error, v.historyWarning, v.kharej, v.best, v.setup, v.host, v.suiteActive, st === 'idle' || fresh ? v.root : 0]);
     if (sig === leftSig) {
       if (st === 'running') { const s = $('#ctSettled', left); if (s) s.textContent = settled(v); }
       return;
     }
     leftSig = sig;
+    const setupKeep = ['ctSetupPorts','ctSetupTunnel'].map(id => [id, $('#' + id, left)?.value]);
+    const setupUDP = $('#ctSetupUDP',left)?.checked;
     const keep = ['ctHost','ctIPv4','ctIPv6'].map(id => [id, $('#' + id, left)?.value]);
     let html;
     if (fresh || st === 'idle') html = startPane(v);
@@ -336,6 +365,8 @@ export function connTestView(ctx) {
     else if (st === 'done') html = bestPane(v);
     else html = endPane(v);
     left.innerHTML = html + (!fresh && v.historyWarning ? `<p class="tl-meta" role="status">${esc(v.historyWarning)}</p>` : '');
+    for (const [id, value] of setupKeep) if (value !== undefined && $('#' + id, left)) $('#' + id, left).value = value;
+    if (setupUDP !== undefined && $('#ctSetupUDP',left)) $('#ctSetupUDP',left).checked = setupUDP;
     left.dataset.ph = fresh ? 'idle' : st;
     for (const [id,value] of keep) if (value !== undefined && $('#' + id,left)) $('#' + id,left).value = value;
     paintClock();
@@ -470,7 +501,7 @@ export function connTestView(ctx) {
     clearTimeout(timer);
     if (!alive) return;
     timer = setTimeout(async () => { if (!document.hidden) await load(); schedule(); },
-      ACTIVE.includes(last?.state) ? 2000 : 8000);
+      ACTIVE.includes(last?.state) || last?.paths?.some(p => p.setup && !['done','failed','expired'].includes(p.setup.state)) ? 2000 : 8000);
   };
 
   view.addEventListener('click', async ev => {
@@ -498,7 +529,21 @@ export function connTestView(ctx) {
       return;
     }
     if (b.id === 'ctNew') { fresh = true; leftSig = ''; paint(last || { state: 'idle' }); return; }
+    if (b.id === 'ctSetup') {
+      const ports = $('#ctSetupPorts', view)?.value.trim();
+      if (!ports) { toast('Enter at least one forwarded port.', true); return; }
+      const [kind, transport, sni] = ($('#ctSetupTunnel', view)?.value || '').split(':');
+      b.disabled = true;
+      // Keep the ID across a retry after a lost reply: creation is idempotent.
+      const id = setupRequestId || (setupRequestId = Array.from(crypto.getRandomValues(new Uint8Array(16)), n => n.toString(16).padStart(2, '0')).join(''));
+      try {
+        paint(await api.connTestSetup({ id, host: b.dataset.host, kind, transport, sni: sni || '', ports, acceptUDP: String($('#ctSetupUDP', view).checked) }));
+        schedule();
+      } catch (e) { oops(e); b.disabled = false; }
+      return;
+    }
     if (b.id === 'ctStart') {
+      setupRequestId = '';
       const host = $('#ctHost', view)?.value.trim();
       const ipv4 = $('#ctIPv4',view)?.value.trim() || '';
       const ipv6 = $('#ctIPv6',view)?.value.trim() || '';

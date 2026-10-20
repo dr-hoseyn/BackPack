@@ -71,7 +71,7 @@ func connTestIranMenu() {
 	ctx, stop := connTestContext()
 	defer stop()
 	ctMenuStage(os.Stdout, "1", "Preparing test tunnels", "Checking listeners, helpers and REALITY cover compatibility.")
-	suite, link, err := StartConnTestSuite(ConnTestOptions{Context: ctx, Direct: direct, Preset: preset, SpoofSrc: spoof}, hosts)
+	suite, link, err := StartConnTestSuite(ConnTestOptions{AutomaticSetup: root, Context: ctx, Direct: direct, Preset: preset, SpoofSrc: spoof}, hosts)
 	if err != nil {
 		tui.Error(err.Error())
 		tui.PressEnter()
@@ -95,6 +95,9 @@ func connTestIranMenu() {
 	if ctx.Err() != nil {
 		tui.Warn("Stopped.")
 	}
+	if ctx.Err() == nil && root {
+		ctIranSuiteSetupMenu(ctx, suite, paths)
+	}
 	suite.Close()
 	tui.PressEnter()
 
@@ -113,6 +116,9 @@ func RunConnTestKharejTUI(raw string) bool {
 		if err != nil {
 			tui.Error(err.Error())
 			return false
+		}
+		if ctx.Err() == nil && os.Geteuid() == 0 && ctCanSetup(raw) {
+			ctKharejSuiteSetupMenu(ctx, a.Routes, paths)
 		}
 		return true
 	}
@@ -151,5 +157,8 @@ func RunConnTestKharejTUI(raw string) bool {
 		board = newCTBoard(os.Stdout, title)
 	}
 	board.finish(results, best)
+	if ctx.Err() == nil && os.Geteuid() == 0 && ctCanSetup(raw) {
+		ctKharejSetupMenu(ctx, raw, results)
+	}
 	return true
 }

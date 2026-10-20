@@ -73,8 +73,8 @@ const connTestKind = "test"
 // the direct ones when the operator names a source to forge (see
 // ConnTestOptions.SpoofSrc); pck, on either side, needs root on both servers.
 var (
-	connTestReverse = []string{"tcp", "tcpmux", "stealth", "pck", "ws", "wss", "wsmux", "wssmux", "kcp", "quic", "udp", "naive", "short-https", "xhttp", "reality", "hysteria2", "anytls", "shadowtls", "tuic", "xhttp-reality", "trusttunnel", "webtransport"}
-	connTestDirect  = []string{"udp", "quic", "pck", "xdi", "sni", "masque", "masque-h2", "hysteria2", "tuic", "webtransport"}
+	connTestReverse = []string{"tcp", "tcpmux", "stealth", "pck", "ws", "wss", "wsmux", "wssmux", "kcp", "quic", "udp", "naive", "short-https", "xhttp", "reality", "hysteria2", "anytls", "shadowtls", "tuic", "xhttp-reality", "trusttunnel", "webtransport", "tailcat"}
+	connTestDirect  = []string{"udp", "quic", "pck", "xdi", "sni", "masque", "masque-h2", "hysteria2", "tuic", "webtransport", "connect-ip", "spoof"}
 )
 
 // connTestNeedsRoot is a reverse transport that builds its own packets.
@@ -120,16 +120,17 @@ var connTestHelperBinary = func(tool string) (string, error) {
 // ConnTestLink is everything the kharej needs to build its end of every
 // tunnel under test, and to find the Iran side's coordinator.
 type ConnTestLink struct {
-	V     int    `json:"v"`
-	Kind  string `json:"k"` // always connTestKind
-	ID    string `json:"id"`
-	Host  string `json:"h"`  // the Iran server's address
-	Coord int    `json:"c"`  // the coordinator's port, TCP and UDP
-	Tok   string `json:"t"`  // the coordinator's secret
-	TCP   int    `json:"te"` // kharej: the TCP echo reverse tunnels forward to
-	UDP   int    `json:"ue"` // kharej: the UDP echo the udp transport forwards to
-	L3    int    `json:"le"` // kharej: the TCP echo on each direct tunnel's address
-	Until int64  `json:"u"`  // unix seconds: the kharej stops by then whatever happens
+	AutoSetup bool   `json:"as,omitempty"`
+	V         int    `json:"v"`
+	Kind      string `json:"k"` // always connTestKind
+	ID        string `json:"id"`
+	Host      string `json:"h"`  // the Iran server's address
+	Coord     int    `json:"c"`  // the coordinator's port, TCP and UDP
+	Tok       string `json:"t"`  // the coordinator's secret
+	TCP       int    `json:"te"` // kharej: the TCP echo reverse tunnels forward to
+	UDP       int    `json:"ue"` // kharej: the UDP echo the udp transport forwards to
+	L3        int    `json:"le"` // kharej: the TCP echo on each direct tunnel's address
+	Until     int64  `json:"u"`  // unix seconds: the kharej stops by then whatever happens
 	// Preset is the performance preset every tunnel under test was built
 	// with, for the kharej's report; each case carries it too.
 	Preset string `json:"pr,omitempty"`
@@ -246,6 +247,9 @@ func ctNewSecret() string {
 func ctCaseToken(secret, kind, tr string) string {
 	m := hmac.New(sha256.New, []byte(secret))
 	m.Write([]byte("backpack-conntest/" + kind + "/" + tr))
+	if kind == "awg" {
+		return ctAWGToken(m.Sum(nil))
+	}
 	return hex.EncodeToString(m.Sum(nil))[:32]
 }
 
@@ -261,6 +265,7 @@ func ctConfig(l ConnTestLink) string {
 	l.Cases = append([]ShareLink(nil), l.Cases...)
 	for i := range l.Cases {
 		l.Cases[i].Tok = ""
+		l.Cases[i].AWGPeer = "" // fetched as a separately authenticated bounded identity
 		// Reverse forwarding listeners belong to Iran. The peer only dials
 		// the tunnel endpoint; it never consumes these random port mappings.
 		// Omitting them keeps the expanded carrier suite within one packet,
@@ -395,11 +400,14 @@ type ConnTestIran struct {
 	root          bool
 	best          ConnTestBest
 	realityTarget string
+	setupCancel   context.CancelFunc
 	realityLog    string
 }
 
 // ConnTestOptions are what the Iran operator answers.
 type ConnTestOptions struct {
+	skipAWG        bool // focused integration fixtures; ordinary full tests include AWG
+	AutomaticSetup bool // keep endpoint-local identities for the post-test setup agent
 	// A suite reserves ports across paths while child listeners are starting.
 	ports     map[int]bool
 	Context   context.Context // optional cancellation, including startup
@@ -478,7 +486,8 @@ func StartConnTestIran(o ConnTestOptions) (*ConnTestIran, string, error) {
 		used = map[int]bool{}
 	}
 	s.link = ConnTestLink{
-		ID: id, Host: host, Tok: ctNewSecret(), Preset: preset,
+		AutoSetup: o.AutomaticSetup,
+		ID:        id, Host: host, Tok: ctNewSecret(), Preset: preset,
 		TCP: ctPickPort(used, false), UDP: ctPickPort(used, false), L3: ctPickPort(used, false),
 		Until:       time.Now().Add(connTestJoinWait + ConnTestRunTime() + connTestSlack).Unix(),
 		DirectPorts: true,
@@ -544,6 +553,11 @@ func StartConnTestIran(o ConnTestOptions) (*ConnTestIran, string, error) {
 			}
 			c := &connTestCase{kind: "direct", tr: carrier, key: plan.key, name: fmt.Sprintf("ct-%s-d%s-%d", id, carrier, i)}
 			c.l3.SNIDomain = plan.sni
+			if carrier == "spoof" && ctFamily(host) == "IPv6" {
+				c.skip = "the forged-source carrier uses IPv4; IPv6 is not supported"
+				s.cases = append(s.cases, c)
+				continue
+			}
 			if !s.root {
 				c.skip = "needs root on both servers"
 				s.cases = append(s.cases, c)
@@ -565,13 +579,22 @@ func StartConnTestIran(o ConnTestOptions) (*ConnTestIran, string, error) {
 				MTU: defaultL3MTU,
 			}
 			findL3Preset(preset).apply(&c.l3)
+			if carrier == "spoof" {
+				c.l3.Spoof.SpoofProfile = "udp"
+			}
 			raw := pendingShareLink(c.l3, linkExtras{})
 			if c.link, err = DecodeShareLink(raw); err != nil {
 				return fail(fmt.Errorf("building the %s test link: %w", carrier, err))
 			}
 			c.link.Name = c.name
+			if carrier == "spoof" {
+				c.link.Host = host
+			}
 			s.cases = append(s.cases, c)
 		}
+	}
+	if o.Direct && !o.skipAWG {
+		s.startAWGCase(id, used, true)
 	}
 	// IP spoofing, checked the way Manage → IP Spoofing Tester checks it: a
 	// receiver on one server counts the probes that arrive from the forged
@@ -610,11 +633,12 @@ func StartConnTestIran(o ConnTestOptions) (*ConnTestIran, string, error) {
 // Only public trust material is sent; credentials come from the test secret,
 // and the certificate/private REALITY keys stay in the temporary Iran config.
 type ctCarrierSettings struct {
-	TargetPort int    `json:"p"`
-	ServerName string `json:"s,omitempty"`
-	CA         string `json:"c,omitempty"`
-	PublicKey  string `json:"k,omitempty"`
-	ShortID    string `json:"i,omitempty"`
+	Tailcat    *ctTailcatPeer `json:"tc,omitempty"`
+	TargetPort int            `json:"p"`
+	ServerName string         `json:"s,omitempty"`
+	CA         string         `json:"c,omitempty"`
+	PublicKey  string         `json:"k,omitempty"`
+	ShortID    string         `json:"i,omitempty"`
 }
 
 func ctUUID(token string) string {
@@ -808,6 +832,9 @@ func (s *ConnTestIran) startManagedCase(c *connTestCase, used map[int]bool, o Co
 	if c.tr == "naive" || config.SingProtocol(c.tr) {
 		tool = "sing-box"
 	}
+	if c.tr == "tailcat" {
+		tool = "tailcat"
+	}
 	var binary string
 	var err error
 	if c.tr != "short-https" && !config.ConnectProtocol(c.tr) {
@@ -893,7 +920,7 @@ func (s *ConnTestIran) startManagedCase(c *connTestCase, used map[int]bool, o Co
 	}
 	public := net.JoinHostPort(ctBindHost(s.link.Host), strconv.Itoa(port))
 	var cert, key string
-	if !config.XrayREALITY(c.tr) && c.tr != "shadowtls" {
+	if !config.XrayREALITY(c.tr) && c.tr != "shadowtls" && c.tr != "tailcat" {
 		cert, key, settings.CA, err = ctCertificate(s.dir, c.name, s.link.Host)
 		if err != nil {
 			c.skip = "creating the test certificate: " + err.Error()
@@ -902,6 +929,12 @@ func (s *ConnTestIran) startManagedCase(c *connTestCase, used map[int]bool, o Co
 	}
 
 	switch c.tr {
+	case "tailcat":
+		spec.SingServer = config.SingServerConfig{Binary: binary, Listen: public, Protocol: "tailcat"}
+		if err := ctConfigureTailcatTest(&spec, &settings); err != nil {
+			c.skip = err.Error()
+			return
+		}
 	case "trusttunnel", "webtransport":
 		spec.ConnectServer = config.ConnectServerConfig{Protocol: c.tr, Listen: public, ServerName: settings.ServerName, Username: "backpack", Password: token, Certificate: cert, Key: key, Mode: "auto"}
 		if c.tr == "webtransport" {
@@ -976,6 +1009,9 @@ func ctManagedClient(ctx context.Context, link ConnTestLink, c ShareLink, dir st
 	if c.Tr == "naive" {
 		tool = "naive"
 	}
+	if c.Tr == "tailcat" {
+		tool = "tailcat"
+	}
 	var binary string
 	var err error
 	if c.Tr != "short-https" && !config.ConnectProtocol(c.Tr) {
@@ -1009,6 +1045,13 @@ func ctManagedClient(ctx context.Context, link ConnTestLink, c ShareLink, dir st
 		paired.HelperSSKey = base64.StdEncoding.EncodeToString([]byte(c.Tok))
 	}
 	paired.HelperPublicKey, paired.HelperShortID = settings.PublicKey, settings.ShortID
+	if c.Tr == "tailcat" {
+		if settings.Tailcat == nil {
+			return TunnelSpec{}, fmt.Errorf("Tailcat peer identity unavailable")
+		}
+		paired.HelperTailcatKey, paired.HelperTailcatDisco, paired.HelperTailcatPSK = settings.Tailcat.Private, settings.Tailcat.Disco, settings.Tailcat.PSK
+		paired.HelperDERPURL, paired.HelperDERPRegion = settings.Tailcat.Map, settings.Tailcat.Region
+	}
 	if config.XrayHTTP(c.Tr) || c.Tr == "webtransport" {
 		paired.HelperPath = "/" + c.Tok
 	}
@@ -1020,7 +1063,7 @@ func ctManagedClient(ctx context.Context, link ConnTestLink, c ShareLink, dir st
 	spec := reverseClientFromLink(paired, link.Host)
 	var ca string
 	if !config.XrayREALITY(c.Tr) {
-		if settings.CA == "" && c.Tr != "shadowtls" {
+		if settings.CA == "" && c.Tr != "shadowtls" && c.Tr != "tailcat" {
 			return TunnelSpec{}, errors.New("the managed TLS test has no trust certificate")
 		}
 		if settings.CA != "" {
@@ -1083,6 +1126,9 @@ func (s *ConnTestIran) Run(ctx context.Context, progress func(int, ConnTestResul
 		_, port, _ := net.SplitHostPort(c.l3.Addr)
 		port = s.coord.directPort(c.caseKey(), port)
 		c.l3.Addr = net.JoinHostPort(kharej, port)
+		if c.tr == "spoof" {
+			c.l3.Spoof.SpoofPeerIP = kharej
+		}
 
 		if config.SingDatagram(c.tr) {
 			s.coord.mu.Lock()
@@ -1095,7 +1141,7 @@ func (s *ConnTestIran) Run(ctx context.Context, progress func(int, ConnTestResul
 			}
 			c.l3.Sing = cfg
 		}
-		if c.tr == "masque" || c.tr == "masque-h2" || c.tr == "webtransport" {
+		if c.tr == "masque" || c.tr == "masque-h2" || c.tr == "webtransport" || c.tr == "connect-ip" {
 			s.coord.mu.Lock()
 			raw := s.coord.masqueSettings
 			if c.tr == "masque-h2" {
@@ -1103,6 +1149,9 @@ func (s *ConnTestIran) Run(ctx context.Context, progress func(int, ConnTestResul
 			}
 			if c.tr == "webtransport" {
 				raw = s.coord.webTransportSettings
+			}
+			if c.tr == "connect-ip" {
+				raw = s.coord.connectIPSettings
 			}
 			s.coord.mu.Unlock()
 			cfg, err := ctMasqueClient(raw, s.dir, c.name)
@@ -1381,7 +1430,17 @@ func (s *ConnTestIran) Close() {
 	s.mu.Lock()
 	engines := s.engines
 	s.engines = nil
+	setupCancel := s.setupCancel
 	s.mu.Unlock()
+	if setupCancel != nil {
+		setupCancel()
+		s.coord.mu.Lock()
+		setup := s.coord.setup
+		s.coord.mu.Unlock()
+		if setup != nil {
+			<-setup.done
+		}
+	}
 	ctStopAll(engines)
 	if s.coord != nil {
 		s.coord.close()
@@ -1790,8 +1849,10 @@ type ctCoordinator struct {
 	skipped              map[string]bool   // managed cases unavailable on kharej
 	masqueSettings       string            // public certificate/target announced before the peer joins
 	masqueH2Settings     string            // separate trust/target for the TCP fallback
+	connectIPSettings    string
 	webTransportSettings string            // independent authenticated datagram trust
 	directPorts          map[string]string // direct listener ports selected on Kharej
+	setup                *ConnTestSetup
 	live                 func() []ConnTestResult
 	joined               chan struct{}
 	fetched              chan struct{}
@@ -1844,7 +1905,7 @@ func (c *ctCoordinator) serveTCP() {
 			defer func() { <-c.slots; c.sockets.remove(conn) }()
 			defer conn.Close()
 			_ = conn.SetDeadline(time.Now().Add(10 * time.Second))
-			line, err := bufio.NewReader(io.LimitReader(conn, 2048)).ReadString('\n')
+			line, err := bufio.NewReader(io.LimitReader(conn, 8192)).ReadString('\n')
 			if err != nil {
 				return
 			}
@@ -1864,7 +1925,7 @@ func (c *ctCoordinator) serveTCP() {
 }
 
 func (c *ctCoordinator) serveUDP() {
-	buf := make([]byte, 2048) // a path-MTU probe is up to a full frame
+	buf := make([]byte, 8192) // bounded setup requests and path-MTU probes
 	for {
 		n, from, err := c.udp.ReadFrom(buf)
 		if err != nil {
@@ -1913,10 +1974,30 @@ func (c *ctCoordinator) answer(line, from string) string {
 	if len(f) > 3 {
 		return ""
 	}
+	if strings.HasPrefix(f[0], "setup-") {
+		if (f[0] == "setup-poll" && len(f) != 2) ||
+			(f[0] != "setup-poll" && (len(f) != 3 || (f[0] != "setup-start" && f[0] != "setup-ack"))) {
+			return ""
+		}
+		c.mu.Lock()
+		setup := c.setup
+		c.mu.Unlock()
+		if setup == nil {
+			if f[0] != "setup-poll" {
+				return "error automatic setup is not ready yet"
+			}
+			return "setup " + ctSetupEncode(ctSetupWire{View: ConnTestSetupView{State: "starting"}})
+		}
+		payload := ""
+		if len(f) == 3 {
+			payload = f[2]
+		}
+		return setup.answer(f[0], payload)
+	}
 	if f[0] == "sing-cert" && len(f) == 3 {
 		return ctAcceptSingIdentity(c, f[2])
 	}
-	if (f[0] == "masque-cert" || f[0] == "masque-h2-cert" || f[0] == "webtransport-cert") && len(f) == 3 {
+	if (f[0] == "masque-cert" || f[0] == "masque-h2-cert" || f[0] == "webtransport-cert" || f[0] == "connect-ip-cert") && len(f) == 3 {
 		if _, err := ctDecodeMasqueSettings(f[2]); err != nil {
 			return ""
 		}
@@ -1928,6 +2009,9 @@ func (c *ctCoordinator) answer(line, from string) string {
 		}
 		if f[0] == "webtransport-cert" {
 			settings = &c.webTransportSettings
+		}
+		if f[0] == "connect-ip-cert" {
+			settings = &c.connectIPSettings
 		}
 		if c.peer != "" || *settings != "" && *settings != f[2] {
 			return ""
@@ -2067,10 +2151,13 @@ func (c *ctCoordinator) directPort(tr, fallback string) string {
 }
 
 func ctPortCarrier(tr string) bool {
-	return tr == "udp" || tr == "quic" || tr == "pck" || tr == "sni" || tr == "masque" || tr == "masque-h2" || tr == "webtransport" || ctSNIVariantKey(tr)
+	return tr == "udp" || tr == "quic" || tr == "pck" || tr == "sni" || tr == "masque" || tr == "masque-h2" || tr == "webtransport" || tr == "connect-ip" || ctSNIVariantKey(tr)
 }
 
 func ctSkippableCase(value string) bool {
+	if value == "awg/awg" {
+		return true
+	}
 	if managedTransport(value) {
 		return true
 	} // old managed-helper command
@@ -2252,6 +2339,22 @@ func runConnTestKharejLink(ctx context.Context, link ConnTestLink, out io.Writer
 		caseOf[name] = c.Kind + "/" + key
 		var body string
 		switch c.Kind {
+		case "awg":
+			if !root {
+				local[c.Kind+"/"+key] = "needs root and TUN"
+				continue
+			}
+			peer, err := ctAWGKharej(ctx, link, c, name)
+			if err != nil {
+				local[c.Kind+"/"+key] = err.Error()
+				continue
+			}
+			body, err = awgBody(peer)
+			if err != nil {
+				local[c.Kind+"/"+key] = err.Error()
+				continue
+			}
+			echoes.l3(ctx, hostOf(peer.Address), link.L3)
 		case "reverse":
 			if connTestNeedsRoot(c.Tr) && !root {
 				local[c.Kind+"/"+key] = "needs root"
@@ -2304,7 +2407,7 @@ func runConnTestKharejLink(ctx context.Context, link ConnTestLink, out io.Writer
 				}
 				n.Sing = native
 			}
-			if c.Tr == "masque" || c.Tr == "masque-h2" || c.Tr == "webtransport" {
+			if c.Tr == "masque" || c.Tr == "masque-h2" || c.Tr == "webtransport" || c.Tr == "connect-ip" {
 				var err error
 				n.Masque, err = ctMasqueListener(ctx, link, dir, name, usedDirectPorts, c.Tr)
 				if err != nil {
@@ -2412,6 +2515,9 @@ func runConnTestKharejLink(ctx context.Context, link ConnTestLink, out io.Writer
 				if why := local[r.Kind+"/"+ctResultCaseKey(r)]; why != "" && r.Status != ctOK {
 					v.Results[i].Detail = strings.TrimPrefix(v.Results[i].Detail+"; kharej: "+why, "; ")
 				}
+			}
+			if link.AutoSetup {
+				ctRememberSetupMaterial(link, dir)
 			}
 			return v.Results, v.Best, nil
 		}

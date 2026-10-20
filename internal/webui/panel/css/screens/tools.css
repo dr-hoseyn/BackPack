@@ -537,3 +537,9 @@ body[data-t="light"] .panel .tm-body{background:#fbfbfb}
 .panel #ctPathMode button{flex:1 1 95px}
 .panel .ct-field[hidden],.panel #ctV4Field[hidden],.panel #ctV6Field[hidden]{display:none}
 .panel .ct-bc b{overflow-wrap:anywhere}
+
+.panel .ct-setup{display:flex;flex-direction:column;gap:10px;margin-top:12px;padding-top:14px;border-top:1px solid var(--ln)}
+
+.panel .ct-setup select{width:100%;min-width:0;padding:10px;border:1px solid var(--ln2);border-radius:9px;background:var(--field);color:var(--tx);font:inherit}
+
+.panel .ct-setup .tl-btn:disabled{opacity:.5;cursor:wait}

@@ -192,7 +192,7 @@ func ConnTestTable(results []ConnTestResult) string {
 	}
 	b.WriteString("\n" + ctRule() + "\n\nWorks Steadily:\n\n")
 	steady := 0
-	for _, kind := range []string{"reverse", "direct", "spoof"} {
+	for _, kind := range []string{"reverse", "direct", "awg", "spoof"} {
 		var rows []ConnTestResult
 		for _, r := range results {
 			if r.Status == ctOK && (r.Kind == kind || kind == "reverse" && r.Kind == "") {
