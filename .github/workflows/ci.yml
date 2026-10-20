@@ -323,12 +323,19 @@ jobs:
             -run '^(TestConnectionTest|TestAnUnreachablePath|TestIPv6|TestBothFamilies|TestUnjoinedFamilies|TestStoppingASuite|TestStoppingBetweenPaths|TestBackgroundProbes|TestTheScreensReadTunnelStateThroughOnePlace|TestEveryPanelCallReachesAHandlerThatReadsWhatItSends)'
       - name: IPv6-only native, PCK, SNI, xDi and MASQUE data paths; PMTU and spoof exclusions
         run: |
+          # Honor the socket sizes requested by the datagram test configs.
+          sudo sysctl -w net.core.rmem_max=268435456 net.core.wmem_max=268435456
           sudo env PATH="$PATH" GOMODCACHE="$(go env GOMODCACHE)" GOCACHE="$(go env GOCACHE)" \
             go test ./internal/manage -run '^TestTheTestSettingsFitOnePacketAndCarryNoToken$' -count=1 -v -timeout 1m
           sudo env PATH="$PATH" GOMODCACHE="$(go env GOMODCACHE)" GOCACHE="$(go env GOCACHE)" BP_L3_LIVE=1 \
             unshare --net -- go test ./internal/utils/network -run '^TestIPv6PckFirewallCleanupPreservesLiveOwners$' -count=1 -v -timeout 1m
           sudo env PATH="$PATH" GOMODCACHE="$(go env GOMODCACHE)" GOCACHE="$(go env GOCACHE)" BP_L3_LIVE=1 \
             go test ./internal/manage -run '^TestTheConnectionTestAcrossAnIPv6OnlyPath$' -count=1 -v -timeout 10m
+
+      - name: Repeat four-stream KCP upload and download on the clean IPv6 path
+        run: |
+          sudo env PATH="$PATH" GOMODCACHE="$(go env GOMODCACHE)" GOCACHE="$(go env GOCACHE)" BP_L3_LIVE=1 \
+            go test ./internal/manage -run '^TestTheKCPConnectionTestAcrossAnIPv6OnlyPath$' -count=3 -v -timeout 4m
 
       - name: IPv6 raw carriers survive listener restart and packet loss
         if: success() || failure()

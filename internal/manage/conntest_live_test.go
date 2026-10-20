@@ -206,6 +206,34 @@ func testConnectionTestAcrossIPv6(t *testing.T, only string) {
 	if err != nil || !strings.Contains(string(out), "RESULT DONE") {
 		t.Fatalf("IPv6 path: %v\n%s", err, out)
 	}
+	// A delay-only fixture must not introduce queue-overflow loss. Report it
+	// separately from a carrier failure so increasing tunnel windows cannot
+	// silently turn the clean-path regression into an unmeasured loss test.
+	for _, side := range []string{"iran", "kharej"} {
+		data, err := os.ReadFile(filepath.Join(w, "qdisc-"+side+".json"))
+		if err != nil {
+			t.Fatalf("missing %s queue diagnostics: %v\n%s", side, err, out)
+		}
+		var queues []struct {
+			Kind  string `json:"kind"`
+			Drops uint64 `json:"drops"`
+		}
+		if err := json.Unmarshal(data, &queues); err != nil {
+			t.Fatal(err)
+		}
+		found := false
+		for _, q := range queues {
+			if q.Kind == "netem" {
+				found = true
+				if q.Drops != 0 {
+					t.Errorf("%s delay-only queue dropped %d packets\n%s", side, q.Drops, out)
+				}
+			}
+		}
+		if !found {
+			t.Fatalf("%s netem diagnostics missing: %s", side, data)
+		}
+	}
 	raw, err := os.ReadFile(filepath.Join(w, "iran.json"))
 	if err != nil {
 		t.Fatalf("%v\n%s", err, out)
