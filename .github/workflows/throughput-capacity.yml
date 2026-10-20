@@ -43,6 +43,10 @@ jobs:
           go test ./internal/e2e -run '^(TestBulkProfileTransportCapacity|TestKCPBulkWindowCandidates)$' -count=1 -v -json -timeout 6m | tee "$RUNNER_TEMP/capacity-candidate.jsonl"
       - name: Measure the same transfers on the base revision
         if: github.event_name == 'pull_request'
+        # The old revision can reproduce the admission/timeout bug this PR
+        # fixes. Preserve its failed measurements without skipping the new
+        # revision's mandatory sustained-load check.
+        continue-on-error: true
         env:
           BP_CAPACITY_BENCHMARK: '1'
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -72,4 +76,7 @@ jobs:
         if: always()
         with:
           name: throughput-capacity
-          path: ${{ runner.temp }}/capacity-*
+          path: |
+            ${{ runner.temp }}/capacity-candidate.jsonl
+            ${{ runner.temp }}/capacity-base.jsonl
+            ${{ runner.temp }}/capacity-soak.txt

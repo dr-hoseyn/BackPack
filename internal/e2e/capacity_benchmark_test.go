@@ -21,6 +21,13 @@ func TestBulkProfileTransportCapacity(t *testing.T) {
 	for _, tr := range []string{"tcp", "stealth", "tcpmux", "ws", "wss", "wsmux", "wssmux", "kcp", "quic"} {
 		t.Run(tr, func(t *testing.T) {
 			tun := bulkProfileTunnel(t, tr)
+			// Readiness proves the first session, not a fully primed 64-session
+			// pool. Exclude initial handshakes from the steady-state goodput
+			// measurement; the separate admission and soak tests cover startup.
+			time.Sleep(time.Second)
+			if err := tun.roundTrip(payload[:1<<20]); err != nil {
+				t.Fatal(err)
+			}
 			for _, streams := range []int{1, 8} {
 				start := time.Now()
 				results := make(chan error, streams)

@@ -228,11 +228,14 @@ func ApplyKCPPreset(s *Spec, preset string) {
 		// — and on a saturated transfer it very nearly doubles the packets on the
 		// wire, every one of them competing with the data for the same link.
 		s.KCPAckNoDelay = false
-		// About 19 MB in flight: more than the 12.5 MB required for
-		// 500 Mbit/s at 200 ms RTT. The old 4096-segment window capped
-		// the same path below 200 Mbit/s before carrier and FEC overhead.
-		s.KCPSndWnd = 16384
-		s.KCPRcvWnd = 16384
+		// Keep about 4.7 MB in flight per physical session. A 16K window
+		// regressed eight-stream goodput in the capacity benchmark: ACK walks
+		// and UDP bursts cost more than the extra window bought. Spread bulk
+		// users across sessions instead; four such windows cover the aggregate
+		// 500 Mbit/s bandwidth-delay product at 200 ms RTT. One KCP session
+		// still has a lower ceiling on a long path.
+		s.KCPSndWnd = 4096
+		s.KCPRcvWnd = 4096
 		// 10:1 — about 10% overhead instead of Aggressive's 40%. Parity is a
 		// straight tax on bandwidth: every parity packet is a packet of capacity
 		// not carrying data. A gaming preset pays it gladly, because repairing a

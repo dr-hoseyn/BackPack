@@ -14,8 +14,9 @@
   requests after a quiet period. Keep Short HTTPS within its finite session
   budget and preserve explicitly configured connection and bandwidth limits.
 - Offer Throughput for every supported Reverse transport and for Direct/L3.
-  Expand the preset pools, mux admission capacity, per-stream windows, KCP
-  bulk windows and QUIC flow control. Raise omitted-value defaults while
+  Expand the preset pools, mux admission capacity, per-stream windows and
+  QUIC flow control. Retain measured KCP bulk windows to avoid oversized ARQ
+  queues. Raise omitted-value defaults while
   preserving existing manual configuration values.
 - Add race-tested burst and live-session regressions, plus matched candidate
   and baseline measurements for native TCP, TLS, mux, KCP and QUIC streams,

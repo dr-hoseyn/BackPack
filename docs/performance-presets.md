@@ -29,10 +29,12 @@ dials share one ceiling, including connections still being established.
 
 500 Mbit/s at 200 ms RTT needs **12.5 MB in flight**. The bulk profile's 32 MiB
 stream window exceeds this bandwidth-delay product. Its KCP-family send and
-receive windows are 16,384 segments (about 19 MB of payload at the preset MTU),
-with batched ACKs, a 20 ms tick and 10:1 FEC. The previous 4,096-segment window
-could cap that path below 200 Mbit/s. Larger KCP windows can increase latency;
-the gaming profiles retain their smaller KCP windows and immediate ACKs.
+receive windows remain 4,096 segments per physical session, with batched ACKs,
+a 20 ms tick and 10:1 FEC. Four parallel sessions cover that aggregate target.
+A single KCP session at 200 ms RTT still has a window ceiling below 200 Mbit/s.
+The 16,384-segment candidate reduced measured concurrent goodput through ACK
+processing and bursts; capacity comes from parallel sessions and CPU workers
+instead. Gaming profiles retain their smaller KCP windows and immediate ACKs.
 
 QUIC stream windows grow from 1 MiB to 32 MiB, and its connection window from
 4 MiB to 64 MiB. TCP buffers remain kernel auto-tuned unless `so_pin_tcp` was

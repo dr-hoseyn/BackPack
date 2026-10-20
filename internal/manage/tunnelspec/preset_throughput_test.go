@@ -102,9 +102,12 @@ func TestBulkWindowsCover500MbitAt200Milliseconds(t *testing.T) {
 	if s.MuxStreamBuffer < requiredBytes || s.MuxRecvBuffer < s.MuxStreamBuffer {
 		t.Fatalf("mux flow control is too small: stream=%d session=%d", s.MuxStreamBuffer, s.MuxRecvBuffer)
 	}
-	// Allow 100 bytes for KCP, encryption and FEC framing in each segment.
-	if s.KCPSndWnd*(s.KCPMTU-100) < requiredBytes || s.KCPRcvWnd*(s.KCPMTU-100) < requiredBytes {
-		t.Fatal("KCP window cannot cover the target bandwidth-delay product")
+	// KCP bulk traffic spreads across physical sessions. Avoid a single huge
+	// ARQ queue: ACK scans and bursts can reduce aggregate throughput. Allow
+	// 100 bytes for KCP, encryption and FEC framing in each segment.
+	parallel := min(s.ConnectionPool, 4)
+	if parallel*s.KCPSndWnd*(s.KCPMTU-100) < requiredBytes || parallel*s.KCPRcvWnd*(s.KCPMTU-100) < requiredBytes {
+		t.Fatal("parallel KCP windows cannot cover the aggregate target bandwidth-delay product")
 	}
 	if s.ConnectionPool*s.MuxCon < 16384 {
 		t.Fatalf("bulk profile has only %d concurrent stream slots", s.ConnectionPool*s.MuxCon)
@@ -123,7 +126,7 @@ func TestThroughputPresetStaysAValidPresetName(t *testing.T) {
 }
 
 // Adding a preset must not disturb what the existing three produce.
-func TestGamingPresetsAreUnchangedByTheNewOne(t *testing.T) {
+func TestGamingKCPSettingsAreUnchangedByTheNewOne(t *testing.T) {
 	type want struct{ interval, snd, par int }
 	for preset, w := range map[string]want{
 		PresetBalance:    {10, 512, 2},
