@@ -2,6 +2,8 @@ package e2e
 
 import (
 	"fmt"
+	"io"
+	"net"
 	"os"
 	"os/exec"
 	"runtime/pprof"
@@ -75,7 +77,47 @@ func TestDirectBackendBulkCapacity(t *testing.T) {
 		t.Skip("set BP_CAPACITY_BENCHMARK=1 to measure")
 	}
 	backend := startEchoBackend(t)
-	tun := &tunnel{Entry: backend.addr}
+	// A reverse tunnel has three TCP hops. Exercise the same backpressure
+	// shape using only the standard library, with no Backpack handlers,
+	// pool, mux, metrics or custom socket options.
+	addr := backend.addr
+	for hop := 0; hop < 2; hop++ {
+		upstream := addr
+		listener, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { listener.Close() })
+		go func() {
+			for {
+				from, err := listener.Accept()
+				if err != nil {
+					return
+				}
+				go func() {
+					defer from.Close()
+					to, err := net.Dial("tcp", upstream)
+					if err != nil {
+						return
+					}
+					defer to.Close()
+					done := make(chan struct{}, 2)
+					copyDirection := func(dst, src net.Conn) {
+						io.CopyBuffer(struct{ io.Writer }{dst}, struct{ io.Reader }{src}, make([]byte, 64<<10))
+						done <- struct{}{}
+					}
+					go copyDirection(from, to)
+					go copyDirection(to, from)
+					<-done
+					from.Close()
+					to.Close()
+					<-done
+				}()
+			}
+		}()
+		addr = listener.Addr().String()
+	}
+	tun := &tunnel{Entry: addr}
 	payload := randomPayload(t, 16<<20)
 	results := make(chan error, 8)
 	for i := 0; i < 8; i++ {
