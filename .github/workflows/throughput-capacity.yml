@@ -35,6 +35,15 @@ jobs:
           go test -race ./internal/client/transport ./internal/server/transport ./internal/utils/network ./internal/manage/tunnelspec -timeout 8m
           go test -race ./internal/e2e -run '^TestMuxCapacityGrowsWhileExistingForwardsStayOpen$' -count=1 -v -timeout 3m
           go test -race ./internal/e2e -run '^TestTransportConcurrentConnections/wsmux$' -count=25 -timeout 3m
+      - name: Diagnose host TCP without any tunnel
+        continue-on-error: true
+        env:
+          BP_CAPACITY_BENCHMARK: '1'
+        run: |
+          set -o pipefail
+          uname -a
+          sysctl net.ipv4.tcp_rmem net.ipv4.tcp_wmem net.ipv4.tcp_mem
+          go test ./internal/e2e -run '^TestDirectBackendBulkCapacity$' -count=50 -v -json -timeout 4m | tee "$RUNNER_TEMP/capacity-direct.jsonl"
       - name: Measure candidate goodput
         id: candidate
         env:
@@ -93,3 +102,4 @@ jobs:
             ${{ runner.temp }}/capacity-base.jsonl
             ${{ runner.temp }}/capacity-soak.txt
             ${{ runner.temp }}/capacity-buffered-echo.jsonl
+            ${{ runner.temp }}/capacity-direct.jsonl

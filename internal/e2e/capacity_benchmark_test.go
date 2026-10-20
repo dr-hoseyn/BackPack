@@ -68,6 +68,26 @@ func TestBulkProfileTransportCapacity(t *testing.T) {
 	}
 }
 
+// This control deliberately bypasses every Backpack component. A timeout here
+// identifies a host TCP/echo-fixture issue rather than a carrier regression.
+func TestDirectBackendBulkCapacity(t *testing.T) {
+	if os.Getenv("BP_CAPACITY_BENCHMARK") == "" {
+		t.Skip("set BP_CAPACITY_BENCHMARK=1 to measure")
+	}
+	backend := startEchoBackend(t)
+	tun := &tunnel{Entry: backend.addr}
+	payload := randomPayload(t, 16<<20)
+	results := make(chan error, 8)
+	for i := 0; i < 8; i++ {
+		go func() { results <- tun.roundTrip(payload) }()
+	}
+	for i := 0; i < 8; i++ {
+		if err := <-results; err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 func bulkProfileTunnel(t *testing.T, tr string) *tunnel {
 	return bulkProfileConfigured(t, tr, nil)
 }
