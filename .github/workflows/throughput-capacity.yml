@@ -36,13 +36,23 @@ jobs:
           go test -race ./internal/e2e -run '^TestMuxCapacityGrowsWhileExistingForwardsStayOpen$' -count=1 -v -timeout 3m
           go test -race ./internal/e2e -run '^TestTransportConcurrentConnections/wsmux$' -count=25 -timeout 3m
       - name: Measure candidate goodput
+        id: candidate
         env:
           BP_CAPACITY_BENCHMARK: '1'
-          BP_KCP_TUNING_BENCHMARK: '1'
           BP_CAPACITY_DIAGNOSTICS: '1'
         run: |
           set -o pipefail
-          go test ./internal/e2e -run '^(TestBulkProfileTransportCapacity|TestKCPBulkWindowCandidates)$' -count=1 -v -json -timeout 6m | tee "$RUNNER_TEMP/capacity-candidate.jsonl"
+          go test ./internal/e2e -run '^TestBulkProfileTransportCapacity$' -count=3 -v -json -timeout 6m | tee "$RUNNER_TEMP/capacity-candidate.jsonl"
+      - name: Diagnose a failed bulk transfer without same-socket splice echo
+        if: failure() && steps.candidate.outcome == 'failure'
+        continue-on-error: true
+        env:
+          BP_CAPACITY_BENCHMARK: '1'
+          BP_CAPACITY_DIAGNOSTICS: '1'
+          BP_CAPACITY_BUFFERED_ECHO: '1'
+        run: |
+          set -o pipefail
+          go test ./internal/e2e -run '^TestBulkProfileTransportCapacity/(wss|wssmux)$' -count=12 -v -json -timeout 6m | tee "$RUNNER_TEMP/capacity-buffered-echo.jsonl"
       - name: Measure the same transfers on the base revision
         if: github.event_name == 'pull_request'
         # The old revision can reproduce the admission/timeout bug this PR
@@ -57,7 +67,7 @@ jobs:
           git worktree add --detach "$RUNNER_TEMP/capacity-base" "$BASE_SHA"
           cp internal/e2e/capacity_benchmark_test.go "$RUNNER_TEMP/capacity-base/internal/e2e/"
           cd "$RUNNER_TEMP/capacity-base"
-          go test ./internal/e2e -run '^TestBulkProfileTransportCapacity$' -count=1 -v -json -timeout 6m | tee "$RUNNER_TEMP/capacity-base.jsonl"
+          go test ./internal/e2e -run '^TestBulkProfileTransportCapacity$' -count=3 -v -json -timeout 6m | tee "$RUNNER_TEMP/capacity-base.jsonl"
       - name: Keep fresh users working during sustained bulk traffic
         env:
           BP_CAPACITY_SOAK_SECONDS: '60'
@@ -82,3 +92,4 @@ jobs:
             ${{ runner.temp }}/capacity-candidate.jsonl
             ${{ runner.temp }}/capacity-base.jsonl
             ${{ runner.temp }}/capacity-soak.txt
+            ${{ runner.temp }}/capacity-buffered-echo.jsonl

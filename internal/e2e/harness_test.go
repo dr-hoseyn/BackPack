@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -98,7 +99,13 @@ func startEchoBackend(t *testing.T) *echoBackend {
 			backoff.OK()
 			go func(c net.Conn) {
 				defer c.Close()
-				io.Copy(c, c)
+				if os.Getenv("BP_CAPACITY_BUFFERED_ECHO") != "" {
+					// Diagnostic control: distinguish the tunnel from the kernel's
+					// same-socket splice echo path under large concurrent transfers.
+					io.Copy(struct{ io.Writer }{c}, struct{ io.Reader }{c})
+				} else {
+					io.Copy(c, c)
+				}
 			}(conn)
 		}
 	}()
@@ -341,8 +348,8 @@ func (tn *tunnel) roundTrip(payload []byte) error {
 	}()
 
 	got := make([]byte, len(payload))
-	if _, err := io.ReadFull(conn, got); err != nil {
-		return fmt.Errorf("read back: %w", err)
+	if n, err := io.ReadFull(conn, got); err != nil {
+		return fmt.Errorf("read back %d/%d bytes: %w", n, len(got), err)
 	}
 	if err := <-writeErr; err != nil {
 		return fmt.Errorf("write: %w", err)

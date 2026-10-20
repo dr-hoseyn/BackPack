@@ -3,6 +3,7 @@ package e2e
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"runtime/pprof"
 	"testing"
 	"time"
@@ -35,6 +36,9 @@ func TestBulkProfileTransportCapacity(t *testing.T) {
 					snapshot = time.AfterFunc(5*time.Second, func() {
 						fmt.Fprintf(os.Stderr, "CAPACITY_STALL transport=%s streams=%d\n", tr, streams)
 						pprof.Lookup("goroutine").WriteTo(os.Stderr, 2)
+						if sockets, err := exec.Command("ss", "-tinmp").CombinedOutput(); err == nil {
+							fmt.Fprintf(os.Stderr, "CAPACITY_TCP_SOCKETS\n%s\n", sockets)
+						}
 					})
 					t.Cleanup(func() { snapshot.Stop() })
 				}
