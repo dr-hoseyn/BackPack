@@ -74,7 +74,7 @@ type echoBackend struct {
 	listener net.Listener
 }
 
-func startEchoBackend(t *testing.T) *echoBackend {
+func startEchoBackend(t *testing.T, spliceEcho ...bool) *echoBackend {
 	t.Helper()
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -98,7 +98,15 @@ func startEchoBackend(t *testing.T) *echoBackend {
 			backoff.OK()
 			go func(c net.Conn) {
 				defer c.Close()
-				io.Copy(c, c)
+				// A generic application reads then writes its response. Letting
+				// io.Copy specialize the same TCP socket into a Linux splice
+				// echo reproduced bulk stalls even through standard-library-only
+				// relays. Keep that path solely as an explicit diagnostic control.
+				if len(spliceEcho) > 0 && spliceEcho[0] {
+					io.Copy(c, c)
+				} else {
+					io.Copy(struct{ io.Writer }{c}, struct{ io.Reader }{c})
+				}
 			}(conn)
 		}
 	}()

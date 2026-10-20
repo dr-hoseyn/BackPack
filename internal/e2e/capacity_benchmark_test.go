@@ -76,7 +76,7 @@ func TestDirectBackendBulkCapacity(t *testing.T) {
 	if os.Getenv("BP_CAPACITY_BENCHMARK") == "" {
 		t.Skip("set BP_CAPACITY_BENCHMARK=1 to measure")
 	}
-	backend := startEchoBackend(t)
+	backend := startEchoBackend(t, os.Getenv("BP_CAPACITY_SPLICE_ECHO") != "")
 	// A reverse tunnel has three TCP hops. Exercise the same backpressure
 	// shape using only the standard library, with no Backpack handlers,
 	// pool, mux, metrics or custom socket options.
