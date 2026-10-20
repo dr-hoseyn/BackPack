@@ -212,6 +212,48 @@ jobs:
             release/SBOM.txt
             install.sh
 
+      - name: Verify published signature and all seven archives
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          assets="$RUNNER_TEMP/published-release"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir "$assets"
+          verify_source="$GITHUB_WORKSPACE/release-verify-sums-temp.go"
+          trap 'rm -f "$verify_source"' EXIT
+          cat > "$verify_source" <<'GO'
+          package main
+          import("crypto/ed25519";"encoding/base64";"fmt";"os";"path/filepath";"strings";"github.com/backpack/backpack/internal/app")
+          func must(err error){if err!=nil{panic(err)}}
+          func main(){
+            root:=os.Args[1]
+            sums,e:=os.ReadFile(filepath.Join(root,"SHA256SUMS"));must(e)
+            raw,e:=os.ReadFile(filepath.Join(root,"SHA256SUMS.sig"));must(e)
+            sig,e:=base64.StdEncoding.DecodeString(strings.TrimSpace(string(raw)));must(e)
+            pub,e:=base64.StdEncoding.DecodeString(app.ReleasePublicKey);must(e)
+            if !ed25519.Verify(pub,app.ReleaseSignedMessage(os.Getenv("TAG"),sums),sig){panic("invalid pinned-key release signature")}
+            expected:=map[string]bool{}
+            for _,a:=range []string{"amd64","arm64","386","s390x","armv5","armv6","armv7"}{expected["backpack_linux_"+a+".tar.gz"]=true}
+            lines:=strings.Split(strings.TrimSpace(string(sums)),"\n")
+            if len(lines)!=7{panic("expected exactly seven architectures")}
+            for _,line:=range lines{f:=strings.Fields(line);if len(f)!=2 || !expected[f[1]]{panic("unexpected or duplicate checksum entry")};delete(expected,f[1])}
+            if len(expected)!=0{panic("missing release architecture")}
+            fmt.Println("Pinned Ed25519 signature verified for this release; all seven architectures covered")
+          }
+          GO
+          go run "$verify_source" "$assets"
+          rm -f "$verify_source"
+          declared="$(tr -d ' \n' < VERSION)"
+          cd "$assets"
+          sha256sum -c SHA256SUMS
+          test -s SBOM.txt
+          test -s install.sh
+          tar -xzf backpack_linux_amd64.tar.gz
+          test "$(./backpack -v | head -1)" = "$declared"
+          ./backpack version --json
+          echo 'RESULT: published signature, all archive hashes, SBOM, installer and executable version verified'
+
       - name: Verify the published one-line installer
         env:
           TAG: ${{ steps.tag.outputs.tag }}
