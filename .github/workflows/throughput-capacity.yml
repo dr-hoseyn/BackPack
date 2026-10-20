@@ -34,6 +34,7 @@ jobs:
           sudo sysctl -w net.core.rmem_max=268435456 net.core.wmem_max=268435456
           go test -race ./internal/client/transport ./internal/server/transport ./internal/utils/network ./internal/manage/tunnelspec -timeout 8m
           go test -race ./internal/e2e -run '^TestMuxCapacityGrowsWhileExistingForwardsStayOpen$' -count=1 -v -timeout 3m
+          go test -race ./internal/e2e -run '^TestTransportConcurrentConnections/wsmux$' -count=25 -timeout 3m
       - name: Measure candidate goodput
         env:
           BP_CAPACITY_BENCHMARK: '1'

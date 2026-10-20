@@ -13,6 +13,10 @@
   Retain warm physical mux sessions instead of discarding future user capacity
   requests after a quiet period. Keep Short HTTPS within its finite session
   budget and preserve explicitly configured connection and bandwidth limits.
+- Preserve the first mux frames when they arrive in the same read as the
+  WebSocket HTTP Upgrade response. Losing buffered bytes could reset or stall
+  fresh WSMUX/WSSMUX users during concurrent session admission. Keep the
+  existing wire format and framed control-channel behavior.
 - Offer Throughput for every supported Reverse transport and for Direct/L3.
   Expand the preset pools, mux admission capacity, per-stream windows and
   QUIC flow control. Retain measured KCP bulk windows to avoid oversized ARQ

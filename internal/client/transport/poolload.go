@@ -44,7 +44,7 @@ const (
 // Receive windows are allocated as traffic arrives. Treating all of them as
 // resident up front imposed a fixed 128 MB budget that often prevented any
 // growth at all. Capacity now follows the configured pool and live demand;
-// idle retirement and the relative connection ceiling still bound it.
+// the relative connection ceiling still bounds it, including pending dials.
 func muxPoolLimit(size int) int {
 	return size * poolGrowthLimit
 }
