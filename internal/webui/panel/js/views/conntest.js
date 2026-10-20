@@ -179,10 +179,11 @@ function setupPane(v) {
   if (!v.root) return '<div class="tl-note">Automatic setup needs Backpack running as root on both servers.</div>';
   const s = v.setup;
   if (!s) return '<div class="tl-note">Preparing automatic setup. Keep the kharej test open.</div>';
-  if (s.state === 'done') return `<div class="tl-note"><b>Tunnel connected on both servers.</b><br>
+  const setupPhase = phase(s);
+  if (setupPhase === 'done') return `<div class="tl-note"><b>Tunnel connected on both servers.</b><br>
     Iran: ${esc(s.iran)} · Kharej: ${esc(s.kharej)}</div>`;
-  if (s.state === 'failed' || s.state === 'expired') return `<div class="tl-note wr">${esc(s.error || 'Setup ended. Run a new test.')}</div>`;
-  if (s.state !== 'waiting') return `<div class="tl-note"><b>Setting up both servers…</b><br>${esc(s.state === 'verifying'
+  if (setupPhase === 'failed' || setupPhase === 'expired') return `<div class="tl-note wr">${esc(s.error || 'Setup ended. Run a new test.')}</div>`;
+  if (setupPhase !== 'waiting') return `<div class="tl-note"><b>Setting up both servers…</b><br>${esc(setupPhase === 'verifying'
     ? 'Checking that the tunnel reaches its peer.' : 'Sending settings and starting the tunnel services.')}</div>`;
   const choices = (v.rows || []).filter(r => r.status === 'ok' && (s.choices || []).some(c => c.kind === r.kind && c.transport === r.tr && (c.sni || '') === (r.sni || '')))
     .sort((a, b) => (b.mbps || 0) - (a.mbps || 0));
