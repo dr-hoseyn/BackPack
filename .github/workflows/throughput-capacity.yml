@@ -63,7 +63,7 @@ jobs:
         run: |
           set -o pipefail
           git worktree add --detach "$RUNNER_TEMP/capacity-base" "$BASE_SHA"
-          cp internal/e2e/capacity_benchmark_test.go "$RUNNER_TEMP/capacity-base/internal/e2e/"
+          cp internal/e2e/capacity_benchmark_test.go internal/e2e/harness_test.go "$RUNNER_TEMP/capacity-base/internal/e2e/"
           cd "$RUNNER_TEMP/capacity-base"
           go test ./internal/e2e -run '^TestBulkProfileTransportCapacity$' -count=3 -v -json -timeout 6m | tee "$RUNNER_TEMP/capacity-base.jsonl"
       - name: Keep fresh users working during sustained bulk traffic
