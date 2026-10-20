@@ -654,9 +654,10 @@ func ctUUID(token string) string {
 	return token[:8] + "-" + token[8:12] + "-" + token[12:16] + "-" + token[16:20] + "-" + token[20:]
 }
 
-// ctCertificate creates a short-lived, private test identity with explicit
+// ctCertificate creates a private test identity with explicit
 // SANs. The peer verifies it with this leaf as its trust anchor, never insecure
-// TLS. Files are owned by this test directory and removed with it.
+// TLS. Unpromoted files are removed with the test directory. Its validity
+// matches normal Backpack certificates so a promoted tunnel remains usable.
 func ctCertificate(dir, name, host string) (cert, key, ca string, err error) {
 	private, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -667,7 +668,7 @@ func ctCertificate(dir, name, host string) (cert, key, ca string, err error) {
 		return "", "", "", err
 	}
 	leaf := &x509.Certificate{SerialNumber: serial, NotBefore: time.Now().Add(-time.Minute),
-		NotAfter: time.Now().Add(time.Hour), DNSNames: []string{"conntest.backpack.invalid"},
+		NotAfter: time.Now().AddDate(10, 0, 0), DNSNames: []string{"conntest.backpack.invalid"},
 		KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}
 	if ip := net.ParseIP(host); ip != nil {
 		leaf.IPAddresses = []net.IP{ip}

@@ -2,12 +2,15 @@ package manage
 
 import (
 	"bytes"
+	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/BurntSushi/toml"
 	"github.com/backpack/backpack/config"
@@ -102,8 +105,22 @@ func TestConnTestPromotionRetainsPrivateTrustAfterTemporaryFilesAreGone(t *testi
 				if strings.HasPrefix(path, temporary) {
 					t.Fatal("permanent config still points at disposable trust")
 				}
-				if _, err := os.ReadFile(path); err != nil {
+				trust, err := os.ReadFile(path)
+				if err != nil {
 					t.Fatal(err)
+				}
+				block, _ := pem.Decode(trust)
+				if block == nil {
+					t.Fatal("promoted trust is not a certificate")
+				}
+				certificate, err := x509.ParseCertificate(block.Bytes)
+				if err != nil {
+					t.Fatal(err)
+				}
+				roots := x509.NewCertPool()
+				roots.AddCert(certificate)
+				if _, err := certificate.Verify(x509.VerifyOptions{Roots: roots, DNSName: "conntest.backpack.invalid", CurrentTime: time.Now().AddDate(1, 0, 0)}); err != nil {
+					t.Fatalf("promoted tunnel trust will expire shortly after the test: %v", err)
 				}
 				raw, _ := json.Marshal(f)
 				if strings.Contains(string(raw), "host-private") || strings.Contains(string(raw), "BEGIN PRIVATE KEY") || strings.Contains(string(raw), f.SetupAssetDir) {

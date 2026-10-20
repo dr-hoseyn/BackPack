@@ -55,6 +55,8 @@ verified test configuration privately, copies required certificates/keys/CA file
 to `/etc/backpack/setup/<new-tunnel-name>/` with private permissions, and rotates
 paired authentication. Permanent services do not reference the deleted test
 workspace. Updating both endpoints is required for this coordinator capability.
+Retained test certificates use the same ten-year validity as normal generated
+Backpack certificates, so permanent tunnels do not expire an hour after testing.
 
 AmneziaWG requires root and TUN access. Its backend must listen on the peer TUN
 address or a wildcard. Automatic setup maps `127.0.0.1`/`localhost` destinations
