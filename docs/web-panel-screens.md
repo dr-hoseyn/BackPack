@@ -107,12 +107,12 @@ protocol settings, pairing requirements and the limits of saved measurements.
 *CLI: Automatic; Setup Kharej → Setup Link; `backpack diagnose -c FILE`;
 Connection Test → History.*
 
-### Terminal — `#/terminal`
-
 Successful Connection Test results now also offer **Set up both servers**.
 Choose the measured IP path and a successful tunnel, enter forwarded ports once,
 and leave the Kharej test agent open to receive its permanent settings.
 See [automatic setup after testing](connection-test-setup.md).
+
+### Terminal — `#/terminal`
 
 A root shell on this server. It opens only from its button, only for a signed-in
 browser (never an API token), and each one opened is written to the audit record
