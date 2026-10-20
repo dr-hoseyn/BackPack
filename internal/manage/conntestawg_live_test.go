@@ -17,6 +17,15 @@ import (
 // This exercises AWG through Connection Test itself, not just its standalone
 // engine: identity handoff, the Iran forward, peer echo, verdict and speed.
 func TestAmneziaWGConnectionTestOverRealIPv4AndIPv6TUN(t *testing.T) {
+	ctTestNativeConnectionTestBothFamilies(t, "awg", "awg")
+}
+
+func TestConnectIPConnectionTestOverRealIPv4AndIPv6TUN(t *testing.T) {
+	ctTestNativeConnectionTestBothFamilies(t, "direct", "connect-ip")
+}
+
+func ctTestNativeConnectionTestBothFamilies(t *testing.T, kind, transport string) {
+	t.Helper()
 	if os.Getenv("BP_L3_LIVE") == "" {
 		t.Skip("set BP_L3_LIVE=1 for isolated root network namespaces")
 	}
@@ -44,7 +53,7 @@ func TestAmneziaWGConnectionTestOverRealIPv4AndIPv6TUN(t *testing.T) {
 			if family == "IPv6" {
 				v6 = "1"
 			}
-			cmd.Env = append(os.Environ(), "BIN="+bin, "TESTBIN="+self, "W="+w, "SOAK=3", "ONLY=awg/awg", "FILTER=", "CT_IPV6="+v6, "PATHMTU=1400")
+			cmd.Env = append(os.Environ(), "BIN="+bin, "TESTBIN="+self, "W="+w, "SOAK=3", "ONLY="+kind+"/"+transport, "FILTER=", "CT_IPV6="+v6, "PATHMTU=1400")
 			out, err := cmd.CombinedOutput()
 			if err != nil || !strings.Contains(string(out), "RESULT DONE") {
 				t.Fatalf("%v\n%s", err, out)
@@ -59,15 +68,15 @@ func TestAmneziaWGConnectionTestOverRealIPv4AndIPv6TUN(t *testing.T) {
 			}
 			found := false
 			for _, r := range rows {
-				if r.Kind == "awg" {
+				if r.Kind == kind && r.Transport == transport {
 					found = true
 					if r.Status != ctOK || r.Mbps <= 0 || r.UploadMbps <= 0 {
-						t.Fatalf("AWG did not carry bidirectional traffic: %+v\n%s", r, out)
+						t.Fatalf("%s did not carry bidirectional traffic: %+v\n%s", transport, r, out)
 					}
 				}
 			}
 			if !found {
-				t.Fatal("AWG was missing from Connection Test")
+				t.Fatalf("%s was missing from Connection Test", transport)
 			}
 		})
 	}

@@ -583,6 +583,11 @@ func StartConnTestIran(o ConnTestOptions) (*ConnTestIran, string, error) {
 				MTU: defaultL3MTU,
 			}
 			findL3Preset(preset).apply(&c.l3)
+			if carrier == "connect-ip" {
+				// Native RFC 9484 packets do not use Noise auto-MTU or GRE tuning.
+				off := false
+				c.l3.MTU, c.l3.AutoMTU = 1280, &off
+			}
 			if carrier == "spoof" {
 				c.l3.Spoof.SpoofProfile = "udp"
 			}
