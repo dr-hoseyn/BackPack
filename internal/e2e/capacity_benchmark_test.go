@@ -106,6 +106,11 @@ func bulkProfileConfigured(t *testing.T, tr string, tune func(*config.Config)) *
 			BindAddr:   fmt.Sprintf("127.0.0.1:%d", tunnelPort),
 			RemoteAddr: fmt.Sprintf("127.0.0.1:%d", tunnelPort),
 			Ports:      []string{fmt.Sprintf("%d=%s", entryPort, backend.addr)},
+			// Use Internet-sized TCP segments for the capacity comparison. The
+			// default loopback MSS is ~64 KiB, larger than a small autotuned
+			// receive window observed during a stalled CI transfer. Keep the
+			// raw-host control and socket snapshots to investigate jumbo paths.
+			MSS: 1460,
 		}
 		tunnelspec.ApplyPreset(&spec, tunnelspec.PresetThroughput)
 		if _, err := toml.Decode(spec.Render(), &cfg); err != nil {

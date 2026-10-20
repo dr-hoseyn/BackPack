@@ -51,7 +51,7 @@ jobs:
           BP_CAPACITY_DIAGNOSTICS: '1'
         run: |
           set -o pipefail
-          go test ./internal/e2e -run '^TestBulkProfileTransportCapacity$' -count=3 -v -json -timeout 6m | tee "$RUNNER_TEMP/capacity-candidate.jsonl"
+          go test ./internal/e2e -run '^TestBulkProfileTransportCapacity$' -count=8 -v -json -timeout 10m | tee "$RUNNER_TEMP/capacity-candidate.jsonl"
       - name: Diagnose a failed bulk transfer without same-socket splice echo
         if: failure() && steps.candidate.outcome == 'failure'
         continue-on-error: true
