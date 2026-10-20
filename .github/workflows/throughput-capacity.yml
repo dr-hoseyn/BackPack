@@ -39,6 +39,7 @@ jobs:
         env:
           BP_CAPACITY_BENCHMARK: '1'
           BP_KCP_TUNING_BENCHMARK: '1'
+          BP_CAPACITY_DIAGNOSTICS: '1'
         run: |
           set -o pipefail
           go test ./internal/e2e -run '^(TestBulkProfileTransportCapacity|TestKCPBulkWindowCandidates)$' -count=1 -v -json -timeout 6m | tee "$RUNNER_TEMP/capacity-candidate.jsonl"

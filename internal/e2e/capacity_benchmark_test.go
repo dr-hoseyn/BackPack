@@ -3,6 +3,7 @@ package e2e
 import (
 	"fmt"
 	"os"
+	"runtime/pprof"
 	"testing"
 	"time"
 
@@ -29,6 +30,14 @@ func TestBulkProfileTransportCapacity(t *testing.T) {
 				t.Fatal(err)
 			}
 			for _, streams := range []int{1, 8} {
+				var snapshot *time.Timer
+				if os.Getenv("BP_CAPACITY_DIAGNOSTICS") != "" {
+					snapshot = time.AfterFunc(5*time.Second, func() {
+						fmt.Fprintf(os.Stderr, "CAPACITY_STALL transport=%s streams=%d\n", tr, streams)
+						pprof.Lookup("goroutine").WriteTo(os.Stderr, 2)
+					})
+					t.Cleanup(func() { snapshot.Stop() })
+				}
 				start := time.Now()
 				results := make(chan error, streams)
 				for i := 0; i < streams; i++ {
@@ -36,8 +45,14 @@ func TestBulkProfileTransportCapacity(t *testing.T) {
 				}
 				for i := 0; i < streams; i++ {
 					if err := <-results; err != nil {
+						if snapshot != nil {
+							snapshot.Stop()
+						}
 						t.Fatal(err)
 					}
+				}
+				if snapshot != nil {
+					snapshot.Stop()
 				}
 				seconds := time.Since(start).Seconds()
 				// Report one-way-equivalent application goodput. Echo traffic
