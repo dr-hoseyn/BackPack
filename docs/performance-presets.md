@@ -21,7 +21,8 @@ expand up to 32 times its configured floor. Multiplexed sessions no longer stop
 growing at a fixed 128 MiB aggregate receive-window budget. Spare connections
 and physical sessions are counted separately: opening idle TCP connections or
 QUIC streams does not divide the bandwidth of an existing transfer. Physical
-mux sessions retire only after traffic has gone quiet. Repair and demand-driven
+mux sessions stay warm until their connection or generation ends. They never
+discard future capacity requests as a substitute for retiring a busy session. Repair and demand-driven
 dials share one ceiling, including connections still being established.
 
 ## Sizing for 400–500 Mbit/s
@@ -90,4 +91,4 @@ calling a deployment a verified 500 Mbit/s link.
 
 [← Back to the docs index](README.md)
 
-*Last verified against Backpack v1.14.0 source with the throughput-capacity changes.*
+*Last verified against Backpack v1.14.1 source with the throughput-capacity changes.*

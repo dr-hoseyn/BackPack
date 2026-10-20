@@ -1,5 +1,7 @@
 name: Throughput capacity
 on:
+  push:
+    branches: [main]
   pull_request:
     paths:
       - 'internal/client/**'
@@ -29,14 +31,16 @@ jobs:
       - name: Capacity regressions with the race detector
         run: |
           sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
+          sudo sysctl -w net.core.rmem_max=268435456 net.core.wmem_max=268435456
           go test -race ./internal/client/transport ./internal/server/transport ./internal/utils/network ./internal/manage/tunnelspec -timeout 8m
           go test -race ./internal/e2e -run '^TestMuxCapacityGrowsWhileExistingForwardsStayOpen$' -count=1 -v -timeout 3m
       - name: Measure candidate goodput
         env:
           BP_CAPACITY_BENCHMARK: '1'
+          BP_KCP_TUNING_BENCHMARK: '1'
         run: |
           set -o pipefail
-          go test ./internal/e2e -run '^TestBulkProfileTransportCapacity$' -count=1 -v -json -timeout 6m | tee "$RUNNER_TEMP/capacity-candidate.jsonl"
+          go test ./internal/e2e -run '^(TestBulkProfileTransportCapacity|TestKCPBulkWindowCandidates)$' -count=1 -v -json -timeout 6m | tee "$RUNNER_TEMP/capacity-candidate.jsonl"
       - name: Measure the same transfers on the base revision
         if: github.event_name == 'pull_request'
         env:
@@ -48,6 +52,12 @@ jobs:
           cp internal/e2e/capacity_benchmark_test.go "$RUNNER_TEMP/capacity-base/internal/e2e/"
           cd "$RUNNER_TEMP/capacity-base"
           go test ./internal/e2e -run '^TestBulkProfileTransportCapacity$' -count=1 -v -json -timeout 6m | tee "$RUNNER_TEMP/capacity-base.jsonl"
+      - name: Keep fresh users working during sustained bulk traffic
+        env:
+          BP_CAPACITY_SOAK_SECONDS: '60'
+        run: |
+          set -o pipefail
+          go test ./internal/e2e -run '^TestBulkProfileKeepsAcceptingUsersUnderSustainedLoad$' -count=1 -v -timeout 6m | tee "$RUNNER_TEMP/capacity-soak.txt"
       - name: Publish measurements
         if: always()
         run: |
@@ -62,4 +72,4 @@ jobs:
         if: always()
         with:
           name: throughput-capacity
-          path: ${{ runner.temp }}/capacity-*.jsonl
+          path: ${{ runner.temp }}/capacity-*

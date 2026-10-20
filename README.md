@@ -1,7 +1,12 @@
 # dr-hoseyn fork
 
-This fork combines upstream BackPack v1.9.0 with PRs [#104](https://github.com/AminMGMT/BackPack/pull/104), [#98](https://github.com/AminMGMT/BackPack/pull/98), and [#108](https://github.com/AminMGMT/BackPack/pull/108). Fork release **v1.14.0** installs and updates from `dr-hoseyn/BackPack`. Managed Short HTTPS is available for Reverse TCP. The source also includes [advanced XHTTP settings](docs/xhttp-advanced.md) and [managed AmneziaWG setup](docs/amneziawg.md).
+This fork combines upstream BackPack v1.9.0 with PRs [#104](https://github.com/AminMGMT/BackPack/pull/104), [#98](https://github.com/AminMGMT/BackPack/pull/98), and [#108](https://github.com/AminMGMT/BackPack/pull/108). Fork release **v1.14.1** installs and updates from `dr-hoseyn/BackPack`. Managed Short HTTPS is available for Reverse TCP. The source also includes [advanced XHTTP settings](docs/xhttp-advanced.md) and [managed AmneziaWG setup](docs/amneziawg.md).
 
+
+**v1.14.1:** improves capacity under load with batch pool growth, larger flow
+windows and a Throughput profile across supported tunnel families. Existing
+configurations keep their values; reapply the same preset on both peers.
+See [performance presets](docs/performance-presets.md) for resource costs and tests.
 
 **v1.14.0:** after Connection Test, select a successful tunnel and enter the
 forwarded ports on either server. Both ends are configured automatically,

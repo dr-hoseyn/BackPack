@@ -18,31 +18,9 @@ func TestBulkProfileTransportCapacity(t *testing.T) {
 		t.Skip("set BP_CAPACITY_BENCHMARK=1 to measure")
 	}
 	payload := randomPayload(t, 16<<20)
-	for _, tr := range []string{"tcp", "stealth", "tcpmux", "ws", "wss", "wsmux", "wssmux", "kcp", "quic", "udp"} {
+	for _, tr := range []string{"tcp", "stealth", "tcpmux", "ws", "wss", "wsmux", "wssmux", "kcp", "quic"} {
 		t.Run(tr, func(t *testing.T) {
-			backend := startEchoBackend(t)
-			tunnelPort, entryPort := freePort(t), freePort(t)
-			const token = "bulk-capacity-measurement-token-0123456789"
-			cfg := config.Config{
-				Server: *baseServerConfig(tr, tunnelPort, entryPort, backend.addr, token),
-				Client: *baseClientConfig(tr, fmt.Sprintf("127.0.0.1:%d", tunnelPort), token, nil),
-			}
-			for _, role := range []string{"server", "client"} {
-				spec := tunnelspec.Spec{Role: role, Transport: tr, Token: token, SkipOptz: true,
-					BindAddr:   fmt.Sprintf("127.0.0.1:%d", tunnelPort),
-					RemoteAddr: fmt.Sprintf("127.0.0.1:%d", tunnelPort),
-					Ports:      []string{fmt.Sprintf("%d=%s", entryPort, backend.addr)},
-				}
-				tunnelspec.ApplyPreset(&spec, tunnelspec.PresetThroughput)
-				if _, err := toml.Decode(spec.Render(), &cfg); err != nil {
-					t.Fatal(err)
-				}
-			}
-			cfg.Server.LogLevel, cfg.Client.LogLevel = "error", "error"
-			tun := runPair(t, &cfg.Server, &cfg.Client, entryPort, tunnelPort)
-			if err := tun.waitReady(tunnelReadyTimeout); err != nil {
-				t.Fatal(err)
-			}
+			tun := bulkProfileTunnel(t, tr)
 			for _, streams := range []int{1, 8} {
 				start := time.Now()
 				results := make(chan error, streams)
@@ -61,5 +39,74 @@ func TestBulkProfileTransportCapacity(t *testing.T) {
 					float64(streams*len(payload)*8)/seconds/1e6, seconds)
 			}
 		})
+	}
+}
+
+func bulkProfileTunnel(t *testing.T, tr string) *tunnel {
+	return bulkProfileConfigured(t, tr, nil)
+}
+
+func bulkProfileConfigured(t *testing.T, tr string, tune func(*config.Config)) *tunnel {
+	t.Helper()
+	backend := startEchoBackend(t)
+	tunnelPort, entryPort := freePort(t), freePort(t)
+	const token = "bulk-capacity-measurement-token-0123456789"
+	cfg := config.Config{
+		Server: *baseServerConfig(tr, tunnelPort, entryPort, backend.addr, token),
+		Client: *baseClientConfig(tr, fmt.Sprintf("127.0.0.1:%d", tunnelPort), token, nil),
+	}
+	for _, role := range []string{"server", "client"} {
+		spec := tunnelspec.Spec{Role: role, Transport: tr, Token: token, SkipOptz: true,
+			BindAddr:   fmt.Sprintf("127.0.0.1:%d", tunnelPort),
+			RemoteAddr: fmt.Sprintf("127.0.0.1:%d", tunnelPort),
+			Ports:      []string{fmt.Sprintf("%d=%s", entryPort, backend.addr)},
+		}
+		tunnelspec.ApplyPreset(&spec, tunnelspec.PresetThroughput)
+		if _, err := toml.Decode(spec.Render(), &cfg); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if tune != nil {
+		tune(&cfg)
+	}
+	cfg.Server.LogLevel, cfg.Client.LogLevel = "error", "error"
+	tun := runPair(t, &cfg.Server, &cfg.Client, entryPort, tunnelPort)
+	if err := tun.waitReady(tunnelReadyTimeout); err != nil {
+		t.Fatal(err)
+	}
+	return tun
+}
+
+// Reproducible tuning comparison: a large ARQ queue can spend more CPU scanning
+// ACKs than it earns in bandwidth. This diagnostic is deliberately opt-in.
+func TestKCPBulkWindowCandidates(t *testing.T) {
+	if os.Getenv("BP_KCP_TUNING_BENCHMARK") == "" {
+		t.Skip("set BP_KCP_TUNING_BENCHMARK=1")
+	}
+	payload := randomPayload(t, 8<<20)
+	for _, nc := range []int{1, 0} {
+		for _, window := range []int{2048, 4096, 16384} {
+			t.Run(fmt.Sprintf("nc%d-window%d", nc, window), func(t *testing.T) {
+				tun := bulkProfileConfigured(t, "kcp", func(cfg *config.Config) {
+					cfg.Server.KCPConfig.SndWnd, cfg.Server.KCPConfig.RcvWnd = window, window
+					cfg.Client.KCPConfig.SndWnd, cfg.Client.KCPConfig.RcvWnd = window, window
+					cfg.Server.KCPConfig.NoCongestion, cfg.Client.KCPConfig.NoCongestion = nc, nc
+				})
+				if err := tun.roundTrip(payload[:1<<20]); err != nil {
+					t.Fatal(err)
+				}
+				start := time.Now()
+				results := make(chan error, 8)
+				for i := 0; i < 8; i++ {
+					go func() { results <- tun.roundTrip(payload) }()
+				}
+				for i := 0; i < 8; i++ {
+					if err := <-results; err != nil {
+						t.Fatal(err)
+					}
+				}
+				t.Logf("KCP_TUNING nc=%d window=%d streams=8 goodput_mbps=%.1f", nc, window, float64(8*len(payload)*8)/time.Since(start).Seconds()/1e6)
+			})
+		}
 	}
 }

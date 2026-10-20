@@ -33,7 +33,9 @@ func TestMuxCapacityGrowsWhileExistingForwardsStayOpen(t *testing.T) {
 					t.Fatal(err)
 				}
 				t.Cleanup(func() { conn.Close() })
-				_ = conn.SetDeadline(time.Now().Add(2500 * time.Millisecond))
+				// Leave room for instrumentation; the server still enforces its
+				// actual three-second pairing deadline and drops failed admissions.
+				_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
 				payload := []byte("capacity")
 				if _, err := conn.Write(payload); err != nil {
 					t.Fatal(err)

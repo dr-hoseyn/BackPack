@@ -152,7 +152,9 @@ func (p poolSizer) maintain() {
 			// outside is indistinguishable from a leak. Publish what it is
 			// doing and why, so the panel can say "8 configured, 19 open,
 			// carrying 240 Mbit/s" instead of leaving somebody to guess.
-			grow := newPoolSize < ceiling && (((taken + a) > openAvg*b) ||
+			// An empty pool after failed dials needs repair, not exponential
+			// growth without demand. Otherwise a carrier outage becomes a dial storm.
+			grow := newPoolSize < ceiling && ((taken > 0 && (taken+a) > openAvg*b) ||
 				load.wantsMore(mbps, openAvg, newPoolSize, p.size))
 
 			switch {
@@ -168,7 +170,7 @@ func (p poolSizer) maintain() {
 				}
 				newPoolSize = next
 
-			case quiet && time.Since(quietSince) >= 30*time.Second && newPoolSize > p.size:
+			case !p.mux && quiet && time.Since(quietSince) >= 30*time.Second && newPoolSize > p.size:
 				quietSince = time.Now()
 				p.log.Debugf("decreasing pool size: %d -> %d, avg pool conn: %d, avg load conn: %d",
 					newPoolSize, newPoolSize-1, openAvg, taken)
@@ -200,7 +202,11 @@ func (p poolSizer) maintain() {
 func poolGrowthTarget(current, ceiling, requests, factor, mbps int, mux bool) int {
 	next := max(current+max(current/2, 1), (requests+factor-1)/factor)
 	if mux {
-		next = max(next, (mbps+poolScaleMbpsPerConn-1)/poolScaleMbpsPerConn)
+		// A byte-rate sample can be noisy. Expand physical sessions by at
+		// most a factor of two per sample so handshake work does not consume
+		// the CPU currently carrying those bytes. Connection demand above is
+		// independent and can fill the ceiling immediately.
+		next = max(next, min(current*2, (mbps+poolScaleMbpsPerConn-1)/poolScaleMbpsPerConn))
 	}
 	return min(next, ceiling)
 }

@@ -217,12 +217,15 @@ func nodelayTune(nodelay bool, log *logrus.Logger) func(*net.TCPConn) {
 }
 
 // muxRequest is the queued adapter of the mux transports: a waiting user is
-// one more stream, and a new session is asked for only once the live ones are
-// carrying as many streams as they may.
+// one more stream. Reserve capacity before the last slots fill, so the control
+// round trip and the new session's handshake do not consume a user's pairing
+// timeout. At least one session's worth of slots stays ahead of demand.
 func muxRequest(streams, sessions *int32, muxCon int, reqNewConn chan struct{}, log *logrus.Logger) func() {
 	return func() {
 		n := atomic.AddInt32(streams, 1)
-		if n < atomic.LoadInt32(sessions)*int32(muxCon) {
+		capacity := int64(atomic.LoadInt32(sessions)) * int64(max(muxCon, 1))
+		reserve := max(capacity/4, int64(max(muxCon, 1)))
+		if int64(n) < capacity-reserve {
 			return
 		}
 		log.Tracef("stream counter: %v, session counter: %v", n, atomic.LoadInt32(sessions))
