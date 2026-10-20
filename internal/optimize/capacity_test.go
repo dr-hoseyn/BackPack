@@ -11,11 +11,12 @@ import (
 
 func capacityFixture(t *testing.T) (*capacityState, *[]string) {
 	t.Helper()
-	oldFile, oldBackup, oldNet, oldIPv4, oldSet := capacityFile, capacityBackup, procNetDir, procIPv4Dir, capacitySysctl
+	oldFile, oldBackup, oldNet, oldIPv4, oldSet, oldLock := capacityFile, capacityBackup, procNetDir, procIPv4Dir, capacitySysctl, capacityLockFile
 	t.Cleanup(func() {
-		capacityFile, capacityBackup, procNetDir, procIPv4Dir, capacitySysctl = oldFile, oldBackup, oldNet, oldIPv4, oldSet
+		capacityFile, capacityBackup, procNetDir, procIPv4Dir, capacitySysctl, capacityLockFile = oldFile, oldBackup, oldNet, oldIPv4, oldSet, oldLock
 	})
 	dir := t.TempDir()
+	capacityLockFile = filepath.Join(dir, "kernel-policy.lock")
 	capacityFile, capacityBackup = filepath.Join(dir, "sysctl.d", "capacity.conf"), filepath.Join(dir, "config", "backup.json")
 	procNetDir, procIPv4Dir = filepath.Join(dir, "net"), filepath.Join(dir, "ipv4")
 	for _, d := range []string{procNetDir, procIPv4Dir} {

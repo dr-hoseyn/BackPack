@@ -31,6 +31,7 @@ func TestHighConcurrencyRealLoopbackCapacity(t *testing.T) {
 		t.Fatalf("lo: %v %s", err, out)
 	}
 	dir := t.TempDir()
+	capacityLockFile = filepath.Join(dir, "policy.lock")
 	capacityFile = filepath.Join(dir, "capacity.conf")
 	capacityBackup = filepath.Join(dir, "backup.json")
 	listener, err := net.Listen("tcp4", "127.0.0.1:0")
@@ -87,5 +88,31 @@ func TestHighConcurrencyRealLoopbackCapacity(t *testing.T) {
 	s, err := currentCapacity()
 	if err != nil || s.Range != "40000\t40015" {
 		t.Fatalf("original range not restored: %+v %v", s, err)
+	}
+}
+
+func TestConcurrentKernelPolicyChangesLeaveSnapshotAndSysctlsAlone(t *testing.T) {
+	_, calls := capacityFixture(t)
+	unlock, err := lockKernelPolicy()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unlock()
+	if _, err := EnableHighConcurrency(nil); err == nil {
+		t.Fatal("conflicting enable accepted")
+	}
+	if err := RestoreHighConcurrency(); err == nil {
+		t.Fatal("conflicting restore accepted")
+	}
+	var logs []string
+	Apply(func(s string) { logs = append(logs, s) }, nil)
+	if len(logs) != 1 || !strings.Contains(logs[0], "another kernel policy update") {
+		t.Fatal(logs)
+	}
+	if len(*calls) != 0 {
+		t.Fatal("conflicting operation changed sysctls", *calls)
+	}
+	if _, err := os.Stat(capacityBackup); !os.IsNotExist(err) {
+		t.Fatal("conflicting operation changed rollback snapshot", err)
 	}
 }

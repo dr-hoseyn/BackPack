@@ -47,11 +47,20 @@ func TestTuneMeasuredPathUsesExistingMSSSetting(t *testing.T) {
 	var mss int
 	tuneMSS = func(n string, m int) error { name, mss = n, m; return nil }
 	r := Run([]string{"tune", "path-mtu", "server-8443", "1492"})
-	if r.Code != 0 || name != "server-8443" || mss != 1440 {
+	if r.Code != 0 || name != "server-8443" || mss != 1452 {
 		t.Fatal(r, name, mss)
 	}
 	if !strings.Contains(r.Out, "restarted") {
 		t.Fatal("restart side effect not reported")
+	}
+	for _, tc := range []struct {
+		mtu string
+		mss int
+	}{{"576", 536}, {"1500", 1460}} {
+		r = Run([]string{"tune", "path-mtu", "server-8443", tc.mtu})
+		if r.Code != 0 || mss != tc.mss {
+			t.Fatal(tc, r, mss)
+		}
 	}
 	r = Run([]string{"tune", "path-mtu", "server-8443", "0"})
 	if r.Code != 0 || mss != 0 {

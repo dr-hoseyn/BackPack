@@ -17,11 +17,12 @@ import (
 const HighConcurrencyRange = "10240 65535"
 
 var (
-	capacityFile   = "/etc/sysctl.d/zzzz-backpack-capacity.conf"
-	capacityBackup = "/etc/backpack/high-concurrency-backup.json"
-	procNetDir     = "/proc/net"
-	procIPv4Dir    = "/proc/sys/net/ipv4"
-	capacitySysctl = func(key, value string) error {
+	capacityLockFile = "/run/lock/backpack-kernel-policy.lock"
+	capacityFile     = "/etc/sysctl.d/zzzz-backpack-capacity.conf"
+	capacityBackup   = "/etc/backpack/high-concurrency-backup.json"
+	procNetDir       = "/proc/net"
+	procIPv4Dir      = "/proc/sys/net/ipv4"
+	capacitySysctl   = func(key, value string) error {
 		out, err := exec.Command("sysctl", "-w", key+"="+value).CombinedOutput()
 		if err != nil {
 			return fmt.Errorf("%s: %w: %s", key, err, strings.TrimSpace(string(out)))
@@ -219,6 +220,11 @@ func EnableHighConcurrency(extra []int) (string, error) {
 	if runtime.GOOS != "linux" {
 		return "", fmt.Errorf("high-concurrency tuning requires Linux")
 	}
+	unlock, err := lockKernelPolicy()
+	if err != nil {
+		return "", err
+	}
+	defer unlock()
 	return enableHighConcurrency(extra)
 }
 
@@ -317,6 +323,11 @@ func RestoreHighConcurrency() error {
 	if runtime.GOOS != "linux" {
 		return fmt.Errorf("high-concurrency tuning requires Linux")
 	}
+	unlock, err := lockKernelPolicy()
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	return restoreHighConcurrency()
 }
 

@@ -25,8 +25,8 @@ tunnel ports before widening the ephemeral range to 10240-65535. Include fixed
 UDP services and stopped services with --reserve-ports. Existing tunnels and
 the auto-refresh schedule keep running.
 
-path-mtu uses the existing per-tunnel TCP MSS setting (MTU minus 52 bytes for
-IPv4/TCP with timestamps). Apply on both ends; it restarts the named tunnel.
+path-mtu uses the existing per-tunnel TCP MSS setting (MTU minus the fixed 40-byte
+IPv4/TCP headers; Linux accounts for TCP options). Apply on both ends; it restarts the named tunnel.
 Use 0 to clear the MSS clamp. It does not change any host route or interface.
 `
 
@@ -90,7 +90,9 @@ func runTune(args []string) Result {
 		}
 		mss := 0
 		if mtu != 0 {
-			mss = mtu - 52
+			// RFC 6691: TCP_MAXSEG advertises the MSS excluding only fixed
+			// IP/TCP headers. Linux subtracts timestamps/options itself.
+			mss = mtu - 40
 		}
 		if err := tuneMSS(args[1], mss); err != nil {
 			return fail(CodeFailed, "path MTU setting failed: %v\n", err)

@@ -148,6 +148,16 @@ func Apply(logf func(string), reserve []int) {
 		return
 	}
 
+	// Startup, CLI tuning and updates can be separate processes. Hold the same
+	// lock through persistence and live sysctls so restore cannot lose its
+	// original snapshot or be followed by a stale wider-range write.
+	unlock, err := lockKernelPolicy()
+	if err != nil {
+		logf("Could not lock kernel tuning: " + err.Error())
+		return
+	}
+	defer unlock()
+
 	loadBBRModule(logf)
 
 	// The static table plus whatever this machine has to keep. Built here

@@ -35,7 +35,9 @@ original port policy in `/etc/backpack/high-concurrency-backup.json`. Rerunning
 Optimize, applying a preset or updating preserves the selected capacity profile
 and refreshes its reservations. Ordinary installations keep their default
 range. Failed applications attempt to restore the live settings and report
-rollback failures instead of claiming success.
+rollback failures instead of claiming success. Host policy changes and Optimize
+share a process lock; a conflicting operation reports that another update is in
+progress before changing kernel settings or the rollback snapshot.
 
 Restore the original range and reservations with:
 
@@ -63,8 +65,10 @@ sudo backpack tune path-mtu server-8443 1492
 sudo backpack tune path-mtu client-8443 1492
 ```
 
-This stores an MSS of 1440, leaving room for IPv4, TCP and timestamps, through
-the existing validated tunnel-edit path. Each command **restarts its named
+This stores an advertised MSS of 1452 (1492 minus the fixed 40-byte IPv4/TCP
+headers). Linux deducts TCP options such as timestamps from the data payload
+itself, following [RFC 6691](https://www.rfc-editor.org/rfc/rfc6691.html#section-2).
+The command uses the existing validated tunnel-edit path. Each command **restarts its named
 tunnel**; the configured auto-refresh schedule is unchanged. Existing
 connections must be re-established to negotiate the new MSS. No default route,
 host route or interface MTU is modified. This is for reverse TCP-based

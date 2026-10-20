@@ -1,6 +1,8 @@
 name: High concurrency tuning
 
 on:
+  push:
+    branches: [main]
   pull_request:
     paths:
       - 'internal/optimize/**'
