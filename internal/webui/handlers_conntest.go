@@ -56,14 +56,15 @@ type conntestRow struct {
 
 // conntestView is the whole state, as GET /api/conntest answers it.
 type conntestPath struct {
-	Host    string              `json:"host"`
-	Family  string              `json:"family"`
-	State   string              `json:"state"`
-	Error   string              `json:"error,omitempty"`
-	Kharej  string              `json:"kharej,omitempty"`
-	Rows    []conntestRow       `json:"rows,omitempty"`
-	Best    manage.ConnTestBest `json:"best"`
-	Started int64               `json:"started,omitempty"`
+	Setup   *manage.ConnTestSetupView `json:"setup,omitempty"`
+	Host    string                    `json:"host"`
+	Family  string                    `json:"family"`
+	State   string                    `json:"state"`
+	Error   string                    `json:"error,omitempty"`
+	Kharej  string                    `json:"kharej,omitempty"`
+	Rows    []conntestRow             `json:"rows,omitempty"`
+	Best    manage.ConnTestBest       `json:"best"`
+	Started int64                     `json:"started,omitempty"`
 }
 
 type conntestView struct {
@@ -93,9 +94,12 @@ type conntestView struct {
 // conntestRunner holds the one test this panel can run at a time. Two at once
 // would measure each other, which is the reason the menu runs one too.
 type conntestRunner struct {
-	mu     sync.Mutex
-	v      conntestView
-	cancel context.CancelFunc
+	startMu sync.Mutex
+	done    chan struct{}
+	setups  map[string]*manage.ConnTestSetup
+	mu      sync.Mutex
+	v       conntestView
+	cancel  context.CancelFunc
 }
 
 func (c *conntestRunner) view() conntestView {
@@ -105,6 +109,10 @@ func (c *conntestRunner) view() conntestView {
 	v.Rows = append([]conntestRow(nil), c.v.Rows...)
 	v.Paths = append([]conntestPath(nil), c.v.Paths...)
 	for i := range v.Paths {
+		if setup := c.setups[v.Paths[i].Host]; setup != nil {
+			value := setup.View()
+			v.Paths[i].Setup = &value
+		}
 		v.Paths[i].Rows = append([]conntestRow(nil), v.Paths[i].Rows...)
 	}
 	if v.State == "" {
@@ -152,6 +160,21 @@ func rowOf(r manage.ConnTestResult) conntestRow {
 // start begins a test in the background and returns once the test tunnels are
 // up and the link exists, or they could not be started.
 func (c *conntestRunner) start(parent context.Context, hosts []string, preset string) error {
+	c.startMu.Lock()
+	defer c.startMu.Unlock()
+	if c.busy() {
+		return fmt.Errorf("a connection test is already running — stop it first")
+	}
+	c.mu.Lock()
+	previousCancel, previousDone := c.cancel, c.done
+	c.mu.Unlock()
+	if previousCancel != nil {
+		previousCancel()
+	}
+	if previousDone != nil {
+		<-previousDone
+	}
+	done := make(chan struct{})
 	ctx, cancel := context.WithCancel(parent)
 	c.mu.Lock()
 	if c.v.State == ctStarting || c.v.State == ctWaiting || c.v.State == ctRunning {
@@ -160,12 +183,14 @@ func (c *conntestRunner) start(parent context.Context, hosts []string, preset st
 		return fmt.Errorf("a connection test is already running — stop it first")
 	}
 	c.cancel = cancel
+	c.done, c.setups = done, nil
 	c.v = conntestView{State: ctStarting, Host: hosts[0], Preset: preset, Started: time.Now().Unix()}
 	c.mu.Unlock()
 	suite, link, err := manage.StartConnTestSuite(manage.ConnTestOptions{
-		Context: ctx, Preset: preset, Direct: os.Geteuid() == 0, SpoofSrc: manage.ConnTestSpoofSource,
+		AutomaticSetup: os.Geteuid() == 0, Context: ctx, Preset: preset, Direct: os.Geteuid() == 0, SpoofSrc: manage.ConnTestSpoofSource,
 	}, hosts)
 	if err != nil {
+		close(done)
 		cancel()
 		c.update(func(v *conntestView) { v.State, v.Error, v.Finished = ctFailed, err.Error(), time.Now().Unix() })
 		return err
@@ -177,6 +202,7 @@ func (c *conntestRunner) start(parent context.Context, hosts []string, preset st
 		v.Deadline = time.Now().Add(manage.ConnTestJoinWait()).Unix()
 	})
 	go func() {
+		defer close(done)
 		defer cancel()
 		defer suite.Close()
 		paths := suite.Run(ctx, func(paths []manage.ConnTestPath) {
@@ -240,6 +266,16 @@ func (c *conntestRunner) start(parent context.Context, hosts []string, preset st
 				v.Best = &best
 			}
 		})
+		if ctx.Err() == nil && os.Geteuid() == 0 {
+			setups := suite.EnableSetup(ctx)
+			c.mu.Lock()
+			c.setups = setups
+			c.mu.Unlock()
+			select {
+			case <-ctx.Done():
+			case <-time.After(manage.ConnTestSetupWindow):
+			}
+		}
 	}()
 	return nil
 }
@@ -284,11 +320,27 @@ func (s *server) handleConnTest(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			writeJSON(w, s.conntest.view())
+		case "setup":
+			s.conntest.mu.Lock()
+			setup := s.conntest.setups[r.FormValue("host")]
+			s.conntest.mu.Unlock()
+			if setup == nil {
+				http.Error(w, "automatic setup is not ready; finish the connection test first", http.StatusConflict)
+				return
+			}
+			if err := setup.Start(manage.ConnTestSetupRequest{
+				ID: r.FormValue("id"), Kind: r.FormValue("kind"), Transport: r.FormValue("transport"),
+				SNIDomain: r.FormValue("sni"), Ports: r.FormValue("ports"), AcceptUDP: r.FormValue("acceptUDP") == "true",
+			}); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			writeJSON(w, s.conntest.view())
 		case "stop":
 			s.conntest.stop()
 			writeJSON(w, s.conntest.view())
 		default:
-			http.Error(w, "action must be start or stop", http.StatusBadRequest)
+			http.Error(w, "action must be start, stop or setup", http.StatusBadRequest)
 		}
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

@@ -100,6 +100,7 @@ const samples = {
   alerts: [[]],
   tokens: [[]], tokenIssue: [[{ name: 'ci', scope: 'read', days: 30 }]], tokenRevoke: [['ci']],
   audit: [[]],
+  connTestSetup: [[{ host: '203.0.113.7', id: 'sample-id', kind: 'reverse', transport: 'tcp', ports: '443', acceptUDP: 'false', sni: '' }]],
   connTest: [[]], connTestStart: [[{ host: '203.0.113.7', preset: 'turbo', path: 'both', ipv4: '203.0.113.7', ipv6: '2001:db8::7' }]], connTestStop: [[]],
   manageState: [[]], setAutoRefresh: [[12]],
   proxyEnable: [[{ type: 'socks5', port: 1085, username: 'u', password: 'p' }]],

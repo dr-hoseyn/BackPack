@@ -66,7 +66,7 @@ func TestTheConnectionTestAcrossARealPath(t *testing.T) {
 			}
 			// Every reverse transport, every direct carrier, and IP spoofing
 			// both ways.
-			if len(results) != len(connTestReverse)+len(ctDirectPlans(""))+2 {
+			if len(results) != len(connTestReverse)+len(ctDirectPlans(""))+3 {
 				t.Fatalf("%d results\n%s", len(results), out)
 			}
 			if !strings.Contains(string(out), "Works Steadily:") {
@@ -80,7 +80,7 @@ func TestTheConnectionTestAcrossARealPath(t *testing.T) {
 				// pck, sni, xdi and the spoofing probes write below netfilter, where
 				// the filter here cannot always reach them; every other carrier
 				// is an ordinary socket the filter sees.
-				raw := r.Transport == "pck" || r.Kind == "spoof" ||
+				raw := r.Transport == "pck" || r.Kind == "spoof" || r.Kind == "direct" && r.Transport == "spoof" ||
 					(r.Kind == "direct" && (r.Transport == "sni" || r.Transport == "xdi"))
 				switch {
 				case path.filter == "" && r.Status != ctOK:
@@ -106,16 +106,18 @@ func TestConnTestIranSide(t *testing.T) {
 		connTestSoak = n
 	}
 	// CT_ONLY=reverse/pck narrows the test to one tunnel, for debugging it.
+	skipAWG := false
 	if only := os.Getenv("CT_ONLY"); only != "" {
 		kind, tr, _ := strings.Cut(only, "/")
 		connTestReverse, connTestDirect = nil, nil
 		if kind == "reverse" {
 			connTestReverse = []string{tr}
-		} else {
+		} else if kind == "direct" {
 			connTestDirect = []string{tr}
 		}
+		skipAWG = kind != "awg"
 	}
-	s, link, err := StartConnTestIran(ConnTestOptions{Host: os.Getenv("CT_HOST"), Direct: true,
+	s, link, err := StartConnTestIran(ConnTestOptions{skipAWG: skipAWG, Host: os.Getenv("CT_HOST"), Direct: true,
 		SpoofSrc: "10.10.10.10", Preset: os.Getenv("CT_PRESET")})
 	if err != nil {
 		t.Fatal(err)
@@ -212,7 +214,7 @@ func testConnectionTestAcrossIPv6(t *testing.T, only string) {
 	if err := json.Unmarshal(raw, &rows); err != nil {
 		t.Fatal(err)
 	}
-	wantRows := len(connTestReverse) + len(ctDirectPlans("")) + 2
+	wantRows := len(connTestReverse) + len(ctDirectPlans("")) + 3
 	if only != "" {
 		// The two IPv4-only spoof capability rows remain visible as skipped
 		// even when a single actual tunnel is selected.
@@ -222,7 +224,7 @@ func testConnectionTestAcrossIPv6(t *testing.T, only string) {
 		t.Fatalf("missing IPv6 results: %+v", rows)
 	}
 	for _, r := range rows {
-		unsupported := r.Kind == "spoof"
+		unsupported := r.Kind == "spoof" || r.Kind == "direct" && r.Transport == "spoof"
 		if unsupported {
 			if r.Status != ctSkipped || !strings.Contains(r.Detail, "IPv6 is not supported") {
 				t.Errorf("raw IPv6 verdict: %+v", r)

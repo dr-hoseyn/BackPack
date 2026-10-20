@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+## v1.14.0 — 2026-10-20 (dr-hoseyn fork)
+
+- Set up both servers from a successful Connection Test. Choose a measured IP
+  path and tunnel and enter forwarded ports on either endpoint or the Iran web
+  panel; the authenticated peer agent receives the settings automatically.
+- Support native Reverse, managed helper Reverse, Direct carriers and AmneziaWG
+  in this setup flow. Preserve endpoint-local identities and verified TLS trust,
+  copy temporary trust assets into private permanent storage, and rotate paired
+  authentication before checking the new connection. Failed setup rolls back
+  the newly created pair and retries do not create duplicate tunnels.
+- Add AmneziaWG, CONNECT-IP and the IPv4 Spoof carrier to Connection Test. Include
+  Tailcat when its optional pinned helper and explicitly selected DERP map/region
+  are configured; missing prerequisites are reported as skipped, never successful.
+- Keep IPv4 and IPv6 results, negotiated Direct ports and individual SNI
+  candidates attached to their own setup session. Noninteractive peers remain
+  available for setup without requiring another copied link.
+- Fix WebTransport loss recovery and wait for complete speed-test transfers.
+- Deliver KCP client goodbye before closing its socket.
+
 - Add optional end-to-end HTTP payload checks to online and offline updates via
   `/etc/backpack/update-health.json`. A healthy baseline is required before
   installation; persistent post-restart failure restores the previous snapshot

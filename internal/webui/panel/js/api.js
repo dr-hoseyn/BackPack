@@ -278,6 +278,7 @@ export const setChannel   = beta =>
 export const connTest = () => get('/api/conntest');
 export const connTestStart = ({ host = '', preset = '', path = 'manual', ipv4 = '', ipv6 = '' } = {}) =>
   post('/api/conntest', new URLSearchParams({ action: 'start', host, preset, path, ipv4, ipv6 }));
+export const connTestSetup = fields => post('/api/conntest', new URLSearchParams({ ...fields, action: 'setup' }));
 export const connTestStop = () => post('/api/conntest', new URLSearchParams({ action: 'stop' }));
 
 /* ---- CLI: 3 Manage → Auto Refresh, Proxy, File Locations ------- */

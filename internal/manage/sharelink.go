@@ -376,6 +376,11 @@ type PeerForm struct {
 	// setting the link could not carry across, rather than an error.
 	Note        string     `json:"note,omitempty"`
 	ManagedLink *ShareLink `json:"-"`
+	// Automatic setup names a local tested config; private helper identities
+	// and file contents never travel in the setup form.
+	TestCase      string         `json:"testCase,omitempty"`
+	SetupConfig   *config.Config `json:"-"`
+	SetupAssetDir string         `json:"-"`
 }
 
 // PeerNeedsAddress reports whether the side this link is for dials the side

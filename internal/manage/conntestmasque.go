@@ -30,6 +30,9 @@ func ctMasqueListener(ctx context.Context, link ConnTestLink, dir, name string, 
 	if len(carrier) != 0 && carrier[0] == "masque-h2" {
 		command = "masque-h2-cert"
 	}
+	if len(carrier) != 0 && carrier[0] == "connect-ip" {
+		command = "connect-ip-cert"
+	}
 	if len(carrier) != 0 && carrier[0] == "webtransport" {
 		command = "webtransport-cert"
 	}

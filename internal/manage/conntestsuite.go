@@ -241,7 +241,13 @@ func (s *ConnTestSuite) Run(ctx context.Context, progress func([]ConnTestPath)) 
 		case <-time.After(30 * time.Second):
 		}
 		if ctx.Err() == nil {
-			test.Close()
+			// Release listeners before the next path, while retaining the
+			// authenticated coordinator for optional setup after the suite.
+			test.mu.Lock()
+			engines := test.engines
+			test.engines = nil
+			test.mu.Unlock()
+			ctStopAll(engines)
 		}
 		joinDeadline = time.Now().Add(connTestJoinWait)
 	}
@@ -257,6 +263,19 @@ func (s *ConnTestSuite) Run(ctx context.Context, progress func([]ConnTestPath)) 
 		report()
 	}
 	return s.Paths()
+}
+
+// EnableSetup retains each completed path's own authenticated coordinator.
+// The 15-minute setup window starts after all selected paths finish.
+func (s *ConnTestSuite) EnableSetup(ctx context.Context) map[string]*ConnTestSetup {
+	setups := map[string]*ConnTestSetup{}
+	paths := s.Paths()
+	for i, p := range paths {
+		if p.State == "done" && s.tests[i] != nil {
+			setups[p.Host] = s.tests[i].EnableSetup(ctx, p.Rows)
+		}
+	}
+	return setups
 }
 
 // Give a reachable peer one poll to hear the cancellation before closing its

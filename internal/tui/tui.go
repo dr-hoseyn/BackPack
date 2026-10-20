@@ -51,6 +51,9 @@ func SetInput(r io.Reader) (restore func()) {
 // or a script feeding the wizard ran out of answers.
 var inputEnded bool
 
+// InputEnded distinguishes an explicit Back choice from a headless setup agent.
+func InputEnded() bool { return inputEnded }
+
 // onInputEnd is what StopIfInputGone does. A variable only so a test can watch
 // it happen without the test binary exiting.
 var onInputEnd = func() {
