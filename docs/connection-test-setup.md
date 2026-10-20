@@ -72,3 +72,23 @@ DERP choice in `/etc/backpack/conntest-tailcat.json`, for example:
 Use the region actually present in that operator-selected map; no public relay
 is silently selected. This configuration is shared through the authenticated
 test coordinator so that the peer uses the same rendezvous selection.
+
+<div dir="rtl">
+
+## خلاصهٔ فارسی
+
+پس از Connection Test، مسیر IP و تونل موفق را انتخاب کنید و پورت‌های فوروارد
+را فقط در یک سمت وارد کنید. عامل سمت مقابل تنظیمات را خودکار دریافت می‌کند؛
+هر دو سرور باید نسخهٔ جدید را با root اجرا کنند و تست تا پایان راه‌اندازی باز
+بماند. نشست راه‌اندازی تا ۱۵ دقیقه پس از پایان تست فعال است.
+
+تونل‌های بومی، حامل‌های دارای helper و AmneziaWG پشتیبانی می‌شوند. فایل‌های
+خصوصی هر سمت روی همان سرور نگه داشته می‌شوند و گواهی‌ها در پوشهٔ دائمی خصوصی
+کپی می‌شوند. در صورت شکست، پیکربندی تازه جمع می‌شود. ابزار اختیاریِ نصب‌نشده
+یا Tailcat بدون نقشه و منطقهٔ DERP انتخاب‌شده، skipped گزارش می‌شود؛ نتیجهٔ
+موفق ساختگی ثبت نمی‌شود. سرویس پشت AmneziaWG باید روی IP تونل یا wildcard
+گوش کند. این حامل به root و TUN نیاز دارد.
+
+</div>
+
+*Last verified against Backpack v1.14.0.*

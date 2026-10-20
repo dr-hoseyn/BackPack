@@ -3,6 +3,7 @@ package manage
 import (
 	"encoding/json"
 	"reflect"
+	"strconv"
 	"testing"
 )
 
@@ -31,6 +32,7 @@ func TestConnectionTestCompactionPreservesPeerSettings(t *testing.T) {
 	}
 	expected := append([]ShareLink(nil), original...)
 	for i := range expected {
+		expected[i].Name = "ct" + strconv.FormatInt(int64(i), 36)
 		expected[i].Host, expected[i].Tok = "", ""
 		if expected[i].Kind == "reverse" {
 			expected[i].Ports = ""

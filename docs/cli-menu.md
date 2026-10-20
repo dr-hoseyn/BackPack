@@ -16,7 +16,7 @@ long form. For *how to set a tunnel up*, use the
 
 | # | Option | What it does |
 |---|--------|--------------|
-| 0 | **Connection Test** | Runs every reverse transport and direct carrier between this server and another for real — started on the Iran server, joined on the kharej with the link it prints — and shows which ones carry traffic steadily, which drop, and which never come up, with round trip and speed. Nothing is installed; the test tunnels are gone when it ends. |
+| 0 | **Connection Test** | Tests Reverse, Direct and AmneziaWG between Iran and Kharej, with traffic, round trip and speed. After the verdict, select a successful tunnel and enter forwarded ports on either server to configure both ends automatically. Temporary engines are removed; permanent services are created only when setup is selected. See [automatic setup](connection-test-setup.md). |
 | 1 | **Setup Iran** | Create the **Iran-side** tunnel that exposes ports. Asks the direction first — reverse or direct. |
 | 2 | **Setup Kharej** | Create the **kharej-side** tunnel that holds the real service. Accepts a Setup Link directly, or opens manual setup. |
 | 3 | **Manage** | Everything about existing tunnels, plus the diagnostics. [↓](#3-manage) |
@@ -534,7 +534,7 @@ FEC؛ و zero-copy (فقط روی tcp ساده).
 
 ---
 
-*Last verified against Backpack v1.13.0.*
+*Last verified against Backpack v1.14.0.*
 
 
 Connection Test also provides [saved history and repeated-run comparison](connection-test-history.md)

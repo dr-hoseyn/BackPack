@@ -262,8 +262,12 @@ func ctConfig(l ConnTestLink) string {
 	// its random secret and address consumes the one-packet settings budget.
 	host := l.Host
 	l.Host, l.Coord, l.Tok = "", 0, ""
+	l.ID = "" // not used by the peer's engines or authentication
 	l.Cases = append([]ShareLink(nil), l.Cases...)
 	for i := range l.Cases {
+		// Names are local artifact stems, never paired engine settings. Short,
+		// unique names also remain usable by older connection-test workers.
+		l.Cases[i].Name = "ct" + strconv.FormatInt(int64(i), 36)
 		l.Cases[i].Tok = ""
 		l.Cases[i].AWGPeer = "" // fetched as a separately authenticated bounded identity
 		// Reverse forwarding listeners belong to Iran. The peer only dials

@@ -65,36 +65,6 @@ func ctWaitSetup(ctx context.Context, view func() ConnTestSetupView) {
 	}
 }
 
-func ctIranSetupMenu(ctx context.Context, s *ConnTestSetup, results []ConnTestResult) {
-	tui.Info("Automatic Setup Is Available For 15 Minutes. Keep Both Test Screens Open.")
-	pick := tui.ChooseOpt("After The Test", []tui.Option{
-		{Title: "Set Up A Tested Tunnel", Desc: "enter ports here; both servers are configured automatically"},
-		{Title: "Wait For Setup From Kharej", Desc: "the other server chooses the tunnel and ports"},
-		{Title: "Finish", Desc: "close automatic setup"},
-	})
-	if pick < 0 && tui.InputEnded() {
-		pick = 1 // a headless test remains available for the other operator
-	}
-	switch pick {
-	case 0:
-		if r, ok := ctAskSetup(results); ok {
-			// The verdict can arrive just before the kharej's engines finish
-			// stopping. Give its setup poll a chance to advertise readiness.
-			until := time.Now().Add(30 * time.Second)
-			for !s.View().Ready && time.Now().Before(until) && ctx.Err() == nil {
-				ctSleep(ctx, time.Second)
-			}
-			if err := s.Start(r); err != nil {
-				tui.Error(err.Error())
-				return
-			}
-			ctWaitSetup(ctx, s.View)
-		}
-	case 1:
-		ctWaitSetup(ctx, s.View)
-	}
-}
-
 // The poller runs while the kharej operator reads or fills the menu. Iran can
 // therefore initiate setup without another click on this server.
 func ctKharejSetupMenu(ctx context.Context, raw string, results []ConnTestResult) {

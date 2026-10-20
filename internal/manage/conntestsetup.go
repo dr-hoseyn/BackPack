@@ -344,17 +344,11 @@ func (s *ConnTestSetup) forms(r ConnTestSetupRequest) (PeerForm, PeerForm, error
 	if l.Kind == "" {
 		return PeerForm{}, PeerForm{}, fmt.Errorf("the tested tunnel settings are missing")
 	}
+	caseID := ctSetupCaseID(l)
 	l.Name = "quick-" + randomToken(8)
 	l.Tok, l.Ports, l.AcceptUDP = randomToken(64), r.Ports, r.AcceptUDP
 	if l.Kind == "awg" {
-		iran := PeerForm{Kind: "awg", Side: "iran", Name: l.Name + "-iran", Token: l.Tok, TunnelPort: l.Port, Ports: r.Ports, AcceptUDP: r.AcceptUDP, TestCase: l.Name}
-		iran.TestCase = ""
-		for _, c := range s.link.Cases {
-			if c.Kind == "awg" {
-				iran.TestCase = c.Name
-				break
-			}
-		}
+		iran := PeerForm{Kind: "awg", Side: "iran", Name: l.Name + "-iran", Token: l.Tok, TunnelPort: l.Port, Ports: r.Ports, AcceptUDP: r.AcceptUDP, TestCase: caseID}
 		kharej := iran
 		kharej.Side, kharej.Name, kharej.Ports = "kharej", l.Name+"-kharej", ""
 		return iran, kharej, nil
@@ -368,12 +362,7 @@ func (s *ConnTestSetup) forms(r ConnTestSetupRequest) (PeerForm, PeerForm, error
 		l.LocalIP, l.PeerIP = kharej.LocalIP, hostOf(l.LocalIP)
 	}
 	iran := MirrorForPeer(l)
-	for _, c := range s.link.Cases {
-		if c.Kind == r.Kind && c.Tr == r.Transport && c.SNI == r.SNIDomain {
-			iran.TestCase, kharej.TestCase = c.Name, c.Name
-			break
-		}
-	}
+	iran.TestCase, kharej.TestCase = caseID, caseID
 	return iran, kharej, nil
 }
 

@@ -30,6 +30,8 @@ type ctSetupMaterial struct {
 	root   string
 }
 
+func ctSetupCaseID(c ShareLink) string { return c.Kind + "/" + c.Tr + "/" + c.SNI }
+
 var ctSetupMaterials = struct {
 	sync.Mutex
 	items map[string]*ctSetupMaterial
@@ -138,6 +140,7 @@ func ctCaptureSetupMaterial(link ConnTestLink, dir string) (*ctSetupMaterial, er
 		})
 		if err == nil {
 			m.cases[c.Name] = cfg
+			m.cases[ctSetupCaseID(c)] = cfg
 		}
 	}
 	return m, nil

@@ -109,6 +109,11 @@ Connection Test → History.*
 
 ### Terminal — `#/terminal`
 
+Successful Connection Test results now also offer **Set up both servers**.
+Choose the measured IP path and a successful tunnel, enter forwarded ports once,
+and leave the Kharej test agent open to receive its permanent settings.
+See [automatic setup after testing](connection-test-setup.md).
+
 A root shell on this server. It opens only from its button, only for a signed-in
 browser (never an API token), and each one opened is written to the audit record
 and the alert feed. The shell stays open while you move between sections.
@@ -211,4 +216,4 @@ hash همه‌جا درست reload می‌شود. هر صفحه‌ای در ای
 
 ---
 
-*Last verified against Backpack v1.13.0.*
+*Last verified against Backpack v1.14.0.*
