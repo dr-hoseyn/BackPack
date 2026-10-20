@@ -62,11 +62,8 @@ func TestThroughputPresetTradesLatencyForBandwidth(t *testing.T) {
 	}
 }
 
-// The profile is for the plain udp+kcp+fec transport and nothing else. The
-// other KCP carriers (xdi, spoof, pck) hand-build their packets and pay a
-// syscall per datagram, so a "maximum bandwidth" profile would promise what
-// they cannot deliver.
-func TestThroughputPresetIsOfferedOnKCPOnly(t *testing.T) {
+// Each reverse transport consumes the pool, buffers or KCP part of this profile.
+func TestThroughputPresetIsOfferedOnEveryReverseTransport(t *testing.T) {
 	if !PresetSuitsTransport(PresetThroughput, "kcp") {
 		t.Error("throughput should be allowed on kcp")
 	}
@@ -74,15 +71,18 @@ func TestThroughputPresetIsOfferedOnKCPOnly(t *testing.T) {
 		t.Error("throughput missing from the menu for kcp")
 	}
 	for _, transport := range []string{
-		"xdi", "spoof", "pck", // KCP family, but not bandwidth transports
+		"xdi", "pck",
 		"tcp", "tcpmux", "ws", "wss", "wsmux", "wssmux", "udp", "quic", "stealth",
 	} {
-		if PresetSuitsTransport(PresetThroughput, transport) {
-			t.Errorf("throughput should not be allowed on %q", transport)
+		if !PresetSuitsTransport(PresetThroughput, transport) {
+			t.Errorf("throughput should be allowed on %q", transport)
 		}
-		if hasPreset(PresetOptionsFor(transport), PresetThroughput) {
-			t.Errorf("throughput offered in the menu for %q, where it would do nothing", transport)
+		if !hasPreset(PresetOptionsFor(transport), PresetThroughput) {
+			t.Errorf("throughput missing from the menu for %q", transport)
 		}
+	}
+	if PresetSuitsTransport(PresetThroughput, "unknown") {
+		t.Error("unknown transport accepted")
 	}
 
 	// The gaming presets stay available everywhere.
@@ -92,6 +92,22 @@ func TestThroughputPresetIsOfferedOnKCPOnly(t *testing.T) {
 				t.Errorf("%s went missing from the menu for %q", p, transport)
 			}
 		}
+	}
+}
+
+func TestBulkWindowsCover500MbitAt200Milliseconds(t *testing.T) {
+	var s Spec
+	ApplyPreset(&s, PresetThroughput)
+	const requiredBytes = 500_000_000 / 8 / 5 // bandwidth-delay product, 200 ms
+	if s.MuxStreamBuffer < requiredBytes || s.MuxRecvBuffer < s.MuxStreamBuffer {
+		t.Fatalf("mux flow control is too small: stream=%d session=%d", s.MuxStreamBuffer, s.MuxRecvBuffer)
+	}
+	// Allow 100 bytes for KCP, encryption and FEC framing in each segment.
+	if s.KCPSndWnd*(s.KCPMTU-100) < requiredBytes || s.KCPRcvWnd*(s.KCPMTU-100) < requiredBytes {
+		t.Fatal("KCP window cannot cover the target bandwidth-delay product")
+	}
+	if s.ConnectionPool*s.MuxCon < 16384 {
+		t.Fatalf("bulk profile has only %d concurrent stream slots", s.ConnectionPool*s.MuxCon)
 	}
 }
 

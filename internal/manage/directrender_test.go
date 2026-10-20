@@ -310,8 +310,8 @@ func TestPresetRoundTrips(t *testing.T) {
 	if d.Preset != PresetThroughput {
 		t.Fatalf("preset = %q, want %q", d.Preset, PresetThroughput)
 	}
-	if d.MaxStreamBuffer != 16*1024*1024 {
-		t.Fatalf("mux_streambuffer = %d, want 16 MiB", d.MaxStreamBuffer)
+	if d.MaxStreamBuffer != 32*1024*1024 {
+		t.Fatalf("mux_streambuffer = %d, want 32 MiB", d.MaxStreamBuffer)
 	}
 	if d.MaxReceiveBuffer != 32*1024*1024 {
 		t.Fatalf("mux_recievebuffer = %d, want 32 MiB", d.MaxReceiveBuffer)

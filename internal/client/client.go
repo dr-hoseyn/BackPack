@@ -231,6 +231,10 @@ func (c *Client) startTransport(ctx context.Context, tr config.TransportType, en
 	}
 	switch tr {
 	case config.TCP, config.STEALTH:
+		fixedPool := c.config.Short.Enabled()
+		for _, path := range c.config.Paths {
+			fixedPool = fixedPool || path.Short.Enabled()
+		}
 		tcpConfig := &transport.TcpConfig{
 			RemoteAddr:     c.config.RemoteAddr,
 			Endpoints:      endpoints,
@@ -239,6 +243,7 @@ func (c *Client) startTransport(ctx context.Context, tr config.TransportType, en
 			RetryInterval:  time.Duration(c.config.RetryInterval) * time.Second,
 			DialTimeOut:    time.Duration(c.config.DialTimeout) * time.Second,
 			ConnPoolSize:   c.config.ConnectionPool,
+			FixedPool:      fixedPool,
 			Token:          c.config.Token,
 			Sniffer:        c.config.Sniffer,
 			WebPort:        c.config.WebPort,

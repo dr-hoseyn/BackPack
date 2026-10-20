@@ -257,7 +257,9 @@ func (c *QuicTransport) channelDialer() {
 // shared with every other client transport — see poolmaintain.go.
 func (c *QuicTransport) poolMaintainer() {
 	poolSizer{
-		mux:        true,
+		// These are spare streams on one QUIC connection, not physical mux
+		// sessions. Opening more idle streams cannot spread its throughput.
+		mux:        false,
 		ctx:        c.state.Ctx(),
 		log:        c.logger,
 		size:       c.config.ConnPoolSize,

@@ -66,6 +66,12 @@ var l3Presets = []l3Preset{
 		SockBuf:    32 << 20,
 		Qdisc:      "fq_codel",
 	},
+	{
+		Name:       PresetThroughput,
+		TxQueueLen: 4096,
+		SockBuf:    32 << 20,
+		Qdisc:      "fq_codel",
+	},
 }
 
 // findL3Preset returns a preset by name, falling back to Turbo.
@@ -94,11 +100,14 @@ func chooseL3Preset(classic bool) l3Preset {
 		{Title: "Turbo", Desc: "default — 8 MB buffers, most links"},
 		{Title: "Balance", Desc: "least memory — small VPS"},
 		{Title: "Aggressive", Desc: "fast links — 32 MB buffers, needs RAM"},
+		{Title: "Throughput", Desc: "bulk traffic - 32 MB buffers, bounded queue"},
 	}) {
 	case 1:
 		return findL3Preset(PresetBalance)
 	case 2:
 		return findL3Preset(PresetAggressive)
+	case 3:
+		return findL3Preset(PresetThroughput)
 	default:
 		return findL3Preset(PresetTurbo)
 	}

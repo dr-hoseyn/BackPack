@@ -1,0 +1,64 @@
+name: Throughput capacity
+on:
+  pull_request:
+    paths:
+      - 'internal/client/**'
+      - 'internal/server/**'
+      - 'internal/manage/**'
+      - 'internal/utils/network/**'
+      - 'internal/e2e/**'
+      - '.github/workflows/throughput-capacity.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: capacity-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  capacity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Capacity regressions with the race detector
+        run: |
+          go test -race ./internal/client/transport ./internal/server/transport ./internal/utils/network ./internal/manage/tunnelspec -timeout 8m
+          go test -race ./internal/e2e -run '^TestMuxCapacityGrowsWhileExistingForwardsStayOpen$' -count=1 -v -timeout 3m
+      - name: Measure candidate goodput
+        env:
+          BP_CAPACITY_BENCHMARK: '1'
+        run: |
+          set -o pipefail
+          go test ./internal/e2e -run '^TestBulkProfileTransportCapacity$' -count=1 -v -json -timeout 6m | tee "$RUNNER_TEMP/capacity-candidate.jsonl"
+      - name: Measure the same transfers on the base revision
+        if: github.event_name == 'pull_request'
+        env:
+          BP_CAPACITY_BENCHMARK: '1'
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -o pipefail
+          git worktree add --detach "$RUNNER_TEMP/capacity-base" "$BASE_SHA"
+          cp internal/e2e/capacity_benchmark_test.go "$RUNNER_TEMP/capacity-base/internal/e2e/"
+          cd "$RUNNER_TEMP/capacity-base"
+          go test ./internal/e2e -run '^TestBulkProfileTransportCapacity$' -count=1 -v -json -timeout 6m | tee "$RUNNER_TEMP/capacity-base.jsonl"
+      - name: Publish measurements
+        if: always()
+        run: |
+          for report in "$RUNNER_TEMP"/capacity-*.jsonl; do
+            [ -f "$report" ] || continue
+            echo "### $(basename "$report")" >> "$GITHUB_STEP_SUMMARY"
+            echo '```text' >> "$GITHUB_STEP_SUMMARY"
+            python3 -c 'import json,sys; [print(e["Output"].strip()) for l in open(sys.argv[1]) if "CAPACITY " in (e:=json.loads(l)).get("Output", "")]' "$report" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          done
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: throughput-capacity
+          path: ${{ runner.temp }}/capacity-*.jsonl

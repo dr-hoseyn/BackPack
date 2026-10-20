@@ -129,22 +129,8 @@ export function addView(ctx) {
         on('[name="peerConn.proxy"]', !isDatagram(t));
       }
 
-      /* Throughput is offered only where it applies — presetSuitsTransport. */
+      /* Every reverse transport supports the bulk Throughput profile. */
       function applyPresets() {
-        const t = chosen.transport || '';
-        root.querySelectorAll('.rp').forEach(b => {
-          const key = b.querySelector('.key2')?.textContent.trim();
-          const hide = key === 'throughput' && t !== 'kcp';
-          b.hidden = hide;
-          if (hide && b.classList.contains('on')) {
-            b.classList.remove('on');
-            root.querySelector('.rp:not([hidden])')?.classList.add('on');
-          }
-        });
-        /* Whatever is marked is what will be sent. The `on` class is what the
-           operator can see, so it is the one source of truth here — and it is
-           re-read after the list changes, because Throughput disappearing moves
-           the selection and the payload has to follow the screen. */
         chosen.preset = markedPreset();
       }
 

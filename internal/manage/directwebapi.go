@@ -236,9 +236,9 @@ func PanelDirectCarriers() []map[string]string {
 func DirectPresets(layer ...int) []map[string]string {
 	if len(layer) > 0 && layer[0] == 4 {
 		return []map[string]string{
-			{"value": PresetTurbo, "label": "Turbo", "desc": "2 MB per-stream receive window, for most links"},
+			{"value": PresetTurbo, "label": "Turbo", "desc": "8 MB per-stream receive window, for most links"},
 			{"value": PresetBalance, "label": "Balance", "desc": "256 KB per stream, for the smallest footprint"},
-			{"value": PresetThroughput, "label": "Throughput", "desc": "16 MB per stream and at least four sessions, for fast distant links"},
+			{"value": PresetThroughput, "label": "Throughput", "desc": "32 MB per stream and at least four sessions, for fast distant links"},
 		}
 	}
 	return []map[string]string{
@@ -248,6 +248,8 @@ func DirectPresets(layer ...int) []map[string]string {
 			"desc": "smallest footprint, for a small VPS or several tunnels on one box"},
 		{"value": PresetAggressive, "label": "Aggressive",
 			"desc": "for a fast link with bursts — 32 MB of buffer and a deep queue"},
+		{"value": PresetThroughput, "label": "Throughput",
+			"desc": "bulk traffic - 32 MB of socket buffer and a bounded queue"},
 	}
 }
 

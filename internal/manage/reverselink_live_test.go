@@ -49,10 +49,7 @@ func TestAKharejMadeFromTheSetupLinkCarriesTraffic(t *testing.T) {
 	slots := make(chan struct{}, linkedPairsAtOnce)
 	var wg sync.WaitGroup
 	for _, tr := range transports {
-		presets := []string{PresetBalance, PresetTurbo, PresetAggressive}
-		if tr == "kcp" {
-			presets = append(presets, PresetThroughput) // offered for kcp only
-		}
+		presets := []string{PresetBalance, PresetTurbo, PresetAggressive, PresetThroughput}
 		variants := map[string]func(*TunnelSpec){}
 		for _, p := range presets {
 			p := p

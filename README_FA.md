@@ -244,7 +244,7 @@ sudo backpack   →  2. Setup Kharej
 <details>
 <summary><b>فهرست کامل امکانات</b></summary>
 
-**عملکرد** — چهار پریست (Balance، **Turbo**، Aggressive و Throughput روی KCP) همهٔ
+**عملکرد** — چهار پریست (Balance، **Turbo**، Aggressive و Throughput برای انتقال سنگین) همهٔ
 مقادیر تنظیم را یک‌جا پر می‌کنند؛ **Optimize** تیونینگ کرنل و شبکه را اعمال می‌کند
 (BBR + fq، سقف بافرها، لیمیت فایل)؛ **Link Test** تایمرها را از رفت‌وبرگشت واقعی
 مسیرت درمی‌آورد.

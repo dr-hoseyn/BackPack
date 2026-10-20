@@ -86,7 +86,8 @@ func (p poolSizer) launch() {
 	}
 }
 
-// maintain fills the pool and then keeps it the right size until ctx ends.
+// maintain reacts once a second. Growing by one every ten seconds took minutes
+// to absorb a burst while the server gives queued users only three seconds.
 func (p poolSizer) maintain() {
 	var quietSince time.Time
 	for i := 0; i < p.size; i++ { // initial pool filling
@@ -104,11 +105,8 @@ func (p poolSizer) maintain() {
 		x, y = 0, 0.75
 	}
 
-	tickerPool := time.NewTicker(time.Second * 1)
-	defer tickerPool.Stop()
-
-	tickerLoad := time.NewTicker(time.Second * 10)
-	defer tickerLoad.Stop()
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
 
 	newPoolSize := p.size // initial value
 	ceiling := p.maxSize
@@ -116,34 +114,22 @@ func (p poolSizer) maintain() {
 		ceiling = p.size * poolGrowthLimit
 	}
 	var load poolLoad // throughput signal, see poolload.go
-	var openSum int32
+	load.spare = !p.mux
+	load.mbps() // establish a baseline before the first sizing decision
+	lastSample := time.Now()
 
 	for {
 		select {
 		case <-p.ctx.Done():
 			return
 
-		case <-tickerPool.C:
-			// Accumulate pool connections over time (every second)
-			atomic.AddInt32(&openSum, atomic.LoadInt32(p.open))
-			// A failed initial dial or a retired session must not permanently
-			// hollow out the pool once automatic growth reaches its ceiling.
-			if p.pending != nil {
-				missing := newPoolSize - int(atomic.LoadInt32(p.open)+atomic.LoadInt32(p.pending))
-				for i := 0; i < missing && p.ctx.Err() == nil; i++ {
-					p.launch()
-				}
-			}
-
-		case <-tickerLoad.C:
-			load.spare = !p.mux
-			// The load over the last ten seconds, and the average pool size
-			// over the same window. +9 before the divide is a ceiling: a pool
-			// that was needed at all should not round down to "not needed".
-			taken := (int(atomic.SwapInt32(p.taken, 0)) + 9) / 10
-
-			openAvg := (int(atomic.LoadInt32(&openSum)) + 9) / 10
-			atomic.StoreInt32(&openSum, 0)
+		case now := <-ticker.C:
+			// Use elapsed time: scheduler delays must not turn a multi-second
+			// request count into a one-second burst.
+			seconds := max(now.Sub(lastSample).Seconds(), 1)
+			lastSample = now
+			taken := int(float64(atomic.SwapInt32(p.taken, 0)) / seconds)
+			openAvg := int(atomic.LoadInt32(p.open))
 
 			// Throughput carried since the previous tick. A pool whose
 			// connections are each working hard should grow even when nobody
@@ -153,7 +139,9 @@ func (p poolSizer) maintain() {
 			// the same place — through CountedConn or through AddBytes.
 			mbps := load.mbps()
 
-			quiet := float64(taken+x) < float64(openAvg)*y && mbps < max(openAvg, 1)*(poolScaleMbpsPerConn/2)
+			// A mux session may be carrying a long transfer without asking for
+			// another stream. Retire it only after actual traffic goes quiet.
+			quiet := float64(taken+x) < float64(openAvg)*y && mbps < max(openAvg, 1)*(poolScaleMbpsPerConn/2) && (!p.mux || mbps == 0)
 			if !quiet {
 				quietSince = time.Time{}
 			} else if quietSince.IsZero() {
@@ -164,18 +152,21 @@ func (p poolSizer) maintain() {
 			// outside is indistinguishable from a leak. Publish what it is
 			// doing and why, so the panel can say "8 configured, 19 open,
 			// carrying 240 Mbit/s" instead of leaving somebody to guess.
-			metrics.ReportPool(openAvg, newPoolSize, p.size, mbps)
-
 			grow := newPoolSize < ceiling && (((taken + a) > openAvg*b) ||
 				load.wantsMore(mbps, openAvg, newPoolSize, p.size))
 
 			switch {
 			case grow:
 				quietSince = time.Time{}
+				next := poolGrowthTarget(newPoolSize, ceiling, taken, b, mbps, p.mux)
 				p.log.Debugf("increasing pool size: %d -> %d, avg pool conn: %d, avg load conn: %d, throughput: %d Mbit/s",
-					newPoolSize, newPoolSize+1, openAvg, taken, mbps)
-				newPoolSize++
-				p.launch()
+					newPoolSize, next, openAvg, taken, mbps)
+				if p.pending == nil {
+					for i := newPoolSize; i < next; i++ {
+						p.launch()
+					}
+				}
+				newPoolSize = next
 
 			case quiet && time.Since(quietSince) >= 30*time.Second && newPoolSize > p.size:
 				quietSince = time.Now()
@@ -190,6 +181,26 @@ func (p poolSizer) maintain() {
 					// A full retirement queue already covers future requests.
 				}
 			}
+			// Repairs and growth use one reconciler, so a growth decision does
+			// not launch the same missing connections twice.
+			if p.pending != nil {
+				missing := newPoolSize - int(atomic.LoadInt32(p.open)+atomic.LoadInt32(p.pending))
+				for i := 0; i < missing && p.ctx.Err() == nil; i++ {
+					p.launch()
+				}
+			}
+			metrics.ReportPool(openAvg, newPoolSize, p.size, mbps)
 		}
 	}
+}
+
+// A burst earns a batch of capacity, bounded by the same socket/memory ceiling
+// as control-channel requests. Spare connections do not carry the measured
+// traffic, so only physical mux sessions scale on bytes per second.
+func poolGrowthTarget(current, ceiling, requests, factor, mbps int, mux bool) int {
+	next := max(current+max(current/2, 1), (requests+factor-1)/factor)
+	if mux {
+		next = max(next, (mbps+poolScaleMbpsPerConn-1)/poolScaleMbpsPerConn)
+	}
+	return min(next, ceiling)
 }

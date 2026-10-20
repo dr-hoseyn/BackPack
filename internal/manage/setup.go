@@ -516,8 +516,7 @@ func chooseTransport() string {
 
 // choosePreset asks for the performance profile. Turbo is preselected because
 // it reproduces exactly what earlier versions called "Best Performance".
-// The transport decides which profiles are on offer: Throughput only means
-// something where this process runs the congestion control itself.
+// The setup and panel share the supported performance profile list.
 func choosePreset(transport string) string {
 	options := presetOptionsFor(transport)
 	opts := make([]tui.Option, len(options))

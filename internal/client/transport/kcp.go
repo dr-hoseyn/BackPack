@@ -302,7 +302,7 @@ func (c *KcpTransport) poolMaintainer() {
 		dial:       c.tunnelDialer,
 		spawn:      c.state.Go,
 		pending:    &c.dialingConnections,
-		maxSize:    muxPoolLimit(c.config.ConnPoolSize, c.config.MaxReceiveBuffer),
+		maxSize:    muxPoolLimit(c.config.ConnPoolSize),
 	}.maintain()
 }
 
@@ -317,7 +317,7 @@ func (c *KcpTransport) control() controlLoop {
 }
 
 func (c *KcpTransport) tunnelDialer() {
-	ready, ok := c.beginPoolDial(muxPoolLimit(c.config.ConnPoolSize, c.config.MaxReceiveBuffer))
+	ready, ok := c.beginPoolDial(muxPoolLimit(c.config.ConnPoolSize))
 	if !ok {
 		return
 	}

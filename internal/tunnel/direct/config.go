@@ -48,8 +48,8 @@ const (
 	defaultRetryDelay   = 3 * time.Second
 	defaultBackendDial  = 10 * time.Second
 	defaultMaxFrameSize = 32768
-	defaultMaxReceive   = 4194304
-	defaultMaxStream    = 65536
+	defaultMaxReceive   = 33554432
+	defaultMaxStream    = 16777216
 
 	// defaultACMECacheDir must survive restarts: re-issuing works, but doing
 	// it repeatedly runs into Let's Encrypt's rate limits, and then the tunnel

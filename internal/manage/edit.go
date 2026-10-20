@@ -387,7 +387,7 @@ func ChangePreset(name, preset string, apply ...func(TunnelSpec) error) error {
 		return err
 	}
 	if !presetSuitsTransport(preset, s.Transport) {
-		return fmt.Errorf("the %s preset applies to the udp+kcp+fec transport only, not %q",
+		return fmt.Errorf("the %s preset is not available for transport %q",
 			presetLabel(preset), s.Transport)
 	}
 	ApplyPreset(&s, preset)

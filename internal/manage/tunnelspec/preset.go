@@ -1,70 +1,34 @@
 package tunnelspec
 
-// Performance presets.
-//
-// A preset is a single choice that fills every tuning knob of a tunnel —
-// buffers, pool sizes, mux windows and (for KCP) the retransmission and FEC
-// settings. The same three presets apply to every transport, so the answer to
-// "how hard should this tunnel push?" is the same question everywhere.
-//
-// Upgrade note: a preset is applied once, when a tunnel is created or when the
-// operator picks "Change performance preset". The numbers are written into the
-// tunnel's config file, and an update replaces only the binary — it never
-// rewrites a config. So changing the values here cannot disturb a tunnel that
-// already exists: it keeps the numbers on its disk until somebody deliberately
-// re-applies a preset. New tunnels get the current values, and a config with no
-// preset field at all is left exactly as it is.
+// Presets expand into concrete configuration once, at creation or when the
+// operator reapplies one. Updating the binary preserves existing manual tuning.
 const (
 	PresetBalance    = "balance"
 	PresetTurbo      = "turbo"
 	PresetAggressive = "aggressive"
-	// PresetThroughput is the odd one out, and deliberately so.
-	//
-	// Balance, Turbo and Aggressive are all gaming profiles: they differ only in
-	// how much headroom they buy, and every one of them spends bandwidth to hold
-	// the ping steady — immediate ACKs, a 10 ms tick, and enough parity to repair
-	// a lost packet rather than wait a round trip for it to be resent. That is
-	// the right trade for a game and the wrong one for a download, and no amount
-	// of tuning inside those three fixes it, because the cost is the point.
-	//
-	// This preset makes the opposite trade on the same transport: batch the ACKs,
-	// tick half as often, carry a tenth as much parity, and open the window wide
-	// enough that one stream can actually fill a long fat path. It is for the
-	// operator who wants the tunnel to move data quickly and is not measuring
-	// their ping while it does.
-	//
-	// It is offered on the plain "udp + kcp + fec" transport only. The other
-	// carriers in the KCP family — xdi, spoof, pck — exist to get through a path
-	// that blocks the ordinary one, and each pays for that with hand-built
-	// packets and a syscall per datagram. Bandwidth is not what they are for, and
-	// offering a "maximum bandwidth" profile on them would promise something the
-	// carrier underneath cannot deliver. On a TCP-based transport it would be
-	// worse still: every knob it changes belongs to the kernel's stack rather
-	// than to this process, so choosing it there would change nothing at all.
+	// Throughput sizes pools and windows for bulk traffic on a long path.
+	// 500 Mbit/s at 200 ms needs 12.5 MB in flight. These windows leave
+	// headroom, but neither a carrier nor a network speed is guaranteed.
 	PresetThroughput = "throughput"
 )
 
-// PresetOption is one preset as the setup and edit menus and the panel offer it.
+// PresetOption is shared by setup, edit and the panel.
 type PresetOption struct {
 	Label string `json:"label"`
 	Desc  string `json:"desc"`
 	Value string `json:"value"`
-	// KCPOnly marks a preset that only applies to the udp+kcp+fec transport,
-	// so a panel rendering the full list can hide or disable it elsewhere.
+	// Retained for older options API clients; current profiles apply to all
+	// supported reverse transports and leave this false.
 	KCPOnly bool `json:"kcpOnly,omitempty"`
 }
 
-// PresetOptions is the ordered list shown in the setup and edit menus.
 var PresetOptions = []PresetOption{
-	{"Balance", "light on CPU and RAM — best for small or shared VPS", PresetBalance, false},
-	{"Turbo", "recommended — the tuned default for Iran to abroad links", PresetTurbo, false},
-	{"Aggressive", "maximum gaming headroom, noticeably more CPU — for strong servers", PresetAggressive, false},
-	{"Throughput", "maximum bandwidth for udp+kcp+fec — trades steady ping for speed", PresetThroughput, true},
+	{"Balance", "light on CPU and RAM - small or shared VPS", PresetBalance, false},
+	{"Turbo", "recommended - tuned for distant links", PresetTurbo, false},
+	{"Aggressive", "more gaming headroom - needs CPU and RAM", PresetAggressive, false},
+	{"Throughput", "bulk traffic on fast distant links - needs RAM", PresetThroughput, false},
 }
 
-// ValidPreset reports whether p names a preset at all. It deliberately does not
-// ask which transport is in play: a config that already names a preset must keep
-// loading, and the transport check belongs where a choice is being made.
 func ValidPreset(p string) bool {
 	switch p {
 	case PresetBalance, PresetTurbo, PresetAggressive, PresetThroughput:
@@ -73,29 +37,28 @@ func ValidPreset(p string) bool {
 	return false
 }
 
-// PresetSuitsTransport reports whether a preset can be chosen for a transport.
-// Throughput is for the plain udp+kcp+fec transport alone — see the constant for
-// why the other KCP carriers are excluded rather than merely discouraged.
+// Managed HTTPS helpers run the TCP reverse engine, so they inherit its profile.
 func PresetSuitsTransport(preset, transport string) bool {
 	if preset != PresetThroughput {
 		return true
 	}
-	return transport == "kcp"
+	switch transport {
+	case "tcp", "tcpmux", "stealth", "ws", "wss", "wsmux", "wssmux", "kcp", "xdi", "pck", "udp", "quic":
+		return true
+	}
+	return false
 }
 
-// PresetOptionsFor returns the presets offerable for a transport, in menu order.
 func PresetOptionsFor(transport string) []PresetOption {
 	out := PresetOptions[:0:0]
 	for _, o := range PresetOptions {
-		if o.KCPOnly && !PresetSuitsTransport(o.Value, transport) {
-			continue
+		if PresetSuitsTransport(o.Value, transport) {
+			out = append(out, o)
 		}
-		out = append(out, o)
 	}
 	return out
 }
 
-// presetLabel returns the display name of a preset value.
 func presetLabel(value string) string {
 	for _, o := range PresetOptions {
 		if o.Value == value {
@@ -108,9 +71,9 @@ func presetLabel(value string) string {
 	return value
 }
 
-// ApplyPreset fills every tuning field of a spec from the named preset. It is
-// the single place where the numbers behind Balance/Turbo/Aggressive live, so
-// the CLI, the edit screen and the benchmark all agree on what a preset means.
+// ApplyPreset is the single expansion used by the terminal, panel and tests.
+// MuxCon is admission capacity, not a bandwidth limit or a preallocation of
+// every stream window. The receive buffer is shared by a physical session.
 func ApplyPreset(s *Spec, preset string) {
 	defer func() {
 		short := s.ShortClient.Enabled()
@@ -118,8 +81,8 @@ func ApplyPreset(s *Spec, preset string) {
 			short = short || p.Short.Enabled()
 		}
 		if short {
-			// Short HTTPS has a bounded relay session table. A performance
-			// preset cannot enable aggressive pool growth beyond that budget.
+			// Short HTTPS owns a bounded relay table. A bulk profile cannot
+			// exceed that protocol budget or enable aggressive growth.
 			s.AggressivePool = false
 			s.ConnectionPool = min(s.ConnectionPool, 32)
 		}
@@ -129,115 +92,40 @@ func ApplyPreset(s *Spec, preset string) {
 	}
 	s.Preset = preset
 	s.LogLevel = "info"
-	s.Nodelay = true // disable Nagle — lowest latency on every transport
-
+	s.Nodelay = true
+	s.KeepAlive, s.Heartbeat = 75, 40
+	s.MuxVersion = 2
+	s.MuxFrameSize = 32768
+	s.AggressivePool = false
 	switch preset {
 	case PresetBalance:
-		s.KeepAlive = 75
-		s.Heartbeat = 40
-		s.ChannelSize = 2048
-		s.ConnectionPool = 4
-		// A steady pool keeps idle CPU low, which is the whole point of Balance.
-		s.AggressivePool = false
-		// Sizes the datagram socket only; TCP is auto-tuned by the kernel.
-		s.SoRcvBuf = 4 * 1024 * 1024
-		s.SoSndBuf = 4 * 1024 * 1024
-		s.MuxCon = 4
-		s.MuxVersion = 2
-		s.MuxFrameSize = 32768
-		// 256 KB per stream ≈ 20 Mbit/s for one connection at 100 ms — modest
-		// on purpose, but four times what 64 KB allowed. Worst-case memory is
-		// MuxCon × MuxRecvBuffer = 4 × 4 MB.
-		s.MuxRecvBuffer = 4 * 1024 * 1024
-		s.MuxStreamBuffer = 256 * 1024
-
+		s.ChannelSize, s.ConnectionPool, s.MuxCon = 2048, 4, 32
+		s.SoRcvBuf, s.SoSndBuf = 4<<20, 4<<20
+		s.MuxRecvBuffer, s.MuxStreamBuffer = 4<<20, 256<<10
 	case PresetTurbo:
-		s.KeepAlive = 75
-		s.Heartbeat = 40
-		s.ChannelSize = 4096
-		s.ConnectionPool = 8 // enough warm connections without constant churn
-		// AggressivePool stays OFF here: it keeps the pool topped up in a tight
-		// loop and noticeably raises idle CPU. A normal pool is plenty.
-		s.AggressivePool = false
-		// Sizes the datagram socket only; TCP is auto-tuned by the kernel.
-		s.SoRcvBuf = 8 * 1024 * 1024
-		s.SoSndBuf = 8 * 1024 * 1024
-		s.MuxCon = 8
-		s.MuxVersion = 2
-		s.MuxFrameSize = 32768
-		// 2 MB per stream ≈ 160 Mbit/s for a single connection at 100 ms RTT.
-		// This is the number that decides how fast one download feels, and the
-		// old 64 KB capped it at about 5 Mbit/s on that same path — the mux
-		// transports were being throttled by their own flow control long before
-		// the link ran out. Worst-case memory is MuxCon × MuxRecvBuffer = 8 × 16 MB.
-		s.MuxRecvBuffer = 16 * 1024 * 1024
-		s.MuxStreamBuffer = 2 * 1024 * 1024
-
+		// 8 MB gives one stream about 670 Mbit/s at 100 ms RTT. Warm
+		// capacity and 256 slots/session absorb connection bursts while the
+		// bounded adaptive pool is establishing more sessions.
+		s.ChannelSize, s.ConnectionPool, s.MuxCon = 4096, 16, 256
+		s.SoRcvBuf, s.SoSndBuf = 8<<20, 8<<20
+		s.MuxRecvBuffer, s.MuxStreamBuffer = 16<<20, 8<<20
 	case PresetAggressive:
-		s.KeepAlive = 60
-		s.Heartbeat = 25
-		s.ChannelSize = 8192
-		s.ConnectionPool = 16
-		// Refills the pool in a tight loop: lowest possible connect latency at
-		// the cost of real idle CPU. Only worth it on a server with cores spare.
+		s.KeepAlive, s.Heartbeat = 60, 25
+		s.ChannelSize, s.ConnectionPool, s.MuxCon = 8192, 32, 512
 		s.AggressivePool = true
-		// Sizes the datagram socket only; TCP is auto-tuned by the kernel. 32 MB
-		// so a full window can land in one burst without the kernel dropping the
-		// tail of it — on a datagram transport that loss is indistinguishable from
-		// the network's, and it costs a retransmit at the busiest moment.
-		s.SoRcvBuf = 32 * 1024 * 1024
-		s.SoSndBuf = 32 * 1024 * 1024
-		s.MuxCon = 16
-		s.MuxVersion = 2
+		s.SoRcvBuf, s.SoSndBuf = 32<<20, 32<<20
 		s.MuxFrameSize = 65535
-		// 16 MB per stream: at 100 ms round trip that is roughly 1.3 Gbit/s for a
-		// single connection, and at 200 ms still ~640 Mbit/s — enough that the
-		// flow control is never what limits a transfer on this route. The memory
-		// is a ceiling on data actually in flight rather than an allocation, but
-		// the worst case is real: MuxCon × MuxRecvBuffer = 16 × 32 MB, so this
-		// preset wants a server with RAM to spare — as it says it does.
-		s.MuxRecvBuffer = 32 * 1024 * 1024
-		s.MuxStreamBuffer = 16 * 1024 * 1024
-
-		// The KCP window deliberately stays where it is. It is the one knob on
-		// this preset where "more" is not "better": with congestion control off,
-		// the window IS the queue, and a deeper queue is exactly the bufferbloat
-		// that shows up as the ping spike a gaming preset exists to prevent.
-		// Wanting a bigger one is wanting the Throughput profile, which is what
-		// it is for.
-
+		s.MuxRecvBuffer, s.MuxStreamBuffer = 32<<20, 16<<20
 	case PresetThroughput:
-		s.KeepAlive = 75
-		s.Heartbeat = 40
-		s.ChannelSize = 8192
-		s.ConnectionPool = 16
-		// Off on purpose, unlike Aggressive. Topping the pool up in a tight loop
-		// buys lower connect latency for a new stream and costs real idle CPU —
-		// worth it when every millisecond of a game's first packet counts,
-		// pointless for a transfer that runs for minutes once it has started.
-		s.AggressivePool = false
-		// Sizes the UDP socket the whole tunnel shares. A window this large can
-		// have far more in flight than the default socket buffer will hold, and a
-		// datagram dropped by a full socket buffer is indistinguishable on the
-		// wire from one the network lost — it just triggers a retransmit and
-		// halves nothing, because congestion control is off. So it is generous.
-		s.SoRcvBuf = 32 * 1024 * 1024
-		s.SoSndBuf = 32 * 1024 * 1024
-		s.MuxCon = 8
-		s.MuxVersion = 2
+		// 64 sessions x 512 slots removes the small pool's few-thousand-
+		// connection ceiling. A 32 MB stream window covers 500 Mbit/s at
+		// 200 ms RTT. Windows grow on demand, but 64 busy receive windows
+		// can retain 2 GB, which is why this profile is opt-in.
+		s.ChannelSize, s.ConnectionPool, s.MuxCon = 8192, 64, 512
+		s.SoRcvBuf, s.SoSndBuf = 32<<20, 32<<20
 		s.MuxFrameSize = 65535
-		// 32 MB per stream is what makes a single download fast on a long path:
-		// it is the flow-control ceiling one connection can have outstanding, so
-		// at 200 ms round trip it allows roughly 1.3 Gbit/s for one stream, where
-		// Turbo's 2 MB would cap that same stream near 80 Mbit/s. Half as many
-		// sessions as Aggressive, each with twice the room — a transfer wants one
-		// deep stream far more than it wants sixteen shallow ones. Worst case is
-		// MuxCon × MuxRecvBuffer = 8 × 64 MB, the same 512 MB ceiling Aggressive
-		// asks for, so this needs a server with RAM but no more than that one.
-		s.MuxRecvBuffer = 64 * 1024 * 1024
-		s.MuxStreamBuffer = 32 * 1024 * 1024
+		s.MuxRecvBuffer, s.MuxStreamBuffer = 32<<20, 32<<20
 	}
-
 	ApplyKCPPreset(s, preset)
 }
 
@@ -340,14 +228,11 @@ func ApplyKCPPreset(s *Spec, preset string) {
 		// — and on a saturated transfer it very nearly doubles the packets on the
 		// wire, every one of them competing with the data for the same link.
 		s.KCPAckNoDelay = false
-		// 4096 × 1198 bytes ≈ 4.9 MB in flight. This is the number that decides
-		// the ceiling on a long path: at 200 ms round trip it allows roughly
-		// 196 Mbit/s for a single stream, where Aggressive's 2048 caps the same
-		// stream near 98. It is also why this is not a gaming preset — with
-		// congestion control off, a window that large is a queue that deep, and
-		// a queue that deep is bufferbloat under load.
-		s.KCPSndWnd = 4096
-		s.KCPRcvWnd = 4096
+		// About 19 MB in flight: more than the 12.5 MB required for
+		// 500 Mbit/s at 200 ms RTT. The old 4096-segment window capped
+		// the same path below 200 Mbit/s before carrier and FEC overhead.
+		s.KCPSndWnd = 16384
+		s.KCPRcvWnd = 16384
 		// 10:1 — about 10% overhead instead of Aggressive's 40%. Parity is a
 		// straight tax on bandwidth: every parity packet is a packet of capacity
 		// not carrying data. A gaming preset pays it gladly, because repairing a
