@@ -35,8 +35,7 @@ jobs:
           go test -race ./internal/client/transport ./internal/server/transport ./internal/utils/network ./internal/manage/tunnelspec -timeout 8m
           go test -race ./internal/e2e -run '^TestMuxCapacityGrowsWhileExistingForwardsStayOpen$' -count=1 -v -timeout 3m
           go test -race ./internal/e2e -run '^TestTransportConcurrentConnections/wsmux$' -count=25 -timeout 3m
-      - name: Diagnose host TCP without any tunnel
-        continue-on-error: true
+      - name: Verify host TCP without any tunnel
         env:
           BP_CAPACITY_BENCHMARK: '1'
         run: |
@@ -52,16 +51,6 @@ jobs:
         run: |
           set -o pipefail
           go test ./internal/e2e -run '^TestBulkProfileTransportCapacity$' -count=8 -v -json -timeout 10m | tee "$RUNNER_TEMP/capacity-candidate.jsonl"
-      - name: Diagnose a failed bulk transfer without same-socket splice echo
-        if: failure() && steps.candidate.outcome == 'failure'
-        continue-on-error: true
-        env:
-          BP_CAPACITY_BENCHMARK: '1'
-          BP_CAPACITY_DIAGNOSTICS: '1'
-          BP_CAPACITY_BUFFERED_ECHO: '1'
-        run: |
-          set -o pipefail
-          go test ./internal/e2e -run '^TestBulkProfileTransportCapacity/(wss|wssmux)$' -count=12 -v -json -timeout 6m | tee "$RUNNER_TEMP/capacity-buffered-echo.jsonl"
       - name: Measure the same transfers on the base revision
         if: github.event_name == 'pull_request'
         # The old revision can reproduce the admission/timeout bug this PR
@@ -101,5 +90,4 @@ jobs:
             ${{ runner.temp }}/capacity-candidate.jsonl
             ${{ runner.temp }}/capacity-base.jsonl
             ${{ runner.temp }}/capacity-soak.txt
-            ${{ runner.temp }}/capacity-buffered-echo.jsonl
             ${{ runner.temp }}/capacity-direct.jsonl

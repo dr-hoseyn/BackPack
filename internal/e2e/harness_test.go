@@ -15,7 +15,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"os"
 	"sync"
 	"testing"
 	"time"
@@ -99,13 +98,7 @@ func startEchoBackend(t *testing.T) *echoBackend {
 			backoff.OK()
 			go func(c net.Conn) {
 				defer c.Close()
-				if os.Getenv("BP_CAPACITY_BUFFERED_ECHO") != "" {
-					// Diagnostic control: distinguish the tunnel from the kernel's
-					// same-socket splice echo path under large concurrent transfers.
-					io.Copy(struct{ io.Writer }{c}, struct{ io.Reader }{c})
-				} else {
-					io.Copy(c, c)
-				}
+				io.Copy(c, c)
 			}(conn)
 		}
 	}()
