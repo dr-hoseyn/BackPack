@@ -28,6 +28,7 @@ jobs:
           cache: true
       - name: Capacity regressions with the race detector
         run: |
+          sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
           go test -race ./internal/client/transport ./internal/server/transport ./internal/utils/network ./internal/manage/tunnelspec -timeout 8m
           go test -race ./internal/e2e -run '^TestMuxCapacityGrowsWhileExistingForwardsStayOpen$' -count=1 -v -timeout 3m
       - name: Measure candidate goodput

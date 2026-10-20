@@ -194,7 +194,7 @@ func (p poolSizer) maintain() {
 	}
 }
 
-// A burst earns a batch of capacity, bounded by the same socket/memory ceiling
+// A burst earns a batch of capacity, bounded by the same connection ceiling
 // as control-channel requests. Spare connections do not carry the measured
 // traffic, so only physical mux sessions scale on bytes per second.
 func poolGrowthTarget(current, ceiling, requests, factor, mbps int, mux bool) int {
