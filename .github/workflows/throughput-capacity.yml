@@ -28,6 +28,19 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - name: Apply the same host tuning as Optimize
+        run: |
+          set -o pipefail
+          sudo modprobe tcp_bbr || true
+          mkdir .capacity-kernel
+          trap 'rm -f .capacity-kernel/main.go; rmdir .capacity-kernel' EXIT
+          cat > .capacity-kernel/main.go <<'GO'
+          package main
+          import ("fmt"; "github.com/backpack/backpack/internal/optimize")
+          func main() { for _, row := range optimize.FullTuning() { fmt.Printf("%s=%s\n", row[0], row[1]) } }
+          GO
+          go run ./.capacity-kernel | while IFS= read -r setting; do sudo sysctl -w "$setting" || true; done
+          sysctl net.ipv4.tcp_available_congestion_control net.ipv4.tcp_congestion_control
       - name: Capacity regressions with the race detector
         run: |
           sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
