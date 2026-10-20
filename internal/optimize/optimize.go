@@ -28,24 +28,11 @@ var sysctls = [][2]string{
 	{"net.core.somaxconn", "65536"},
 	{"net.core.netdev_max_backlog", "250000"},
 	{"net.ipv4.tcp_max_syn_backlog", "20480"},
-	// The kernel's own range, set explicitly rather than widened.
-	//
-	// This used to be "1024 65535", on the reasoning that more ephemeral ports
-	// means more concurrent connections. What it actually means is that every
-	// service port on the machine is inside the range an outgoing connection
-	// can be given — and a port held by an outgoing socket cannot be bound by
-	// the service that owns it.
-	//
-	// That was reported from the field as a panel node that would not start:
-	// its ports are 62050 and 62051, which sit safely above the default range
-	// and inside the widened one. Once something on the box had been given one
-	// of them as a source port, the node could not bind it, and `ss -tlnp` —
-	// the command anyone would run — showed nothing at all, because the holder
-	// was an outgoing connection rather than a listener.
-	//
-	// 28,000 ephemeral ports with tcp_tw_reuse on is far more than a tunnel
-	// needs, and the 4,500 extra the wider range bought are not worth the
-	// 61000-65535 band, which is where services like that one live.
+	// Keep the ordinary range by default: widening it without reservations
+	// can let outbound sockets take a panel's fixed ports (62050/62051).
+	// Busy local backends can nevertheless exhaust these 28,232 ports. The
+	// explicit high-concurrency profile widens the range only after preserving
+	// existing reservations and discovering TCP listeners; see capacity.go.
 	{"net.ipv4.ip_local_port_range", "32768 60999"},
 	{"net.ipv4.tcp_tw_reuse", "1"},
 	{"net.ipv4.tcp_fin_timeout", "15"},
@@ -165,16 +152,15 @@ func Apply(logf func(string), reserve []int) {
 
 	// The static table plus whatever this machine has to keep. Built here
 	// rather than in the table because it depends on the tunnels configured.
-	rows := append([][2]string(nil), sysctls...)
-	if list := reservedList(reserve); list != "" {
-		rows = append(rows, [2]string{"net.ipv4.ip_local_reserved_ports", list})
-		logf("Reserving ports this server listens on: " + list)
+	rows, persistedRows, err := capacityTuningRows(reserve)
+	if err != nil {
+		logf("Could not refresh high-concurrency reservations: " + err.Error())
 	}
 
 	// Persist sysctl settings.
 	var b strings.Builder
 	b.WriteString("# Managed by backpack — network optimizations\n")
-	for _, kv := range rows {
+	for _, kv := range persistedRows {
 		fmt.Fprintf(&b, "%s = %s\n", kv[0], kv[1])
 	}
 	if err := os.WriteFile(sysctlFile, []byte(b.String()), 0644); err != nil {

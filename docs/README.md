@@ -46,6 +46,7 @@ Reference pages: what each part of Backpack **is**, and every setting it has.
   binding a listener to one local IP on a multi-homed server
 - [Forwarded UDP](forwarded-udp.md) — the one to read when UDP does not pass
 - [Performance presets](performance-presets.md) — Balance / Turbo / Aggressive / Throughput
+- [High traffic and backend capacity](high-traffic.md) - reserve service ports, increase source-port capacity and apply a measured TCP path limit
 - [Failover & load balancing](failover-load-balancing.md) — backup addresses, health scoring
 - [Real client IP (PROXY protocol)](real-client-ip.md)
 - [Per-tunnel limits](limits.md)

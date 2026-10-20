@@ -73,6 +73,12 @@ func uninstallMenu() {
 		repo = app.InstallDir
 	}
 
+	if optimize.HighConcurrencyEnabled() {
+		if err := optimize.RestoreHighConcurrency(); err != nil {
+			tui.Error("Could Not Restore The Original Port Policy: " + err.Error())
+			return
+		}
+	}
 	for _, t := range manage.List() {
 		_ = manage.Delete(t.Name)
 	}
