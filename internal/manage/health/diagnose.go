@@ -153,7 +153,10 @@ func systemChecks() []Check {
 	// server set up before the fix still carries the wide range and has no way
 	// to know. This is what tells it.
 	if v := SysctlValue("net.ipv4.ip_local_port_range"); v != "" {
-		if lo, hi, wide := host.EphemeralRangeIsWide(v); wide {
+		if optimize.HighConcurrencyEnabled() && strings.Join(strings.Fields(v), " ") == optimize.HighConcurrencyRange {
+			out = append(out, Check{Group: g, Name: "Ephemeral port range", Level: CheckOK,
+				Detail: v + " — high-concurrency profile; service ports reserved"})
+		} else if lo, hi, wide := host.EphemeralRangeIsWide(v); wide {
 			out = append(out, Check{Group: g, Name: "Ephemeral port range", Level: CheckWarn,
 				Detail: fmt.Sprintf("%d-%d — services on ports in this range can lose them "+
 					"to an outgoing connection", lo, hi),

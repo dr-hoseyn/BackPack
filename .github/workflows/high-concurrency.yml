@@ -1,0 +1,30 @@
+name: High concurrency tuning
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - 'internal/optimize/**'
+      - 'internal/cli/**'
+      - 'internal/manage/health/**'
+      - '.github/workflows/high-concurrency.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  capacity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Reserve ports, failure rollback, optimizer compatibility and CLI
+        run: go test -race ./internal/optimize ./internal/cli -count=1 -timeout 3m
+      - name: Exhaust and recover real backend source ports in a private network namespace
+        run: sudo env "PATH=$PATH" BP_CAPACITY_NETNS_TEST=1 go test ./internal/optimize -run '^TestHighConcurrencyRealLoopbackCapacity$' -count=1 -v -timeout 1m

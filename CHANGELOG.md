@@ -22,6 +22,11 @@
   QUIC flow control. Retain measured KCP bulk windows to avoid oversized ARQ
   queues. Raise omitted-value defaults while
   preserving existing manual configuration values.
+- Add an explicit high-concurrency host profile that reserves service ports
+  before expanding the source-port range, retains the original rollback policy,
+  and survives Optimize and updates. Serialize host policy changes across
+  processes. Add measured IPv4 path-MTU tuning through the existing MSS editor;
+  Linux accounts for TCP options without subtracting them twice.
 - Add race-tested burst and live-session regressions, plus matched candidate
   and baseline measurements for native TCP, TLS, mux, KCP and QUIC streams,
   plus sustained-load checks that keep admitting fresh users.

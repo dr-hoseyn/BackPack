@@ -85,6 +85,11 @@ const usage = `backpack — non-interactive commands
   backpack test history [--json]       saved Connection Test runs
   backpack test compare [--json]       compare repeated measurements
   backpack version [--json]
+  backpack tune high-concurrency [--reserve-ports LIST]
+                                        reserve service ports and increase backend capacity
+  backpack tune path-mtu <name> <measured-ipv4-mtu>
+                                        persist a TCP MSS limit for a measured path
+  backpack tune restore                 restore the original ephemeral-port policy
 
 Run backpack with no arguments for the interactive menu.
 Exit codes: 0 ok, 1 failed, 2 usage, 3 not found, 4 unhealthy.
@@ -104,6 +109,8 @@ func Run(args []string) Result {
 		args = append(append([]string{}, args...), "--json")
 	}
 	switch args[0] {
+	case "tune":
+		return runTune(args[1:])
 	case "tunnel":
 		return runTunnel(args[1:])
 	case "test":
@@ -459,7 +466,7 @@ func takeJSONFlag(args []string) (bool, []string) {
 // drifting — a command added below is routable immediately.
 func IsCommand(s string) bool {
 	switch s {
-	case "tunnel", "check", "version", "link", "proxy", "test", "diagnose":
+	case "tunnel", "check", "version", "link", "proxy", "test", "diagnose", "tune":
 		return true
 	}
 	return false
