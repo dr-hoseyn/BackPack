@@ -26,7 +26,7 @@ func TestConnectionTestChoosesDirectPortsOnKharej(t *testing.T) {
 	defer cancel()
 	used := map[int]bool{occupiedPort: true}
 	ports := map[string]bool{}
-	for _, tr := range []string{"udp", "quic", "pck", "sni"} {
+	for _, tr := range []string{"udp", "quic", "pck", "sni", "masque", "masque-h2", "webtransport", "connect-ip", "hysteria2", "tuic"} {
 		port, err := ctKharejDirectPort(ctx, link, tr, used)
 		if err != nil {
 			t.Fatal(err)

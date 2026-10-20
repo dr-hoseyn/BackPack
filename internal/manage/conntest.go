@@ -2155,7 +2155,7 @@ func (c *ctCoordinator) directPort(tr, fallback string) string {
 }
 
 func ctPortCarrier(tr string) bool {
-	return tr == "udp" || tr == "quic" || tr == "pck" || tr == "sni" || tr == "masque" || tr == "masque-h2" || tr == "webtransport" || tr == "connect-ip" || ctSNIVariantKey(tr)
+	return tr == "udp" || tr == "quic" || tr == "pck" || tr == "sni" || tr == "masque" || tr == "masque-h2" || tr == "webtransport" || tr == "connect-ip" || config.SingDatagram(tr) || ctSNIVariantKey(tr)
 }
 
 func ctSkippableCase(value string) bool {

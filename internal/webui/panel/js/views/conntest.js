@@ -365,7 +365,10 @@ export function connTestView(ctx) {
     else if (st === 'done') html = bestPane(v);
     else html = endPane(v);
     left.innerHTML = html + (!fresh && v.historyWarning ? `<p class="tl-meta" role="status">${esc(v.historyWarning)}</p>` : '');
-    for (const [id, value] of setupKeep) if (value !== undefined && $('#' + id, left)) $('#' + id, left).value = value;
+    for (const [id, value] of setupKeep) {
+      const field = $('#' + id, left);
+      if (value !== undefined && field && (field.tagName !== 'SELECT' || [...field.options].some(o => o.value === value))) field.value = value;
+    }
     if (setupUDP !== undefined && $('#ctSetupUDP',left)) $('#ctSetupUDP',left).checked = setupUDP;
     left.dataset.ph = fresh ? 'idle' : st;
     for (const [id,value] of keep) if (value !== undefined && $('#' + id,left)) $('#' + id,left).value = value;
