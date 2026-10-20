@@ -18,7 +18,10 @@ concurrency:
   cancel-in-progress: true
 jobs:
   capacity:
-    runs-on: ubuntu-latest
+    # Azure 6.17 loopback TCP can stall under receive-window pressure. Keep
+    # this measurement on the 22.04 kernel line; ordinary CI still covers latest.
+    # https://www.spinics.net/lists/netdev/msg1152282.html
+    runs-on: ubuntu-22.04
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
