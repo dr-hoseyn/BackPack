@@ -2,7 +2,10 @@ package e2e
 
 import (
 	"fmt"
+	"io"
+	"net"
 	"os"
+	"os/exec"
 	"runtime/pprof"
 	"testing"
 	"time"
@@ -35,6 +38,9 @@ func TestBulkProfileTransportCapacity(t *testing.T) {
 					snapshot = time.AfterFunc(5*time.Second, func() {
 						fmt.Fprintf(os.Stderr, "CAPACITY_STALL transport=%s streams=%d\n", tr, streams)
 						pprof.Lookup("goroutine").WriteTo(os.Stderr, 2)
+						if sockets, err := exec.Command("ss", "-tinmp").CombinedOutput(); err == nil {
+							fmt.Fprintf(os.Stderr, "CAPACITY_TCP_SOCKETS\n%s\n", sockets)
+						}
 					})
 					t.Cleanup(func() { snapshot.Stop() })
 				}
@@ -61,6 +67,66 @@ func TestBulkProfileTransportCapacity(t *testing.T) {
 					float64(streams*len(payload)*8)/seconds/1e6, seconds)
 			}
 		})
+	}
+}
+
+// This control deliberately bypasses every Backpack component. A timeout here
+// identifies a host TCP/echo-fixture issue rather than a carrier regression.
+func TestDirectBackendBulkCapacity(t *testing.T) {
+	if os.Getenv("BP_CAPACITY_BENCHMARK") == "" {
+		t.Skip("set BP_CAPACITY_BENCHMARK=1 to measure")
+	}
+	backend := startEchoBackend(t, os.Getenv("BP_CAPACITY_SPLICE_ECHO") != "")
+	// A reverse tunnel has three TCP hops. Exercise the same backpressure
+	// shape using only the standard library, with no Backpack handlers,
+	// pool, mux, metrics or custom socket options.
+	addr := backend.addr
+	for hop := 0; hop < 2; hop++ {
+		upstream := addr
+		listener, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { listener.Close() })
+		go func() {
+			for {
+				from, err := listener.Accept()
+				if err != nil {
+					return
+				}
+				go func() {
+					defer from.Close()
+					to, err := net.Dial("tcp", upstream)
+					if err != nil {
+						return
+					}
+					defer to.Close()
+					done := make(chan struct{}, 2)
+					copyDirection := func(dst, src net.Conn) {
+						io.CopyBuffer(struct{ io.Writer }{dst}, struct{ io.Reader }{src}, make([]byte, 64<<10))
+						done <- struct{}{}
+					}
+					go copyDirection(from, to)
+					go copyDirection(to, from)
+					<-done
+					from.Close()
+					to.Close()
+					<-done
+				}()
+			}
+		}()
+		addr = listener.Addr().String()
+	}
+	tun := &tunnel{Entry: addr}
+	payload := randomPayload(t, 16<<20)
+	results := make(chan error, 8)
+	for i := 0; i < 8; i++ {
+		go func() { results <- tun.roundTrip(payload) }()
+	}
+	for i := 0; i < 8; i++ {
+		if err := <-results; err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 
