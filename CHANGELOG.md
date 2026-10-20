@@ -2,6 +2,42 @@
 
 ## Unreleased
 
+## v1.14.1 — 2026-10-20 (dr-hoseyn fork)
+
+- Remove the fixed 128 MiB mux receive-window budget that could prevent a
+  healthy tunnel from adding sessions when its stream slots were full. Grow
+  capacity in batches every second, allow a larger demand-driven expansion,
+  prefetch sessions before their last stream slots fill, and use every CPU
+  available to Go for assignment workers and KCP/PCK/XDI scheduling.
+- Repair unavailable carriers without speculative exponential dial storms.
+  Retain warm physical mux sessions instead of discarding future user capacity
+  requests after a quiet period. Keep Short HTTPS within its finite session
+  budget and preserve explicitly configured connection and bandwidth limits.
+- Preserve the first mux frames when they arrive in the same read as the
+  WebSocket HTTP Upgrade response. Losing buffered bytes could reset or stall
+  fresh WSMUX/WSSMUX users during concurrent session admission. Keep the
+  existing wire format and framed control-channel behavior.
+- Offer Throughput for every supported Reverse transport and for Direct/L3.
+  Expand the preset pools, mux admission capacity, per-stream windows and
+  QUIC flow control. Retain measured KCP bulk windows to avoid oversized ARQ
+  queues. Raise omitted-value defaults while
+  preserving existing manual configuration values.
+- Add race-tested burst and live-session regressions, plus matched candidate
+  and baseline measurements for native TCP, TLS, mux, KCP and QUIC streams,
+  plus sustained-load checks that keep admitting fresh users.
+  These settings target high-capacity links; actual WAN throughput still depends
+  on the carrier, path, latency and loss.
+
+<div dir="rtl">
+
+نسخهٔ **v1.14.1** محدودیت مصنوعی رشد نشست‌ها و واکنش کند به بار را اصلاح می‌کند.
+پروفایل Throughput برای همهٔ تونل‌های پشتیبانی‌شده در دسترس است و ظرفیت صف‌ها،
+نشست‌ها و پنجره‌های جریان افزایش یافته است. برای کانفیگ‌های موجود، پروفایل را
+روی هر دو سمت دوباره اعمال کنید؛ مقادیر دستی با آپدیت بی‌صدا تغییر نمی‌کنند.
+سرعت واقعی مسیر باید جداگانه سنجیده شود و برای همهٔ کریرها عدد ثابتی تضمین نمی‌شود.
+
+</div>
+
 ## v1.14.0 — 2026-10-20 (dr-hoseyn fork)
 
 - Set up both servers from a successful Connection Test. Choose a measured IP

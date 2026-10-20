@@ -138,9 +138,9 @@ func sizeUDPBuffers(conn *net.UDPConn, sockBuf int) {
 	_ = conn.SetWriteBuffer(sockBuf)
 }
 
-// defaultSockBuf matches what the spoof carrier already asks for, for the same
-// reason it does.
-const defaultSockBuf = 4 << 20
+// Leave a burst of 500 Mbit/s traffic on a 200 ms path room in the socket.
+// Explicit presets and configured values still take precedence.
+const defaultSockBuf = 16 << 20
 
 // Carrier names accepted in a configuration. General reverse stream transports
 // are absent. MASQUE/H2 is a separate, explicit Capsule fallback.

@@ -473,7 +473,7 @@ func StartConnTestIran(o ConnTestOptions) (*ConnTestIran, string, error) {
 
 	preset := strings.ToLower(strings.TrimSpace(o.Preset))
 	switch preset {
-	case PresetBalance, PresetTurbo, PresetAggressive:
+	case PresetBalance, PresetTurbo, PresetAggressive, PresetThroughput:
 	default:
 		preset = PresetTurbo
 	}

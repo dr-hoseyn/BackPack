@@ -53,9 +53,7 @@ func TransportFamilies() []TransportFamily {
 	return out
 }
 
-// Presets returns the performance profiles in menu order. It lists every one,
-// including those that only apply to some transports; KCPOnly says which
-// entries a transport would drop, so the panel filters them client-side.
+// Presets returns the shared reverse profiles in menu order.
 func Presets() []PresetOption {
 	return append([]PresetOption(nil), presetOptions...)
 }
@@ -539,7 +537,7 @@ func specFromNew(n NewTunnel) (TunnelSpec, error) {
 	// path: on a kernel-stack transport this profile's knobs would be written and
 	// then ignored.
 	if !presetSuitsTransport(n.Preset, s.Transport) {
-		return s, fmt.Errorf("the %s preset applies to the udp+kcp+fec transport only, not %q",
+		return s, fmt.Errorf("the %s preset is not available for transport %q",
 			presetLabel(n.Preset), s.Transport)
 	}
 	ApplyPreset(&s, n.Preset)
@@ -679,7 +677,7 @@ func (e TunnelEdit) editTuning(s *TunnelSpec, shown FineTune) (bool, error) {
 		// control belongs to the kernel, every knob this profile changes would be
 		// written to the config and ignored, which looks like a setting that took.
 		if !presetSuitsTransport(p, string(s.Transport)) {
-			return false, fmt.Errorf("the %s preset applies to the udp+kcp+fec transport only, not %q",
+			return false, fmt.Errorf("the %s preset is not available for transport %q",
 				presetLabel(p), s.Transport)
 		}
 		ApplyPreset(s, p)

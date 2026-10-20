@@ -33,7 +33,7 @@ type directPreset struct {
 //
 // The stream buffer is the headline number in each. At 100 ms round trip, a
 // single connection can move roughly StreamBuffer / RTT — so 256 KB is about
-// 20 Mbit/s, 2 MB about 160, and 16 MB more than the link. Anyone whose single
+// 20 Mbit/s, 8 MB about 670, and 16 MB more than the link. Anyone whose single
 // download feels slow while the link is fast is being limited by this and
 // wants the next one up.
 var directPresets = []directPreset{
@@ -49,7 +49,7 @@ var directPresets = []directPreset{
 		Name:             PresetTurbo,
 		MuxFrameSize:     32768,
 		MuxReceiveBuffer: 16 * 1024 * 1024,
-		MuxStreamBuffer:  2 * 1024 * 1024,
+		MuxStreamBuffer:  8 * 1024 * 1024,
 		Sessions:         1,
 		Keepalive:        75,
 	},
@@ -57,7 +57,7 @@ var directPresets = []directPreset{
 		Name:             PresetThroughput,
 		MuxFrameSize:     65535,
 		MuxReceiveBuffer: 32 * 1024 * 1024,
-		MuxStreamBuffer:  16 * 1024 * 1024,
+		MuxStreamBuffer:  32 * 1024 * 1024,
 		// Several sessions, so one shaped connection is not the whole tunnel
 		// and a single stalled stream cannot hold up the others behind it.
 		Sessions:  4,

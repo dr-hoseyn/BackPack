@@ -162,6 +162,7 @@ func attemptDialWebSocket(ctx context.Context, out *Outbound, addr string, edgeI
 	// ekm is the TLS session's keying material on a bound wss dial, for
 	// checking the server's answer; nil otherwise.
 	var ekm []byte
+	rawMux := path != "/channel" && (mode == config.WSMUX || mode == config.WSSMUX)
 
 	// Handle edgeIP assignment
 	if edgeIP != "" {
@@ -204,6 +205,9 @@ func attemptDialWebSocket(ctx context.Context, out *Outbound, addr string, edgeI
 					return nil, err
 				}
 				own(conn)
+				if rawMux {
+					return muxUpgradeStream(conn), nil
+				}
 				return conn, nil
 			},
 		}
@@ -281,6 +285,9 @@ func attemptDialWebSocket(ctx context.Context, out *Outbound, addr string, edgeI
 			WriteBufferSize: wsWriteBufferSize,
 			WriteBufferPool: wsWriteBuffers,
 			NetDialTLSContext: func(_ context.Context, _, _ string) (net.Conn, error) {
+				if rawMux {
+					return muxUpgradeStream(uconn), nil
+				}
 				return uconn, nil
 			},
 		}

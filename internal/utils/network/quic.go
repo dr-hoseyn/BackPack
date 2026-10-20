@@ -71,6 +71,13 @@ func (s QUICSettings) quicConfig() *quic.Config {
 		// The pool pre-opens streams and every forwarded flow is one more, so the
 		// ceiling has to be generous or the client blocks opening the next one.
 		MaxIncomingStreams: 1 << 16,
+		// 500 Mbit/s at 200 ms RTT needs 12.5 MB in flight. The library's
+		// default stream window can cap one forward below that even though
+		// UDP and the CPUs have room. Windows grow on demand, not up front.
+		InitialStreamReceiveWindow:     1 << 20,
+		MaxStreamReceiveWindow:         32 << 20,
+		InitialConnectionReceiveWindow: 4 << 20,
+		MaxConnectionReceiveWindow:     64 << 20,
 		// Allow the datagram socket to be reused for a graceful restart.
 		Allow0RTT: false,
 		// Start small enough to cross a 1280-byte path; discovery grows it.

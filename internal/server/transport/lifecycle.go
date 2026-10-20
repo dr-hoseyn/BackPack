@@ -178,8 +178,9 @@ func (l *lifecycle) restart(closeControl func(), next func(ctx context.Context))
 }
 
 // pairingWorkers is how many goroutines pair queued users with tunnel
-// connections: one per CPU, up to four.
-func pairingWorkers() int { return min(runtime.NumCPU(), 4) }
+// connections. Use every CPU available to Go instead of stopping at four on
+// larger servers; a blocked assignment must not serialize the whole machine.
+func pairingWorkers() int { return max(runtime.GOMAXPROCS(0), 1) }
 
 // serveGeneration starts what a generation keeps for as long as it lives — the
 // forwarded ports and the pairing workers — whichever client is seated. See

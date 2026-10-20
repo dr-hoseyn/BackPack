@@ -38,7 +38,7 @@ type Spec struct {
 	XrayClient    config.XrayClientConfig    `json:"-"`
 
 	// Preset is the performance profile every tuning field was filled from:
-	// balance, turbo or aggressive. Empty means the values were set by hand or
+	// balance, turbo, aggressive or throughput. Empty means the values were set by hand or
 	// by a version that predates presets — either way they are left untouched.
 	Preset string
 	// Preserve the operator's decision to avoid process-wide kernel tuning.

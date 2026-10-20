@@ -35,13 +35,16 @@ type TcpConfig struct {
 	RemoteAddr string
 	// Endpoints rotates through the server addresses (primary + fallbacks)
 	// so a filtered IP or blocked port does not stop the tunnel.
-	Endpoints      *network.Endpoints
-	Token          string
-	SnifferLog     string
-	KeepAlive      time.Duration
-	RetryInterval  time.Duration
-	DialTimeOut    time.Duration
-	ConnPoolSize   int
+	Endpoints     *network.Endpoints
+	Token         string
+	SnifferLog    string
+	KeepAlive     time.Duration
+	RetryInterval time.Duration
+	DialTimeOut   time.Duration
+	ConnPoolSize  int
+	// FixedPool is used by wrappers with a finite protocol session table.
+	// It limits only spare connections; active forwards remain independent.
+	FixedPool      bool
 	WebPort        int
 	Nodelay        bool
 	Sniffer        bool
@@ -257,8 +260,15 @@ func (c *TcpTransport) poolMaintainer() {
 		dial:       c.tunnelDialer,
 		spawn:      c.state.Go,
 		pending:    &c.dialingConnections,
-		maxSize:    c.config.ConnPoolSize * poolGrowthLimit,
+		maxSize:    c.poolLimit(),
 	}.maintain()
+}
+
+func (c *TcpTransport) poolLimit() int {
+	if c.config.FixedPool {
+		return c.config.ConnPoolSize
+	}
+	return c.config.ConnPoolSize * poolGrowthLimit
 }
 
 // control is this generation's control loop. See controlLoop.
@@ -268,7 +278,7 @@ func (c *TcpTransport) control() controlLoop {
 
 // Dialing to the tunnel server, chained functions, without retry
 func (c *TcpTransport) tunnelDialer() {
-	ready, ok := c.beginPoolDial(c.config.ConnPoolSize * poolGrowthLimit)
+	ready, ok := c.beginPoolDial(c.poolLimit())
 	if !ok {
 		return
 	}

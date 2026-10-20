@@ -38,17 +38,15 @@ const (
 	// poolGrowthLimit caps the pool at this multiple of the configured size.
 	// Both triggers respect it: growth was previously unbounded, so a burst of
 	// requests could keep adding connections with nothing to stop it.
-	poolGrowthLimit = 4
+	poolGrowthLimit = 32
 )
 
-// muxPoolLimit bounds automatic growth by the aggregate receive windows. Keep
-// an explicitly configured initial pool even when it exceeds this budget.
-func muxPoolLimit(size, receiveBuffer int) int {
-	limit := size * poolGrowthLimit
-	if receiveBuffer > 0 {
-		limit = min(limit, max(size, (128*1024*1024)/receiveBuffer))
-	}
-	return limit
+// Receive windows are allocated as traffic arrives. Treating all of them as
+// resident up front imposed a fixed 128 MB budget that often prevented any
+// growth at all. Capacity now follows the configured pool and live demand;
+// the relative connection ceiling still bounds it, including pending dials.
+func muxPoolLimit(size int) int {
+	return size * poolGrowthLimit
 }
 
 // poolLoad turns the tunnel's cumulative byte counters into a per-interval

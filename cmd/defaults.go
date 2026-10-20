@@ -21,7 +21,7 @@ const ( // Default values
 	defaultToken          = "backpack"
 	defaultChannelSize    = 2048
 	defaultRetryInterval  = 3 // only for client
-	defaultConnectionPool = 8
+	defaultConnectionPool = 32
 	defaultLogLevel       = "info"
 	defaultMuxSession     = 1
 	defaultKeepAlive      = 75
@@ -29,7 +29,7 @@ const ( // Default values
 
 	// defaultDatagramSockBuf is the socket buffer a datagram transport asks
 	// for when its config names none. See applyDefaults.
-	defaultDatagramSockBuf = 4 << 20
+	defaultDatagramSockBuf = 16 << 20
 	defaultDialTimeout     = 10 // 10 seconds
 	// related to smux
 	//
@@ -38,11 +38,11 @@ const ( // Default values
 	// the moment one end was upgraded — and the version is settled on the
 	// control channel now instead, so nothing read it. Both the mechanism and
 	// that reasoning live in internal/utils/network/mux.go.
-	defaultMaxFrameSize     = 32768   // 32KB
-	defaultMaxReceiveBuffer = 4194304 // 4MB
-	defaultMaxStreamBuffer  = 65536   // 64KB
+	defaultMaxFrameSize     = 32768    // 32KB
+	defaultMaxReceiveBuffer = 33554432 // 32MB
+	defaultMaxStreamBuffer  = 16777216 // 16MB
 	defaultSnifferLog       = "backpack.json"
-	defaultMuxCon           = 8
+	defaultMuxCon           = 256
 )
 
 func applyDefaults(cfg *config.Config) {

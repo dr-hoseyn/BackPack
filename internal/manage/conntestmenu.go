@@ -47,11 +47,12 @@ func connTestIranMenu() {
 	if len(hosts) == 0 {
 		return
 	}
-	presets := []string{PresetBalance, PresetTurbo, PresetAggressive}
+	presets := []string{PresetBalance, PresetTurbo, PresetAggressive, PresetThroughput}
 	pick := tui.ChooseOpt("Preset", []tui.Option{
 		{Title: "Balance", Desc: "least memory"},
 		{Title: "Turbo", Desc: "default"},
 		{Title: "Aggressive", Desc: "fast links"},
+		{Title: "Throughput", Desc: "bulk traffic - needs RAM"},
 	})
 	if pick < 0 {
 		return
