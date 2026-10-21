@@ -117,6 +117,18 @@ func TestDirectBackendBulkCapacity(t *testing.T) {
 		}()
 		addr = listener.Addr().String()
 	}
+	// Preserve the TCP state before the deadline: this control has no
+	// Backpack data path, so a stalled socket must remain diagnosable.
+	if os.Getenv("BP_CAPACITY_DIAGNOSTICS") != "" {
+		snapshot := time.AfterFunc(5*time.Second, func() {
+			fmt.Fprintln(os.Stderr, "CAPACITY_DIRECT_STALL")
+			pprof.Lookup("goroutine").WriteTo(os.Stderr, 2)
+			if sockets, err := exec.Command("ss", "-tinmp").CombinedOutput(); err == nil {
+				fmt.Fprintf(os.Stderr, "CAPACITY_DIRECT_TCP_SOCKETS\n%s\n", sockets)
+			}
+		})
+		defer snapshot.Stop()
+	}
 	tun := &tunnel{Entry: addr}
 	payload := randomPayload(t, 16<<20)
 	results := make(chan error, 8)

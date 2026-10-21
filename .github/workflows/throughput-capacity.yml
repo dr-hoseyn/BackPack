@@ -51,6 +51,7 @@ jobs:
       - name: Verify host TCP without any tunnel
         env:
           BP_CAPACITY_BENCHMARK: '1'
+          BP_CAPACITY_DIAGNOSTICS: '1'
         run: |
           set -o pipefail
           uname -a

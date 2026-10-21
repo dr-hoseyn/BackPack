@@ -28,8 +28,13 @@ ip -n iran link set vi up; ip -n kharej link set vk up
 if [ -n "${PATHMTU:-}" ]; then
   ip -n iran link set vi mtu "$PATHMTU"; ip -n kharej link set vk mtu "$PATHMTU"
 fi
-ip netns exec iran tc qdisc add dev vi root netem delay 35ms
-ip netns exec kharej tc qdisc add dev vk root netem delay 35ms
+# Delay is not an implicit loss model. The default 1000-packet queue dropped
+# 89k-131k packets per direction in four-stream KCP measurements, despite this
+# fixture calling the path clean. Retain enough packets for the native windows
+# plus FEC; FILTER below still supplies deliberate loss for the filtered test.
+# NETEM_LIMIT=1000 remains available to reproduce the old queue overflow.
+ip netns exec iran tc qdisc add dev vi root netem limit "${NETEM_LIMIT:-65536}" delay 35ms
+ip netns exec kharej tc qdisc add dev vk root netem limit "${NETEM_LIMIT:-65536}" delay 35ms
 # A strict rp_filter drops a forged source before the spoof carrier sees it,
 # and a loose one does too here, where no default route covers it; off, as
 # l3live.sh has it. A real server with a default route needs only loose (2).
@@ -71,6 +76,14 @@ KC=$?
 if [ -n "$HP" ]; then kill "$HP" 2>/dev/null; wait "$HP" 2>/dev/null; fi
 wait $IP
 IC=$?
+# Preserve evidence after engines exit, before this namespace disappears.
+for side in iran kharej; do
+  dev=vi; [ "$side" = iran ] || dev=vk
+  echo "--- $side delay queue"
+  ip netns exec "$side" tc -s qdisc show dev "$dev"
+  ip netns exec "$side" tc -j -s qdisc show dev "$dev" > "$W/qdisc-$side.json"
+  ip netns exec "$side" awk '$1 ~ /^Udp6(InErrors|RcvbufErrors|SndbufErrors)$/ {print}' /proc/net/snmp6
+done
 echo "--- iran"; cat "$W/iran.out"
 echo "--- kharej (exit $KC)"; cat "$W/kharej.out"
 [ $IC -eq 0 ] && echo "RESULT DONE" || echo "RESULT FAIL iran side exit $IC"

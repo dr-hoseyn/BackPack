@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-## v1.14.1 — 2026-10-20 (dr-hoseyn fork)
+## v1.14.1 — 2026-10-21 (dr-hoseyn fork)
 
 - Remove the fixed 128 MiB mux receive-window budget that could prevent a
   healthy tunnel from adding sessions when its stream slots were full. Grow
@@ -27,6 +27,8 @@
   and survives Optimize and updates. Serialize host policy changes across
   processes. Add measured IPv4 path-MTU tuning through the existing MSS editor;
   Linux accounts for TCP options without subtracting them twice.
+- Build with Go 1.26.10 to include the crypto/x509 trust-store security fix
+  for GO-2026-6809.
 - Add race-tested burst and live-session regressions, plus matched candidate
   and baseline measurements for native TCP, TLS, mux, KCP and QUIC streams,
   plus sustained-load checks that keep admitting fresh users.
