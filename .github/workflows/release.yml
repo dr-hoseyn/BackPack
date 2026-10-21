@@ -87,11 +87,9 @@ jobs:
             exit 1
           fi
 
-      - name: Test before publishing
-        # Nothing gets published that has not passed the suite. A broken
-        # release is far more expensive to undo than a slow pipeline.
-        run: go test ./... -timeout 20m
-
+      # CI runs the complete test, race and coverage suites for this commit.
+      # Build and compatibility checks can overlap that work; the mandatory
+      # exact-commit CI gate below must pass before anything is published.
       - name: Build release assets
         # RELEASE_SIGNING_KEY signs release/SHA256SUMS. Without it the build
         # still produces every asset and simply publishes no signature, which
