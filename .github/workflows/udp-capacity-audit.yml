@@ -1,0 +1,55 @@
+name: UDP stability and allocation audit
+on:
+  pull_request:
+    paths:
+      - 'internal/nativeudp/**'
+      - 'internal/client/transport/**'
+      - 'internal/server/transport/**'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/udp-capacity-audit.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  udp-audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Race check UDP lifecycle, pacing and fragmented rekey
+        run: |
+          go mod verify
+          go test -race ./internal/nativeudp ./internal/client/transport ./internal/server/transport ./internal/utils/network -count=1 -timeout 8m
+          go test -race ./internal/nativeudp -run 'TestNativeDatagramKeepsItsSession|TestConcurrentNativeEngine|TestNativeEngineSteady' -count=20 -timeout 2m
+          go test -race ./internal/client/transport ./internal/server/transport -run 'TestRawUDPTarget|TestPacedUDPPacket|TestFullRawUDPQueue' -count=10 -timeout 2m
+      - name: Measure sender allocations on the candidate
+        run: |
+          set -o pipefail
+          go test ./internal/nativeudp -run '^$' -bench '^BenchmarkNativeUDPEngineSend$' -benchmem -benchtime=1s -count=5 | tee "$RUNNER_TEMP/native-udp-candidate.txt"
+      - name: Reproduce fragmented rekey loss and measure the base
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          git worktree add --detach "$RUNNER_TEMP/native-udp-base" "$BASE_SHA"
+          cp internal/nativeudp/send_rekey_test.go "$RUNNER_TEMP/native-udp-base/internal/nativeudp/"
+          cd "$RUNNER_TEMP/native-udp-base"
+          if go test ./internal/nativeudp -run '^TestNativeDatagramKeepsItsSessionWhenRekeyCompletesBetweenFragments$' -count=1 > "$RUNNER_TEMP/native-udp-reproduction.txt" 2>&1; then
+            echo 'Base no longer reproduces the fragmented rekey regression; reassess the comparison.'
+            exit 1
+          fi
+          grep -q 'one datagram crossed Noise sessions' "$RUNNER_TEMP/native-udp-reproduction.txt"
+          go test ./internal/nativeudp -run '^$' -bench '^BenchmarkNativeUDPEngineSend$' -benchmem -benchtime=1s -count=5 | tee "$RUNNER_TEMP/native-udp-base.txt"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: native-udp-allocation-audit
+          path: ${{ runner.temp }}/native-udp-*.txt

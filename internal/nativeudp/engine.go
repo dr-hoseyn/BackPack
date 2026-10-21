@@ -38,6 +38,8 @@ type Engine struct {
 	server            bool
 	max               int
 	limiter           *rate.Limiter
+	sendMu            sync.Mutex
+	sendBuf           []byte // at most maxPayload bytes, reused until Link.Write returns
 	mu                sync.Mutex
 	flows             map[uint64]*flow
 	sources           map[string]*flow
@@ -171,7 +173,16 @@ func (e *Engine) write(id uint64, target string, p []byte) {
 		e.drops.Add(1)
 		return
 	}
-	b := make([]byte, 10+len(target)+len(p))
+	// The link consumes the whole message synchronously. Reuse one bounded
+	// frame instead of allocating a payload-sized object for every datagram.
+	// Backend reply workers share this buffer, so keep it until Write returns.
+	e.sendMu.Lock()
+	defer e.sendMu.Unlock()
+	size := 10 + len(target) + len(p)
+	if cap(e.sendBuf) < size {
+		e.sendBuf = make([]byte, size)
+	}
+	b := e.sendBuf[:size]
 	binary.BigEndian.PutUint64(b, id)
 	binary.BigEndian.PutUint16(b[8:], uint16(len(target)))
 	copy(b[10:], target)

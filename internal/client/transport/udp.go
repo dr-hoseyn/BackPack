@@ -222,40 +222,31 @@ func (c *UdpTransport) handleTunnelConnReady(tunConn *net.UDPConn, ready func())
 	atomic.AddInt32(&c.poolConnections, 1)
 	ready()
 
-	// Prepare a buffer to receive the server's response
-	buffer := make([]byte, 47) // maximum buffer requried for store in IPv6:Port format
+	port, remoteAddr, err := c.udpTarget(tunConn)
+	atomic.AddInt32(&c.poolConnections, -1)
+	if err != nil {
+		c.logger.Error("failed to receive UDP target:", err)
+		return
+	}
+	c.localDialer(remoteAddr, port, tunConn)
+}
 
+func (c *UdpTransport) udpTarget(tunConn *net.UDPConn) (int, string, error) {
+	// Targets include hostnames, scoped IPv6 and backend lists, not just an
+	// IPv6 literal and port. A 47-byte read silently truncated valid targets.
+	// Release this setup buffer before entering the long-lived payload relay.
+	buffer := network.GetDatagramBuffer(network.MaxDatagram)
+	defer network.PutDatagramBuffer(buffer)
 	for {
-		n, _, err := tunConn.ReadFromUDP(buffer)
+		n, err := tunConn.Read(buffer)
 		if err != nil {
-			c.logger.Error("failed to receive response from server:", err)
-
-			atomic.AddInt32(&c.poolConnections, -1)
-
-			return
+			return 0, "", err
 		}
-
-		// Compare the received bytes with the expected SG_Ping message
 		if n == 1 && buffer[0] == utils.SG_Ping {
-			c.logger.Tracef("ping signal recieved for %s", tunConn.LocalAddr().String())
 			continue
 		}
-
-		port, remoteAddr, err := network.ResolveRemoteAddr(string(buffer[:n]))
-
-		// Decrement active connections after successful or failed connection
-		atomic.AddInt32(&c.poolConnections, -1)
-
-		if err != nil {
-			c.logger.Error("failed to find remote address:", err)
-			return
-		}
-
-		c.localDialer(remoteAddr, port, tunConn)
-
-		break
+		return network.ResolveRemoteAddr(string(buffer[:n]))
 	}
-
 }
 
 func (c *UdpTransport) localDialer(remoteAddr string, port int, tunConn *net.UDPConn) {

@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Keep every fragment of a native UDP datagram on the same Noise session
+  during rekey, and serialize nonce assignment with socket writes. Reuse a
+  bounded engine send buffer instead of allocating another payload per packet.
+- Preserve complete raw UDP targets, including long hostnames and backend
+  lists. Allow association retirement while bandwidth pacing waits, discard
+  packets belonging to replaced associations, and avoid copying packets when
+  their bounded receive queue is already full.
+- Update quic-go to v0.64.1 for congestion recovery, reordered-packet handling,
+  migration/MTU and cancellation fixes; update kcp-go to v5.6.73 for queued
+  segment preservation across MTU changes and reduced deadline timer overhead.
+
 ## v1.14.1 — 2026-10-21 (dr-hoseyn fork)
 
 - Remove the fixed 128 MiB mux receive-window budget that could prevent a

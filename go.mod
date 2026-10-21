@@ -11,12 +11,12 @@ require (
 	github.com/klauspost/reedsolomon v1.14.2
 	github.com/quic-go/connect-ip-go v0.6.0
 	github.com/quic-go/masque-go v0.6.0
-	github.com/quic-go/quic-go v0.63.0
+	github.com/quic-go/quic-go v0.64.1
 	github.com/quic-go/webtransport-go v0.13.0
 	github.com/refraction-networking/utls v1.8.2
 	github.com/shirou/gopsutil/v4 v4.26.9
 	github.com/sirupsen/logrus v1.10.2
-	github.com/xtaci/kcp-go/v5 v5.6.72
+	github.com/xtaci/kcp-go/v5 v5.6.73
 	github.com/xtaci/smux v1.5.57
 	github.com/yosida95/uritemplate/v3 v3.0.2
 	golang.org/x/crypto v0.58.0

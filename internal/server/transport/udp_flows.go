@@ -90,13 +90,15 @@ func (s *UdpTransport) localListener(g *udpGen, localAddr, remoteAddr string) {
 				// Check if the connection is already active
 				if existingConn, exists := activeConnections[key]; exists {
 					// If connection is active and not closed, send payload
-					select {
-					case existingConn.payload <- append([]byte(nil), buf[:n]...):
-						s.logger.Tracef("buffered %d bytes for existing connection %s", n, addr.String())
-					default:
+					queued := enqueueUDPPayload(existingConn.payload, buf[:n])
+					mu.Unlock()
+					if queued {
+						if s.logger.IsLevelEnabled(logrus.TraceLevel) {
+							s.logger.Tracef("buffered %d bytes for existing connection %s", n, key)
+						}
+					} else {
 						s.logger.Warnf("payload channel for connection %s is full, dropping UDP packet", addr.String())
 					}
-					mu.Unlock()
 					continue
 				}
 

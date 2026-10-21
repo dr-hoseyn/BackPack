@@ -212,8 +212,23 @@ func (l *Link) send(payload []byte) error {
 // sendParts serializes reusable plaintext and wire buffers through the socket
 // write. The packet connection consumes them before another sender reuses them.
 func (l *Link) sendParts(prefix, payload []byte) error {
+	l.wmu.Lock()
+	defer l.wmu.Unlock()
+	k, peer := l.sendKey()
+	return l.sendPartsLocked(k, peer, prefix, payload)
+}
+
+func (l *Link) sendKey() (*keys, net.Addr) {
 	l.mu.Lock()
-	k, peer := l.active, l.peer
+	defer l.mu.Unlock()
+	return l.active, l.peer
+}
+
+// The writer lock covers nonce assignment and the socket write, so local
+// senders cannot push an earlier counter behind arbitrarily many later ones.
+// A fragmented message supplies the same key/peer snapshot for all its parts.
+func (l *Link) sendPartsLocked(k *keys, peer net.Addr, prefix, payload []byte) error {
+	l.mu.Lock()
 	if k == nil || peer == nil || time.Since(k.created) > sessionLife || k.counter >= 1<<60 {
 		l.mu.Unlock()
 		return errNotReady
@@ -225,8 +240,6 @@ func (l *Link) sendParts(prefix, payload []byte) error {
 	id := k.id
 	cipher := k.send
 	l.mu.Unlock()
-	l.wmu.Lock()
-	defer l.wmu.Unlock()
 	if l.ctx.Err() != nil {
 		return net.ErrClosed
 	}
