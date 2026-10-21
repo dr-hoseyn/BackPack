@@ -40,7 +40,12 @@ git push origin v1.8.5
 ```
 
 The release workflow builds every architecture, writes `SHA256SUMS`, signs it
-with the repository secret, and publishes.
+with the repository secret, and checks real L3 compatibility while CI runs.
+Publication requires successful CI, protocol, recovery, connection-setup,
+capacity and high-concurrency workflows for the exact release commit. The full
+test, race and coverage suites run in CI; the release job reuses that result
+without running the complete suite a second time. Failed or missing checks
+block publication. Published assets and the one-line installer are then verified.
 
 What is signed is the **tag and the list together** (`backpack release <tag>`,
 a newline, then `SHA256SUMS`), not the list alone. The list names archives,

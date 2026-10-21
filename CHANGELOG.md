@@ -27,6 +27,8 @@
   and survives Optimize and updates. Serialize host policy changes across
   processes. Add measured IPv4 path-MTU tuning through the existing MSS editor;
   Linux accounts for TCP options without subtracting them twice.
+- Update the Go crypto, networking and syscall modules to the reviewed upstream
+  versions, and synchronize verified source-installer toolchains with Go 1.26.10.
 - Build with Go 1.26.10 to include the crypto/x509 trust-store security fix
   for GO-2026-6809.
 - Add race-tested burst and live-session regressions, plus matched candidate
