@@ -50,8 +50,16 @@ const udpIdleTimeout = 60 * time.Second
 const udpFlowQueue = 256
 
 // udpForwarder owns one UDP socket on a forwarded port and the flows on it.
+// forwardedUDPSocket keeps shutdown testable under a blocked kernel write.
+type forwardedUDPSocket interface {
+	ReadFromUDP([]byte) (int, *net.UDPAddr, error)
+	WriteToUDP([]byte, *net.UDPAddr) (int, error)
+	LocalAddr() net.Addr
+	Close() error
+}
+
 type udpForwarder struct {
-	conn   *net.UDPConn
+	conn   forwardedUDPSocket
 	logger *logrus.Logger
 	// target is the address on the far side, already marked as UDP.
 	target string
