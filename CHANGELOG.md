@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Update the Go crypto, networking and syscall modules to the reviewed upstream
+  versions, and synchronize verified source-installer toolchains with Go 1.26.10.
+
 ## v1.14.1 — 2026-10-21 (dr-hoseyn fork)
 
 - Remove the fixed 128 MiB mux receive-window budget that could prevent a
