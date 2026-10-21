@@ -242,6 +242,10 @@ func (s *WsTransport) tunnelListener(g *wsGen) {
 				return
 			}
 
+			var owner context.Context
+			if r.URL.Path != "/channel" {
+				owner = g.seat.client()
+			}
 			conn, err := upgrader.Upgrade(w, r, serverProof(r, s.config.Token, s.config.SimpleAuth))
 			if err != nil {
 				s.logger.Errorf("failed to upgrade connection from %s: %v", r.RemoteAddr, err)
@@ -269,12 +273,19 @@ func (s *WsTransport) tunnelListener(g *wsGen) {
 					ping: make(chan struct{}),
 					mu:   &sync.Mutex{},
 				}
-				select {
-				case g.tunnelChannel <- wsConn:
+				accepted := g.seat.admitFor(g.ctx, owner, func(context.Context) bool {
+					select {
+					case g.tunnelChannel <- wsConn:
+						return true
+					default:
+						return false
+					}
+				})
+				if accepted {
 					go s.keepAlive(g, &wsConn)
 					s.logger.Debugf("websocket connection accepted from %s", conn.RemoteAddr().String())
-				default:
-					s.logger.Warnf("websocket tunnel channel is full, closing connection from %s", conn.RemoteAddr().String())
+				} else {
+					s.logger.Debugf("websocket pool is full or its client changed, closing connection from %s", conn.RemoteAddr().String())
 					conn.Close()
 				}
 			}

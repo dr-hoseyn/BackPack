@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Bind WS/WSS and websocket-mux pool admission to the client that owned the
+  HTTP upgrade. A delayed upgrade from a retired client cannot enter a new
+  client's pool after it was drained during replacement.
 - Keep every fragment of a native UDP datagram on the same Noise session
   during rekey, and serialize nonce assignment with socket writes. Reuse a
   bounded engine send buffer instead of allocating another payload per packet.

@@ -33,6 +33,8 @@ jobs:
         run: |
           set -o pipefail
           go test ./internal/nativeudp -run '^$' -bench '^BenchmarkNativeUDPEngineSend$' -benchmem -benchtime=1s -count=5 | tee "$RUNNER_TEMP/native-udp-candidate.txt"
+      - name: Repeated websocket client replacement
+        run: go test -race ./internal/e2e -run '^TestAServerOutlivesItsClientsWithoutLeaking/(ws|wsmux)$' -count=20 -timeout 4m
       - name: Reproduce fragmented rekey loss and measure the base
         if: github.event_name == 'pull_request'
         env:

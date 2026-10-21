@@ -92,6 +92,19 @@ func (c *clientSeat) admit(genCtx context.Context, accept func(context.Context) 
 	return accept(ctx)
 }
 
+// A websocket upgrade can finish after its client was replaced. Remember the
+// owner before upgrading, then check it under the same lock that drains the
+// previous pool. Authentication alone cannot distinguish two clients with the
+// same token, and a late old upgrade must never enter the replacement's pool.
+func (c *clientSeat) admitFor(genCtx, owner context.Context, accept func(context.Context) bool) bool {
+	if owner == nil || genCtx.Err() != nil {
+		return false
+	}
+	return c.admit(genCtx, func(current context.Context) bool {
+		return current == owner && owner.Err() == nil && accept(current)
+	})
+}
+
 // sit seats a new client. It ends the loop of whoever held the seat and calls
 // vacate for it; install then puts the new client's channel in place — the
 // transport's nonce, control channel and peer — and run starts its control

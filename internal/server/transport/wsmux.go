@@ -244,6 +244,10 @@ func (s *WsMuxTransport) tunnelListener(g *wsMuxGen) {
 				return
 			}
 
+			var owner context.Context
+			if r.URL.Path != "/channel" {
+				owner = g.seat.client()
+			}
 			conn, err := upgrader.Upgrade(w, r, serverProof(r, s.config.Token, s.config.SimpleAuth))
 			if err != nil {
 				s.logger.Errorf("failed to upgrade connection from %s: %v", r.RemoteAddr, err)
@@ -271,11 +275,17 @@ func (s *WsMuxTransport) tunnelListener(g *wsMuxGen) {
 					conn.Close()
 					return
 				}
-				select {
-				case g.tunnelChannel <- session: // ok
-				default:
-					s.logger.Warnf("forwarded port: the queue is full, dropping a client from %s", conn.RemoteAddr().String())
-					conn.Close()
+				accepted := g.seat.admitFor(g.ctx, owner, func(context.Context) bool {
+					select {
+					case g.tunnelChannel <- session:
+						return true
+					default:
+						return false
+					}
+				})
+				if !accepted {
+					s.logger.Debugf("websocket mux pool is full or its client changed, closing connection from %s", conn.RemoteAddr().String())
+					session.Close()
 				}
 			}
 		}),
