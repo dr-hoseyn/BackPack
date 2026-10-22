@@ -98,7 +98,7 @@ func TestNoMuxTransportBlocksPuttingAConnectionBack(t *testing.T) {
 	for _, name := range []string{"tcpmux", "wsmux", "kcp"} {
 		t.Run(name+" delegates", func(t *testing.T) {
 			src := readTransportSource(t, name+".go")
-			if !strings.Contains(src, ".run(session)") {
+			if !strings.Contains(src, ".run(session.Session)") {
 				t.Errorf("%s.go no longer hands its session to the shared loop — if it "+
 					"has a copy of it again, every fault fixed in muxsession.go has to "+
 					"be found and fixed here as well", name)

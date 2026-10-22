@@ -41,7 +41,7 @@ jobs:
         run: |
           go mod verify
           go test -race ./internal/nativeudp ./internal/client/transport ./internal/server/transport ./internal/utils/network -count=1 -timeout 8m
-          go test -race ./internal/nativeudp -run 'TestNativeDatagramKeepsItsSession|TestNativeRekeyDelivers|TestConcurrentNativeEngine|TestNativeEngineSteady' -count=20 -timeout 3m
+          go test -race ./internal/nativeudp -run 'TestNativeDatagramKeepsItsSession|TestNativeRekeyDelivers|TestConcurrentNativeEngine|TestNativeEngineSteady|TestNativeSaturatedBackend' -count=20 -timeout 3m
           go test -race ./internal/client/transport ./internal/server/transport -run 'TestRawUDPTarget|TestPacedUDPPacket|TestFullRawUDPQueue|TestUDPOverload|TestDequeuedMux|TestQueuedMux|TestWebSocketUpgrade' -count=20 -timeout 3m
       - name: Measure sender allocations on the candidate
         run: |

@@ -248,7 +248,7 @@ func (e *Engine) receive() {
 			e.drops.Add(1)
 			continue
 		}
-		target := string(b[10 : 10+size])
+		target := b[10 : 10+size]
 		payload := b[10+size : n]
 		if !e.allowed(len(payload)) {
 			e.drops.Add(1)
@@ -272,19 +272,26 @@ func (e *Engine) receive() {
 			}
 			continue
 		}
-		if f == nil && len(e.flows) < e.max && validTarget(target) {
-			f = &flow{id: id, target: target, queue: make(chan []byte, 4)}
+		if f == nil && len(e.flows) < e.max && validTarget(string(target)) {
+			f = &flow{id: id, target: string(target), queue: make(chan []byte, 4)}
 			f.last.Store(time.Now().UnixNano())
 			e.flows[id] = f
 			e.wg.Add(1)
 			go e.backend(f)
 		}
 		e.mu.Unlock()
-		if f == nil || target != f.target {
+		if f == nil || string(target) != f.target {
 			e.drops.Add(1)
 			continue
 		}
 		f.last.Store(time.Now().UnixNano())
+		// This loop is the only producer; the backend can only drain the
+		// queue. Select evaluates the copying send expression even when its
+		// default wins, so reject saturation before allocating a large copy.
+		if len(f.queue) == cap(f.queue) {
+			e.drops.Add(1)
+			continue
+		}
 		select {
 		case f.queue <- append([]byte(nil), payload...):
 			e.bytesIn.Add(uint64(len(payload)))

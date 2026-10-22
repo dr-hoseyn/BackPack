@@ -47,6 +47,10 @@ the following at candidate `d4b6fe1e`:
 These use `BenchmarkNativeUDPEngineSend`, which includes engine framing in
 addition to link encryption. They are separate from the older link-only table
 above. A smaller B/op value measures allocation pressure, not total tunnel RAM.
+The receiver checks backend queue capacity before copying the payload and
+borrows the target bytes for existing-flow comparisons. A saturated backend
+therefore adds no engine allocation for a discarded packet; the already
+performed link authentication/decryption is a separate cost.
 
 One datagram now keeps the same Noise key and peer for all its fragments, even
 if the receive loop completes a rekey during its first socket write. The next
