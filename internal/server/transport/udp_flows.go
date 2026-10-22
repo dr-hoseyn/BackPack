@@ -97,7 +97,7 @@ func (s *UdpTransport) localListener(g *udpGen, localAddr, remoteAddr string) {
 							s.logger.Tracef("buffered %d bytes for existing connection %s", n, key)
 						}
 					} else {
-						s.logger.Warnf("payload channel for connection %s is full, dropping UDP packet", addr.String())
+						s.logUDPOverload("forwarded payload queue is full")
 					}
 					continue
 				}
@@ -110,7 +110,7 @@ func (s *UdpTransport) localListener(g *udpGen, localAddr, remoteAddr string) {
 				// and released on all three ways out below, or a tunnel with a
 				// limit would bleed slots until it forwarded nothing.
 				if !s.limits.acquire() {
-					s.logger.Warnf("connection limit reached, dropping UDP packet from %s", addr.String())
+					s.logUDPOverload("connection limit reached")
 					continue
 				}
 
@@ -148,7 +148,7 @@ func (s *UdpTransport) localListener(g *udpGen, localAddr, remoteAddr string) {
 					}
 
 				default:
-					s.logger.Warn("UDP channel is full, dropping packet.")
+					s.logUDPOverload("forwarded flow queue is full")
 					// Take the flow back out the way every other path does it:
 					// under the lock, and only when the entry is still this one.
 					//

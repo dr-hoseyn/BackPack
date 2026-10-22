@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Keep TCP Mux, WebSocket Mux and KCP sessions bound to the client that
+  admitted them, including a replacement between dequeue and worker startup.
+  Close queued sessions with their owner and reject KCP data handshakes that
+  span a client replacement. Extend repeated churn checks to TLS transports.
+- Aggregate raw UDP queue/connection-limit overload warnings across listeners
+  with one five-second reporting budget. Preserve suppressed-drop counts
+  without formatting and writing a warning for every discarded packet.
 - Bind WS/WSS and websocket-mux pool admission to the client that owned the
   HTTP upgrade. A delayed upgrade from a retired client cannot enter a new
   client's pool after it was drained during replacement.

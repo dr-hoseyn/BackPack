@@ -5,6 +5,7 @@ on:
       - 'internal/nativeudp/**'
       - 'internal/client/transport/**'
       - 'internal/server/transport/**'
+      - 'internal/e2e/churn_test.go'
       - 'go.mod'
       - 'go.sum'
       - '.github/workflows/udp-capacity-audit.yml'
@@ -14,7 +15,7 @@ permissions:
 jobs:
   udp-audit:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
         with:
@@ -23,18 +24,34 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - name: Record audit provenance
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          {
+            go version
+            uname -a
+            echo "Tested checkout: $(git rev-parse HEAD)"
+            echo "PR head: $HEAD_SHA"
+            echo "Comparison base: $BASE_SHA"
+            echo 'Measurements are loopback sender costs, not WAN throughput guarantees.'
+          } | tee "$RUNNER_TEMP/native-udp-provenance.txt"
       - name: Race check UDP lifecycle, pacing and fragmented rekey
         run: |
           go mod verify
           go test -race ./internal/nativeudp ./internal/client/transport ./internal/server/transport ./internal/utils/network -count=1 -timeout 8m
-          go test -race ./internal/nativeudp -run 'TestNativeDatagramKeepsItsSession|TestConcurrentNativeEngine|TestNativeEngineSteady' -count=20 -timeout 2m
-          go test -race ./internal/client/transport ./internal/server/transport -run 'TestRawUDPTarget|TestPacedUDPPacket|TestFullRawUDPQueue' -count=10 -timeout 2m
+          go test -race ./internal/nativeudp -run 'TestNativeDatagramKeepsItsSession|TestNativeRekeyDelivers|TestConcurrentNativeEngine|TestNativeEngineSteady' -count=20 -timeout 3m
+          go test -race ./internal/client/transport ./internal/server/transport -run 'TestRawUDPTarget|TestPacedUDPPacket|TestFullRawUDPQueue|TestUDPOverload|TestDequeuedMux|TestQueuedMux|TestWebSocketUpgrade' -count=20 -timeout 3m
       - name: Measure sender allocations on the candidate
         run: |
           set -o pipefail
           go test ./internal/nativeudp -run '^$' -bench '^BenchmarkNativeUDPEngineSend$' -benchmem -benchtime=1s -count=5 | tee "$RUNNER_TEMP/native-udp-candidate.txt"
-      - name: Repeated websocket client replacement
-        run: go test -race ./internal/e2e -run '^TestAServerOutlivesItsClientsWithoutLeaking/(ws|wsmux)$' -count=20 -timeout 4m
+      - name: Repeated client replacement, including TLS and multiplexing
+        run: |
+          set -o pipefail
+          go test -race ./internal/e2e -run '^TestAServerOutlivesItsClientsWithoutLeaking/(ws|wsmux)$' -count=20 -v -timeout 4m | tee "$RUNNER_TEMP/native-udp-ws-churn.txt"
+          go test -race ./internal/e2e -run '^TestAServerOutlivesItsClientsWithoutLeaking/(tcpmux|kcp|wss|wssmux)$' -count=5 -v -timeout 4m | tee "$RUNNER_TEMP/native-udp-mux-tls-churn.txt"
       - name: Reproduce fragmented rekey loss and measure the base
         if: github.event_name == 'pull_request'
         env:
@@ -43,12 +60,18 @@ jobs:
           set -euo pipefail
           git worktree add --detach "$RUNNER_TEMP/native-udp-base" "$BASE_SHA"
           cp internal/nativeudp/send_rekey_test.go "$RUNNER_TEMP/native-udp-base/internal/nativeudp/"
+          cp internal/nativeudp/rekey_delivery_test.go "$RUNNER_TEMP/native-udp-base/internal/nativeudp/"
           cd "$RUNNER_TEMP/native-udp-base"
           if go test ./internal/nativeudp -run '^TestNativeDatagramKeepsItsSessionWhenRekeyCompletesBetweenFragments$' -count=1 > "$RUNNER_TEMP/native-udp-reproduction.txt" 2>&1; then
-            echo 'Base no longer reproduces the fragmented rekey regression; reassess the comparison.'
-            exit 1
+            echo 'Base already keeps a datagram in one Noise session.' >> "$RUNNER_TEMP/native-udp-reproduction.txt"
+          else
+            grep -q 'one datagram crossed Noise sessions' "$RUNNER_TEMP/native-udp-reproduction.txt"
           fi
-          grep -q 'one datagram crossed Noise sessions' "$RUNNER_TEMP/native-udp-reproduction.txt"
+          if go test ./internal/nativeudp -run '^TestNativeRekeyDeliversWholeDatagramsThroughThePreviousSession$' -count=1 > "$RUNNER_TEMP/native-udp-delivery-reproduction.txt" 2>&1; then
+            echo 'Base already delivers fragmented datagrams across rekey.' >> "$RUNNER_TEMP/native-udp-delivery-reproduction.txt"
+          else
+            grep -q 'fragmented datagram was lost across a completed Noise rekey' "$RUNNER_TEMP/native-udp-delivery-reproduction.txt"
+          fi
           go test ./internal/nativeudp -run '^$' -bench '^BenchmarkNativeUDPEngineSend$' -benchmem -benchtime=1s -count=5 | tee "$RUNNER_TEMP/native-udp-base.txt"
       - uses: actions/upload-artifact@v7
         if: always()

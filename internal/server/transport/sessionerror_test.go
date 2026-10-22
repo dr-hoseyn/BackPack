@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"context"
 	"errors"
 	"net"
 	"sync/atomic"
@@ -58,7 +59,7 @@ func muxSubjects(t *testing.T, queueSize int) []sessionErrorSubject {
 		s := &TcpMuxTransport{lifecycle: lifecycle{logger: log}, limits: lim, config: &TcpMuxConfig{MuxCon: 8}}
 		subs = append(subs, sessionErrorSubject{
 			name: "tcpmux",
-			fail: func(c *LocalTCPConn, err error) { s.session(g).failed(c, err) },
+			fail: func(c *LocalTCPConn, err error) { s.session(g, context.Background()).failed(c, err) },
 			counters: func() (int32, int32) {
 				return atomic.LoadInt32(&s.sessionCounter), atomic.LoadInt32(&s.streamCounter)
 			},
@@ -78,7 +79,7 @@ func muxSubjects(t *testing.T, queueSize int) []sessionErrorSubject {
 		s := &WsMuxTransport{lifecycle: lifecycle{logger: log}, limits: lim, config: &WsMuxConfig{MuxCon: 8}}
 		subs = append(subs, sessionErrorSubject{
 			name: "wsmux",
-			fail: func(c *LocalTCPConn, err error) { s.session(g).failed(c, err) },
+			fail: func(c *LocalTCPConn, err error) { s.session(g, context.Background()).failed(c, err) },
 			counters: func() (int32, int32) {
 				return atomic.LoadInt32(&s.sessionCounter), atomic.LoadInt32(&s.streamCounter)
 			},
@@ -98,7 +99,7 @@ func muxSubjects(t *testing.T, queueSize int) []sessionErrorSubject {
 		s := &KcpTransport{lifecycle: lifecycle{logger: log}, limits: lim, config: &KcpConfig{MuxCon: 8}}
 		subs = append(subs, sessionErrorSubject{
 			name: "kcp",
-			fail: func(c *LocalTCPConn, err error) { s.session(g).failed(c, err) },
+			fail: func(c *LocalTCPConn, err error) { s.session(g, context.Background()).failed(c, err) },
 			counters: func() (int32, int32) {
 				return atomic.LoadInt32(&s.sessionCounter), atomic.LoadInt32(&s.streamCounter)
 			},

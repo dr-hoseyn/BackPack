@@ -32,6 +32,43 @@ through configured TCP protocol helpers at 1/8/32 concurrent connections, use
 require measurements on the deployment's two hosts; none are inferred here from
 the sender microbenchmark.
 
+## Engine framing and rekey audit (2026-10-22)
+
+The engine also reuses its flow/target/payload frame. Concurrent backend reply
+workers share one bounded frame under a mutex until the link has consumed it.
+This removes a separate payload-sized allocation before encryption. Against
+fork/main `00bf113e`, five matched Linux amd64 samples on Go 1.26.10 measured
+the following at candidate `d4b6fe1e`:
+
+| Engine payload | Base median | Candidate median | Base B/op | Candidate B/op | Allocs/op |
+|---|---:|---:|---:|---:|---:|
+| 1200 bytes | 1456 ns | 1205 ns | 1312 | 32 | 3 → 2 |
+
+These use `BenchmarkNativeUDPEngineSend`, which includes engine framing in
+addition to link encryption. They are separate from the older link-only table
+above. A smaller B/op value measures allocation pressure, not total tunnel RAM.
+
+One datagram now keeps the same Noise key and peer for all its fragments, even
+if the receive loop completes a rekey during its first socket write. The next
+datagram adopts the new session. A real-socket regression delays a fresh Noise
+response until the first fragment is sent, then verifies complete authenticated
+delivery for 1001-, 3000- and 60000-byte messages and delivery on the new session.
+The wire format, replay validation and unreliable datagram semantics are unchanged.
+
+On Linux, reproduce the targeted checks and engine benchmark with:
+
+```sh
+go test -race ./internal/nativeudp -run 'TestNativeRekeyDelivers|TestNativeDatagramKeepsItsSession|TestConcurrentNativeEngine' -count=20 -timeout 3m
+go test ./internal/nativeudp -run '^$' -bench '^BenchmarkNativeUDPEngineSend$' -benchmem -benchtime=1s -count=5
+```
+
+The [UDP audit workflow](../.github/workflows/udp-capacity-audit.yml) saves the
+tested commit, base commit, Go version, reproduction results and benchmark
+samples as artifacts. It also checks UDP pacing and saturated queues, session
+ownership across client replacement, and repeated WS/WSS/mux/KCP churn with
+the race detector. Successful loopback tests establish those tested behaviours;
+deployment capacity still needs measurements on the actual two hosts and path.
+
 <div dir="rtl">
 
 ## خلاصهٔ فارسی
@@ -43,4 +80,4 @@ the sender microbenchmark.
 
 </div>
 
-*Last verified against Backpack v1.14.1, 2026-10-18.*
+*Link-only measurements: v1.14.1, 2026-10-18. Engine audit: candidate d4b6fe1e, 2026-10-22.*

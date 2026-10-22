@@ -24,7 +24,7 @@ import (
 // that outlives its run from reaching into the run that replaced it.
 type kcpGen struct {
 	ctx              context.Context
-	tunnelChannel    chan *smux.Session
+	tunnelChannel    chan pooledMuxSession
 	handshakeChannel chan net.Conn
 	localChannel     chan LocalTCPConn
 	reqNewConnChan   chan struct{}
@@ -257,7 +257,7 @@ func (s *KcpTransport) Restart() {
 func (s *KcpTransport) newGen(ctx context.Context) *kcpGen {
 	g := &kcpGen{
 		ctx:              ctx,
-		tunnelChannel:    make(chan *smux.Session, s.config.ChannelSize),
+		tunnelChannel:    make(chan pooledMuxSession, s.config.ChannelSize),
 		handshakeChannel: make(chan net.Conn),
 		localChannel:     make(chan LocalTCPConn, s.config.ChannelSize),
 		reqNewConnChan:   make(chan struct{}, s.config.ChannelSize),
@@ -389,6 +389,8 @@ func (s *KcpTransport) acceptTunnelConn(g *kcpGen, listener *kcp.Listener) {
 // the server reject them forever while it waited for a control channel that
 // the client had no reason to re-open.
 func (s *KcpTransport) acceptSession(g *kcpGen, session *kcp.UDPSession) {
+	// Announcing a data session can span a control-channel replacement.
+	owner := g.seat.client()
 	if err := session.SetReadDeadline(time.Now().Add(controlClaimTimeout)); err != nil {
 		session.Close()
 		return
@@ -463,10 +465,11 @@ func (s *KcpTransport) acceptSession(g *kcpGen, session *kcp.UDPSession) {
 			conn.Close()
 			return
 		}
-		select {
-		case g.tunnelChannel <- muxSession: // ok
-		default:
-			s.logger.Warnf("tunnel listener channel is full, discarding KCP session from %s", session.RemoteAddr())
+		accepted := g.seat.admitFor(g.ctx, owner, func(ctx context.Context) bool {
+			return enqueueMuxSession(g.tunnelChannel, ctx, muxSession)
+		})
+		if !accepted {
+			s.logger.Debugf("KCP pool is full or its client changed, discarding session from %s", session.RemoteAddr())
 			muxSession.Close()
 		}
 
@@ -488,8 +491,8 @@ func (s *KcpTransport) handleLoop(g *kcpGen) {
 				continue
 			}
 
-			loop := s.session(g)
-			go loop.run(session)
+			loop := s.session(g, session.owner)
+			go loop.run(session.Session)
 		}
 	}
 }
@@ -498,9 +501,9 @@ func (s *KcpTransport) handleLoop(g *kcpGen) {
 // loop. It is the whole of what is transport-specific about running a session.
 // Its context is the seated client's, so the session ends with the client that
 // opened it rather than with the generation — which now outlives its clients.
-func (s *KcpTransport) session(g *kcpGen) muxSession {
+func (s *KcpTransport) session(g *kcpGen, owner context.Context) muxSession {
 	return muxSession{
-		ctx:           g.seat.client(),
+		ctx:           owner,
 		local:         g.localChannel,
 		usage:         g.usageMonitor,
 		reqNewConn:    g.reqNewConnChan,

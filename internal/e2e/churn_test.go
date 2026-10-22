@@ -33,7 +33,7 @@ func TestAServerOutlivesItsClientsWithoutLeaking(t *testing.T) {
 	if testing.Short() {
 		t.Skip("churns eight clients per transport")
 	}
-	for _, transport := range []string{"tcp", "tcpmux", "ws", "wsmux", "kcp", "quic"} {
+	for _, transport := range []string{"tcp", "tcpmux", "ws", "wss", "wsmux", "wssmux", "kcp", "quic"} {
 		t.Run(transport, func(t *testing.T) {
 			backend := startEchoBackend(t)
 			tunnelPort := freePort(t)
@@ -53,13 +53,13 @@ func TestAServerOutlivesItsClientsWithoutLeaking(t *testing.T) {
 				ctx, cancel := context.WithCancel(context.Background())
 				tun := startClientAgainst(t, ctx, cliCfg, entryPort, tunnelPort)
 				tun.cancel = cancel
+				defer tun.Stop()
 				if err := tun.waitReady(tunnelReadyTimeout); err != nil {
 					t.Fatalf("client %d never came up: %v", i, err)
 				}
 				if err := tun.roundTrip(randomPayload(t, 64*1024)); err != nil {
 					t.Fatalf("client %d could not carry traffic: %v", i, err)
 				}
-				tun.Stop()
 			}
 
 			visit(0)

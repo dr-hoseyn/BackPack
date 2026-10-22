@@ -22,7 +22,7 @@ import (
 // that outlives its run from reaching into the run that replaced it.
 type tcpMuxGen struct {
 	ctx              context.Context
-	tunnelChannel    chan *smux.Session
+	tunnelChannel    chan pooledMuxSession
 	handshakeChannel chan controlCandidate
 	localChannel     chan LocalTCPConn
 	reqNewConnChan   chan struct{}
@@ -225,7 +225,7 @@ func (s *TcpMuxTransport) Restart() {
 func (s *TcpMuxTransport) newGen(ctx context.Context) *tcpMuxGen {
 	return &tcpMuxGen{
 		ctx:              ctx,
-		tunnelChannel:    make(chan *smux.Session, s.config.ChannelSize),
+		tunnelChannel:    make(chan pooledMuxSession, s.config.ChannelSize),
 		handshakeChannel: make(chan controlCandidate, 1),
 		localChannel:     make(chan LocalTCPConn, s.config.ChannelSize),
 		reqNewConnChan:   make(chan struct{}, s.config.ChannelSize),
@@ -394,21 +394,7 @@ func (s *TcpMuxTransport) deliverTunnelConn(g *tcpMuxGen, conn net.Conn, nonce s
 			s.logger.Errorf("failed to create MUX session: %v", err)
 			return false
 		}
-		select {
-		case g.tunnelChannel <- session:
-			// The client identity is captured before the session can reach a worker.
-			go func() {
-				select {
-				case <-ctx.Done():
-					session.Close()
-				case <-session.CloseChan():
-				}
-			}()
-			return true
-		default:
-			session.Close()
-			return false
-		}
+		return enqueueMuxSession(g.tunnelChannel, ctx, session)
 	})
 	if !accepted {
 		conn.Close()
@@ -428,8 +414,8 @@ func (s *TcpMuxTransport) handleLoop(g *tcpMuxGen) {
 				continue
 			}
 
-			loop := s.session(g)
-			go loop.run(session)
+			loop := s.session(g, session.owner)
+			go loop.run(session.Session)
 		}
 	}
 }
@@ -438,9 +424,9 @@ func (s *TcpMuxTransport) handleLoop(g *tcpMuxGen) {
 // loop. It is the whole of what is transport-specific about running a session.
 // Its context is the seated client's, so the session ends with the client that
 // opened it rather than with the generation — which now outlives its clients.
-func (s *TcpMuxTransport) session(g *tcpMuxGen) muxSession {
+func (s *TcpMuxTransport) session(g *tcpMuxGen, owner context.Context) muxSession {
 	return muxSession{
-		ctx:           g.seat.client(),
+		ctx:           owner,
 		local:         g.localChannel,
 		usage:         g.usageMonitor,
 		reqNewConn:    g.reqNewConnChan,

@@ -69,6 +69,7 @@ type UdpTransport struct {
 	activeMu          sync.Mutex
 	controlChannel    netControl
 	limits            *limiter
+	overloadLog       udpOverloadLog
 }
 
 type UdpConfig struct {
@@ -271,7 +272,7 @@ func (s *UdpTransport) acceptTunnelConn(g *udpGen, listener *net.UDPConn) {
 				go s.keepAlive(g, &tunnelConn)
 				s.logger.Debugf("accepted tunnel connection from %s", addr.String())
 			default:
-				s.logger.Warn("UDP tunnel channel is full")
+				s.logUDPOverload("tunnel pool is full")
 				// Close the newly created connection as it couldn't be added.
 				// Under the lock: this map is read and written by every other
 				// datagram that arrives, and deleting from it unguarded is a
@@ -315,7 +316,7 @@ func (s *UdpTransport) deliverTunnelPayload(ctx context.Context, key string, pac
 			s.logger.Tracef("buffered %d bytes for existing connection %s", len(packet), key)
 		}
 	} else {
-		s.logger.Warnf("payload channel for connection %s is full, dropping UDP packet", key)
+		s.logUDPOverload("tunnel payload queue is full")
 	}
 	return true
 }
