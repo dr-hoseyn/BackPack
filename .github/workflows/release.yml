@@ -261,7 +261,7 @@ jobs:
           sudo bash "$RUNNER_TEMP/verify-install.sh" </dev/null
           test "$(/usr/local/bin/backpack -v | head -1)" = "$TAG"
           /usr/local/bin/backpack version --json | tee "$RUNNER_TEMP/installed-version.json"
-          test -x /usr/local/lib/backpack/helpers/naive/v154.0.8037.49-4-amd64/naive
+          test -x /usr/local/lib/backpack/helpers/naive/v154.0.8037.49-5-amd64/naive
           test -x /usr/local/lib/backpack/helpers/sing-box/v1.14.2-amd64/sing-box
           test -s /usr/local/lib/backpack/helpers/sing-box/v1.14.2-amd64/libcronet.so
           test -x /usr/local/lib/backpack/helpers/xray/v26.3.27-amd64/xray

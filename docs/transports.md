@@ -115,7 +115,7 @@ certificate verification or select an unverified SNI as a purported fix.
 ### Naive HTTP/2
 
 Install with `BP_HELPERS=naive bash install.sh`. The pinned versions are
-NaiveProxy `v154.0.8037.49-4` and sing-box `v1.14.2`. On amd64, for example:
+NaiveProxy `v154.0.8037.49-5` and sing-box `v1.14.2`. On amd64, for example:
 
 ```toml
 # Iran; the ordinary [server] table still owns token, ports and pool tuning.
@@ -141,7 +141,7 @@ remote_addr = "127.0.0.1:3080"
 transport = "tcp"
 token = "REPLACE-WITH-A-RANDOM-SHARED-TOKEN"
 [client.naive]
-binary = "/usr/local/lib/backpack/helpers/naive/v154.0.8037.49-4-amd64/naive"
+binary = "/usr/local/lib/backpack/helpers/naive/v154.0.8037.49-5-amd64/naive"
 server = "tunnel.example.com:443"
 username = "REPLACE-WITH-A-PRIVATE-USERNAME"
 password = "REPLACE-WITH-A-RANDOM-PASSWORD"

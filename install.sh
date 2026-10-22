@@ -214,8 +214,8 @@ helpers_require_tools() {
 helper_spec() {
   helper_tool="$1"; helper_arch="$2"; helper_extra=""
   case "$helper_tool/$helper_arch" in
-    naive/amd64) helper_sha=9d765620b90f7c60eb40c7c68b2f82537757cc52a8693dee7a00f8ba8b13dfd0; helper_arch=x64 ;;
-    naive/arm64) helper_sha=dfa99dc36dafa1ee7f97f48bde14e9ee96bc4011e5cc10c7881fa7883859a036 ;;
+    naive/amd64) helper_sha=80214dfea1767f6ecf63a3a79dc9f48b203460f51abc609357fff48dd5844c7d; helper_arch=x64 ;;
+    naive/arm64) helper_sha=8f4d917fa39a5d8cf1c17fc12ffd99ba84c015b62b43461d09cc074ca4114d8d ;;
     sing-box/amd64) helper_sha=a684484d7477d1437282ee411f4d131d0340aaad60a7868841ebd5d87dd8a0c6 ;;
     sing-box/arm64) helper_sha=b43a1fb1bda131c6653576741ce527eb2bdeab7c9308ca90ee8b972abb7e4a7f ;;
     tailcat/amd64) helper_sha=b107528ec7d989333d986573c097d840b9ef1afa9bb177f8eb03e0767f370514 ;;
@@ -226,7 +226,7 @@ helper_spec() {
   esac
   case "$helper_tool" in
     naive)
-      helper_version=v154.0.8037.49-4; helper_repo=klzgrad/naiveproxy
+      helper_version=v154.0.8037.49-5; helper_repo=klzgrad/naiveproxy
       helper_stem="naiveproxy-$helper_version-linux-$helper_arch"
       helper_asset="$helper_stem.tar.xz"; helper_member="$helper_stem/naive"; helper_kind=xz ;;
     sing-box)
@@ -243,6 +243,17 @@ helper_spec() {
   esac
 }
 
+# Published BackPack binaries still default to the previous Naive helper path.
+# Keep those binaries and saved configurations usable after upstream removes an
+# old archive. Preserve any helper already installed at the compatibility path.
+helper_compat_path() {
+  [[ "$helper_tool" == naive ]] || return 0
+  local legacy="$root/v154.0.8037.49-4-$ARCH"
+  if [[ ! -e "$legacy" && ! -L "$legacy" ]]; then
+    ln -s "$helper_version-$ARCH" "$legacy" || return 1
+  fi
+}
+
 # Subshell owns its staging cleanup and never overwrites an existing directory.
 install_helper() (
   set -euo pipefail
@@ -251,6 +262,7 @@ install_helper() (
   final="$root/$helper_version-$ARCH"
   if [[ -e "$final" || -L "$final" ]]; then
     info "Keeping existing helper directory: $final (configure its binary explicitly)"
+    helper_compat_path || exit 1
     exit 0
   fi
   mkdir -p "$root" || exit 1
@@ -277,6 +289,7 @@ install_helper() (
   # directory really moved: mv -n itself reports success when it skipped it.
   mv -Tn -- "$stage/payload" "$final" || exit 1
   [[ ! -d "$stage/payload" ]] || { err "Helper directory appeared concurrently: $final"; exit 1; }
+  helper_compat_path || exit 1
   info "Verified helper installed: $final/$helper_tool"
 )
 
@@ -308,7 +321,10 @@ mkdir -p /etc/backpack "$INSTALL_DIR/backups"
 fetch() {
   local url="$1" out="$2"
   info "Downloading: ${url}"
-  curl -fSL --connect-timeout 15 "$url" -o "$out" 2>/dev/null
+  curl -fsSL --retry 2 --connect-timeout 15 "$url" -o "$out" || {
+    err "Download failed: $url"
+    return 1
+  }
 }
 
 # verify_asset <file> <sumsfile>

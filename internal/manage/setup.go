@@ -174,7 +174,7 @@ func managedHelperPath(tool string) string {
 	if tool == "tailcat" {
 		return filepath.Join("/usr/local/lib/backpack/helpers", "sing-box", "v1.15.0-alpha.12-"+runtime.GOARCH, "sing-box")
 	}
-	version := map[string]string{"naive": "v154.0.8037.49-4", "sing-box": "v1.14.2", "xray": "v26.3.27"}[tool]
+	version := map[string]string{"naive": "v154.0.8037.49-5", "sing-box": "v1.14.2", "xray": "v26.3.27"}[tool]
 	return filepath.Join("/usr/local/lib/backpack/helpers", tool, version+"-"+runtime.GOARCH, tool)
 }
 
