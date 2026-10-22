@@ -287,4 +287,4 @@ Gecko برای Hysteria2 و ECH اختیاری برای Hysteria2، AnyTLS و TU
 
 </div>
 
-*Last verified against Backpack v1.14.1, 2026-10-18.*
+*Last verified against Backpack v1.14.2, 2026-10-18.*

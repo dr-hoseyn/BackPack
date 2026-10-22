@@ -132,4 +132,4 @@ sudo env "PATH=$PATH" BP_CAPACITY_NETNS_TEST=1 go test ./internal/optimize \
 
 </div>
 
-*Last verified against Backpack v1.14.1.*
+*Last verified against Backpack v1.14.2.*

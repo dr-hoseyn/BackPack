@@ -43,4 +43,4 @@ the sender microbenchmark.
 
 </div>
 
-*Last verified against Backpack v1.14.1, 2026-10-18.*
+*Last verified against Backpack v1.14.2, 2026-10-18.*

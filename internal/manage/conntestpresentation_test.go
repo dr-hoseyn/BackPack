@@ -95,8 +95,10 @@ func TestConnectionTestStartupGroupsSharedWarningsAndExplainsIPv6Skips(t *testin
 		t.Fatal("repeated internal paths clutter the summary")
 	}
 	// Presentation must not discard the full diagnosis from the test result.
-	if got := suite.tests[0].cases[11].skip; got != missing("sing-box") {
-		t.Fatalf("skip reason was changed: %q", got)
+	for _, c := range suite.tests[0].cases {
+		if c.tr == "naive" && c.skip != missing("sing-box") {
+			t.Fatalf("skip reason was changed: %q", c.skip)
+		}
 	}
 }
 
