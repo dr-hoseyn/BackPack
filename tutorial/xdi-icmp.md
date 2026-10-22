@@ -24,7 +24,11 @@ refused with a plain message if the raw socket is not available.
 
 ## The setup
 
-The TCP walkthrough, with **`Experimental` → `xDi (ICMP)`** on both ends.
+The TCP walkthrough, with **`Reverse` → `ICMP` → `xDi (ICMP)`** on both ends.
+
+The kharej client initiates the ICMP tunnel to Iran; applications connect to
+the forwarded ports on Iran. This is separate from Direct xDi, where Iran
+initiates the tunnel to kharej.
 
 The differences are all consequences of ICMP having **no ports**:
 
@@ -95,7 +99,7 @@ If TCP or UDP works at all on your route, use it instead.
 
 **پیش‌نیاز:** لینوکس و دسترسی root روی **هر دو** طرف.
 
-راه‌اندازی مثل [TCP](tcp.md) با انتخاب `Experimental` → `xDi (ICMP)` در دو طرف.
+راه‌اندازی مثل [TCP](tcp.md) با انتخاب `Reverse` → `ICMP` → `xDi (ICMP)` در دو طرف.
 چون ICMP پورت ندارد: پورت تونل فقط اسم و شناسهٔ session است و **نیازی به باز
 کردنش در فایروال نیست**، اما **ICMP باید در دو جهت باز باشد**. قبل از هر کاری از
 سرور خارج `ping -c3 IRAN_IP` بگیر؛ اگر پینگ ساده کار نکند، این ترنسپورت هم کار

@@ -29,13 +29,9 @@ type transportEntry struct {
 // belong to, so the setup menu asks "which kind of connection?" before asking
 // for a specific variant.
 //
-// There was an Experimental family here, holding xDi and — before it — IP
-// spoofing. Both are direct-tunnel carriers now, for the same reason: a reverse
-// tunnel is a control channel plus a pool of connections, each its own session,
-// and neither carrier gives a receiver anything to tell those sessions apart
-// by. They were offered here long after they had stopped being able to carry
-// traffic in this shape. They are chosen under Direct, where the single session
-// is what they can actually serve.
+// xDi shares the KCP reverse engine. Its ICMP carrier separates the control
+// channel and pool sessions by echo identifier, so it is offered for Reverse
+// as well as Direct. IP spoofing remains a Direct-only carrier.
 type transportGroup struct {
 	label, desc string
 	entries     []transportEntry
@@ -58,6 +54,9 @@ var transportGroups = []transportGroup{
 		{"WS Mux", "WebSocket — multiplexed", "wsmux"},
 		{"WSS", "secure WebSocket — TLS encrypted", "wss"},
 		{"WSS Mux", "TLS WebSocket — multiplexed", "wssmux"},
+	}},
+	{"ICMP", "ping packets — Linux, root or CAP_NET_RAW, ICMP must pass", []transportEntry{
+		{"xDi (ICMP)", "reverse KCP over ICMP echo — experimental, subject to ICMP rate limits", "xdi"},
 	}},
 }
 

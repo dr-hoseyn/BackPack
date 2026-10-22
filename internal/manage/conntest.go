@@ -73,12 +73,12 @@ const connTestKind = "test"
 // the direct ones when the operator names a source to forge (see
 // ConnTestOptions.SpoofSrc); pck, on either side, needs root on both servers.
 var (
-	connTestReverse = []string{"tcp", "tcpmux", "stealth", "pck", "ws", "wss", "wsmux", "wssmux", "kcp", "quic", "udp", "naive", "short-https", "xhttp", "reality", "hysteria2", "anytls", "shadowtls", "tuic", "xhttp-reality", "trusttunnel", "webtransport", "tailcat"}
+	connTestReverse = []string{"tcp", "tcpmux", "stealth", "pck", "ws", "wss", "wsmux", "wssmux", "kcp", "xdi", "quic", "udp", "naive", "short-https", "xhttp", "reality", "hysteria2", "anytls", "shadowtls", "tuic", "xhttp-reality", "trusttunnel", "webtransport", "tailcat"}
 	connTestDirect  = []string{"udp", "quic", "pck", "xdi", "sni", "masque", "masque-h2", "hysteria2", "tuic", "webtransport", "connect-ip", "spoof"}
 )
 
 // connTestNeedsRoot is a reverse transport that builds its own packets.
-func connTestNeedsRoot(tr string) bool { return tr == "pck" }
+func connTestNeedsRoot(tr string) bool { return tr == "pck" || tr == "xdi" }
 
 // Variables rather than constants so a test can run the whole thing in
 // seconds.
@@ -321,7 +321,7 @@ func ctCoordinatorFailure(host string, port int) error {
 	return fmt.Errorf("the Iran server's test coordinator (%s port %d, TCP/UDP) did not answer. "+
 		"Check the address, control port and that the Iran test is still open. "+
 		"Tunnel protocols have not been measured; ICMP/raw carriers may still work. "+
-		"On an ICMP-only path, try a Direct xDi tunnel separately", host, port)
+		"On an ICMP-only path, try a Reverse or Direct xDi tunnel separately", host, port)
 }
 
 func gzipB64(raw []byte) string {

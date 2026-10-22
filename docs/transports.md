@@ -390,10 +390,11 @@ thing to try. Test it on your own route before committing to it.
 
 ---
 
-## Experimental family
+## ICMP family
 
-Not flavours of TCP or UDP but different ideas about how to move bytes at all.
-Both are Linux-only and need root.
+xDi is available under **Reverse → ICMP → xDi (ICMP)** in the terminal and
+web panel. It needs Linux and root or `CAP_NET_RAW` on both endpoints.
+Direct xDi remains a separate option with the opposite connection direction.
 
 ### xDi (ICMP)
 The KCP transport with its packets inside **ICMP echo requests and replies**

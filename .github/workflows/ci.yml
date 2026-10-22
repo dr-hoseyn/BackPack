@@ -137,18 +137,39 @@ jobs:
             grep -q '^RESULT OK' "$RUNNER_TEMP/masque-$scenario.out"
           done
 
+  reverse-xdi:
+    name: Reverse xDi over real IPv4 and IPv6 ICMP
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Verify reverse menu, configuration and ICMP session isolation
+        run: go test ./internal/manage ./internal/utils/network -run '^(TestXDIReverse|TestXdi|TestAnXdi|TestTheXdi|TestIPv6Xdi|TestTransportMenuIsTheCLIMenu)' -race -count=1 -v -timeout 2m
+      - name: Concurrent TCP, forwarded UDP and client/server restarts on raw ICMP
+        run: |
+          set -euo pipefail
+          go test -c -race -o "$RUNNER_TEMP/xdi-e2e.test" ./internal/e2e
+          sudo env BACKPACK_XDI_LIVE=1 TESTBIN="$RUNNER_TEMP/xdi-e2e.test" \
+            timeout -k 5s 4m unshare --net --mount --fork -- bash -c \
+            'ip link set lo up; exec "$TESTBIN" -test.run "^TestXDIReverse" -test.v -test.timeout 3m'
+
   # Keep the existing required-check name while all three complete suites run
   # independently. A matrix failure must fail this gate, never cancel coverage.
   test:
     name: Build and test
-    needs: test-suites
+    needs: [test-suites, reverse-xdi]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Require every regression suite
         env:
           RESULT: ${{ needs.test-suites.result }}
-        run: test "$RESULT" = success
+          XDI_RESULT: ${{ needs.reverse-xdi.result }}
+        run: test "$RESULT" = success && test "$XDI_RESULT" = success
 
   test-suites:
     name: Regression (${{ matrix.mode }})

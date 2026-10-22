@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+## v1.14.2 — 2026-10-22 (dr-hoseyn fork)
+
+- Restore Reverse → ICMP → xDi (ICMP) in the terminal and web panel. Keep
+  Direct xDi available separately, and include Reverse xDi in Connection Test
+  with explicit privilege checks on both endpoints.
+- Verify simultaneous reverse TCP streams, forwarded UDP, client restart and
+  server restart over real IPv4 and IPv6 ICMP sockets in an isolated Linux
+  network namespace. Keep the existing KCP/ICMP wire format.
+- Repair default helper installation after upstream removed the old NaiveProxy
+  archives: pin v154.0.8037.49-5 with verified amd64/arm64 checksums, preserve
+  paths used by existing releases, and report actual download failures.
+
+<div dir="rtl">
+
+گزینهٔ **Reverse → ICMP → xDi (ICMP)** به منوی ترمینال و پنل برگشت و به
+Connection Test اضافه شد. هر دو سمت به لینوکس و دسترسی root یا CAP_NET_RAW
+نیاز دارند. نصب ابزار NaiveProxy نیز با نسخه و checksum جدید اصلاح شد.
+
+</div>
+
 ## v1.14.1 — 2026-10-21 (dr-hoseyn fork)
 
 - Remove the fixed 128 MiB mux receive-window budget that could prevent a
