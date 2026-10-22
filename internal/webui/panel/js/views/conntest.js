@@ -50,6 +50,7 @@ const JOIN = 15 * 60;
 const stepOf = st => (st === 'done' ? 3 : st === 'running' ? 2 : st === 'waiting' || st === 'starting' ? 1 : 0);
 
 let preset = 'turbo';
+let testMode = 'quick';
 let pathMode = '';
 
 function stepper(st) {
@@ -107,9 +108,11 @@ function startPane(v) {
   return `<div class="ct-l-in fade">
     <span class="ct-kick">New test</span>
     <div class="tl-lede"><b>Every transport, tried for real between this server and one kharej.</b>
-      <span>Five minutes of stability checks, then about 8–12 seconds of speed testing per healthy tunnel.
+      <span>Quick checks traffic for 30 seconds and measures speed on up to three finalists. Full checks for 60 seconds and measures every healthy tunnel. Each speed test adds about 8–12 seconds plus connection setup.
         Download and upload use four connections and run one tunnel at a time. The test tunnels run on free ports and are
         removed when it ends — nothing is left behind on either server.</span></div>
+    <div class="tl-f ct-field"><span>Test depth</span><div class="tl-seg">${[['quick','Quick','30 seconds · top 3 speed tests'],['full','Full','60 seconds · all speed tests']].map(([value,label,note]) =>
+      `<button type="button" data-depth="${value}" class="${testMode === value ? 'on' : ''}" aria-pressed="${testMode === value}">${label}<small>${note}</small></button>`).join('')}</div></div>
     <div class="tl-f ct-field"><span>IP paths to test</span>
       <div class="tl-seg" id="ctPathMode">${[['both','Both, sequentially'],['ipv4','IPv4'],['ipv6','IPv6'],['manual','One address']].map(([value,label]) =>
         `<button type="button" data-path="${value}" class="${pathMode === value ? 'on' : ''}" aria-pressed="${pathMode === value}">${label}</button>`).join('')}</div></div>
@@ -153,7 +156,7 @@ function waitPane(v) {
 
 function runPane(v) {
   return `<div class="ct-l-in fade">
-    <span class="ct-kick">Step 3 · testing</span>
+    <span class="ct-kick">Step 3 · ${v.mode === 'quick' ? 'quick test · 30-second observation' : 'full test'}</span>
     ${clock('left')}
     <div class="ct-wtitle"><b>Testing against ${esc(v.kharej || 'the kharej')}</b><i class="ct-dots"><i></i><i></i><i></i></i></div>
     <p class="ct-wsub" id="ctSettled">${settled(v)}</p>
@@ -256,8 +259,8 @@ function endPane(v) {
 }
 
 /* ---- right: the transports ----------------------------------------------- */
-const tone = st => ({ ok: 'ok', unstable: 'wr', down: 'er', skipped: 'sk' }[st] || 'run');
-const statusWord = st => ({ ok: 'Held', unstable: 'Unstable', down: 'Down', skipped: 'Skipped', testing: 'Testing' }[st] || st);
+const tone = st => ({ ok: 'ok', screened: 'sk', unstable: 'wr', down: 'er', skipped: 'sk' }[st] || 'run');
+const statusWord = st => ({ ok: 'Held', screened: 'Screened', unstable: 'Unstable', down: 'Down', skipped: 'Skipped', testing: 'Testing' }[st] || st);
 const keyOf = r => `${r.kind}:${r.tr}:${r.sni || ''}`;
 
 function rowHTML() {
@@ -365,7 +368,7 @@ export function connTestView(ctx) {
     else if (st === 'running') html = runPane(v);
     else if (st === 'done') html = bestPane(v);
     else html = endPane(v);
-    left.innerHTML = html + (!fresh && v.historyWarning ? `<p class="tl-meta" role="status">${esc(v.historyWarning)}</p>` : '');
+    left.innerHTML = html + (v.mode === 'quick' && !fresh && st !== 'idle' ? '<p class="tl-meta">Quick: short observation; speed compared on up to three finalists. Screened rows have no speed measurement and cannot be set up automatically. Use Full to compare all healthy tunnels.</p>' : '') + (!fresh && v.historyWarning ? `<p class="tl-meta" role="status">${esc(v.historyWarning)}</p>` : '');
     for (const [id, value] of setupKeep) {
       const field = $('#' + id, left);
       if (value !== undefined && field && (field.tagName !== 'SELECT' || [...field.options].some(o => o.value === value))) field.value = value;
@@ -404,6 +407,7 @@ export function connTestView(ctx) {
            <div class="ct-track"><i style="--w:${pct}%"></i></div>`
         : `<div class="ct-rt"><b>${final ? 'Path results' : 'Transports'}</b><span class="sp"></span>
             <span class="tl-pill ok"><i></i>${count('ok')} held</span>
+            ${count('screened') ? `<span class="tl-pill">${count('screened')} screened · speed not measured</span>` : ''}
             <span class="tl-pill wr"><i></i>${count('unstable')} unstable</span></div>`;
     if (head !== headSig) {
       const bar = rHead.querySelector('.ct-track i');
@@ -435,7 +439,7 @@ export function connTestView(ctx) {
 
     /* Grouped by kind; best first once finished, in the order they were
        started while running so a row does not jump around under the eye. */
-    const order = { ok: 0, unstable: 1, testing: 1, down: 2, skipped: 3 };
+    const order = { ok: 0, screened: 1, unstable: 1, testing: 1, down: 2, skipped: 3 };
     const want = new Set(shown.map(keyOf));
     for (const [k, n] of rows) if (!want.has(k)) { n.remove(); rows.delete(k); }
     KINDS.forEach(g => {
@@ -520,6 +524,11 @@ export function connTestView(ctx) {
       $('#ctManualField',view).hidden = pathMode !== 'manual';
       return;
     }
+    if (b.dataset.depth) {
+      testMode = b.dataset.depth;
+      b.parentElement.querySelectorAll('button').forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-pressed', String(x === b)); });
+      return;
+    }
     if (b.dataset.p) {
       preset = b.dataset.p;
       b.parentElement.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
@@ -558,7 +567,7 @@ export function connTestView(ctx) {
       b.innerHTML = `${ICON.play}Starting…`;
       try {
         fresh = false; selectedPath = -1;
-        paint(await api.connTestStart({ host, preset, path: pathMode, ipv4, ipv6 }));
+        paint(await api.connTestStart({ host, preset, mode: testMode, path: pathMode, ipv4, ipv6 }));
         schedule();
       } catch (e) { oops(e); b.disabled = false; b.innerHTML = `${ICON.play}Start the test`; }
       return;

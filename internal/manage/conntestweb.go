@@ -20,13 +20,12 @@ func ConnTestJoinWait() time.Duration { return connTestJoinWait }
 // It is what the panel counts down from, so it errs a little long rather than
 // reaching zero with rows still filling.
 func ConnTestRunTime() time.Duration {
-	return connTestConnectWait + time.Duration(connTestSoak)*time.Second + 45*time.Second +
-		ConnTestSpeedTime(len(connTestReverse)-1+len(ctDirectPlans("")))
+	return ConnTestRunTimeFor(ConnTestFull)
 }
 
 // ConnTestSpeedTime estimates the serial speed phase for healthy tunnels.
 func ConnTestSpeedTime(tunnels int) time.Duration {
-	return time.Duration(tunnels) * (2*(ctSpeedWarmup+ctSpeedMaximum) + time.Second)
+	return time.Duration(tunnels) * ctSpeedBudget
 }
 
 // ConnTestName is a tested transport's name as the menus print it: "TCP MUX",

@@ -1,5 +1,23 @@
 # Automatic setup after Connection Test
 
+In the terminal or web panel, **Quick** is the default test depth. It observes
+each tunnel for 30 seconds, with connection discovery bounded to 20 seconds
+(30 seconds for direct tunnels). It then measures download and upload on up to
+three lossless candidates, ordered by RTT plus twice jitter, with connection
+time breaking ties. This shortlist finds promising candidates; it does not
+compare the speed of every protocol. Each selected IP path runs separately.
+
+**Full** observes traffic for 60 seconds and measures every healthy tunnel.
+Both depths enforce the observation deadline even when replies stop arriving.
+Speed tests remain sequential so they do not compete for bandwidth. Connection
+setup and optional spoofing/MTU checks add time to the observation window.
+
+Quick results are labelled as a short observation. **SCREENED** means the
+traffic check passed but speed was not measured; these rows retain their
+measurements and are excluded from recommendations and automatic setup. Run
+Full to measure every healthy candidate. Quick and Full remain separate in
+history comparisons. Older links and Go callers without a depth retain Full; the terminal and web panel explicitly default to Quick.
+
 Run Connection Test on Iran and join it on kharej using the test link as usual.
 Both servers must run a version that supports automatic setup, as root. Keep
 both test processes open until setup completes.

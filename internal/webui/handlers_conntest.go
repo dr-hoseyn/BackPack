@@ -73,6 +73,7 @@ type conntestView struct {
 	State          string                   `json:"state"`
 	Host           string                   `json:"host,omitempty"`
 	Preset         string                   `json:"preset,omitempty"`
+	Mode           string                   `json:"mode,omitempty"`
 	Link           string                   `json:"link,omitempty"`
 	Command        string                   `json:"command,omitempty"`
 	Install        string                   `json:"install,omitempty"`
@@ -159,7 +160,12 @@ func rowOf(r manage.ConnTestResult) conntestRow {
 
 // start begins a test in the background and returns once the test tunnels are
 // up and the link exists, or they could not be started.
-func (c *conntestRunner) start(parent context.Context, hosts []string, preset string) error {
+func (c *conntestRunner) start(parent context.Context, hosts []string, preset, mode string) error {
+	var modeErr error
+	mode, modeErr = manage.ConnTestMode(mode)
+	if modeErr != nil {
+		return modeErr
+	}
 	c.startMu.Lock()
 	defer c.startMu.Unlock()
 	if c.busy() {
@@ -184,10 +190,10 @@ func (c *conntestRunner) start(parent context.Context, hosts []string, preset st
 	}
 	c.cancel = cancel
 	c.done, c.setups = done, nil
-	c.v = conntestView{State: ctStarting, Host: hosts[0], Preset: preset, Started: time.Now().Unix()}
+	c.v = conntestView{State: ctStarting, Mode: mode, Host: hosts[0], Preset: preset, Started: time.Now().Unix()}
 	c.mu.Unlock()
 	suite, link, err := manage.StartConnTestSuite(manage.ConnTestOptions{
-		AutomaticSetup: os.Geteuid() == 0, Context: ctx, Preset: preset, Direct: os.Geteuid() == 0, SpoofSrc: manage.ConnTestSpoofSource,
+		Mode: mode, AutomaticSetup: os.Geteuid() == 0, Context: ctx, Preset: preset, Direct: os.Geteuid() == 0, SpoofSrc: manage.ConnTestSpoofSource,
 	}, hosts)
 	if err != nil {
 		close(done)
@@ -223,7 +229,7 @@ func (c *conntestRunner) start(parent context.Context, hosts []string, preset st
 					p := v.Paths[active]
 					v.State, v.Host, v.Kharej, v.Rows = ctRunning, p.Host, p.Kharej, append([]conntestRow(nil), p.Rows...)
 					v.Ran = p.Started
-					v.Ends = time.Unix(p.Started, 0).Add(manage.ConnTestRunTime()).Unix()
+					v.Ends = time.Unix(p.Started, 0).Add(manage.ConnTestRunTimeFor(mode)).Unix()
 					pending := 0
 					speed := false
 					for _, r := range p.Rows {
@@ -310,12 +316,21 @@ func (s *server) handleConnTest(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
+			mode = r.FormValue("mode")
+			if mode == "" {
+				mode = manage.ConnTestQuick
+			}
+			mode, err = manage.ConnTestMode(mode)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
 			preset := strings.ToLower(strings.TrimSpace(r.FormValue("preset")))
 			ctx := s.ctx
 			if ctx == nil {
 				ctx = context.Background()
 			}
-			if err := s.conntest.start(ctx, hosts, preset); err != nil {
+			if err := s.conntest.start(ctx, hosts, preset, mode); err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}

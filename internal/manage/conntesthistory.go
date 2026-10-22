@@ -38,6 +38,9 @@ func SaveConnTestHistory(side, preset string, paths []ConnTestPath, complete boo
 			path.Peer = p.Kharej
 		}
 		for _, m := range p.Rows {
+			if r.Mode == "" {
+				r.Mode = m.Mode
+			}
 			path.Rows = append(path.Rows, testhistory.Measurement{Kind: m.Kind, Transport: m.Transport, SNI: m.SNIDomain, Status: m.Status, Sent: m.Tried, Received: m.OK, RTTms: float64(m.RTTms), JitterMs: m.JitterMs, JitterMeasured: m.JitterMeasured, Download: m.Mbps, Upload: m.UploadMbps, SpeedStable: m.SpeedStable})
 		}
 		r.Paths = append(r.Paths, path)
@@ -70,6 +73,9 @@ func ConnTestHistoryTable(runs []testhistory.Run, compare bool) string {
 				state = "partial"
 			}
 			fmt.Fprintf(&b, "%s  %s  %s  %s\n", r.At.UTC().Format(time.RFC3339), r.Side, r.Preset, state)
+			if r.Mode == ConnTestQuick {
+				fmt.Fprintln(&b, "  Quick: 30-second observation; speed shortlist only")
+			}
 			for _, p := range r.Paths {
 				fmt.Fprintf(&b, "  %s %s peer=%s  %s  %d protocols\n", p.Family, p.Host, p.Peer, p.State, len(p.Rows))
 			}
@@ -84,6 +90,9 @@ func ConnTestHistoryTable(runs []testhistory.Run, compare bool) string {
 	}
 	for _, s := range summaries {
 		fmt.Fprintf(&b, "%s %s %s peer=%s %s %s %s", s.Side, s.Preset, s.Family, s.Peer, s.Host, s.Kind, ctName(s.Transport))
+		if s.Mode == ConnTestQuick {
+			fmt.Fprint(&b, " [quick]")
+		}
 		if s.SNI != "" {
 			fmt.Fprintf(&b, " SNI=%s", s.SNI)
 		}

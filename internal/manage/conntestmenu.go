@@ -47,6 +47,17 @@ func connTestIranMenu() {
 	if len(hosts) == 0 {
 		return
 	}
+	modePick := tui.ChooseOpt("Test depth", []tui.Option{
+		{Title: "Quick", Desc: "30-second check; speed on the best three candidates"},
+		{Title: "Full", Desc: "60-second check; speed on every healthy tunnel"},
+	})
+	if modePick < 0 {
+		return
+	}
+	mode := ConnTestQuick
+	if modePick == 1 {
+		mode = ConnTestFull
+	}
 	presets := []string{PresetBalance, PresetTurbo, PresetAggressive, PresetThroughput}
 	pick := tui.ChooseOpt("Preset", []tui.Option{
 		{Title: "Balance", Desc: "least memory"},
@@ -72,7 +83,7 @@ func connTestIranMenu() {
 	ctx, stop := connTestContext()
 	defer stop()
 	ctMenuStage(os.Stdout, "1", "Preparing test tunnels", "Checking listeners, helpers and REALITY cover compatibility.")
-	suite, link, err := StartConnTestSuite(ConnTestOptions{AutomaticSetup: root, Context: ctx, Direct: direct, Preset: preset, SpoofSrc: spoof}, hosts)
+	suite, link, err := StartConnTestSuite(ConnTestOptions{Mode: mode, AutomaticSetup: root, Context: ctx, Direct: direct, Preset: preset, SpoofSrc: spoof}, hosts)
 	if err != nil {
 		tui.Error(err.Error())
 		tui.PressEnter()
