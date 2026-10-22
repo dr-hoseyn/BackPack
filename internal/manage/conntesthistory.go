@@ -83,7 +83,7 @@ func ConnTestHistoryTable(runs []testhistory.Run, compare bool) string {
 		return b.String()
 	}
 	fmt.Fprintln(&b, "Observed samples only; steady runs are not an uptime percentage.")
-	fmt.Fprintln(&b, "Partial tests and skipped rows are excluded. Speeds are medians of healthy completed transfers.")
+	fmt.Fprintln(&b, "Partial tests, skipped and screened rows are excluded. Speeds are medians of healthy completed transfers.")
 	summaries := testhistory.Compare(runs)
 	if len(summaries) == 0 {
 		fmt.Fprintln(&b, "No completed measurements to compare.")

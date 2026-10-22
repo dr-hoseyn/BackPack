@@ -106,6 +106,34 @@ func TestTrafficObservationHasAWallClockLimit(t *testing.T) {
 	}
 }
 
+func TestTrafficDiscoveryBoundsAHandshakeWithoutPayload(t *testing.T) {
+	prior := connTestConnectWait
+	connTestConnectWait = 150 * time.Millisecond
+	defer func() { connTestConnectWait = prior }()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+	go func() {
+		cn, err := l.Accept()
+		if err != nil {
+			return
+		}
+		defer cn.Close()
+		io.Copy(io.Discard, cn)
+	}()
+	started := time.Now()
+	reported := ConnTestResult{}
+	r := ctProbe(context.Background(), &connTestCase{kind: "reverse", tr: "tcp", entry: l.Addr().(*net.TCPAddr).Port}, 0, func(r ConnTestResult) { reported = r })
+	if time.Since(started) > time.Second {
+		t.Fatal("discovery exceeded its deadline waiting for payload")
+	}
+	if r.Status != ctDown || reported.Status != ctDown || r.OK != 0 {
+		t.Fatalf("handshake-only path passed or left a stale live row: %+v / %+v", r, reported)
+	}
+}
+
 func TestCancellationCannotPassEvenAfterTheLastEcho(t *testing.T) {
 	prior := connTestSoak
 	connTestSoak = 1

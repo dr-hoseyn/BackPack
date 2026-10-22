@@ -141,11 +141,11 @@ export function networkView(ctx) {
     try {
       const r = await api.connTestHistory(); if (!alive) return;
       history.innerHTML = `${r.warning ? `<p>${esc(r.warning)}</p>` : ''}<p>${(r.runs || []).length} saved runs</p>
-        ${(r.comparison || []).map(s => `<article><h4>${esc(s.side)} · ${esc(s.kind)} · ${esc(s.transport)} · ${esc(s.family)} · ${esc(s.preset)}</h4>
+        ${(r.comparison || []).map(s => `<article><h4>${esc(s.side)} · ${esc(s.kind)} · ${esc(s.transport)} · ${esc(s.family)} · ${esc(s.preset)} � ${s.mode === 'quick' ? 'Quick � 30-second observation' : 'Full'}</h4>
           <p>${esc(s.host)} → ${esc(s.peer || 'peer unknown')}${s.sni ? ` · SNI ${esc(s.sni)}` : ''}</p>
           <p>${s.steady}/${s.runs} steady samples · ${number(s.loss_pct)}% unanswered probes · RTT ${number(s.rtt_ms)} ms · ${s.jitter_samples ? `jitter ${number(s.jitter_ms)} ms` : 'jitter not measured'}</p>
           <p>${s.speed_samples ? `Download ${number(s.median_download_mbps)} / upload ${number(s.median_upload_mbps)} Mb/s` : 'Throughput not measured'}</p></article>`).join('')}
-        ${(r.runs || []).map(run => `<details><summary>${esc(new Date(run.at).toLocaleString())} · ${esc(run.side)} · ${run.complete ? 'complete' : 'partial'}</summary>
+        ${(r.runs || []).map(run => `<details><summary>${esc(new Date(run.at).toLocaleString())} · ${esc(run.side)} · ${run.complete ? 'complete' : 'partial'} � ${run.mode === 'quick' ? 'Quick � 30-second observation' : 'Full'}</summary>
           <ul>${(run.paths || []).map(p => `<li>${esc(p.family)} ${esc(p.host)} · ${esc(p.state)} · ${(p.rows || []).length} measurements</li>`).join('')}</ul></details>`).join('')}
         ${!(r.runs || []).length ? '<p>No saved tests yet. Browser and terminal tests are saved here after a run.</p>' : ''}`;
     } catch (e) { error(history,e); }
