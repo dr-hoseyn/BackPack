@@ -82,6 +82,12 @@ deployment capacity still needs measurements on the actual two hosts and path.
 سرعت اینترنت. ابزار tunnelbench مقایسهٔ واقعی تونل‌های تنظیم‌شده را با اتصال‌های
 هم‌زمان، بررسی محتوای داده و نمونه‌برداری CPU و RSS محلی فراهم می‌کند.
 
+در سنجش جداگانهٔ بسته‌بندی داخل Engine، تخصیص پیام ۱۲۰۰ بایتی از ۱۳۱۲ به ۳۲ بایت
+کاهش یافت. بازبینی جدید، یکسان‌ماندن کلیدِ تمام تکه‌های یک پیام هنگام rekey و
+بازسازی کامل پیام در گیرنده را نیز آزمایش می‌کند. صف پُرِ سرویس مقصد، بدون
+ساختن کپیِ اضافی از بسته کنار گذاشته می‌شود و پس از تخلیه، جریان دوباره ادامه دارد.
+
 </div>
 
-*Link-only measurements: v1.14.1, 2026-10-18. Engine audit: candidate d4b6fe1e, 2026-10-22.*
+*Last verified against Backpack v1.14.1 + unreleased UDP/mux audit, 2026-10-22.
+Link-only measurements: 2026-10-18. Engine measurements: candidate d4b6fe1e, 2026-10-22.*
