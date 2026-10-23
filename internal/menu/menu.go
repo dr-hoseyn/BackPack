@@ -5,7 +5,6 @@ package menu
 import (
 	"fmt"
 	"os"
-	"sync/atomic"
 	"time"
 
 	"github.com/backpack/backpack/internal/app"
@@ -13,9 +12,6 @@ import (
 	"github.com/backpack/backpack/internal/schedule"
 	"github.com/backpack/backpack/internal/tui"
 )
-
-// ipStore caches the server's public IPv4 so menus never block on a lookup.
-var ipStore atomic.Value // holds string
 
 // Run starts the interactive menu loop.
 func Run() {
@@ -39,8 +35,6 @@ func Run() {
 		tui.Warn("Monitor Could Not Start: " + err.Error())
 		tui.PressEnter()
 	}
-
-	go resolveServerIP()
 
 	// Look for a newer release in the background. The menu itself only ever
 	// reads the cached answer, so a slow or blocked GitHub cannot delay a
@@ -135,29 +129,6 @@ func menuItem(n int, title, desc string) {
 	}
 	fmt.Printf("  %s %s%-18s%s %s%s%s\n",
 		num, tui.Bold+tui.White, title, tui.Reset, tui.Gray, desc, tui.Reset)
-}
-
-// cachedServerIP returns the resolved public IPv4 if known, otherwise a
-// placeholder — it never blocks, so it's safe for redrawn screens.
-func cachedServerIP() string {
-	if v, _ := ipStore.Load().(string); v != "" {
-		return v
-	}
-	return "detecting…"
-}
-
-// resolveServerIP fetches and caches the public IPv4 (blocking). Used where an
-// accurate value matters, e.g. when showing the panel credentials.
-func resolveServerIP() string {
-	if v, _ := ipStore.Load().(string); v != "" {
-		return v
-	}
-	ip := manage.PublicIPv4()
-	if ip != "" && ip != "-" {
-		ipStore.Store(ip)
-		return ip
-	}
-	return "-"
 }
 
 func refreshLabel() string {

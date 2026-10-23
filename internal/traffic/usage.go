@@ -4,7 +4,6 @@ package traffic
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -198,11 +197,7 @@ func (m *Usage) getUsageFromFile() []PortUsage {
 	return usageData
 }
 
-// converts the byte usage to a human-readable format
-func (m *Usage) usageDataWithReadableUsage(usageData []PortUsage) []struct {
-	Port          int
-	ReadableUsage string
-} {
+ {
 	var result []struct {
 		Port          int
 		ReadableUsage string
@@ -280,25 +275,3 @@ func (m *Usage) writeUsageData(data []byte) error {
 	return os.Rename(tmp, path)
 }
 
-// ConvertBytesToReadable converts bytes into a human-readable format (KB, MB, GB)
-func (m *Usage) convertBytesToReadable(bytes uint64) string {
-	const (
-		KB = 1 << (10 * 1) // 1024 bytes
-		MB = 1 << (10 * 2) // 1024 KB
-		GB = 1 << (10 * 3) // 1024 MB
-		TB = 1 << (10 * 4) // 1024 TB
-	)
-
-	switch {
-	case bytes >= TB:
-		return fmt.Sprintf("%.2f TB", float64(bytes)/float64(TB))
-	case bytes >= GB:
-		return fmt.Sprintf("%.2f GB", float64(bytes)/float64(GB))
-	case bytes >= MB:
-		return fmt.Sprintf("%.2f MB", float64(bytes)/float64(MB))
-	case bytes >= KB:
-		return fmt.Sprintf("%.2f KB", float64(bytes)/float64(KB))
-	default:
-		return fmt.Sprintf("%d B", bytes) // Bytes
-	}
-}

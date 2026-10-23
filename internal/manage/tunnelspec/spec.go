@@ -165,18 +165,6 @@ type Spec struct {
 	ZeroCopy bool
 }
 
-// monitorBind is the address the sniffer page is written out with. It is
-// emitted rather than left to the engine's default so that the knob is visible
-// in the file — an operator who wants the page on the network has to be able to
-// find out that they can have it, and a config the CLI rewrites is the only
-// place they will look.
-func monitorBind(configured string) string {
-	if configured == "" {
-		return "127.0.0.1"
-	}
-	return configured
-}
-
 // writeTuning emits the throughput/latency knobs shared by server and client.
 func (s Spec) writeTuning(p func(string, ...any)) {
 	if s.MPTCP {
