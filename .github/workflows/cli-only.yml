@@ -23,6 +23,10 @@ jobs:
         run: sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
       - name: CLI, migration, accounting and legacy configuration regressions
         run: go test -race -short ./cmd ./config ./internal/menu ./internal/manage/... ./internal/traffic ./internal/telegram ./internal/cli ./internal/app -count=1 -timeout 6m
+      - name: Measure independent CLI host checks
+        run: |
+          go test ./internal/manage/host -coverprofile="$RUNNER_TEMP/cli-host.cover" -count=1 -timeout 1m
+          go tool cover -func="$RUNNER_TEMP/cli-host.cover"
       - name: Build and inspect the installed management surface
         run: |
           set -eu
