@@ -37,7 +37,7 @@ const (
 // Check is one diagnostic line: what was tested, how it went, and — when it
 // went badly — what the user should do about it.
 type Check struct {
-	Group  string // "System", "Web Panel", "Tunnel: name", ...
+	Group  string // "System", "Monitor", "Tunnel: name", ...
 	Name   string
 	Level  CheckLevel
 	Detail string // the measured value / what was found
@@ -232,8 +232,6 @@ func monitorChecks() []Check {
 		Detail: "installed but not running — dropped tunnels will NOT be restarted",
 		Fix:    "systemctl restart " + app.MonitorService + " (logs: journalctl -u " + app.MonitorService + " -n 30)"})
 }
-
-// --- web panel --------------------------------------------------------------
 
 // --- tunnels ----------------------------------------------------------------
 

@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// The setup link, as the web panel shows it.
+// The structured setup-link form shared by CLI callers.
 //
 // The menu prints a tunnel's link with the two lines that build the other end
 // (printShareLink); the panel needs the same facts as data. This is that, and

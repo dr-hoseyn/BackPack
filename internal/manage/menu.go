@@ -61,17 +61,15 @@ func manageOne(t Tunnel) {
 		tui.Title(fmt.Sprintf("Tunnel: %s", t.Name))
 		fmt.Printf("  %s%s %s%s  %s\n\n", tui.Gray, t.Role, TunnelTransportLabel(t), tui.Reset, stateLabel(t.Service))
 
-		// A tunnel whose other end is on a managed server is one tunnel in two
-		// places, and this menu can only change one of them: the channel to the
-		// node belongs to the running panel, and this is a separate process
-		// that has no way to reach it.
+		// This menu changes only the local end. A paired tunnel also needs
+		// matching settings applied over SSH on its remote server.
 		//
 		// Editing here is still allowed — the operator may have a reason, and a
 		// menu that refuses is a menu people work around — but they are told
 		// first, because the failure it causes is silent. Both ends report
 		// themselves as running and no traffic passes.
 		if on, ok := NodeFor(t.Name); ok {
-			tui.Warn(fmt.Sprintf("Other End Is On %q — Edit From The Web Panel So Both Ends Match.\n", on))
+			tui.Warn(fmt.Sprintf("Other End Is On %q — Apply Matching Changes There Over SSH.\n", on))
 		}
 
 		idx := tui.ChooseOpt("Action", []tui.Option{

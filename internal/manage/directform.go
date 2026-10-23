@@ -16,7 +16,7 @@ import (
 	"github.com/backpack/backpack/internal/tunnel/l3"
 )
 
-// Creating a direct tunnel from the web panel.
+// Creating a direct tunnel from a structured CLI request.
 //
 // A separate type and a separate function from CreateTunnel, for the reason
 // every other piece of the direct work is separate: the reverse create path is
@@ -282,8 +282,8 @@ func CreateDirectTunnel(n NewDirectTunnel) (service string, active bool, err err
 		return "", false, err
 	}
 	// A second kharej given the first one's ports: those ports are shared
-	// with it rather than bound twice, which could only fail. The panel has no
-	// screen to ask on, and there is no other reading of the request — see
+	// with it rather than bound twice, which could only fail. Structured requests
+	// have no interactive prompt, so shared ports are inferred — see
 	// l3share.go.
 	if spec.Side == sideIran && len(spec.Ports) > 0 {
 		if spec.Ports, err = shareL3PortsQuietly(spec); err != nil {
@@ -291,7 +291,7 @@ func CreateDirectTunnel(n NewDirectTunnel) (service string, active bool, err err
 		}
 		if busy := busyForwardPorts(spec.Ports, spec.PeerIP); len(busy) > 0 {
 			return "", false, fmt.Errorf("already in use on this server: %s — "+
-				"the web panel's own port is the usual one; pick other ports", strings.Join(busy, ", "))
+				"another service is listening there; pick other ports", strings.Join(busy, ", "))
 		}
 	}
 	if why := kharejPortClash(spec); why != "" {

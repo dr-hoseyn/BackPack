@@ -51,11 +51,6 @@ sudo backpack  →  3. Manage  →  Manage Tunnels  →  <tunnel>  →  Edit
 It shows the current state, explains the cost, and restarts the tunnel on
 confirm.
 
-### In the web panel
-
-Edit the **server** tunnel → Fine Tune → **Forward UDP as well as TCP on the
-exposed ports** → Save.
-
 ### By hand
 
 In `/etc/backpack/<name>.toml`, under `[server]`:
