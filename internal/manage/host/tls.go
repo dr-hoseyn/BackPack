@@ -45,7 +45,7 @@ func EnsureSelfSignedCert(name, host string) (certPath, keyPath string, err erro
 // writeSelfSigned generates a fresh ECDSA self-signed certificate carrying the
 // given IP and DNS SANs and writes it to name.crt / name.key, overwriting any
 // existing pair. It is the one place the certificate template lives, shared by
-// the tunnel certificates and the web panel's.
+// tunnel certificates.
 func writeSelfSigned(name string, ips []net.IP, dns []string) (certPath, keyPath string, err error) {
 	certPath = certDir + "/" + name + ".crt"
 	keyPath = certDir + "/" + name + ".key"

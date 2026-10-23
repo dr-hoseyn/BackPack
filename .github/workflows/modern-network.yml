@@ -23,6 +23,10 @@ jobs:
           tar -xzf "$RUNNER_TEMP/sing.tar.gz" -C "$RUNNER_TEMP"
           echo "BP_SINGBOX_BINARY=$RUNNER_TEMP/sing-box-1.14.2-linux-amd64/sing-box" >> "$GITHUB_ENV"
           echo "LD_LIBRARY_PATH=$RUNNER_TEMP/sing-box-1.14.2-linux-amd64" >> "$GITHUB_ENV"
+      - name: Policy, protocol, pairing and soak regressions
+        run: |
+          sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
+          go test -race ./internal/tunnel/l3 ./internal/tunnel/naive ./internal/tunnel/adaptive ./internal/manage ./tools/tunnelbench -run 'TestConnectIP|TestSingAdvanced|TestSingRealm|TestEconomy|TestNetwork|TestAutomatic|TestSoak|TestManagedPeer' -count=1 -v -timeout 8m
       - name: Real CONNECT-IP TUN, verified files, restart and loss
         shell: bash
         run: |

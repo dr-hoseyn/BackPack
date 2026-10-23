@@ -49,11 +49,8 @@ type RestoreResult struct {
 
 // WriteBackup streams a gzip-compressed tar of the entire config directory.
 //
-// Exported because the web panel streams a backup straight to the browser as a
-// download; everything else goes through BackupToFile.
-// (every tunnel TOML, webui.json, telegram.json, certificates, meta and the
-// recorded install path) plus a small sidecar capturing the auto-refresh
-// schedule, to w. It is the single source for both the CLI and web downloads.
+// Tunnel configs, tokens, Telegram settings, certificates and install metadata
+// share one archive, plus a sidecar for the auto-refresh schedule.
 func WriteBackup(w io.Writer) error { return writeBackupTree(w, app.ConfigDir) }
 
 // writeBackupTree is WriteBackup against a named root, so that the archive

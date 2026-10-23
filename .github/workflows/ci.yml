@@ -190,12 +190,6 @@ jobs:
       - name: Prepare configuration test fixtures
         run: sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
 
-      # The panel's own tests are plain `node --test` with no dependencies, and
-      # `go test` runs them. That test skips when node is
-      # missing rather than failing — a Go toolchain is the only thing this
-      # repository requires — so node is pinned here to make sure the skip
-      # never happens in CI.
-
       # Exercise native helper paths in the coverage gate rather than crediting
       # skipped optional-helper tests. The protocol job also checks real TUNs.
       - name: Install pinned sing-box for measured helper coverage
@@ -332,6 +326,10 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - name: Selection, fallback, sequencing and cancellation regressions
+        run: |
+          go test ./internal/manage ./internal/utils/network -race -count=1 -v -timeout 6m \
+            -run '^(TestConnectionTest|TestAnUnreachablePath|TestIPv6|TestBothFamilies|TestUnjoinedFamilies|TestStoppingASuite|TestStoppingBetweenPaths|TestBackgroundProbes)'
       - name: IPv6-only native, PCK, SNI, xDi and MASQUE data paths; PMTU and spoof exclusions
         run: |
           # Honor the socket sizes requested by the datagram test configs.

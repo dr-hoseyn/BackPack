@@ -29,7 +29,7 @@ func Run() {
 	manage.EnsureUnits()
 
 	// The watchdog, the Telegram bot and the alerts run in their own service so
-	// they survive the panel being stopped. Installing it here is also how an
+	// they survive the SSH session ending. Installing it here is also how an
 	// install that predates the service picks it up.
 	if err := manage.EnsureMonitorService(); err != nil {
 		tui.Warn("Monitor Could Not Start: " + err.Error())
