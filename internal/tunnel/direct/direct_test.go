@@ -469,7 +469,7 @@ func TestEdgeSpreadsAcrossSessions(t *testing.T) {
 			targetA, targetB := echoBackend(t, "A:"), echoBackend(t, "B:")
 			origin, err := NewOrigin(Config{
 				Role: RoleOrigin, Addr: "127.0.0.1:0", Token: "token",
-			}, quietLogger())
+			}, testLogger(t))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -483,7 +483,7 @@ func TestEdgeSpreadsAcrossSessions(t *testing.T) {
 				Role: RoleEdge, Addr: awaitBind(t, origin).String(), Token: "token", Sessions: count,
 				Ports:      []string{fmt.Sprintf("127.0.0.1:%d=%s|%s", port, targetA, targetB)},
 				RetryDelay: 200 * time.Millisecond,
-			}, quietLogger())
+			}, testLogger(t))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -510,7 +510,18 @@ func TestEdgeSpreadsAcrossSessions(t *testing.T) {
 			})
 			backends := map[string]int{}
 			for i := 0; i < 8; i++ {
-				peer, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 3*time.Second)
+				// Sessions and forwarders start independently. Keep the first
+				// successful connection as one of the eight measured flows;
+				// a separate readiness probe would change session rotation.
+				deadline := time.Now().Add(3 * time.Second)
+				addr := fmt.Sprintf("127.0.0.1:%d", port)
+				peer, err := net.DialTimeout("tcp", addr, time.Until(deadline))
+				for i == 0 && err != nil && time.Now().Before(deadline) {
+					time.Sleep(5 * time.Millisecond)
+					if remaining := time.Until(deadline); remaining > 0 {
+						peer, err = net.DialTimeout("tcp", addr, remaining)
+					}
+				}
 				if err != nil {
 					t.Fatal(err)
 				}

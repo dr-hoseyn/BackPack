@@ -43,6 +43,10 @@ jobs:
           go test -race ./internal/nativeudp ./internal/client/transport ./internal/server/transport ./internal/utils/network -count=1 -timeout 8m
           go test -race ./internal/nativeudp -run 'TestNativeDatagramKeepsItsSession|TestNativeRekeyDelivers|TestConcurrentNativeEngine|TestNativeEngineSteady|TestNativeSaturatedBackend' -count=20 -timeout 3m
           go test -race ./internal/client/transport ./internal/server/transport -run 'TestRawUDPTarget|TestPacedUDPPacket|TestFullRawUDPQueue|TestUDPOverload|TestDequeuedMux|TestQueuedMux|TestWebSocketUpgrade' -count=20 -timeout 3m
+      - name: Repeat direct forwarder readiness under race and coverage
+        run: |
+          go test -race ./internal/tunnel/direct -run '^TestEdgeSpreadsAcrossSessions$' -count=50 -timeout 2m
+          go test ./internal/tunnel/direct -coverpkg=./... -run '^TestEdgeSpreadsAcrossSessions$' -count=50 -timeout 2m
       - name: Measure sender allocations on the candidate
         run: |
           set -o pipefail
