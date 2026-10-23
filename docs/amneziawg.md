@@ -16,7 +16,7 @@ private credentials, mode `0600`.
 
 The `[awg]` engine is mutually exclusive with the other engines. It preserves
 the exclusive TUN and peer-only route policy below. It does not install NAT,
-default routes, forwarding sysctls or firewall rules. The normal CLI and panel
+default routes, forwarding sysctls or firewall rules. The normal CLI
 can start, stop, restart, delete and monitor it, and edit forwarded TCP/UDP ports
 and forwarding limits. The creator's Iran side listens and Kharej dials it.
 Backends must listen on their tunnel IP or wildcard, since only the peer host
@@ -132,4 +132,4 @@ tests establish implementation behavior, not resistance to every censor.
 
 ---
 
-*Last verified against Backpack v1.14.2.*
+*Last verified against Backpack v1.15.0.*

@@ -6,7 +6,7 @@ are.
 
 ---
 
-## One binary, seven modes
+## One binary, CLI management
 
 `main.go` dispatches before anything else is decided:
 
@@ -14,11 +14,10 @@ are.
 |---|---|
 | `backpack` | the interactive management menu — `internal/menu` |
 | `backpack -c <file>` | **engine mode**: one tunnel, from one config |
-| `backpack --webui` | the web panel — `internal/webui` |
 | `backpack --monitor` | watchdog, Telegram bot, alerts, history — `internal/monitor` |
 | `backpack --proxy` | the built-in SOCKS5/HTTP proxy — `internal/localproxy` |
 | `backpack --restart-all` / `--telegram-report` | one-shot jobs, run from cron |
-| `backpack node exec -` | the one operation a panel runs on a managed server over SSH |
+| `backpack node exec -` | a management RPC invoked over SSH |
 
 Everything except engine mode is management. Engine mode is the product.
 
@@ -146,7 +145,6 @@ miss looked healthy in the socket table.
 |---|---|
 | `internal/manage` | the real work, and the seam the panel and the CLI both call: wizards, editing, the panel's API, update, migration (12,600 lines). Layered below it: `manage/tunnelspec` (a tunnel's configuration: render, load, apply with revert, presets, history), `manage/health` (tunnel health, watchdog, Health Check), `manage/host` (this machine's addresses, ports, certificates), `manage/backup`, and `manage/core` + `manage/spec` at the bottom (tunnel listing, systemd, the transport and address vocabulary). Each re-exports through `internal/manage`, so callers see one package |
 | `internal/menu` | the interactive TUI, over `internal/tui`; its screens are tested through a scripted input |
-| `internal/webui` | the panel: a Go mux plus a vanilla-JS SPA under `panel/`, served beneath a random secret base path. Also currently owns the fleet |
 | `internal/telegram` | bot, alerts, scheduled reports. Has a read-only admin tier |
 | `internal/node` | the fleet: JSON over the managed server's own SSH, with a closed list of operations |
 | `internal/monitor` | the always-on service: watchdog, bot, alerts, history sampler, auto-backup — each in its own supervised goroutine |
@@ -204,8 +202,6 @@ stores. `internal/sysstat`, `internal/geo`, `internal/optimize`,
   `internal/server/transport`
 - **A tunnel drops or restarts** → `lifecycle.go` and `controlloop.go` on each
   side, before any one transport
-- **Something about the panel** → `internal/webui/server.go` for the routes,
-  `panel/js/api.js` for every call the page makes
 - **Something about setup or editing** → `internal/manage`
 - **Layer-3** → `internal/tunnel/l3/doc.go`, then `session.go` and `tunnel*.go` (state, pumps, receive, handshake)
 
@@ -224,7 +220,7 @@ they are worth reading before changing the code they sit on.
 
 **یک باینری، هفت حالت.** `main.go` قبل از هر چیز دیگری تصمیم می‌گیرد: `backpack`
 منوی مدیریت است؛ `backpack -c <file>` **حالت موتور** است یعنی یک تونل از یک
-کانفیگ؛ `--webui` پنل وب؛ `--monitor` نگهبان و ربات تلگرام و هشدارها و تاریخچه؛
+کانفیگ؛ `--monitor` نگهبان و ربات تلگرام و هشدارها و تاریخچه؛
 `--proxy` پراکسی داخلی SOCKS5/HTTP؛ `--restart-all` و `--telegram-report` کارهای
 یک‌باره‌ای که از cron اجرا می‌شوند؛ و `backpack node exec -` تنها عملیاتی
 که پنل روی یک سرور مدیریت‌شده از طریق SSH اجرا می‌کند. **هر چیزی جز حالت موتور،
@@ -253,7 +249,6 @@ context)، پورت‌های فوروارد (`forward.go`)، حلقهٔ کانا
 ترنسپورت از همان استفاده می‌کنند. دلیلش در [ADR 0001](adr/0001-reverse-transport-generations.md) است.
 
 **از کجا شروع به خواندن کنی:** تونل بالا نمی‌آید → اول `backpack check -c <file>`، بعد `cmd/cmd.go` و بعد ترنسپورت
-زیر `internal/server/transport`. چیزی دربارهٔ پنل → `internal/webui/server.go`
 برای مسیرها و `panel/js/api.js` برای هر فراخوانی صفحه. چیزی دربارهٔ راه‌اندازی یا
 ویرایش → `internal/manage`. لایه‌۳ → `internal/tunnel/l3/doc.go` و بعد
 `session.go` و `tunnel.go`.
@@ -269,4 +264,4 @@ context)، پورت‌های فوروارد (`forward.go`)، حلقهٔ کانا
 
 ---
 
-*Last verified against Backpack v1.14.2.*
+*Last verified against Backpack v1.15.0.*

@@ -640,10 +640,7 @@ func restartLast(units []string, logf func(string)) {
 func unhealthyAfterUpdate(skip []string) []string {
 	skipped := func(unit string) bool { return slices.Contains(skip, unit) }
 	var bad []string
-	if !skipped(app.WebUIService) && fileExists(app.ServiceDir+"/"+app.WebUIService) &&
-		!WaitServiceActive(app.WebUIService, 20*time.Second) {
-		bad = append(bad, "web panel")
-	}
+
 	// The monitor counts: if the new version cannot run the watchdog and the
 	// alerts, the update has broken something even though every tunnel is still
 	// carrying traffic — and without this it would be judged healthy and kept.

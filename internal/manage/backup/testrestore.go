@@ -30,7 +30,6 @@ type RestoreReport struct {
 	Path string
 
 	Tunnels        []string
-	WebUIConfig    bool
 	TelegramConfig bool
 	Certificates   int
 	Files          int
@@ -59,9 +58,6 @@ func (r RestoreReport) Summary() string {
 	}
 	if r.Certificates > 0 {
 		fmt.Fprintf(&b, "  %d TLS certificate file(s)\n", r.Certificates)
-	}
-	if r.WebUIConfig {
-		b.WriteString("  the web panel's settings and password\n")
 	}
 	if r.TelegramConfig {
 		b.WriteString("  the Telegram bot and its admins\n")
@@ -109,7 +105,6 @@ func TestRestore(path string) (RestoreReport, error) {
 	}
 
 	rep.Files = contents.Files
-	rep.WebUIConfig = contents.WebUIConfig
 	rep.TelegramConfig = contents.TelegramConfig
 	rep.Warnings = append(rep.Warnings, contents.Warnings...)
 

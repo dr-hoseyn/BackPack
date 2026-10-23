@@ -13,7 +13,6 @@ import (
 	"github.com/backpack/backpack/internal/manage"
 	"github.com/backpack/backpack/internal/node"
 	"github.com/backpack/backpack/internal/tui"
-	"github.com/backpack/backpack/internal/webui"
 )
 
 // backupMenu creates or restores a full configuration backup (all tunnels, the
@@ -173,18 +172,6 @@ func restoreBackup() {
 		return
 	}
 
-	// Bring the web panel back up (it may have a restored password now) — unless
-	// the restored config says its operator had stopped it.
-	if !webui.Load().Stopped {
-		if _, err := webui.EnsureRunning(); err != nil {
-			tui.Warn("Panel Could Not Start: " + err.Error())
-		} else if res.WebUIConfig {
-			// The restored config may carry a different port/password — restart
-			// the already-running panel so it actually serves with them.
-			_ = manage.RestartService(app.WebUIService)
-		}
-	}
-
 	tui.Success(fmt.Sprintf("Restored %d File(s).", res.Files))
 	if len(res.Tunnels) > 0 {
 		tui.Info(fmt.Sprintf("Tunnels: %d Registered, %d Started, %d Failed.",
@@ -192,9 +179,6 @@ func restoreBackup() {
 	}
 	if res.AutoRefreshHours > 0 {
 		tui.Info(fmt.Sprintf("Auto Refresh: Every %d Hour(s).", res.AutoRefreshHours))
-	}
-	if res.WebUIConfig {
-		tui.Info("Panel Password Restored.")
 	}
 	tui.PressEnter()
 }

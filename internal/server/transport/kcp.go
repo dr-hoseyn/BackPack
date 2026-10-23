@@ -9,9 +9,9 @@ import (
 
 	"github.com/backpack/backpack/internal/controlwire"
 	"github.com/backpack/backpack/internal/metrics"
+	"github.com/backpack/backpack/internal/traffic"
 	"github.com/backpack/backpack/internal/utils"
 	"github.com/backpack/backpack/internal/utils/network"
-	"github.com/backpack/backpack/internal/web"
 
 	"github.com/sirupsen/logrus"
 	"github.com/xtaci/kcp-go/v5"
@@ -28,7 +28,7 @@ type kcpGen struct {
 	handshakeChannel chan net.Conn
 	localChannel     chan LocalTCPConn
 	reqNewConnChan   chan struct{}
-	usageMonitor     *web.Usage
+	usageMonitor     *traffic.Usage
 	// bye is said once the seated client has been told this run is ending;
 	// each client gets its own, so the goodbye waited for at shutdown is the
 	// current client's. See farewell.
@@ -72,7 +72,6 @@ type KcpConfig struct {
 	MaxFrameSize     int
 	MaxReceiveBuffer int
 	MaxStreamBuffer  int
-	WebPort          int
 	Heartbeat        time.Duration
 	SO_RCVBUF        int
 	SO_SNDBUF        int
@@ -165,7 +164,7 @@ func NewKcpServer(parentCtx context.Context, config *KcpConfig, logger *logrus.L
 		lifecycle: lifecycle{
 			parentctx: parentCtx,
 			logger:    logger,
-			usage:     usageSpec{webPort: config.WebPort, snifferLog: config.SnifferLog, sniffer: config.Sniffer},
+			usage:     usageSpec{snifferLog: config.SnifferLog, sniffer: config.Sniffer},
 		},
 		limits: newLimiter(Limits{MaxConnections: config.MaxConnections, BandwidthMbps: config.BandwidthMbps}),
 	}
@@ -193,8 +192,8 @@ func (s *KcpTransport) Start() {
 // replace while this run is still using it.
 func (s *KcpTransport) start(g *kcpGen) {
 	go sweepTunnelConns(g.ctx, g.tunnelChannel)
-	if s.config.WebPort > 0 {
-		go g.usageMonitor.Monitor()
+	if s.config.Sniffer {
+		go g.usageMonitor.Run()
 	}
 	s.status.set("Disconnected (" + s.transportLabel() + ")")
 

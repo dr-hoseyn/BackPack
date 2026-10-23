@@ -15,7 +15,6 @@ import (
 	"github.com/backpack/backpack/internal/utils"
 	"github.com/backpack/backpack/internal/utils/handlers"
 	"github.com/backpack/backpack/internal/utils/network"
-	"github.com/backpack/backpack/internal/web"
 
 	"github.com/sirupsen/logrus"
 )
@@ -40,7 +39,6 @@ func NewServer(cfg *config.ServerConfig, parentCtx context.Context) *Server {
 	// Off unless this tunnel asked for it; see handlers/zerocopy.go.
 	handlers.SetZeroCopy(cfg.ZeroCopy)
 	// Loopback unless this tunnel asked otherwise; see web/monitorhttp.go.
-	web.SetMonitorBind(cfg.WebBind)
 	return &Server{
 		config: cfg,
 		ctx:    ctx,
@@ -203,7 +201,6 @@ func (s *Server) startTransport(ctx context.Context, tr config.TransportType) ru
 			ChannelSize:     s.config.ChannelSize,
 			Ports:           s.config.Ports,
 			Sniffer:         s.config.Sniffer,
-			WebPort:         s.config.WebPort,
 			SnifferLog:      s.config.SnifferLog,
 			AcceptUDP:       s.config.ForwardsUDP() && !s.config.NativeSing().NativeUDP,
 			MSS:             s.config.MSS,
@@ -238,7 +235,6 @@ func (s *Server) startTransport(ctx context.Context, tr config.TransportType) ru
 			MaxReceiveBuffer: s.config.MaxReceiveBuffer,
 			MaxStreamBuffer:  s.config.MaxStreamBuffer,
 			Sniffer:          s.config.Sniffer,
-			WebPort:          s.config.WebPort,
 			SnifferLog:       s.config.SnifferLog,
 			SO_RCVBUF:        s.config.SO_RCVBUF,
 			SO_SNDBUF:        s.config.SO_SNDBUF,
@@ -276,7 +272,6 @@ func (s *Server) startTransport(ctx context.Context, tr config.TransportType) ru
 			ChannelSize:    s.config.ChannelSize,
 			Ports:          s.config.Ports,
 			Sniffer:        s.config.Sniffer,
-			WebPort:        s.config.WebPort,
 			SnifferLog:     s.config.SnifferLog,
 			SO_RCVBUF:      s.config.SO_RCVBUF,
 			SO_SNDBUF:      s.config.SO_SNDBUF,
@@ -306,7 +301,6 @@ func (s *Server) startTransport(ctx context.Context, tr config.TransportType) ru
 			MaxReceiveBuffer: s.config.MaxReceiveBuffer,
 			MaxStreamBuffer:  s.config.MaxStreamBuffer,
 			Sniffer:          s.config.Sniffer,
-			WebPort:          s.config.WebPort,
 			SnifferLog:       s.config.SnifferLog,
 			MSS:              s.config.MSS,
 			SO_RCVBUF:        s.config.SO_RCVBUF,
@@ -331,7 +325,6 @@ func (s *Server) startTransport(ctx context.Context, tr config.TransportType) ru
 			ChannelSize:  s.config.ChannelSize,
 			Ports:        s.config.Ports,
 			Sniffer:      s.config.Sniffer,
-			WebPort:      s.config.WebPort,
 			SnifferLog:   s.config.SnifferLog,
 			Mode:         tr,
 			SimpleAuth:   s.config.SimpleAuth,
@@ -366,7 +359,6 @@ func (s *Server) startTransport(ctx context.Context, tr config.TransportType) ru
 			MaxReceiveBuffer: s.config.MaxReceiveBuffer,
 			MaxStreamBuffer:  s.config.MaxStreamBuffer,
 			Sniffer:          s.config.Sniffer,
-			WebPort:          s.config.WebPort,
 			SnifferLog:       s.config.SnifferLog,
 			Mode:             tr,
 			SimpleAuth:       s.config.SimpleAuth,
@@ -393,7 +385,6 @@ func (s *Server) startTransport(ctx context.Context, tr config.TransportType) ru
 			ChannelSize: s.config.ChannelSize,
 			Ports:       s.config.Ports,
 			Sniffer:     s.config.Sniffer,
-			WebPort:     s.config.WebPort,
 			SnifferLog:  s.config.SnifferLog,
 			SO_RCVBUF:   s.config.SO_RCVBUF,
 			SO_SNDBUF:   s.config.SO_SNDBUF,

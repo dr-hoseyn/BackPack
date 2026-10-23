@@ -46,7 +46,6 @@ const (
 // staged so that nothing has to be re-read after the commit.
 type restoreContents struct {
 	Files            int
-	WebUIConfig      bool
 	TelegramConfig   bool
 	SawTunnelConfig  bool
 	AutoRefreshHours int
@@ -250,8 +249,6 @@ func isTunnelConfigPath(target string) bool {
 // the archive.
 func noteRestoredFile(contents *restoreContents, name string) {
 	switch base := filepath.Base(name); {
-	case base == filepath.Base(app.WebUIConfig):
-		contents.WebUIConfig = true
 	case base == filepath.Base(app.TelegramConfig):
 		contents.TelegramConfig = true
 	case strings.HasSuffix(base, ".toml"):

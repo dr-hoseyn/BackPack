@@ -327,7 +327,6 @@ func commandList() []commandEntry {
 		{"health", "run every diagnostic check"},
 		{"history", "recent alerts and bot actions"},
 		{"backup", "send a full backup here as a file"},
-		{"webui", "panel link and login code"},
 		{"support", "project links and donations"},
 		{"help", "what the bot can do"},
 	}

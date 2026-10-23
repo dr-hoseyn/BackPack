@@ -11,10 +11,10 @@ import (
 
 	"github.com/backpack/backpack/config"
 	"github.com/backpack/backpack/internal/controlwire"
+	"github.com/backpack/backpack/internal/traffic"
 	"github.com/backpack/backpack/internal/utils"
 	"github.com/backpack/backpack/internal/utils/handlers"
 	"github.com/backpack/backpack/internal/utils/network"
-	"github.com/backpack/backpack/internal/web"
 
 	"github.com/backpack/backpack/internal/metrics"
 	"github.com/gorilla/websocket"
@@ -30,7 +30,7 @@ type wsGen struct {
 	tunnelChannel  chan TunnelChannel
 	localChannel   chan LocalTCPConn
 	reqNewConnChan chan struct{}
-	usageMonitor   *web.Usage
+	usageMonitor   *traffic.Usage
 	// seat holds the client this generation serves, and serving starts what
 	// outlives any one client — once, whichever claim comes first. See
 	// clientSeat.
@@ -68,7 +68,6 @@ type WsConfig struct {
 	KeepAlive    time.Duration
 	Heartbeat    time.Duration // in seconds
 	ChannelSize  int
-	WebPort      int
 	Mode         config.TransportType // ws or wss
 
 	// MSS caps the largest TCP segment the accepted tunnel connections send.
@@ -88,7 +87,7 @@ func NewWSServer(parentCtx context.Context, config *WsConfig, logger *logrus.Log
 		lifecycle: lifecycle{
 			parentctx: parentCtx,
 			logger:    logger,
-			usage:     usageSpec{webPort: config.WebPort, snifferLog: config.SnifferLog, sniffer: config.Sniffer},
+			usage:     usageSpec{snifferLog: config.SnifferLog, sniffer: config.Sniffer},
 		},
 		limits: newLimiter(Limits{MaxConnections: config.MaxConnections, BandwidthMbps: config.BandwidthMbps}),
 	}
@@ -122,8 +121,8 @@ func (s *WsTransport) Start() {
 // replace while this run is still using it.
 func (s *WsTransport) start(g *wsGen) {
 	// for  webui
-	if s.config.WebPort > 0 {
-		go g.usageMonitor.Monitor()
+	if s.config.Sniffer {
+		go g.usageMonitor.Run()
 	}
 
 	s.status.set(fmt.Sprintf("Disconnected (%s)", s.config.Mode))

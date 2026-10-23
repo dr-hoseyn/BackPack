@@ -6,7 +6,7 @@ import (
 	"net"
 	"sync"
 
-	"github.com/backpack/backpack/internal/web"
+	"github.com/backpack/backpack/internal/traffic"
 	"github.com/gorilla/websocket"
 )
 
@@ -27,14 +27,14 @@ type clientState struct {
 	cancel       context.CancelFunc
 	conn         net.Conn        // control channel for the byte-stream transports
 	wsConn       *websocket.Conn // control channel for the websocket transports
-	usageMonitor *web.Usage
+	usageMonitor *traffic.Usage
 	workers      sync.WaitGroup
 	stopping     bool
 }
 
 // Reset publishes a whole new generation at once, so no reader can observe a
 // half-swapped mixture of old and new.
-func (s *clientState) Reset(ctx context.Context, cancel context.CancelFunc, usage *web.Usage) {
+func (s *clientState) Reset(ctx context.Context, cancel context.CancelFunc, usage *traffic.Usage) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.ctx = ctx
@@ -96,7 +96,7 @@ func (s *clientState) Cancel() context.CancelFunc {
 	return s.cancel
 }
 
-func (s *clientState) Usage() *web.Usage {
+func (s *clientState) Usage() *traffic.Usage {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.usageMonitor

@@ -70,25 +70,6 @@ func TestDatagramServerNoLongerDisclaimsWhatItCanCheck(t *testing.T) {
 	}
 }
 
-// The regression guard: the panel must not compute tunnel state itself. It did,
-// and that is why a working KCP tunnel showed as offline in the Iran web UI
-// while the watchdog — which had the datagram case right — left it alone.
-func TestPanelUsesSharedHealth(t *testing.T) {
-	src, err := os.ReadFile("../../webui/stats.go")
-	if err != nil {
-		t.Skipf("cannot read the panel source: %v", err)
-	}
-	body := string(src)
-
-	if !strings.Contains(body, "manage.AllHealth()") {
-		t.Error("the panel does not use manage.AllHealth — it is deciding tunnel state on its own again")
-	}
-	// The old logic keyed "offline" off an empty TCP peer list.
-	if strings.Contains(body, "case len(peers) == 0:") {
-		t.Error("the panel still decides offline from an empty TCP peer list, which is wrong for KCP and UDP")
-	}
-}
-
 // A datagram server kept showing green in the panel after its client had been
 // stopped from the other end. The peer and the ping both disappeared, because
 // those are read from the tunnel's own snapshot, which knew; the light stayed

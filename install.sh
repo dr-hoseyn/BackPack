@@ -611,6 +611,15 @@ build_from_source() {
   echo "$INSTALL_DIR" > /etc/backpack/install_path
 }
 
+# A CLI-only installation must not leave an older release's web service alive.
+# Stop it before replacing the executable, including when the old process still
+# has the previous binary mapped. Retain old settings as inert backup material.
+if [[ -f /etc/systemd/system/backpack-webui.service ]]; then
+  systemctl disable --now backpack-webui.service || { err "Could not stop the retired web service"; exit 1; }
+  rm -f /etc/systemd/system/backpack-webui.service
+  systemctl daemon-reload || { err "Could not reload systemd after retiring the web service"; exit 1; }
+fi
+
 # Select the engine build independently of optional helper installation.
 if [[ "${BP_BUILD_FROM_SOURCE:-0}" == 1 ]]; then
   trusted_dir "$SCRIPT_DIR" || { err 'The requested source directory is not trusted'; exit 1; }

@@ -9,11 +9,11 @@ import (
 	"github.com/backpack/backpack/internal/controlwire"
 	"github.com/backpack/backpack/internal/metrics"
 	"github.com/backpack/backpack/internal/pathprobe"
+	"github.com/backpack/backpack/internal/traffic"
 	"github.com/backpack/backpack/internal/tunnel/naive"
 	"github.com/backpack/backpack/internal/utils"
 	"github.com/backpack/backpack/internal/utils/handlers"
 	"github.com/backpack/backpack/internal/utils/network"
-	"github.com/backpack/backpack/internal/web"
 
 	"github.com/sirupsen/logrus"
 )
@@ -28,7 +28,7 @@ type tcpGen struct {
 	localChannel     chan LocalTCPConn
 	reqNewConnChan   chan struct{}
 	handshakeChannel chan controlCandidate
-	usageMonitor     *web.Usage
+	usageMonitor     *traffic.Usage
 	// seat holds the client this generation serves; a new one replaces it
 	// without the generation ending. See clientSeat.
 	seat clientSeat
@@ -67,7 +67,6 @@ type TcpConfig struct {
 	KeepAlive       time.Duration
 	Heartbeat       time.Duration // in seconds
 	ChannelSize     int
-	WebPort         int
 	AcceptUDP       bool
 	MSS             int
 	SO_RCVBUF       int
@@ -91,7 +90,7 @@ func NewTCPServer(parentCtx context.Context, config *TcpConfig, logger *logrus.L
 		lifecycle: lifecycle{
 			parentctx: parentCtx,
 			logger:    logger,
-			usage:     usageSpec{webPort: config.WebPort, snifferLog: config.SnifferLog, sniffer: config.Sniffer},
+			usage:     usageSpec{snifferLog: config.SnifferLog, sniffer: config.Sniffer},
 		},
 		limits: newLimiter(Limits{MaxConnections: config.MaxConnections, BandwidthMbps: config.BandwidthMbps}),
 	}
@@ -126,8 +125,8 @@ func (s *TcpTransport) start(g *tcpGen) {
 	go sweepTunnelConns(g.ctx, g.tunnelChannel)
 	s.status.set("Disconnected (TCP)")
 
-	if s.config.WebPort > 0 {
-		go g.usageMonitor.Monitor()
+	if s.config.Sniffer {
+		go g.usageMonitor.Run()
 	}
 
 	go s.tunnelPort(g).serve()

@@ -1,0 +1,39 @@
+name: CLI-only management
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cli-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Prepare private configuration fixtures
+        run: sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
+      - name: CLI, migration, accounting and legacy configuration regressions
+        run: go test -race -short ./cmd ./config ./internal/menu ./internal/manage/... ./internal/traffic ./internal/telegram ./internal/cli ./internal/app -count=1 -timeout 6m
+      - name: Build and inspect the installed management surface
+        run: |
+          set -eu
+          go build -o "$RUNNER_TEMP/backpack-cli" .
+          "$RUNNER_TEMP/backpack-cli" -v
+          "$RUNNER_TEMP/backpack-cli" -h > "$RUNNER_TEMP/cli-help" 2>&1
+          if grep -Ei 'webui|web panel' "$RUNNER_TEMP/cli-help"; then exit 1; fi
+          if "$RUNNER_TEMP/backpack-cli" --webui > "$RUNNER_TEMP/retired-mode" 2>&1; then
+            echo 'Retired web mode was accepted'; exit 1
+          fi
+          if go list -deps . | grep -E 'backpack/internal/web(ui)?$'; then exit 1; fi
+          test ! -d internal/webui
+          test ! -d internal/web
+          bash -n install.sh

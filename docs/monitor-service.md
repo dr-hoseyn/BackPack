@@ -1,47 +1,26 @@
 # Monitor service
 
-The watchdog, the [Telegram bot](telegram-bot.md) and the [alerts](alerts.md)
-run as their own systemd unit, **`backpack-monitor.service`**, separately from
-the [web panel](web-panel.md).
+The watchdog, Telegram bot and alerts run in `backpack-monitor.service`.
+This service is independent of the interactive CLI; closing an SSH session does
+not stop monitoring. The CLI installs it on launch and updates refresh its unit.
+Use **Manage → Health Check** to inspect it, or:
 
-## Why it is separate
+```sh
+systemctl status backpack-monitor
+journalctl -u backpack-monitor -n 50
+```
 
-Monitoring used to run inside the panel process, which made the panel a
-dependency of monitoring — backwards. Stopping the panel, or the panel crashing,
-silently stopped dropped tunnels from being restarted and stopped every alert.
-
-Now monitoring depends on nothing but the machine being up, restarts itself if
-it dies, and keeps working when the panel is stopped.
-
-## Nothing to do by hand
-
-It is installed automatically — the CLI installs it on launch and the updater
-installs it as part of an update. [Health Check](health-check.md) reports if it
-is not running.
-
----
+No browser listener is created. Optional per-port traffic accounting writes its
+usage log without an HTTP page. On upgrade, the retired dashboard service is
+stopped and disabled before its unit is removed.
 
 <div dir="rtl">
 
 ## خلاصهٔ فارسی
 
-واچ‌داگ، [ربات تلگرام](telegram-bot.md) و [هشدارها](alerts.md) در یک سرویس
-جداگانهٔ systemd به نام **`backpack-monitor.service`** اجرا می‌شوند، مستقل از
-[پنل وب](web-panel.md).
-
-**چرا جداست؟** قبلاً پایش داخل پروسهٔ پنل بود، یعنی پایش به پنل وابسته بود —
-که برعکس منطق است. با خاموش شدن یا کرش کردن پنل، ری‌استارت تونل‌های افتاده و
-همهٔ هشدارها بی‌صدا متوقف می‌شد. حالا پایش به هیچ چیز جز روشن بودن سرور وابسته
-نیست و اگر بمیرد خودش را دوباره بالا می‌آورد.
-
-**کاری لازم نیست بکنی:** خودکار نصب می‌شود — هم موقع اجرای CLI و هم به‌عنوان
-بخشی از آپدیت. [Health Check](health-check.md) می‌گوید اگر اجرا نشده باشد.
+واچ‌داگ، ربات تلگرام و هشدارها در سرویس مستقل `backpack-monitor.service` اجرا
+می‌شوند. بستن SSH مانیتورینگ را متوقف نمی‌کند. پنل و پورت مدیریتی وب وجود ندارد.
 
 </div>
 
----
-[← Back to the docs index](README.md)
-
----
-
-*Last verified against Backpack v1.14.2.*
+Last verified against Backpack v1.15.0 (2026-10-23).

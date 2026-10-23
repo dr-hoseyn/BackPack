@@ -41,7 +41,6 @@ type WsMuxConfig struct {
 	MaxReceiveBuffer int
 	MaxStreamBuffer  int
 	ConnPoolSize     int
-	WebPort          int
 	Mode             config.TransportType
 	SimpleAuth       bool
 	AggressivePool   bool
@@ -71,13 +70,13 @@ func NewWSMuxClient(parentCtx context.Context, config *WsMuxConfig, logger *logr
 		config: config,
 	}
 
-	client.firstGeneration(parentCtx, logger, usageSpec{webPort: config.WebPort, snifferLog: config.SnifferLog, sniffer: config.Sniffer})
+	client.firstGeneration(parentCtx, logger, usageSpec{snifferLog: config.SnifferLog, sniffer: config.Sniffer})
 	return client
 }
 
 func (c *WsMuxTransport) Start() {
-	if c.config.WebPort > 0 {
-		c.state.Go(c.state.Usage().Monitor)
+	if c.config.Sniffer {
+		c.state.Go(c.state.Usage().Run)
 	}
 
 	c.status.set(fmt.Sprintf("Disconnected (%s)", c.config.Mode))

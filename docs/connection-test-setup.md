@@ -1,6 +1,6 @@
 # Automatic setup after Connection Test
 
-In the terminal or web panel, **Quick** is the default test depth. It observes
+In the terminal, **Quick** is the default test depth. It observes
 each tunnel for 30 seconds, with connection discovery bounded to 20 seconds
 (30 seconds for direct tunnels). It then measures download and upload on up to
 three lossless candidates, ordered by RTT plus twice jitter, with connection
@@ -16,7 +16,7 @@ Quick results are labelled as a short observation. **SCREENED** means the
 traffic check passed but speed was not measured; these rows retain their
 measurements and are excluded from recommendations and automatic setup. Run
 Full to measure every healthy candidate. Quick and Full remain separate in
-history comparisons. Older links and Go callers without a depth retain Full; the terminal and web panel explicitly default to Quick.
+history comparisons. Older links and Go callers without a depth retain Full; the terminal explicitly defaults to Quick.
 
 Run Connection Test on Iran and join it on kharej using the test link as usual.
 Both servers must run a version that supports automatic setup, as root. Keep
@@ -33,10 +33,6 @@ receives its settings and creates its service automatically, even while its
 after-test menu is still waiting for input. No second setup link or SSH login
 is needed. To let the other operator choose, select **Wait For Setup**.
 A kharej command without interactive input waits for the other side automatically.
-
-In the Iran web panel, the final results include **Set up both servers** with
-the same tunnel selector and ports field. Leave the kharej test command open,
-enter the ports in the panel, and press **Connect both servers**.
 
 The setup session lasts 15 minutes after the test. Each measured IP path can create one
 permanent pair. Only tunnels marked successful are eligible; unstable tunnels
@@ -111,4 +107,4 @@ test coordinator so that the peer uses the same rendezvous selection.
 
 </div>
 
-*Last verified against Backpack v1.14.2.*
+*Last verified against Backpack v1.15.0.*

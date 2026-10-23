@@ -49,7 +49,6 @@ type Check struct {
 func Diagnose() []Check {
 	var out []Check
 	out = append(out, systemChecks()...)
-	out = append(out, panelChecks()...)
 	out = append(out, monitorChecks()...)
 	out = append(out, tunnelChecks()...)
 	return out
@@ -235,65 +234,6 @@ func monitorChecks() []Check {
 }
 
 // --- web panel --------------------------------------------------------------
-
-func panelChecks() []Check {
-	const g = "Web Panel"
-	var out []Check
-
-	unit := app.ServiceDir + "/" + app.WebUIService
-	if !core.FileExists(unit) {
-		out = append(out, Check{Group: g, Name: "Service", Level: CheckWarn,
-			Detail: "not installed", Fix: "open Web Panel in the menu to start it"})
-		return out
-	}
-	if core.IsActive(app.WebUIService) {
-		out = append(out, Check{Group: g, Name: "Service", Level: CheckOK, Detail: "running"})
-	} else {
-		out = append(out, Check{Group: g, Name: "Service", Level: CheckFail,
-			Detail: "installed but not running",
-			Fix:    "Web Panel → Restart panel, or check: journalctl -u " + app.WebUIService + " -n 30"})
-	}
-
-	port := panelPort()
-	if port > 0 {
-		if listening(port) {
-			out = append(out, Check{Group: g, Name: "Port", Level: CheckOK,
-				Detail: fmt.Sprintf("%d listening", port)})
-		} else {
-			out = append(out, Check{Group: g, Name: "Port", Level: CheckWarn,
-				Detail: fmt.Sprintf("%d not listening", port),
-				Fix:    "Web Panel → Restart panel"})
-		}
-		out = append(out, Check{Group: g, Name: "Firewall", Level: CheckInfo,
-			Detail: fmt.Sprintf("allow it if unreachable: ufw allow %d", port)})
-	}
-	return out
-}
-
-// panelPort reads the configured web-panel port without importing webui
-// (which would create an import cycle).
-func panelPort() int {
-	data, err := os.ReadFile(app.WebUIConfig)
-	if err != nil {
-		return app.WebUIPort
-	}
-	// Tiny hand-parse to stay dependency-free: look for "port": N.
-	s := string(data)
-	i := strings.Index(s, `"port"`)
-	if i < 0 {
-		return app.WebUIPort
-	}
-	rest := s[i+len(`"port"`):]
-	rest = strings.TrimLeft(rest, " \t:\r\n")
-	j := 0
-	for j < len(rest) && rest[j] >= '0' && rest[j] <= '9' {
-		j++
-	}
-	if n, err := strconv.Atoi(rest[:j]); err == nil && n > 0 {
-		return n
-	}
-	return app.WebUIPort
-}
 
 // --- tunnels ----------------------------------------------------------------
 
@@ -733,10 +673,8 @@ func Locations() []Location {
 		{Label: "Backups", Path: app.BackupDir},
 		{Label: "Snapshots", Path: backup.Root()},
 		{Label: "Config folder", Path: app.ConfigDir},
-		{Label: "Web panel config", Path: app.WebUIConfig},
 		{Label: "Telegram config", Path: app.TelegramConfig},
 		{Label: "TLS certificates", Path: app.ConfigDir + "/certs"},
-		{Label: "Web panel service", Path: app.ServiceDir + "/" + app.WebUIService},
 		{Label: "Monitor service", Path: app.ServiceDir + "/" + app.MonitorService},
 	}
 	for i := range out {

@@ -16,12 +16,12 @@ import (
 // the builder. Reaching a tunnel on disk by any other route is the fault this
 // guards against, whether the route is a new function or a copy of an old one.
 func TestEveryCreationPathChecksForAClash(t *testing.T) {
-	if !strings.Contains(manageFuncBody(t, "webapi.go", "specFromNew"), "portClash(") {
+	if !strings.Contains(manageFuncBody(t, "tunnelform.go", "specFromNew"), "portClash(") {
 		t.Error("specFromNew builds a configuration without checking whether it can " +
 			"coexist with the tunnels already there")
 	}
 	for _, fn := range []string{"CreateTunnel", "ApplyTunnel"} {
-		if !strings.Contains(manageFuncBody(t, "webapi.go", fn), "specFromNew(") {
+		if !strings.Contains(manageFuncBody(t, "tunnelform.go", fn), "specFromNew(") {
 			t.Errorf("%s makes a tunnel without going through specFromNew, so nothing "+
 				"checks whether it can coexist with the ones already there", fn)
 		}

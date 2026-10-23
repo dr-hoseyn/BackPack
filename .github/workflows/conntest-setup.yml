@@ -19,7 +19,7 @@ jobs:
       - name: Endpoint-local promotion, protocol and failure tests
         run: |
           sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
-          go test -race ./internal/manage ./internal/webui ./internal/tui -run 'TestConnTest|TestInputEnded|TestTheCoordinatorAnswersOnlyWithTheToken' -count=1 -timeout 5m
+          go test -race ./internal/manage ./internal/tui -run 'TestConnTest|TestInputEnded|TestTheCoordinatorAnswersOnlyWithTheToken' -count=1 -timeout 5m
       - name: Real AmneziaWG and CONNECT-IP Connection Tests on both IP families
         working-directory: internal/manage
         run: |

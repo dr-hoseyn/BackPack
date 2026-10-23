@@ -126,7 +126,7 @@ and the recovery threshold still applies. Late results from the previous helper
 process cannot revive the restarted path. Valid static TLS
 replacement triggers the normal generation reload; such reloads may interrupt
 active flows. Metrics show selected TCP/native UDP paths and per-path verified
-RTT, transfer rate, probe failures and helper readiness in the CLI and panel.
+RTT, transfer rate, probe failures and helper readiness in the CLI.
 These contain path identities and measurements, never credentials.
 
 Test real forwarded traffic, keep a long-lived application connection open,
@@ -148,4 +148,4 @@ certificate renewal still require validation in your deployment.
 
 </div>
 
-*Last verified against Backpack v1.14.2, 2026-10-18.*
+*Last verified against Backpack v1.15.0, 2026-10-18.*

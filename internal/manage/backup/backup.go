@@ -38,7 +38,6 @@ type RestoreResult struct {
 	Tunnels          []string // tunnels re-registered as systemd services
 	Started          int      // tunnels successfully started
 	Failed           int      // tunnels that failed to start
-	WebUIConfig      bool     // webui.json was present in the archive
 	TelegramConfig   bool     // telegram.json was present in the archive
 	AutoRefreshHours int      // auto-refresh interval restored from the archive
 
@@ -336,9 +335,6 @@ func syncDir(dir string) {
 //
 // Nothing in the live config directory changes until the whole archive has
 // been read, checked and staged; see internal/manage/restore.go.
-//
-// The caller is responsible for (re)starting the web-panel service afterwards —
-// that lives in the webui package to avoid an import cycle.
 func Restore(r io.Reader) (RestoreResult, error) {
 	var res RestoreResult
 
@@ -365,7 +361,6 @@ func Restore(r io.Reader) (RestoreResult, error) {
 	}
 
 	res.Files = contents.Files
-	res.WebUIConfig = contents.WebUIConfig
 	res.TelegramConfig = contents.TelegramConfig
 	res.AutoRefreshHours = contents.AutoRefreshHours
 	res.Warnings = append(res.Warnings, contents.Warnings...)

@@ -9,8 +9,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/backpack/backpack/internal/traffic"
 	"github.com/backpack/backpack/internal/utils/network"
-	"github.com/backpack/backpack/internal/web"
 	"github.com/gorilla/websocket"
 	"github.com/sirupsen/logrus"
 )
@@ -28,7 +28,7 @@ import (
 
 // UDPForward pipes a tunnel stream carrying framed datagrams to a UDP backend.
 // It returns when either side ends, having closed both.
-func UDPForward(stream net.Conn, target string, logger *logrus.Logger, usage *web.Usage, port int, sniffer bool) {
+func UDPForward(stream net.Conn, target string, logger *logrus.Logger, usage *traffic.Usage, port int, sniffer bool) {
 	udpForwardContext(context.Background(), udpBackendDialTimeout, stream, target, logger, usage, port, sniffer)
 }
 
@@ -43,7 +43,7 @@ const udpBackendDialTimeout = 10 * time.Second
 // dialForwardedUDP takes a flow whose target is marked as UDP, reporting
 // whether it was one. Every transport calls it before resolving the target the
 // ordinary way, so recognising a datagram flow is one thing in one place.
-func dialForwardedUDP(ctx context.Context, timeout time.Duration, stream net.Conn, remoteAddr string, logger *logrus.Logger, usage *web.Usage, sniffer bool) bool {
+func dialForwardedUDP(ctx context.Context, timeout time.Duration, stream net.Conn, remoteAddr string, logger *logrus.Logger, usage *traffic.Usage, sniffer bool) bool {
 	target, isUDP := network.SplitUDPTarget(remoteAddr)
 	if !isUDP {
 		return false
@@ -59,7 +59,7 @@ func dialForwardedUDP(ctx context.Context, timeout time.Duration, stream net.Con
 }
 
 // udpForwardContext binds backend lookup and the flow to its generation.
-func udpForwardContext(ctx context.Context, timeout time.Duration, stream net.Conn, target string, logger *logrus.Logger, usage *web.Usage, port int, sniffer bool) {
+func udpForwardContext(ctx context.Context, timeout time.Duration, stream net.Conn, target string, logger *logrus.Logger, usage *traffic.Usage, port int, sniffer bool) {
 	// A UDP backend cannot be health-checked the way a TCP one is — there is
 	// nothing to connect to — so a multi-backend list takes its first entry
 	// rather than being handed to the resolver as one nonsense address.
@@ -119,7 +119,7 @@ func dialUDPContext(ctx context.Context, timeout time.Duration, target string) (
 }
 
 // tunnelToBackend unpacks datagrams from the tunnel and sends them on.
-func tunnelToBackend(stream net.Conn, backend *net.UDPConn, logger *logrus.Logger, usage *web.Usage, port int, sniffer bool, activity ...*atomic.Int64) {
+func tunnelToBackend(stream net.Conn, backend *net.UDPConn, logger *logrus.Logger, usage *traffic.Usage, port int, sniffer bool, activity ...*atomic.Int64) {
 	var buf []byte
 	for {
 		var err error
@@ -143,7 +143,7 @@ func tunnelToBackend(stream net.Conn, backend *net.UDPConn, logger *logrus.Logge
 }
 
 // backendToTunnel frames the backend's replies and writes them to the tunnel.
-func backendToTunnel(stream net.Conn, backend *net.UDPConn, logger *logrus.Logger, usage *web.Usage, port int, sniffer bool, activity ...*atomic.Int64) {
+func backendToTunnel(stream net.Conn, backend *net.UDPConn, logger *logrus.Logger, usage *traffic.Usage, port int, sniffer bool, activity ...*atomic.Int64) {
 	buf := make([]byte, network.MaxDatagram)
 	for {
 		// The deadline is what ends a flow the far side abandoned without

@@ -135,13 +135,8 @@ type Spec struct {
 	// BandwidthMbps caps total tunnel throughput in Mbit/s (0 = unlimited).
 	BandwidthMbps int
 
-	// Sniffer web panel
+	// Optional per-port traffic accounting.
 	Sniffer bool
-	WebPort int
-	// WebBind is the address that page listens on. Empty means loopback, which
-	// is the default because the page has no authentication; see
-	// config.ServerConfig.WebBind.
-	WebBind string
 
 	// TLS (server, wss/wssmux only)
 	TLSCert string
@@ -344,10 +339,6 @@ func (s Spec) Render() string {
 			p("bandwidth_mbps = %d\n", s.BandwidthMbps)
 		}
 		p("sniffer = %t\n", s.Sniffer)
-		if s.WebPort > 0 {
-			p("web_port = %d\n", s.WebPort)
-			p("web_bind = %q\n", monitorBind(s.WebBind))
-		}
 		b.WriteString("ports = [\n")
 		for _, port := range s.Ports {
 			p("    %q,\n", port)
@@ -426,10 +417,6 @@ func (s Spec) Render() string {
 		p("mux_streambuffer = %d\n", s.MuxStreamBuffer)
 	}
 	p("sniffer = %t\n", s.Sniffer)
-	if s.WebPort > 0 {
-		p("web_port = %d\n", s.WebPort)
-		p("web_bind = %q\n", monitorBind(s.WebBind))
-	}
 	s.writeHelpers(&b)
 	return b.String()
 }
