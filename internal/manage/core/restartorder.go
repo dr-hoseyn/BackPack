@@ -9,26 +9,8 @@ import (
 	"github.com/backpack/backpack/internal/app"
 )
 
-// Restarting everything onto a new binary, from wherever the request came.
-//
-// An update can be started from the SSH menu, from the web panel and from the
-// Telegram bot. The last two run inside units the update itself restarts — the
-// panel in backpack-webui, the bot in backpack-monitor — and `systemctl
-// restart` of the unit that contains the caller stops the caller: systemd sends
-// every process of the unit SIGTERM and waits for it. The update used to
-// restart the panel first, then the monitor, then the tunnels, then check them
-// and roll back if they failed; started from the panel it died at the first
-// step, and the tunnels, the health check and the rollback never happened.
-//
-// So the order is fixed here, once, for the update, the local update and the
-// rollback alike: tunnels first, then the monitor and the panel — and whichever
-// of those hosts the caller is not restarted here at all. It is recorded, and
-// the caller restarts it with FinishDeferredRestarts once it has reported the
-// outcome — the report is the last thing it can do, since the restart ends it.
-//
-// What that costs: a panel or monitor that fails to start on the new binary is
-// not caught by the update's own health check, because it is started after it.
-// systemd's Restart= keeps retrying it, and the SSH menu remains the way in.
+// Restart tunnels before the monitor. A Telegram-triggered update defers its
+// own monitor restart until the outcome has been reported.
 
 // procSelfCgroup is where the kernel says which cgroup — and so which systemd
 // unit — this process belongs to. A variable so a test can point it elsewhere.
@@ -42,7 +24,7 @@ func OwnUnit() string {
 		return ""
 	}
 	for _, line := range strings.Split(string(b), "\n") {
-		// "0::/system.slice/backpack-webui.service" on cgroup v2,
+		// "0::/system.slice/backpack-monitor.service" on cgroup v2,
 		// "1:name=systemd:/system.slice/…" on v1.
 		i := strings.LastIndexByte(line, ':')
 		if i < 0 {
@@ -57,12 +39,15 @@ func OwnUnit() string {
 	return ""
 }
 
-// RestartForNewBinary restarts every tunnel, then the monitor and the panel, and
+// RestartForNewBinary restarts every tunnel, then the monitor, and
 // returns the units it deliberately left for RestartLater because the caller
 // runs inside them.
 func RestartForNewBinary(logf func(string)) (ok, failed int, later []string) {
 	if logf == nil {
 		logf = func(string) {}
+	}
+	if err := RetireLegacyPanel(); err != nil {
+		logf("Warning: " + err.Error())
 	}
 	ok, failed = RestartAll()
 
@@ -77,15 +62,6 @@ func RestartForNewBinary(logf func(string)) (ok, failed int, later []string) {
 		logf("Warning: monitor service could not start: " + err.Error())
 	}
 
-	if own == app.WebUIService {
-		later = append(later, app.WebUIService)
-	} else if IsEnabled(app.WebUIService) || IsActive(app.WebUIService) {
-		// The panel is optional; a machine without its unit has nothing to
-		// restart, and saying it failed would be a false alarm on every update.
-		if err := RestartService(app.WebUIService); err != nil {
-			logf("Warning: web panel could not restart: " + err.Error())
-		}
-	}
 	deferred.add(later)
 	return ok, failed, later
 }

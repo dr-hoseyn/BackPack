@@ -2,7 +2,6 @@ package telegram
 
 import (
 	"encoding/json"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -173,12 +172,6 @@ func route(c Config, u tgUser, data string) reply {
 		// Most screens are readings, and a reading is answered for anyone on the
 		// admin list. A few are not readings at all — they print a credential —
 		// and those are gated here. See secretScreens.
-		if secretScreens[rest] && !c.isOwner(strconv.FormatInt(u.ID, 10)) {
-			r := navigate(c, lang, "home")
-			r.toast = tr(lang, "Only the bot's owner can see this.")
-			r.alert = true
-			return r
-		}
 		return navigate(c, lang, rest)
 	case "t":
 		return tunnelRoute(lang, rest)
@@ -202,23 +195,8 @@ func route(c Config, u tgUser, data string) reply {
 // no user can reach.
 var navScreens = []string{
 	"home", "overview", "tunnels", "system", "alerts",
-	"health", "history", "audit", "tools", "update", "webui", "support",
+	"health", "history", "audit", "tools", "update", "support",
 }
-
-// secretScreens names the nav screens that hand over a credential rather than
-// report a reading. They need write permission even though they change nothing.
-//
-// "Read-only" was written as "every screen, no actions", and every nav screen
-// was answered for anyone on the admin list on exactly that basis. nav:webui
-// changes nothing — it prints the web panel's password in plain text. But the
-// panel is root on this machine: every tunnel and its token, the backups, the
-// updater, the Telegram settings. So the account that had deliberately been
-// denied the restart button could take the whole server by opening a different
-// screen, and /webui reached it without even a button to notice.
-//
-// Handing somebody a credential is a write in everything but name, so it is
-// checked against the same canWrite every action is.
-var secretScreens = map[string]bool{"webui": true}
 
 // navigate serves the read-only screens.
 func navigate(c Config, lang, name string) reply {
@@ -241,8 +219,6 @@ func navigate(c Config, lang, name string) reply {
 		return toolsScreen(lang)
 	case "update":
 		return updateScreen(c, lang)
-	case "webui":
-		return screenReply(webUIText(lang), refreshBack(lang, "nav:webui"))
 	case "support":
 		return screenReply(supportText(lang), kb(backTo(lang, "nav:home")))
 	}

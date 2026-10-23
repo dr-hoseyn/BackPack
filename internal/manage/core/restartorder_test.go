@@ -1,7 +1,6 @@
 package core
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -52,7 +51,7 @@ func fakeCgroup(t *testing.T, body string) {
 
 func TestOwnUnitReadsTheCgroup(t *testing.T) {
 	for body, want := range map[string]string{
-		"0::/system.slice/backpack-webui.service\n":                                app.WebUIService,
+		"0::/system.slice/backpack-monitor.service\n":                              app.MonitorService,
 		"12:pids:/\n1:name=systemd:/system.slice/backpack-monitor.service\n0::/\n": app.MonitorService,
 		"0::/user.slice/user-0.slice/session-3.scope\n":                            "",
 	} {
@@ -67,16 +66,16 @@ func TestOwnUnitReadsTheCgroup(t *testing.T) {
 // line — that stops the process doing the update before it reaches the tunnels.
 func TestTheCallersOwnUnitIsLeftForLast(t *testing.T) {
 	calls := recordSystemctl(t)
-	fakeCgroup(t, "0::/system.slice/"+app.WebUIService+"\n")
+	fakeCgroup(t, "0::/system.slice/"+app.MonitorService+"\n")
 
 	_, _, later := RestartForNewBinary(nil)
 
 	for _, c := range *calls {
-		if c == "restart "+app.WebUIService {
+		if c == "restart "+app.MonitorService {
 			t.Fatalf("the panel restarted its own unit in line: %v", *calls)
 		}
 	}
-	if len(later) != 1 || later[0] != app.WebUIService {
+	if len(later) != 1 || later[0] != app.MonitorService {
 		t.Fatalf("later = %v, want the panel's unit", later)
 	}
 
@@ -90,7 +89,7 @@ func TestTheCallersOwnUnitIsLeftForLast(t *testing.T) {
 	if len(*calls) != before+1 {
 		t.Fatal("the deferred restart ran twice")
 	}
-	if last := (*calls)[before]; last != "--no-block restart "+app.WebUIService {
+	if last := (*calls)[before]; last != "--no-block restart "+app.MonitorService {
 		t.Fatalf("the deferred restart was %q, want a non-blocking restart", last)
 	}
 }
@@ -122,43 +121,9 @@ func TestFromASessionEverythingRestartsInLine(t *testing.T) {
 		t.Fatalf("later = %v, want nothing deferred", later)
 	}
 	joined := strings.Join(*calls, "\n")
-	for _, unit := range []string{app.MonitorService, app.WebUIService} {
+	for _, unit := range []string{app.MonitorService} {
 		if !strings.Contains(joined, "restart "+unit) {
 			t.Fatalf("%s was not restarted: %v", unit, *calls)
-		}
-	}
-}
-
-// The panel is optional. On a machine without its unit there is nothing to
-// restart, and an update must not warn that restarting it failed.
-func TestAMachineWithoutThePanelIsNotWarnedAboutIt(t *testing.T) {
-	calls := recordSystemctl(t)
-	fakeCgroup(t, "0::/user.slice/user-0.slice/session-3.scope\n")
-	inner := runSystemctl
-	runSystemctl = func(args ...string) (string, error) {
-		if len(args) == 2 && args[1] == app.WebUIService {
-			*calls = append(*calls, strings.Join(args, " "))
-			switch args[0] {
-			case "is-enabled", "is-active":
-				return "", errors.New("Unit backpack-webui.service could not be found.")
-			case "restart":
-				return "", errors.New("Unit backpack-webui.service not found.")
-			}
-		}
-		return inner(args...)
-	}
-	unitCache.Forget()
-
-	var warnings []string
-	RestartForNewBinary(func(s string) { warnings = append(warnings, s) })
-	for _, c := range *calls {
-		if c == "restart "+app.WebUIService {
-			t.Fatal("a panel that is not installed was restarted")
-		}
-	}
-	for _, w := range warnings {
-		if strings.Contains(w, "web panel") {
-			t.Fatalf("warned about a panel that is not installed: %q", w)
 		}
 	}
 }

@@ -86,7 +86,6 @@ forward over TCP. Set it per tunnel:
 
 - **CLI** — Manage → Edit → *Forward UDP*, or answer *no* to the UDP question at
   setup
-- **Web panel** — Edit → Fine Tune → the same switch
 - **By hand** — `accept_udp = false` in the `[server]` section
 
 With it off, the forwarded port binds TCP only, which is what Backpack did
@@ -163,7 +162,7 @@ forward‌های TCP گرسنه می‌مانند — سایت نصفه لود �
 (که کلاً UDP است)، DNS، بازی و ویس.
 
 **روشن کردن:** سر نصب سؤال «Carry UDP as well as TCP…» را `y` بزن؛ روی تونل
-موجود `Manage → Edit → Forward UDP`؛ در پنل وب از Fine Tune؛ یا دستی
+موجود `Manage → Edit → Forward UDP`؛ یا دستی
 `accept_udp = true` زیر `[server]`. فقط سمت سرور (ایران) این تنظیم را دارد.
 
 **بعدش فایروال:** `ufw allow <port>/udp` هم لازم است — قانون TCP شامل UDP
@@ -185,4 +184,4 @@ forward‌های TCP گرسنه می‌مانند — سایت نصفه لود �
 
 ---
 
-*Last verified against Backpack v1.14.1.*
+*Last verified against Backpack v1.15.0.*

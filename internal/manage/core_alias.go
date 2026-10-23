@@ -63,6 +63,7 @@ var (
 	MonitorRunning        = core.MonitorRunning
 	RestartMonitorService = core.RestartMonitorService
 	EnsureMonitorService  = core.EnsureMonitorService
+	RetireLegacyPanel     = core.RetireLegacyPanel
 	DisableMonitorService = core.DisableMonitorService
 
 	ProxyRunning        = core.ProxyRunning

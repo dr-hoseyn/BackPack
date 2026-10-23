@@ -80,7 +80,7 @@ func TestTheConnectionTestAcrossARealPath(t *testing.T) {
 				// pck, sni, xdi and the spoofing probes write below netfilter, where
 				// the filter here cannot always reach them; every other carrier
 				// is an ordinary socket the filter sees.
-				raw := r.Transport == "pck" || r.Kind == "spoof" || r.Kind == "direct" && r.Transport == "spoof" ||
+				raw := r.Transport == "pck" || r.Transport == "xdi" || r.Kind == "spoof" || r.Kind == "direct" && r.Transport == "spoof" ||
 					(r.Kind == "direct" && (r.Transport == "sni" || r.Transport == "xdi"))
 				switch {
 				case path.filter == "" && r.Status != ctOK:

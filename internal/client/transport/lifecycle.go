@@ -2,13 +2,12 @@ package transport
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/backpack/backpack/internal/metrics"
-	"github.com/backpack/backpack/internal/web"
+	"github.com/backpack/backpack/internal/traffic"
 	"github.com/sirupsen/logrus"
 )
 
@@ -47,7 +46,6 @@ type lifecycle struct {
 
 // usageSpec is what each generation's usage monitor is built from.
 type usageSpec struct {
-	webPort    int
 	snifferLog string
 	sniffer    bool
 }
@@ -70,7 +68,7 @@ func (l *lifecycle) firstGeneration(parent context.Context, logger *logrus.Logge
 // publish installs a whole new generation at once: a reader must never see the
 // new context paired with the old monitor, or the other way round.
 func (l *lifecycle) publish(ctx context.Context, cancel context.CancelFunc) {
-	l.state.Reset(ctx, cancel, web.NewDataStore(fmt.Sprintf(":%v", l.usage.webPort), ctx, l.usage.snifferLog, l.usage.sniffer, l.status.get, l.logger))
+	l.state.Reset(ctx, cancel, traffic.NewDataStore(ctx, l.usage.snifferLog, l.usage.sniffer, l.logger))
 }
 
 // Running reports whether a control channel is up.

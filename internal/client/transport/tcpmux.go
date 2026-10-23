@@ -54,7 +54,6 @@ type TcpMuxConfig struct {
 	MaxReceiveBuffer int
 	MaxStreamBuffer  int
 	ConnPoolSize     int
-	WebPort          int
 	AggressivePool   bool
 	MSS              int
 	SO_RCVBUF        int
@@ -79,13 +78,13 @@ func NewMuxClient(parentCtx context.Context, config *TcpMuxConfig, logger *logru
 		config: config,
 	}
 
-	client.firstGeneration(parentCtx, logger, usageSpec{webPort: config.WebPort, snifferLog: config.SnifferLog, sniffer: config.Sniffer})
+	client.firstGeneration(parentCtx, logger, usageSpec{snifferLog: config.SnifferLog, sniffer: config.Sniffer})
 	return client
 }
 
 func (c *TcpMuxTransport) Start() {
-	if c.config.WebPort > 0 {
-		c.state.Go(c.state.Usage().Monitor)
+	if c.config.Sniffer {
+		c.state.Go(c.state.Usage().Run)
 	}
 
 	c.status.set("Disconnected (TCPMUX)")

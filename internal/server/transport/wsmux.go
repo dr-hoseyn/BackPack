@@ -13,8 +13,8 @@ import (
 	"github.com/backpack/backpack/config" // for mode
 	"github.com/backpack/backpack/internal/controlwire"
 	"github.com/backpack/backpack/internal/metrics"
+	"github.com/backpack/backpack/internal/traffic"
 	"github.com/backpack/backpack/internal/utils/network"
-	"github.com/backpack/backpack/internal/web"
 	"github.com/xtaci/smux"
 
 	"github.com/gorilla/websocket"
@@ -30,7 +30,7 @@ type wsMuxGen struct {
 	tunnelChannel  chan pooledMuxSession
 	localChannel   chan LocalTCPConn
 	reqNewConnChan chan struct{}
-	usageMonitor   *web.Usage
+	usageMonitor   *traffic.Usage
 	// seat holds the client this generation serves, and serving starts what
 	// outlives any one client — once, whichever claim comes first. See
 	// clientSeat.
@@ -73,7 +73,6 @@ type WsMuxConfig struct {
 	MaxFrameSize     int
 	MaxReceiveBuffer int
 	MaxStreamBuffer  int
-	WebPort          int
 	Mode             config.TransportType // ws or wss
 	ProxyProtocol    bool
 	// MSS caps the largest TCP segment the accepted tunnel connections send.
@@ -101,7 +100,7 @@ func NewWSMuxServer(parentCtx context.Context, config *WsMuxConfig, logger *logr
 		lifecycle: lifecycle{
 			parentctx: parentCtx,
 			logger:    logger,
-			usage:     usageSpec{webPort: config.WebPort, snifferLog: config.SnifferLog, sniffer: config.Sniffer},
+			usage:     usageSpec{snifferLog: config.SnifferLog, sniffer: config.Sniffer},
 		},
 		streamCounter:  0,
 		sessionCounter: 0,
@@ -128,8 +127,8 @@ func (s *WsMuxTransport) Start() {
 func (s *WsMuxTransport) start(g *wsMuxGen) {
 	go sweepTunnelConns(g.ctx, g.tunnelChannel)
 	// for  webui
-	if s.config.WebPort > 0 {
-		go g.usageMonitor.Monitor()
+	if s.config.Sniffer {
+		go g.usageMonitor.Run()
 	}
 
 	s.status.set(fmt.Sprintf("Disconnected (%s)", s.config.Mode))

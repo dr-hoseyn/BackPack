@@ -10,7 +10,7 @@ import (
 
 const (
 	// Version of the backpack engine.
-	Version = "v1.14.1"
+	Version = "v1.15.0"
 
 	// RepoOwner/RepoName identify the GitHub repository used by the installer
 	// and the release-based updater.
@@ -43,15 +43,6 @@ const (
 
 	// AutoRefreshMarker is the cron comment tag for the global auto-refresh job.
 	AutoRefreshMarker = "backpack-auto-refresh"
-
-	// WebUIConfig stores the web panel settings (JSON).
-	WebUIConfig = ConfigDir + "/webui.json"
-
-	// WebUIService is the systemd unit that runs the web panel.
-	WebUIService = "backpack-webui.service"
-
-	// WebUIPort is the default port the web panel listens on.
-	WebUIPort = 7777
 
 	// MonitorService is the systemd unit that watches the tunnels and runs the
 	// Telegram bot and alerts. It is deliberately separate from the web panel:

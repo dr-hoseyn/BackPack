@@ -20,7 +20,6 @@ import (
 	"github.com/backpack/backpack/internal/telegram"
 	"github.com/backpack/backpack/internal/tunnel/naive"
 	"github.com/backpack/backpack/internal/utils"
-	"github.com/backpack/backpack/internal/webui"
 )
 
 var logger = utils.NewLogger("info")
@@ -85,10 +84,17 @@ func main() {
 	showVersion := flag.Bool("v", false, "print the version and exit")
 	restartAll := flag.Bool("restart-all", false, "restart every configured tunnel and exit (used by the auto-refresh job)")
 	tgReport := flag.Bool("telegram-report", false, "send a Telegram status report and exit (used by the scheduled job)")
-	webPanel := flag.Bool("webui", false, "run the web panel (used by the backpack-webui service)")
 	monitorMode := flag.Bool("monitor", false, "run the watchdog, Telegram bot and alerts (used by the backpack-monitor service)")
 	proxyMode := flag.Bool("proxy", false, "run the built-in SOCKS5/HTTP proxy (used by the backpack-proxy service)")
 	flag.Parse()
+	// Older CLI updaters restart tunnel/monitor units before checking health.
+	// Retire the old dashboard unit on that first new process too, so the
+	// old updater does not roll back solely because its removed UI cannot start.
+	if os.Geteuid() == 0 && (*configPath != "" || *monitorMode) {
+		if err := manage.RetireLegacyPanel(); err != nil {
+			logger.Fatalf("legacy service cleanup failed: %v", err)
+		}
+	}
 
 	switch {
 	case *showVersion:
@@ -103,11 +109,6 @@ func main() {
 		if err := telegram.SendStatusNow(); err != nil {
 			logger.Errorf("telegram report failed: %v", err)
 			os.Exit(1)
-		}
-		return
-	case *webPanel:
-		if err := webui.Serve(); err != nil {
-			logger.Fatalf("web panel failed: %v", err)
 		}
 		return
 	case *monitorMode:

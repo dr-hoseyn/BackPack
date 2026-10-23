@@ -10,9 +10,9 @@ import (
 	"github.com/xtaci/smux"
 
 	"github.com/backpack/backpack/internal/metrics"
+	"github.com/backpack/backpack/internal/traffic"
 	"github.com/backpack/backpack/internal/utils"
 	"github.com/backpack/backpack/internal/utils/handlers"
-	"github.com/backpack/backpack/internal/web"
 )
 
 // The owner travels through the queue with the session. Looking up the seat
@@ -85,7 +85,7 @@ func enqueueMuxSession(queue chan pooledMuxSession, owner context.Context, sessi
 type muxSession struct {
 	ctx        context.Context
 	local      chan LocalTCPConn
-	usage      *web.Usage
+	usage      *traffic.Usage
 	reqNewConn chan struct{}
 
 	// muxCon is how many streams one session may carry at once.

@@ -16,14 +16,14 @@ exact link that is broken.
 
 ## Setup
 
-**Telegram Bot → Configure** in the CLI (or **Settings** in the [web
-panel](web-panel.md)). You need a bot token from `@BotFather` and your numeric
+**Telegram Bot → Configure** in the CLI.
+You need a bot token from `@BotFather` and your numeric
 user id from `@userinfobot`.
 
 ## What it offers
 
 Buttons and commands for **Status**, **System**, **Alerts**, **Backup**,
-**Web UI** and **Support**. Internal plumbing — the relay port, any SOCKS port,
+**Support**. Internal plumbing — the relay port, any SOCKS port,
 the API host — never appears in a message.
 
 ## Who may do what
@@ -35,13 +35,10 @@ beside it, each with full or read-only (`:ro`) access:
 |---|:--:|:--:|:--:|
 | Status, tunnels, alerts, health, history | ✅ | ✅ | ✅ |
 | Start, stop, restart tunnels | ✅ | ✅ | — |
-| **Web UI** (the panel's address *and password*) | ✅ | — | — |
-| **Backup** (the archive carries the panel password) | ✅ | — | — |
+| **Backup** (the archive carries tunnel credentials) | ✅ | — | — |
 
-The last two are the owner's alone because the panel password is full access —
-including who else gets in — which is the panel's `admin` scope. An added admin
-is the bot's equivalent of a `write` token, and a write token cannot reach it
-either. See [access control](access-control.md).
+Backup and administrator changes are restricted to the owner because they expose or change credentials —
+Read-only admins can view readings without receiving credentials. See [access control](access-control.md).
 
 ---
 
@@ -60,11 +57,10 @@ forward می‌شود و **سمت خارج** اتصال بیرونی را برق
 می‌رود**، پس لازم نیست تو انتخاب کنی. اگر باز هم بیرون نرفت، گزینهٔ **Diagnose**
 زنجیره را قدم‌به‌قدم می‌رود و می‌گوید دقیقاً کدام حلقه خراب است.
 
-**راه‌اندازی:** `Telegram Bot → Configure` در CLI (یا Settings در
-[پنل وب](web-panel.md)). به یک توکن ربات از `@BotFather` و آیدی عددی خودت از
-`@userinfobot` نیاز داری.
+**راه‌اندازی:** `Telegram Bot → Configure` در CLI؛ توکن ربات از `@BotFather`
+و آیدی عددی خود را از `@userinfobot` بگیرید.
 
-دکمه‌ها و دستورها: Status، System، Alerts، Backup، Web UI و Support. جزئیات
+دکمه‌ها و دستورها: Status، System، Alerts، Backup و Support. جزئیات
 داخلی (پورت رله، پورت SOCKS، هاست API) هیچ‌وقت در پیام‌ها ظاهر نمی‌شود.
 
 </div>
@@ -74,4 +70,4 @@ forward می‌شود و **سمت خارج** اتصال بیرونی را برق
 
 ---
 
-*Last verified against Backpack v1.14.1.*
+*Last verified against Backpack v1.15.0.*

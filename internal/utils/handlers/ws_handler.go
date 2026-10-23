@@ -7,14 +7,14 @@ import (
 	"net"
 
 	"github.com/backpack/backpack/internal/metrics"
-	"github.com/backpack/backpack/internal/web"
+	"github.com/backpack/backpack/internal/traffic"
 	"github.com/gorilla/websocket"
 	"github.com/sirupsen/logrus"
 )
 
 // WSConnectionHandler relays between a websocket tunnel connection and a TCP
 // connection to the backend, until either side ends.
-func WSConnectionHandler(ctx context.Context, wsConn *websocket.Conn, tcpConn net.Conn, logger *logrus.Logger, usage *web.Usage, remotePort int, sniffer bool) {
+func WSConnectionHandler(ctx context.Context, wsConn *websocket.Conn, tcpConn net.Conn, logger *logrus.Logger, usage *traffic.Usage, remotePort int, sniffer bool) {
 	// Two independent copies, for the reason given in TCPConnectionHandler: a
 	// ReadMessage on an idle websocket blocks exactly as long as an idle TCP
 	// Read does, and cancellation has to be able to interrupt it.
@@ -32,7 +32,7 @@ func WSConnectionHandler(ctx context.Context, wsConn *websocket.Conn, tcpConn ne
 }
 
 // transferWebSocketToTCP transfers data from a WebSocket connection to a TCP connection
-func transferWebSocketToTCP(wsConn *websocket.Conn, tcpConn net.Conn, logger *logrus.Logger, usage *web.Usage, remotePort int, sniffer bool) {
+func transferWebSocketToTCP(wsConn *websocket.Conn, tcpConn net.Conn, logger *logrus.Logger, usage *traffic.Usage, remotePort int, sniffer bool) {
 	// Each message is copied through the pooled relay buffer rather than read
 	// whole: ReadMessage allocated a buffer the size of every message, which
 	// on a busy tunnel was a fifth of the relay's CPU in the collector.
@@ -78,7 +78,7 @@ func transferWebSocketToTCP(wsConn *websocket.Conn, tcpConn net.Conn, logger *lo
 }
 
 // transferTCPToWebSocket transfers data from a TCP connection to a WebSocket connection
-func transferTCPToWebSocket(tcpConn net.Conn, wsConn *websocket.Conn, logger *logrus.Logger, usage *web.Usage, remotePort int, sniffer bool) {
+func transferTCPToWebSocket(tcpConn net.Conn, wsConn *websocket.Conn, logger *logrus.Logger, usage *traffic.Usage, remotePort int, sniffer bool) {
 	// The same pooled 64 KiB buffer the TCP relay copies through, for the same
 	// two reasons (see relaybuf.go): a relay's cost is syscalls, and 16 KiB took
 	// four times as many of them per gigabyte as 64 KiB does; and allocating it

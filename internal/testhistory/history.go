@@ -46,6 +46,7 @@ type Path struct {
 	Rows   []Measurement `json:"rows"`
 }
 type Run struct {
+	Mode     string    `json:"mode,omitempty"`
 	Version  int       `json:"version"`
 	At       time.Time `json:"at"`
 	Side     string    `json:"side"`
@@ -56,7 +57,7 @@ type Run struct {
 type Store struct{ Dir string }
 
 func validate(r Run) error {
-	if r.Version != 1 || r.At.IsZero() || (r.Side != "iran" && r.Side != "kharej") || !identity.MatchString(r.Preset) || len(r.Paths) == 0 || len(r.Paths) > 2 {
+	if (r.Mode != "" && r.Mode != "quick" && r.Mode != "full") || r.Version != 1 || r.At.IsZero() || (r.Side != "iran" && r.Side != "kharej") || !identity.MatchString(r.Preset) || len(r.Paths) == 0 || len(r.Paths) > 2 {
 		return errors.New("invalid connection test history run")
 	}
 	for _, p := range r.Paths {
@@ -65,7 +66,7 @@ func validate(r Run) error {
 			return errors.New("invalid history path")
 		}
 		for _, m := range p.Rows {
-			if !slices.Contains([]string{"reverse", "direct", "spoof"}, m.Kind) || m.Transport == "" || !identity.MatchString(m.Transport) || !identity.MatchString(m.SNI) || !slices.Contains([]string{"ok", "unstable", "down", "skipped", "testing"}, m.Status) || m.Sent < 0 || m.Sent > 1000000 || m.Received < 0 || m.Received > m.Sent {
+			if !slices.Contains([]string{"reverse", "direct", "spoof"}, m.Kind) || m.Transport == "" || !identity.MatchString(m.Transport) || !identity.MatchString(m.SNI) || !slices.Contains([]string{"ok", "unstable", "down", "skipped", "testing", "screened"}, m.Status) || m.Sent < 0 || m.Sent > 1000000 || m.Received < 0 || m.Received > m.Sent {
 				return errors.New("invalid history measurement")
 			}
 			for _, n := range []float64{m.RTTms, m.JitterMs, m.Download, m.Upload} {
@@ -194,6 +195,7 @@ func (s Store) Load() ([]Run, error) {
 }
 
 type Summary struct {
+	Mode          string  `json:"mode,omitempty"`
 	Side          string  `json:"side"`
 	Preset        string  `json:"preset"`
 	Host          string  `json:"host"`
@@ -226,8 +228,12 @@ func Compare(runs []Run) []Summary {
 		rtt, jitter  float64
 		jitterEchoes int
 	}
-	groups := map[[8]string]*group{}
+	groups := map[[9]string]*group{}
 	for _, r := range runs {
+		mode := r.Mode
+		if mode == "" {
+			mode = "full"
+		}
 		if !r.Complete {
 			continue
 		}
@@ -236,13 +242,13 @@ func Compare(runs []Run) []Summary {
 				continue
 			}
 			for _, m := range p.Rows {
-				if m.Status == "skipped" || m.Status == "testing" {
+				if m.Status == "skipped" || m.Status == "testing" || m.Status == "screened" {
 					continue
 				}
-				key := [8]string{r.Side, r.Preset, p.Host, p.Peer, p.Family, m.Kind, m.Transport, m.SNI}
+				key := [9]string{mode, r.Side, r.Preset, p.Host, p.Peer, p.Family, m.Kind, m.Transport, m.SNI}
 				g := groups[key]
 				if g == nil {
-					g = &group{Summary: Summary{Side: r.Side, Preset: r.Preset, Host: p.Host, Peer: p.Peer, Family: p.Family, Kind: m.Kind, Transport: m.Transport, SNI: m.SNI}}
+					g = &group{Summary: Summary{Mode: mode, Side: r.Side, Preset: r.Preset, Host: p.Host, Peer: p.Peer, Family: p.Family, Kind: m.Kind, Transport: m.Transport, SNI: m.SNI}}
 					groups[key] = g
 				}
 				g.Runs++

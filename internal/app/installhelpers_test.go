@@ -43,7 +43,7 @@ func TestInstallerInstallsHTTPSHelpersByDefaultAndHonorsOverrides(t *testing.T) 
 				"uname() { echo Linux; }\ngetconf() { [[ '" + tc.libc + "' == glibc ]]; }\n" +
 				"info() { :; }; warn() { :; }; err() { echo \"$*\" >&2; }\n"
 			script := prefix + functions + "\ninstall_helper() { printf 'INSTALL %s\\n' \"$1\"; }\nhelpers_defaults\nhelpers_validate\ninstall_helpers\n"
-			out, err := exec.Command("bash", "-c", script).CombinedOutput()
+			out, err := runInstallerHelperScript(script)
 			if (err != nil) != tc.fail {
 				t.Fatalf("unexpected result: %v\n%s", err, out)
 			}
@@ -85,6 +85,7 @@ command() {
     *) return 1 ;;
   esac
 }
+
 apt-get() {
   printf 'APT %s\n' "$*"
   [[ "$1" != install ]] || have_unzip=1
@@ -92,7 +93,7 @@ apt-get() {
 }
 helpers_require_tools
 `
-			out, err := exec.Command("bash", "-c", script).CombinedOutput()
+			out, err := runInstallerHelperScript(script)
 			if (err != nil) != tc.fail {
 				t.Fatalf("unexpected result: %v\n%s", err, out)
 			}
@@ -104,4 +105,55 @@ helpers_require_tools
 			}
 		})
 	}
+}
+
+func TestInstallerNaiveCompatibilityPreservesExistingHelpers(t *testing.T) {
+	script := "set -euo pipefail\n" + installerHelperFunctions(t) + `
+root="$(mktemp -d)"
+trap 'rm -rf -- "$root"' EXIT
+for ARCH in amd64 arm64; do
+  helper_spec naive "$ARCH"
+  mkdir "$root/$helper_version-$ARCH"
+  printf 'new helper' > "$root/$helper_version-$ARCH/naive"
+  helper_compat_path
+  legacy="$root/v154.0.8037.49-4-$ARCH"
+  [[ "$(cat "$legacy/naive")" == 'new helper' ]]
+  [[ "$(uname -s)" != Linux || -L "$legacy" ]]
+  helper_compat_path
+  rm -rf -- "$legacy"
+  mkdir "$legacy"
+  printf 'existing helper' > "$legacy/naive"
+  helper_compat_path
+  [[ ! -L "$legacy" && "$(cat "$legacy/naive")" == 'existing helper' ]]
+done
+`
+	if out, err := runInstallerHelperScript(script); err != nil {
+		t.Fatalf("helper compatibility failed: %v\n%s", err, out)
+	}
+}
+
+func TestInstallerDownloadFailureIsVisible(t *testing.T) {
+	body, err := os.ReadFile("../../install.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := strings.ReplaceAll(string(body), "\r\n", "\n")
+	start, end := strings.Index(source, "fetch() {"), strings.Index(source, "# verify_asset <file>")
+	if start < 0 || end < start {
+		t.Fatal("installer fetch function not found")
+	}
+	script := "info() { :; }; err() { echo \"$*\" >&2; }\n" + source[start:end] + `
+curl() { echo 'curl: (22) HTTP 404' >&2; return 22; }
+fetch https://example.invalid/helper archive
+`
+	out, err := runInstallerHelperScript(script)
+	if err == nil || !strings.Contains(string(out), "HTTP 404") || !strings.Contains(string(out), "Download failed: https://example.invalid/helper") {
+		t.Fatalf("download failure hidden: %v\n%s", err, out)
+	}
+}
+
+func runInstallerHelperScript(script string) ([]byte, error) {
+	cmd := exec.Command("bash", "-s")
+	cmd.Stdin = strings.NewReader(script)
+	return cmd.CombinedOutput()
 }

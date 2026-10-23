@@ -316,29 +316,14 @@ func TestPortsInUse(t *testing.T) {
 	server := &config.Config{}
 	server.Server.BindAddr = "0.0.0.0:3080"
 	server.Server.Transport = config.TCP
-	server.Server.WebPort = 2060
 	got := portsInUse(server)
-	want := []listenerBinding{
-		{network: "tcp", address: "0.0.0.0:3080"},
-		{network: "tcp", address: ":2060"},
+	if len(got) != 1 || got[0] != (listenerBinding{network: "tcp", address: "0.0.0.0:3080"}) {
+		t.Fatalf("unexpected server listeners: %v", got)
 	}
-	if len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
-		t.Fatalf("server ports = %v, want %v", got, want)
-	}
-
 	client := &config.Config{}
 	client.Client.RemoteAddr = "example.com:3080"
-	client.Client.WebPort = 2061
-	got = portsInUse(client)
-	if len(got) != 1 || got[0] != (listenerBinding{network: "tcp", address: ":2061"}) {
-		t.Fatalf("client ports = %v, want only the web port", got)
-	}
-
-	// A client with no panel binds nothing that can be named here.
-	bare := &config.Config{}
-	bare.Client.RemoteAddr = "example.com:3080"
-	if got := portsInUse(bare); len(got) != 0 {
-		t.Fatalf("a client with no web port reported %v", got)
+	if got := portsInUse(client); len(got) != 0 {
+		t.Fatalf("client opened a management listener: %v", got)
 	}
 }
 
@@ -358,10 +343,9 @@ func TestPortsInUseNamesTheTransportsOwnProtocol(t *testing.T) {
 	spoof := &config.Config{}
 	spoof.Server.BindAddr = "0.0.0.0:3080"
 	spoof.Server.Transport = config.SPOOF
-	spoof.Server.WebPort = 2060
 	got = portsInUse(spoof)
-	if len(got) != 1 || got[0] != (listenerBinding{network: "tcp", address: ":2060"}) {
-		t.Fatalf("spoof ports = %v, want only the web port", got)
+	if len(got) != 0 {
+		t.Fatalf("raw transport reported a management listener: %v", got)
 	}
 }
 

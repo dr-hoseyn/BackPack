@@ -28,11 +28,8 @@ jobs:
         run: |
           sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
           go test -race ./internal/manage/tunnelspec -count=1 -timeout 2m
-      - name: Verify editor integration, previews and history UI
-        run: go test -race ./internal/manage ./internal/webui -run '^(TestSafe|TestForwardPort|TestEdit|TestLayer3Editor|TestTheConfigHistory|TestAMoment|TestEveryPanelCallReachesAHandlerThatReadsWhatItSends|TestEveryDialogTitleEscapesItsVariables|TestTheConfirmDialogEscapesTheValuesItIsGiven)' -count=1 -timeout 2m
-      - name: Verify panel wiring and mapping editor
-        run: node --test internal/webui/paneltest/*.test.js
-
+      - name: Verify CLI editing and configuration history
+        run: go test -race ./internal/manage -run '^(TestSafe|TestForwardPort|TestEdit|TestLayer3Editor|TestTheConfigHistory|TestAMoment)' -count=1 -timeout 2m
   forwarded-ports:
     name: Forwarded port menu regressions
     runs-on: ubuntu-latest
@@ -137,18 +134,39 @@ jobs:
             grep -q '^RESULT OK' "$RUNNER_TEMP/masque-$scenario.out"
           done
 
+  reverse-xdi:
+    name: Reverse xDi over real IPv4 and IPv6 ICMP
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Verify reverse menu, configuration and ICMP session isolation
+        run: go test ./internal/manage ./internal/utils/network -run '^(TestXDIReverse|TestXdi|TestAnXdi|TestTheXdi|TestIPv6Xdi|TestTransportMenuIsTheCLIMenu)' -race -count=1 -v -timeout 2m
+      - name: Concurrent TCP, forwarded UDP and client/server restarts on raw ICMP
+        run: |
+          set -euo pipefail
+          go test -c -race -o "$RUNNER_TEMP/xdi-e2e.test" ./internal/e2e
+          sudo env BACKPACK_XDI_LIVE=1 TESTBIN="$RUNNER_TEMP/xdi-e2e.test" \
+            timeout -k 5s 4m unshare --net --mount --fork -- bash -c \
+            'ip link set lo up; exec "$TESTBIN" -test.run "^TestXDIReverse" -test.v -test.timeout 3m'
+
   # Keep the existing required-check name while all three complete suites run
   # independently. A matrix failure must fail this gate, never cancel coverage.
   test:
     name: Build and test
-    needs: test-suites
+    needs: [test-suites, reverse-xdi]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Require every regression suite
         env:
           RESULT: ${{ needs.test-suites.result }}
-        run: test "$RESULT" = success
+          XDI_RESULT: ${{ needs.reverse-xdi.result }}
+        run: test "$RESULT" = success && test "$XDI_RESULT" = success
 
   test-suites:
     name: Regression (${{ matrix.mode }})
@@ -171,15 +189,6 @@ jobs:
       # configuration permissions remain unchanged.
       - name: Prepare configuration test fixtures
         run: sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
-
-      # The panel's own tests are plain `node --test` with no dependencies, and
-      # `go test ./internal/webui` runs them. That test skips when node is
-      # missing rather than failing — a Go toolchain is the only thing this
-      # repository requires — so node is pinned here to make sure the skip
-      # never happens in CI.
-      - uses: actions/setup-node@v7
-        with:
-          node-version: '22'
 
       # Exercise native helper paths in the coverage gate rather than crediting
       # skipped optional-helper tests. The protocol job also checks real TUNs.
@@ -317,10 +326,10 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Selection, fallback, sequencing, cancellation and panel API regressions
+      - name: Selection, fallback, sequencing and cancellation regressions
         run: |
-          go test ./internal/manage ./internal/webui ./internal/utils/network -race -count=1 -v -timeout 6m \
-            -run '^(TestConnectionTest|TestAnUnreachablePath|TestIPv6|TestBothFamilies|TestUnjoinedFamilies|TestStoppingASuite|TestStoppingBetweenPaths|TestBackgroundProbes|TestTheScreensReadTunnelStateThroughOnePlace|TestEveryPanelCallReachesAHandlerThatReadsWhatItSends)'
+          go test ./internal/manage ./internal/utils/network -race -count=1 -v -timeout 6m \
+            -run '^(TestConnectionTest|TestAnUnreachablePath|TestIPv6|TestBothFamilies|TestUnjoinedFamilies|TestStoppingASuite|TestStoppingBetweenPaths|TestBackgroundProbes)'
       - name: IPv6-only native, PCK, SNI, xDi and MASQUE data paths; PMTU and spoof exclusions
         run: |
           # Honor the socket sizes requested by the datagram test configs.

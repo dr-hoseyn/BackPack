@@ -52,16 +52,11 @@ Reference pages: what each part of Backpack **is**, and every setting it has.
 - [Per-tunnel limits](limits.md)
 - [TCP MSS clamp](mss-clamp.md)
 
-- [Advanced XHTTP](xhttp-advanced.md) � separate verified download and connection limits
-- [Experimental AmneziaWG](amneziawg.md) � independent point-to-point L3 prototype
+- [Advanced XHTTP](xhttp-advanced.md) — separate verified download and connection limits
+- [Experimental AmneziaWG](amneziawg.md) — independent point-to-point L3 prototype
 
 ### Monitoring
-- [Web panel](web-panel.md)
-- [The web panel, screen by screen](web-panel-screens.md) — every screen, its
-  address, and the CLI entry that does the same job
-- [Managed servers (nodes)](managed-servers.md) — register a foreign server with
-  the panel once, then build both ends of a tunnel from one screen, with no SSH
-  and no login held for that machine
+- [Servers over SSH](managed-servers.md) — CLI management on each peer
 - [Telegram bot](telegram-bot.md)
 - [Alerts](alerts.md)
 - [Tunnel Metrics](tunnel-metrics.md)
@@ -101,4 +96,4 @@ Reference pages: what each part of Backpack **is**, and every setting it has.
 
 ---
 
-*Last verified against Backpack v1.14.1.*
+*Last verified against Backpack v1.15.0.*

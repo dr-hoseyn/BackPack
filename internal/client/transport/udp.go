@@ -31,7 +31,6 @@ type UdpConfig struct {
 	RetryInterval  time.Duration
 	DialTimeOut    time.Duration
 	ConnPoolSize   int
-	WebPort        int
 	Sniffer        bool
 	AggressivePool bool
 	// SO_RCVBUF/SO_SNDBUF size every UDP socket the client opens — the sockets
@@ -48,13 +47,13 @@ func NewUDPClient(parentCtx context.Context, config *UdpConfig, logger *logrus.L
 		config: config,
 	}
 
-	client.firstGeneration(parentCtx, logger, usageSpec{webPort: config.WebPort, snifferLog: config.SnifferLog, sniffer: config.Sniffer})
+	client.firstGeneration(parentCtx, logger, usageSpec{snifferLog: config.SnifferLog, sniffer: config.Sniffer})
 	return client
 }
 
 func (c *UdpTransport) Start() {
-	if c.config.WebPort > 0 {
-		c.state.Go(c.state.Usage().Monitor)
+	if c.config.Sniffer {
+		c.state.Go(c.state.Usage().Run)
 	}
 
 	c.status.set("Disconnected (UDP)")

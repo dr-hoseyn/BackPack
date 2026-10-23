@@ -36,6 +36,12 @@ func ctMenuStartup(out io.Writer, suite *ConnTestSuite) {
 	for _, p := range suite.paths {
 		width = max(width, len(p.Host))
 	}
+	for _, s := range suite.tests {
+		if s != nil && s.link.Mode == ConnTestQuick {
+			fmt.Fprintln(out, "  Quick: 30-second observation; speed on up to three finalists.")
+			break
+		}
+	}
 	fmt.Fprintf(out, "  Preset: %s\n\n", tui.Color(tui.White, titleWord(preset)))
 	fmt.Fprintf(out, "    %-6s %-*s %s\n", "Path", width, "Iran address", "Tests")
 	type skippedGroup struct {

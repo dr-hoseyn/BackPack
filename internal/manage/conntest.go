@@ -73,12 +73,12 @@ const connTestKind = "test"
 // the direct ones when the operator names a source to forge (see
 // ConnTestOptions.SpoofSrc); pck, on either side, needs root on both servers.
 var (
-	connTestReverse = []string{"tcp", "tcpmux", "stealth", "pck", "ws", "wss", "wsmux", "wssmux", "kcp", "quic", "udp", "naive", "short-https", "xhttp", "reality", "hysteria2", "anytls", "shadowtls", "tuic", "xhttp-reality", "trusttunnel", "webtransport", "tailcat"}
+	connTestReverse = []string{"tcp", "tcpmux", "stealth", "pck", "ws", "wss", "wsmux", "wssmux", "kcp", "xdi", "quic", "udp", "naive", "short-https", "xhttp", "reality", "hysteria2", "anytls", "shadowtls", "tuic", "xhttp-reality", "trusttunnel", "webtransport", "tailcat"}
 	connTestDirect  = []string{"udp", "quic", "pck", "xdi", "sni", "masque", "masque-h2", "hysteria2", "tuic", "webtransport", "connect-ip", "spoof"}
 )
 
 // connTestNeedsRoot is a reverse transport that builds its own packets.
-func connTestNeedsRoot(tr string) bool { return tr == "pck" }
+func connTestNeedsRoot(tr string) bool { return tr == "pck" || tr == "xdi" }
 
 // Variables rather than constants so a test can run the whole thing in
 // seconds.
@@ -120,6 +120,7 @@ var connTestHelperBinary = func(tool string) (string, error) {
 // ConnTestLink is everything the kharej needs to build its end of every
 // tunnel under test, and to find the Iran side's coordinator.
 type ConnTestLink struct {
+	Mode      string `json:"mode,omitempty"`
 	AutoSetup bool   `json:"as,omitempty"`
 	V         int    `json:"v"`
 	Kind      string `json:"k"` // always connTestKind
@@ -321,7 +322,7 @@ func ctCoordinatorFailure(host string, port int) error {
 	return fmt.Errorf("the Iran server's test coordinator (%s port %d, TCP/UDP) did not answer. "+
 		"Check the address, control port and that the Iran test is still open. "+
 		"Tunnel protocols have not been measured; ICMP/raw carriers may still work. "+
-		"On an ICMP-only path, try a Direct xDi tunnel separately", host, port)
+		"On an ICMP-only path, try a Reverse or Direct xDi tunnel separately", host, port)
 }
 
 func gzipB64(raw []byte) string {
@@ -347,6 +348,7 @@ func unGzipB64(s string) ([]byte, error) {
 
 // ConnTestResult is one tunnel's verdict.
 type ConnTestResult struct {
+	Mode           string  `json:"mode,omitempty"`
 	CaseID         string  `json:"case,omitempty"`
 	SNIDomain      string  `json:"sni,omitempty"`
 	Kind           string  `json:"k"` // "reverse" or "direct"
@@ -380,6 +382,7 @@ const (
 
 // connTestCase is one tunnel under test, as the Iran side holds it.
 type connTestCase struct {
+	mode       string
 	kind, tr   string
 	key        string // transport, or the domain-qualified SNI candidate identity
 	name       string
@@ -410,8 +413,9 @@ type ConnTestIran struct {
 
 // ConnTestOptions are what the Iran operator answers.
 type ConnTestOptions struct {
-	skipAWG        bool // focused integration fixtures; ordinary full tests include AWG
-	AutomaticSetup bool // keep endpoint-local identities for the post-test setup agent
+	Mode           string // quick: short traffic screen and three speed finalists; full: all speeds
+	skipAWG        bool   // focused integration fixtures; ordinary full tests include AWG
+	AutomaticSetup bool   // keep endpoint-local identities for the post-test setup agent
 	// A suite reserves ports across paths while child listeners are starting.
 	ports     map[int]bool
 	Context   context.Context // optional cancellation, including startup
@@ -445,6 +449,10 @@ const (
 // StartConnTestIran starts the Iran end of every tunnel under test and the
 // coordinator, and returns the link to give the kharej.
 func StartConnTestIran(o ConnTestOptions) (*ConnTestIran, string, error) {
+	mode, modeErr := ConnTestMode(o.Mode)
+	if modeErr != nil {
+		return nil, "", modeErr
+	}
 	ctx := o.Context
 	if ctx == nil {
 		ctx = context.Background()
@@ -491,9 +499,10 @@ func StartConnTestIran(o ConnTestOptions) (*ConnTestIran, string, error) {
 	}
 	s.link = ConnTestLink{
 		AutoSetup: o.AutomaticSetup,
+		Mode:      mode,
 		ID:        id, Host: host, Tok: ctNewSecret(), Preset: preset,
 		TCP: ctPickPort(used, false), UDP: ctPickPort(used, false), L3: ctPickPort(used, false),
-		Until:       time.Now().Add(connTestJoinWait + ConnTestRunTime() + connTestSlack).Unix(),
+		Until:       time.Now().Add(connTestJoinWait + ConnTestRunTimeFor(mode) + connTestSlack).Unix(),
 		DirectPorts: true,
 		SNIVariants: o.Direct && strings.TrimSpace(o.SNIDomain) == "",
 	}
@@ -610,7 +619,7 @@ func StartConnTestIran(o ConnTestOptions) (*ConnTestIran, string, error) {
 	// source, the other server sends them. Once each way.
 	if spoofSrc != "" {
 		if ctFamily(host) != "IPv6" {
-			s.link.SpoofSrc, s.link.SpoofN = spoofSrc, connTestSoak
+			s.link.SpoofSrc, s.link.SpoofN = spoofSrc, (&connTestCase{mode: mode}).samples()
 		}
 		s.link.SpoofK = ctPickPort(used, false)
 		s.link.SpoofI = ctPickPort(used, true)
@@ -626,6 +635,7 @@ func StartConnTestIran(o ConnTestOptions) (*ConnTestIran, string, error) {
 	}
 
 	for _, c := range s.cases {
+		c.mode = mode
 		if c.skip == "" && c.kind != "spoof" {
 			s.link.Cases = append(s.link.Cases, c.link)
 		}
@@ -1234,6 +1244,9 @@ func (s *ConnTestIran) Run(ctx context.Context, progress func(int, ConnTestResul
 		}(i, c)
 	}
 	wg.Wait()
+	if s.link.Mode == ConnTestQuick {
+		ctShortlist(results, connTestQuickFinalists, reportRow)
+	}
 	// Stability probes finish before any bandwidth test starts. Heavy traffic
 	// must not change another tunnel's loss/RTT or share its speed measurement.
 	for i, c := range s.cases {
@@ -1290,7 +1303,7 @@ func (s *ConnTestIran) Best() ConnTestBest { return s.best }
 // over through the coordinator.
 func (s *ConnTestIran) spoofProbe(ctx context.Context, c *connTestCase, kharej string, report func(ConnTestResult)) {
 	n := s.link.SpoofN
-	r := ConnTestResult{Kind: c.kind, Transport: c.tr, Status: ctTesting, Total: n}
+	r := ConnTestResult{Mode: s.link.Mode, Kind: c.kind, Transport: c.tr, Status: ctTesting, Total: n}
 	report(r)
 	forged := net.ParseIP(s.link.SpoofSrc)
 	type count struct {
@@ -1468,12 +1481,11 @@ func ctProbe(ctx context.Context, c *connTestCase, l3Echo int, report func(ConnT
 			report(r)
 		}
 	}
-	dial := func() (net.Conn, error) {
-		return ctDial(ctx, c, l3Echo)
-	}
 
 	// Up: the first echo that comes back.
 	start := time.Now()
+	connectCtx, cancelConnect := context.WithTimeout(ctx, connectWaitFor(c))
+	defer cancelConnect()
 	var conn net.Conn
 	for conn == nil {
 		if ctx.Err() != nil {
@@ -1481,7 +1493,7 @@ func ctProbe(ctx context.Context, c *connTestCase, l3Echo int, report func(ConnT
 			say("")
 			return r
 		}
-		if time.Since(start) > connectWaitFor(c) {
+		if connectCtx.Err() != nil {
 			r.Status, r.Detail = ctDown, fmt.Sprintf("never carried traffic in %s", connectWaitFor(c))
 			if c.tr == "spoof" {
 				r.Detail += " — the forged source was dropped: by the provider on the way out, " +
@@ -1490,17 +1502,15 @@ func ctProbe(ctx context.Context, c *connTestCase, l3Echo int, report func(ConnT
 			say("never came up")
 			return r
 		}
-		if cn, err := dial(); err == nil {
-			stopClose := context.AfterFunc(ctx, func() { cn.Close() })
-			echoErr := ctEcho(cn, c.udp)
-			stopClose()
+		if cn, err := ctDial(connectCtx, c, l3Echo); err == nil {
+			echoErr := ctEchoContext(connectCtx, cn, c.udp)
 			if echoErr == nil {
 				conn = cn
 				break
 			}
 			cn.Close()
 		}
-		ctSleep(ctx, time.Second)
+		ctSleep(connectCtx, time.Second)
 	}
 	r.Connect = time.Since(start).Seconds()
 	say(fmt.Sprintf("up after %.0fs", r.Connect))
@@ -1511,14 +1521,17 @@ func ctProbe(ctx context.Context, c *connTestCase, l3Echo int, report func(ConnT
 	var rtt time.Duration
 	var firstLoss time.Duration
 	soakStart := time.Now()
-	for i := 0; i < connTestSoak && ctx.Err() == nil; i++ {
-		ctSleep(ctx, time.Until(soakStart.Add(time.Duration(i)*time.Second)))
-		if ctx.Err() != nil {
+	soakEnd := soakStart.Add(time.Duration(r.Total) * time.Second)
+	soakCtx, cancelSoak := context.WithDeadline(ctx, soakEnd)
+	defer cancelSoak()
+	for i := 0; i < r.Total && soakCtx.Err() == nil; i++ {
+		ctSleep(soakCtx, time.Until(soakStart.Add(time.Duration(i)*time.Second)))
+		if soakCtx.Err() != nil {
 			break
 		}
 		r.Tried++
 		if conn == nil {
-			cn, err := dial()
+			cn, err := ctDial(soakCtx, c, l3Echo)
 			if err != nil {
 				if firstLoss == 0 {
 					firstLoss = time.Since(soakStart)
@@ -1529,10 +1542,7 @@ func ctProbe(ctx context.Context, c *connTestCase, l3Echo int, report func(ConnT
 			conn = cn
 		}
 		t0 := time.Now()
-		active := conn
-		stopClose := context.AfterFunc(ctx, func() { active.Close() })
-		err := ctEcho(conn, c.udp)
-		stopClose()
+		err := ctEchoContext(soakCtx, conn, c.udp)
 		if err != nil {
 			conn.Close()
 			conn = nil
@@ -1548,8 +1558,8 @@ func ctProbe(ctx context.Context, c *connTestCase, l3Echo int, report func(ConnT
 		c.rtts = append(c.rtts, took)
 		say("")
 	}
-	if r.Tried == connTestSoak {
-		ctSleep(ctx, time.Until(soakStart.Add(time.Duration(connTestSoak)*time.Second)))
+	if r.Tried == r.Total {
+		ctSleep(ctx, time.Until(soakEnd))
 	}
 	if conn != nil {
 		conn.Close()
@@ -1566,7 +1576,7 @@ func ctProbe(ctx context.Context, c *connTestCase, l3Echo int, report func(ConnT
 		if r.OK == 0 {
 			r.Status = ctDown
 		}
-	case r.OK == connTestSoak && r.Tried == connTestSoak:
+	case r.OK == r.Total && r.Tried == r.Total:
 		if c.udp {
 			r.Status = ctOK
 		} else {
@@ -1599,6 +1609,12 @@ func ctDial(ctx context.Context, c *connTestCase, l3Echo int) (net.Conn, error) 
 // connectWaitFor is how long a tunnel is given to come up. The direct ones
 // wait for the kharej to have built its interface as well.
 func connectWaitFor(c *connTestCase) time.Duration {
+	if c.mode == ConnTestQuick {
+		if c.kind == "direct" {
+			return 30 * time.Second
+		}
+		return 20 * time.Second
+	}
 	if c.kind == "direct" {
 		return connTestConnectWait + 30*time.Second
 	}
@@ -2487,7 +2503,11 @@ func runConnTestKharejLink(ctx context.Context, link ConnTestLink, out io.Writer
 		ctKharejSpoof(ctx, link, root)
 	}
 	go ctKharejPMTU(ctx, link)
-	fmt.Fprintln(out, "The Iran server has started the test: five minutes of stability, then download/upload for each healthy tunnel (about 8–12 seconds each).")
+	if link.Mode == ConnTestQuick {
+		fmt.Fprintln(out, "Quick test: 30-second traffic check, then download/upload for up to three finalists. This is a short observation; use Full to compare every healthy tunnel.")
+	} else {
+		fmt.Fprintln(out, "Full test: 60-second stability check, then download/upload for each healthy tunnel (about 8–12 seconds each, plus connection setup).")
+	}
 
 	// The verdict, and the rows as they fill until it comes.
 	for {

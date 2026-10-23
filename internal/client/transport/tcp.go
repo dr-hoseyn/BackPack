@@ -45,7 +45,6 @@ type TcpConfig struct {
 	// FixedPool is used by wrappers with a finite protocol session table.
 	// It limits only spare connections; active forwards remain independent.
 	FixedPool      bool
-	WebPort        int
 	Nodelay        bool
 	Sniffer        bool
 	AggressivePool bool
@@ -84,13 +83,13 @@ func NewTCPClient(parentCtx context.Context, config *TcpConfig, logger *logrus.L
 		config: config,
 	}
 
-	client.firstGeneration(parentCtx, logger, usageSpec{webPort: config.WebPort, snifferLog: config.SnifferLog, sniffer: config.Sniffer})
+	client.firstGeneration(parentCtx, logger, usageSpec{snifferLog: config.SnifferLog, sniffer: config.Sniffer})
 	return client
 }
 
 func (c *TcpTransport) Start() {
-	if c.config.WebPort > 0 {
-		c.state.Go(c.state.Usage().Monitor)
+	if c.config.Sniffer {
+		c.state.Go(c.state.Usage().Run)
 	}
 
 	c.status.set("Disconnected (TCP)")

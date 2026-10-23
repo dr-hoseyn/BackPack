@@ -4,7 +4,6 @@
 prints a concrete fix under each problem it finds. It verifies:
 
 - kernel tuning is applied,
-- the web panel is running,
 - every tunnel's state,
 - real **TCP reachability** (not just whether systemd is happy),
 - whether the path can carry a full-sized packet — see
@@ -30,7 +29,7 @@ full map.
 **Manage → Health Check** کل سرور و همهٔ تونل‌ها را بررسی می‌کند و **زیر هر
 مشکل، راه‌حل مشخصش را می‌نویسد**. وقتی چیزی درست کار نمی‌کند، از اینجا شروع کن.
 
-چه چیزهایی را چک می‌کند: اعمال شدن تنظیمات کرنل، اجرای پنل وب، وضعیت هر تونل،
+چه چیزهایی را چک می‌کند: اعمال شدن تنظیمات کرنل، وضعیت هر تونل،
 **دسترسی واقعی TCP** (نه فقط راضی بودن systemd)، توانایی مسیر در عبور دادن پکت
 کامل (اگر نتواند، مقدار دقیق [MSS clamp](mss-clamp.md) را می‌گوید)، انقضای گواهی
 TLS و قدرت توکن.
@@ -48,4 +47,4 @@ TLS و قدرت توکن.
 
 ---
 
-*Last verified against Backpack v1.14.1.*
+*Last verified against Backpack v1.15.0.*

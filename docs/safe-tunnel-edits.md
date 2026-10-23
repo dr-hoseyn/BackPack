@@ -1,6 +1,6 @@
 # Reviewing and undoing tunnel edits
 
-The terminal Edit menu and the web panel show the current and proposed values
+The terminal Edit menu show the current and proposed values
 before applying changes. Credentials appear as **Hidden value**; the preview
 never includes a raw configuration file. Cancel, Enter at the confirmation, or
 closed terminal input leaves the settings untouched.
@@ -61,7 +61,7 @@ endpoints require write authentication, like the settings editor and history.
 
 <div dir="rtl">
 
-در منوی ویرایش ترمینال و پنل وب، قبل از ذخیره مقدار قبلی و جدید را می‌بینی.
+در منوی ویرایش ترمینال، قبل از ذخیره مقدار قبلی و جدید را می‌بینی.
 توکن، گذرواژه و کلیدها در این پیش‌نمایش پنهان می‌مانند. انصراف یا زدن Enter
 در تأیید نهایی چیزی را ذخیره نمی‌کند. اگر تنظیمات بعد از بازشدن پیش‌نمایش
 تغییر کرده باشند، ذخیره رد می‌شود تا تغییر تازهٔ دیگری پاک نشود.
@@ -80,4 +80,4 @@ endpoints require write authentication, like the settings editor and history.
 
 </div>
 
-*Last verified against Backpack v1.14.1.*
+*Last verified against Backpack v1.15.0.*

@@ -35,7 +35,6 @@ var (
 
 	CertExpiry           = host.CertExpiry
 	EnsureSelfSignedCert = host.EnsureSelfSignedCert
-	EnsurePanelCert      = host.EnsurePanelCert
 	validCertPair        = host.ValidCertPair
 
 	OfferRelaxRPFilter = host.OfferRelaxRPFilter

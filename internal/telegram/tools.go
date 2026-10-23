@@ -31,8 +31,7 @@ func toolsScreen(lang string) reply {
 	}
 
 	return screenReply(text, kb(
-		row(btn{Text: "🖥 " + tr(lang, "Web Panel"), Data: "nav:webui"},
-			btn{Text: "🔐 " + tr(lang, "Backup"), Data: "act:backup"}),
+		row(btn{Text: "🔐 " + tr(lang, "Backup"), Data: "act:backup"}),
 		row(btn{Text: "⬆️ " + tr(lang, "Update"), Data: "nav:update"},
 			btn{Text: "♻️ " + tr(lang, "Restore points"), Data: "snap:list"}),
 		row(btn{Text: "🛰 " + tr(lang, "Relay check"), Data: "diag:relay"}),

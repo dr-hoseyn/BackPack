@@ -168,8 +168,6 @@ func applyDefaults(cfg *config.Config) {
 	if cfg.Client.MaxStreamBuffer <= 0 {
 		cfg.Client.MaxStreamBuffer = defaultMaxStreamBuffer
 	}
-	// WebPort returns 0 if not exists
-
 	// SnifferLog
 	if cfg.Server.SnifferLog == "" {
 		cfg.Server.SnifferLog = defaultSnifferLog

@@ -48,7 +48,6 @@ var fa = map[string]string{
 	"Tunnel Port":            "پورت تونل",
 	"Forwarded Port":         "پورت فورواردشده",
 	"Server":                 "سرور",
-	"Web Panel":              "پنل وب",
 	"Password":               "رمز عبور",
 	"Address":                "آدرس",
 

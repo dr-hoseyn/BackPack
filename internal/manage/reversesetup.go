@@ -121,7 +121,7 @@ func SetupServer() {
 	}
 	if busy := reverseBusyPorts(s.Ports, s.BindAddr, s.Transport); len(busy) > 0 {
 		tui.Error("Already in use on this server: " + strings.Join(busy, ", ") +
-			" — the tunnel port or the web panel's own port is the usual one. Pick other ports.")
+			" — the tunnel or another service is listening there. Pick other ports.")
 		tui.PressEnter()
 		return
 	}

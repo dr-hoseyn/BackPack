@@ -1,0 +1,29 @@
+name: Quick Connection Test
+
+on:
+  pull_request:
+    paths:
+      - 'internal/manage/conntest*'
+      - 'internal/testhistory/**'
+      - '.github/workflows/quick-connection-test.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  quick-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Prepare isolated configuration fixtures
+        run: sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
+      - name: Verify quick screening, deadlines, setup eligibility and payloads
+        run: go test -race ./internal/manage -run '^(TestQuickTest|TestTrafficObservationHasAWallClockLimit|TestTrafficDiscoveryBoundsAHandshakeWithoutPayload|TestCancellationCannotPassEvenAfterTheLastEcho|TestScreenedRowsCannotBeRecommendedOrInstalled|TestTheTestSettingsFitOnePacketAndCarryNoToken|TestConnectionTestHistory)' -count=1 -v -timeout 4m
+      - name: Verify history compatibility and comparison scope
+        run: go test -race ./internal/testhistory -count=1 -timeout 2m

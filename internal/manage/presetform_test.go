@@ -19,9 +19,9 @@ import (
 // The edit path always refused it. Creating did not, and they are the same
 // question asked twice.
 func TestAFormRefusesAPresetThisBuildDoesNotKnow(t *testing.T) {
-	src, err := os.ReadFile("webapi.go")
+	src, err := os.ReadFile("tunnelform.go")
 	if err != nil {
-		t.Fatalf("cannot read webapi.go: %v", err)
+		t.Fatalf("cannot read tunnelform.go: %v", err)
 	}
 	body := string(src)
 

@@ -1,70 +1,130 @@
 package host
 
 import (
-	"crypto/ecdsa"
-	"crypto/elliptic"
-	"crypto/rand"
+	"crypto/tls"
 	"crypto/x509"
-	"crypto/x509/pkix"
 	"encoding/pem"
-	"math/big"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
 
-// writeTestCert generates a self-signed certificate with the given SANs and
-// writes it to a temp file, returning the path — so certCoversSANs can be
-// checked without touching the real cert directory or the network.
-func writeTestCert(t *testing.T, ips []net.IP, dns []string) string {
-	t.Helper()
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+func TestTunnelCertificateSupportsVerifiedTLSAndReuse(t *testing.T) {
+	name := "tunnel-tls-" + filepath.Base(filepath.Dir(t.TempDir()))
+	certPath, keyPath, err := EnsureSelfSignedCert(name, "127.0.0.1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	tmpl := x509.Certificate{
-		SerialNumber: big.NewInt(1),
-		Subject:      pkix.Name{CommonName: "test"},
-		NotBefore:    time.Now().Add(-time.Hour),
-		NotAfter:     time.Now().Add(time.Hour),
-		IPAddresses:  ips,
-		DNSNames:     dns,
+	t.Cleanup(func() { os.Remove(certPath); os.Remove(keyPath) })
+	if err := ValidCertPair(certPath, keyPath); err != nil {
+		t.Fatal(err)
 	}
-	der, err := x509.CreateCertificate(rand.Reader, &tmpl, &tmpl, &key.PublicKey, key)
+	before, err := os.ReadFile(certPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(t.TempDir(), "c.crt")
-	if err := os.WriteFile(path, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0644); err != nil {
+	if _, _, err := EnsureSelfSignedCert(name, "127.0.0.1"); err != nil {
 		t.Fatal(err)
 	}
-	return path
+	after, err := os.ReadFile(certPath)
+	if err != nil || string(before) != string(after) {
+		t.Fatal("restarting a tunnel replaced its certificate", err)
+	}
+	if info, err := os.Stat(keyPath); err != nil {
+		t.Fatal(err)
+	} else if runtime.GOOS != "windows" && info.Mode().Perm() != 0600 {
+		t.Fatalf("private key permissions: %v", info.Mode())
+	}
+	expiry, err := CertExpiry(certPath)
+	if err != nil || time.Until(expiry) < 365*24*time.Hour {
+		t.Fatal("generated tunnel certificate has no usable lifetime", expiry, err)
+	}
+	pair, err := tls.LoadX509KeyPair(certPath, keyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	roots := x509.NewCertPool()
+	if !roots.AppendCertsFromPEM(before) {
+		t.Fatal("cannot trust generated certificate")
+	}
+	ln, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	done := make(chan error, 1)
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			done <- err
+			return
+		}
+		defer conn.Close()
+		conn.SetDeadline(time.Now().Add(5 * time.Second))
+		secured := tls.Server(conn, &tls.Config{Certificates: []tls.Certificate{pair}, MinVersion: tls.VersionTLS12})
+		_, err = secured.Write([]byte("CLI tunnel"))
+		done <- err
+	}()
+	conn, err := tls.DialWithDialer(&net.Dialer{Timeout: 5 * time.Second}, "tcp4", ln.Addr().String(),
+		&tls.Config{RootCAs: roots, ServerName: "127.0.0.1", MinVersion: tls.VersionTLS12})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	conn.SetDeadline(time.Now().Add(5 * time.Second))
+	buf := make([]byte, len("CLI tunnel"))
+	if _, err := io.ReadFull(conn, buf); err != nil || string(buf) != "CLI tunnel" {
+		t.Fatal("verified TLS tunnel did not carry payload", string(buf), err)
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	// A missing private key must be repaired before the next tunnel starts.
+	if err := os.Remove(keyPath); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := EnsureSelfSignedCert(name, "tunnel.example"); err != nil {
+		t.Fatal(err)
+	}
+	repaired, err := os.ReadFile(certPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	block, _ := pem.Decode(repaired)
+	if block == nil {
+		t.Fatal("repaired certificate is not PEM")
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil || cert.VerifyHostname("tunnel.example") != nil {
+		t.Fatal("repaired certificate lacks the requested tunnel hostname", err)
+	}
+	if _, err := tls.LoadX509KeyPair(certPath, keyPath); err != nil {
+		t.Fatal("repaired certificate and key do not match", err)
+	}
 }
 
-// The panel certificate is regenerated only when it does not already cover the
-// address set — so this superset check is what stops a working certificate being
-// reissued (and re-trusted by hand) on every restart, and what catches a stale
-// one that no longer covers the address the panel is reached on.
-func TestCertCoversSANs(t *testing.T) {
-	path := writeTestCert(t,
-		[]net.IP{net.IPv4(127, 0, 0, 1), net.ParseIP("203.0.113.5")},
-		[]string{"localhost"})
-
-	if !certCoversSANs(path, []net.IP{net.IPv4(127, 0, 0, 1)}, []string{"localhost"}) {
-		t.Error("must report coverage of an IP and DNS name the certificate contains")
+func TestTunnelCertificateDiagnosticsRejectMissingAndInvalidFiles(t *testing.T) {
+	dir := t.TempDir()
+	bad := filepath.Join(dir, "bad.crt")
+	missing := filepath.Join(dir, "missing.key")
+	for _, data := range [][]byte{[]byte("not PEM"), pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: []byte("not DER")})} {
+		if err := os.WriteFile(bad, data, 0600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := CertExpiry(bad); err == nil {
+			t.Fatal("invalid certificate reported an expiry")
+		}
 	}
-	if !certCoversSANs(path, []net.IP{net.ParseIP("203.0.113.5")}, nil) {
-		t.Error("must report coverage of the public IP it contains")
+	if _, err := CertExpiry(missing); err == nil {
+		t.Fatal("missing certificate reported an expiry")
 	}
-	if certCoversSANs(path, []net.IP{net.ParseIP("10.0.0.9")}, nil) {
-		t.Error("must not claim to cover an IP it lacks — the stale-cert case")
-	}
-	if certCoversSANs(path, nil, []string{"panel.example.com"}) {
-		t.Error("must not claim to cover a DNS name it lacks")
-	}
-	if certCoversSANs(filepath.Join(t.TempDir(), "missing.crt"), nil, nil) {
-		t.Error("a missing file covers nothing")
+	for _, files := range [][2]string{{"", bad}, {bad, ""}, {missing, bad}, {bad, missing}} {
+		if err := ValidCertPair(files[0], files[1]); err == nil {
+			t.Fatalf("accepted missing TLS file: %q", files)
+		}
 	}
 }

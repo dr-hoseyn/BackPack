@@ -194,7 +194,7 @@ func TestManagedHTTPSClientWizardCanBeCancelledBeforeSaving(t *testing.T) {
 	}
 	binary, cert, _ := managedWizardFixture(t)
 	name := "https-menu-cancel-" + randomToken(10)
-	input := []string{"2", "4", "2", "127.0.0.1", "8443", name, "shared-token", "3080", "6bf7a33e-7833-4e72-9219-506585657345", "localhost", "/private-path", binary, "", cert, "n", "1", "n", "n"}
+	input := []string{"2", fmt.Sprint(len(transportGroups) + 1), "2", "127.0.0.1", "8443", name, "shared-token", "3080", "6bf7a33e-7833-4e72-9219-506585657345", "localhost", "/private-path", binary, "", cert, "n", "1", "n", "n"}
 	restore := tui.SetInput(strings.NewReader(strings.Join(input, "\n") + "\n"))
 	defer restore()
 	out := capture(t, SetupClient)

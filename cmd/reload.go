@@ -314,13 +314,7 @@ func portsInUse(cfg *config.Config) []listenerBinding {
 		if network := tunnelNetwork(cfg.Server.Transport); network != "" {
 			bindings = append(bindings, listenerBinding{network: network, address: cfg.Server.BindAddr})
 		}
-		if cfg.Server.WebPort > 0 {
-			bindings = append(bindings, listenerBinding{network: "tcp", address: net.JoinHostPort("", itoa(cfg.Server.WebPort))})
-		}
 		return bindings
-	}
-	if cfg.Client.WebPort > 0 {
-		bindings = append(bindings, listenerBinding{network: "tcp", address: net.JoinHostPort("", itoa(cfg.Client.WebPort))})
 	}
 	return bindings
 }

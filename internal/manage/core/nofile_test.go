@@ -31,7 +31,6 @@ func TestEveryServiceUnitAsksForItsOpenFileLimit(t *testing.T) {
 		{"systemd.go", "the tunnel"},
 		{"monitorservice.go", "the monitor"},
 		{"proxyservice.go", "the proxy"},
-		{"../../webui/config.go", "the web panel"},
 	} {
 		b, err := os.ReadFile(c.file)
 		if err != nil {

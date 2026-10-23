@@ -1,7 +1,13 @@
 # dr-hoseyn fork
 
-This fork combines upstream BackPack v1.9.0 with PRs [#104](https://github.com/AminMGMT/BackPack/pull/104), [#98](https://github.com/AminMGMT/BackPack/pull/98), and [#108](https://github.com/AminMGMT/BackPack/pull/108). Fork release **v1.14.1** installs and updates from `dr-hoseyn/BackPack`. Managed Short HTTPS is available for Reverse TCP. The source also includes [advanced XHTTP settings](docs/xhttp-advanced.md) and [managed AmneziaWG setup](docs/amneziawg.md).
+**v1.15.0:** CLI-only management. The web dashboard and per-tunnel monitor pages are removed. Connection Test defaults to Quick (30 seconds plus speed on three finalists); Full remains available. Upgrading retires the legacy web service.
 
+This fork combines upstream BackPack v1.9.0 with PRs [#104](https://github.com/AminMGMT/BackPack/pull/104), [#98](https://github.com/AminMGMT/BackPack/pull/98), and [#108](https://github.com/AminMGMT/BackPack/pull/108). Fork release **v1.15.0** installs and updates from `dr-hoseyn/BackPack`. Managed Short HTTPS is available for Reverse TCP. The source also includes [advanced XHTTP settings](docs/xhttp-advanced.md) and [managed AmneziaWG setup](docs/amneziawg.md).
+
+
+**v1.14.2:** restores Reverse → ICMP → xDi in the CLI, includes
+it in Connection Test, and repairs the default NaiveProxy helper download. Real
+IPv4/IPv6 ICMP tests cover concurrent TCP, forwarded UDP and endpoint restarts.
 
 **v1.14.1:** improves capacity under load with batch pool growth, larger flow
 windows and a Throughput profile across supported tunnel families. Existing
@@ -68,10 +74,11 @@ Version v1.11.0 adds [verified adaptive paths](docs/managed-paths.md), native Re
 
 **BackPack** is a high-performance tunnel engine for connecting **Iran ⇄ abroad (kharej)** servers.
 
+This build is managed entirely through the interactive or scriptable CLI. It includes no web dashboard, login server, browser terminal or per-tunnel monitor page.
+
 It is written in Go and distributed as a self-contained binary with:
 
 * Interactive CLI
-* Web monitoring panel
 * Multiple tunnel transports
 * Full IP direct tunneling
 * Automatic failover and transport fallback
@@ -576,7 +583,7 @@ It also recommends a transport for the measured route.
 
 ### Health Check
 
-Checks the server, panel and tunnels and provides a suggested fix when it detects a problem.
+Checks the server and tunnels and provides a suggested fix when it detects a problem.
 
 ### Tunnel Metrics
 
@@ -626,18 +633,6 @@ Encrypted tunnel options include:
 
 On plain transports such as TCP, TCP Mux, UDP, WS and WS Mux, the tunnel credential itself is not encrypted by the transport.
 
-### Web panel security
-
-The Web Panel supports:
-
-* Password authentication
-* Two-factor authentication
-* Recovery codes
-* Scoped API tokens
-* Authorization records
-
-See [Access control](docs/access-control.md).
-
 ### Verified releases
 
 Release archives are verified against the published SHA-256 checksum.
@@ -659,68 +654,6 @@ This allows applications and panels behind the tunnel to see the real client IP 
 Supported transports and limitations are documented in:
 
 [Real client IP / PROXY protocol v2](docs/real-client-ip.md)
-
----
-
-# Web Panel
-
-BackPack includes a monitoring-focused web dashboard.
-
-It provides:
-
-* CPU usage
-* RAM usage
-* Disk usage
-* Traffic
-* Tunnel state
-* Real ping
-* Logs
-* Backup and Telegram settings
-* Panel security settings
-
-The panel listens on **port 7777** by default.
-
-```text
-Iran server
-    │
-    └── Web Panel :7777
-```
-
-The panel is primarily for monitoring and management around the deployment; tunnel creation and detailed tunnel configuration remain available through the CLI.
-
-It also supports:
-
-* HTTPS
-* Custom certificates
-* Two-factor authentication
-* Recovery codes
-* API access control
-
-See:
-
-* [Web Panel](docs/web-panel.md)
-* [Web Panel — screen by screen](docs/web-panel-screens.md)
-
----
-
-# Managed servers
-
-The Web Panel can register remote servers as managed nodes.
-
-Once registered, BackPack can use the panel to build and manage both ends of a tunnel without requiring you to repeat the entire SSH setup manually.
-
-Managed servers can be:
-
-* registered
-* edited
-* tested
-* used to create tunnels
-* started
-* stopped
-* restarted
-* removed
-
-See [Managed servers](docs/managed-servers.md).
 
 ---
 
@@ -750,8 +683,6 @@ See:
 BackPack can create a portable backup containing the important deployment state, including:
 
 * tunnel configurations
-* panel settings
-* panel password
 * Telegram settings
 * TLS certificates
 * scheduled tasks
@@ -835,7 +766,6 @@ Complete reference for:
 * Tunnel management
 * Built-in proxy
 * Backup & Restore
-* Web Panel
 * Optimize
 * Telegram
 * Updates
@@ -924,8 +854,6 @@ The `tutorial/` directory explains how to actually build a tunnel, step by step,
 * [Installation](docs/install.md)
 * [CLI menu](docs/cli-menu.md)
 * [Server layout](docs/server-layout.md)
-* [Web Panel](docs/web-panel.md)
-* [Web Panel screens](docs/web-panel-screens.md)
 * [Managed servers](docs/managed-servers.md)
 * [Health Check](docs/health-check.md)
 * [Tunnel Metrics](docs/tunnel-metrics.md)
@@ -966,11 +894,6 @@ The `tutorial/` directory explains how to actually build a tunnel, step by step,
   <img src="img/cli-Screenshot.png" alt="BackPack CLI">
 </p>
 
-### Web Panel
-
-<p align="center">
-  <img src="img/web-panel-Screenshot.png" alt="BackPack Web Panel">
-</p>
 
 ### Tunnel Management
 

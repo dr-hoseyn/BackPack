@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/backpack/backpack/internal/metrics"
+	"github.com/backpack/backpack/internal/traffic"
 	"github.com/backpack/backpack/internal/utils/network"
-	"github.com/backpack/backpack/internal/web"
 	"github.com/sirupsen/logrus"
 )
 
@@ -51,7 +51,7 @@ type udpGen struct {
 	ctx            context.Context
 	tunnelChannel  chan *TunnelUDPConn
 	reqNewConnChan chan struct{}
-	usageMonitor   *web.Usage
+	usageMonitor   *traffic.Usage
 	// seat holds the client this generation serves; see clientSeat.
 	seat clientSeat
 }
@@ -80,7 +80,6 @@ type UdpConfig struct {
 	Sniffer     bool
 	Heartbeat   time.Duration // in seconds, for udp conn and control channel
 	ChannelSize int
-	WebPort     int
 	// SO_RCVBUF/SO_SNDBUF size the datagram sockets. The kernel default is a few
 	// hundred KB, which a datagram flood — a speed test, a busy game server —
 	// overruns in a blink, and the packets it cannot hold are dropped before any
@@ -109,7 +108,7 @@ func NewUDPServer(parentCtx context.Context, config *UdpConfig, logger *logrus.L
 		lifecycle: lifecycle{
 			parentctx: parentCtx,
 			logger:    logger,
-			usage:     usageSpec{webPort: config.WebPort, snifferLog: config.SnifferLog, sniffer: config.Sniffer},
+			usage:     usageSpec{snifferLog: config.SnifferLog, sniffer: config.Sniffer},
 		},
 		activeConnections: map[string]*TunnelUDPConn{},
 		activeMu:          sync.Mutex{},
@@ -144,8 +143,8 @@ func (s *UdpTransport) Start() {
 func (s *UdpTransport) start(g *udpGen) {
 	s.status.set("Disconnected (UDP)")
 
-	if s.config.WebPort > 0 {
-		go g.usageMonitor.Monitor()
+	if s.config.Sniffer {
+		go g.usageMonitor.Run()
 	}
 
 	go s.channelHandshake(g)

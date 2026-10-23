@@ -353,4 +353,4 @@ If you set it, nothing changes: it was never doing anything.
 
 ---
 
-*Last verified against Backpack v1.14.1.*
+*Last verified against Backpack v1.15.0.*

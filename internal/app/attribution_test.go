@@ -50,9 +50,6 @@ func TestTheProductDoesNotShowTheAttribution(t *testing.T) {
 		"main.go",
 		"internal/tui/tui.go",
 		"internal/cli/cli.go",
-		"internal/webui/assets/login.html",
-		"internal/webui/assets/twofactor.html",
-		"internal/webui/panel/views/support.html",
 	} {
 		if strings.Contains(read(t, f), "Based on BackPack") {
 			t.Errorf("%s shows the attribution line; it belongs in NOTICE and the README only", f)

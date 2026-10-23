@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/backpack/backpack/internal/telegram"
-	"github.com/backpack/backpack/internal/webui"
 )
 
 // The lines the main menu is made of.
@@ -55,38 +54,6 @@ func TestAZeroThresholdIsNotListed(t *testing.T) {
 	}
 	if !strings.Contains(line, "ram 90%") {
 		t.Fatalf("the threshold that is set went missing: %q", line)
-	}
-}
-
-// The panel path is not authentication, and the line has to say what it
-// actually buys — which is nothing at all when the panel is at the root.
-func TestThePanelPathLineSaysWhenThereIsNoPath(t *testing.T) {
-	bare := panelPathDesc(webui.Config{})
-	if !strings.Contains(bare, "anyone scanning") {
-		t.Fatalf("a panel at the root reads as %q, which does not say what that means", bare)
-	}
-}
-
-// The three certificate states are three different things to do next, so they
-// must not read alike.
-func TestThePanelCertificateLineDistinguishesTheThreeStates(t *testing.T) {
-	plain := panelCertDesc(webui.Config{HTTPS: false})
-	self := panelCertDesc(webui.Config{HTTPS: true})
-	acme := panelCertDesc(webui.Config{HTTPS: true, TLSDomain: "panel.example.ir"})
-
-	if plain == self || self == acme || plain == acme {
-		t.Fatalf("two certificate states read the same:\n  %q\n  %q\n  %q", plain, self, acme)
-	}
-	if !strings.Contains(plain, "no certificate") {
-		t.Fatalf("plain HTTP reads as %q", plain)
-	}
-	if !strings.Contains(self, "self-signed") {
-		t.Fatalf("a self-signed certificate reads as %q", self)
-	}
-	// The domain is the part that tells an operator whether the right
-	// certificate is in place, so it has to be in the line.
-	if !strings.Contains(acme, "panel.example.ir") {
-		t.Fatalf("a Let's Encrypt certificate reads as %q without naming the domain", acme)
 	}
 }
 

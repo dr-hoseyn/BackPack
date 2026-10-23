@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/backpack/backpack/internal/tui"
-	"github.com/backpack/backpack/internal/webui"
 )
 
 // Driving the screens.
@@ -104,7 +103,6 @@ func TestEveryScreenDrawsAndComesBack(t *testing.T) {
 	}{
 		{"manage", manageMenu, []string{"Manage"}},
 		{"backup", backupMenu, []string{"Backup"}},
-		{"web panel", webPanelMenu, []string{"Web Panel"}},
 		{"telegram", telegramMenu, []string{"Telegram"}},
 		{"update", updateMenu, []string{"Update"}},
 		{"auto refresh", autoRefreshMenu, []string{"Refresh"}},
@@ -169,35 +167,6 @@ func TestTheMainMenuNumbersEveryEntry(t *testing.T) {
 }
 
 func itoa(n int) string { return string(rune('0' + n)) }
-
-// The two panel sub-screens take the configuration rather than reading it, so
-// they can be drawn against a known one — which is the only way to assert that
-// what they print is what the configuration says.
-func TestThePanelSubScreensDrawTheConfigurationTheyAreGiven(t *testing.T) {
-	cfg := webui.Config{Port: 7777, BasePath: "/a-secret-path", TLSDomain: "panel.example.com"}
-
-	path := plain(drive(t, "0\n", func() { panelPathMenu(cfg) }))
-	if !strings.Contains(path, "a-secret-path") {
-		t.Errorf("the panel path screen does not show the path it was given:\n%s", path)
-	}
-	if !strings.Contains(path, "panel.example.com") {
-		t.Errorf("the panel path screen does not use the certificate domain as the host:\n%s", path)
-	}
-
-	https := cfg
-	https.HTTPS = true
-	cert := plain(drive(t, "0\n", func() { panelCertMenu(https) }))
-	if !strings.Contains(cert, "panel.example.com") {
-		t.Errorf("the certificate screen does not name the domain it is for:\n%s", cert)
-	}
-
-	// And the other way: a panel served over plain HTTP must not read as
-	// having a certificate for the domain it merely knows about.
-	plainHTTP := plain(drive(t, "0\n", func() { panelCertMenu(cfg) }))
-	if !strings.Contains(plainHTTP, "no certificate") {
-		t.Errorf("a panel on plain HTTP does not say it has no certificate:\n%s", plainHTTP)
-	}
-}
 
 // The relay offer is a decision, not a screen: it is what runs when the release
 // host cannot be reached, and answering it wrongly is the difference between an

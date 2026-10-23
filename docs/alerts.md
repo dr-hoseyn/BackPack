@@ -18,7 +18,6 @@ Each event also gets a **recovery message** when things return to normal.
 - Set any threshold to **0** to stop watching it.
 
 The watching is done by the [monitor service](monitor-service.md), which runs on
-its own — so alerts keep working even when the [web panel](web-panel.md) is
 stopped.
 
 ---
@@ -38,7 +37,7 @@ stopped.
 پایش نمی‌شود.
 
 پایش را [سرویس مانیتور](monitor-service.md) انجام می‌دهد که مستقل اجرا می‌شود،
-پس هشدارها حتی با پنل وب خاموش هم کار می‌کنند.
+هشدارها در سرویس مستقل مانیتور اجرا می‌شوند.
 
 </div>
 
@@ -47,4 +46,4 @@ stopped.
 
 ---
 
-*Last verified against Backpack v1.14.1.*
+*Last verified against Backpack v1.15.0.*

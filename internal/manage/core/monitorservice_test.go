@@ -27,7 +27,7 @@ func TestMonitorUnitContents(t *testing.T) {
 		t.Errorf("the unit would not start at boot:\n%s", unit)
 	}
 	// It must not depend on the panel: that coupling is the thing being removed.
-	if strings.Contains(unit, app.WebUIService) {
+	if strings.Contains(unit, app.ProxyService) {
 		t.Errorf("the monitor unit depends on the web panel:\n%s", unit)
 	}
 }
@@ -47,10 +47,10 @@ func TestMonitorFlagIsParsed(t *testing.T) {
 // TestMonitorServiceNameIsDistinct catches a copy-paste of the panel's name,
 // which would make the two units overwrite each other.
 func TestMonitorServiceNameIsDistinct(t *testing.T) {
-	if app.MonitorService == app.WebUIService {
+	if app.MonitorService == app.ProxyService {
 		t.Fatal("the monitor and the panel share a unit name")
 	}
-	for _, name := range []string{app.MonitorService, app.WebUIService} {
+	for _, name := range []string{app.MonitorService, app.ProxyService} {
 		if !strings.HasSuffix(name, ".service") {
 			t.Errorf("%q is not a systemd unit name", name)
 		}
@@ -102,22 +102,6 @@ func TestUpdateHealthCheckCoversTheMonitor(t *testing.T) {
 	}
 	if !strings.Contains(body[i:], "MonitorService") {
 		t.Error("the post-update health check ignores the monitor service")
-	}
-}
-
-// TestPanelDoesNotRunMonitorJobs is the regression guard for the whole change:
-// the panel must not start the watchdog, the bot or the alerts, or stopping the
-// monitor service would not actually stop anything.
-func TestPanelDoesNotRunMonitorJobs(t *testing.T) {
-	src, err := os.ReadFile("../../webui/server.go")
-	if err != nil {
-		t.Fatalf("cannot read the panel source: %v", err)
-	}
-	body := string(src)
-	for _, call := range []string{"RunWatchdog", "RunBot", "RunAlerts"} {
-		if strings.Contains(body, call+"(") {
-			t.Errorf("the web panel still starts %s — it belongs to the monitor service", call)
-		}
 	}
 }
 

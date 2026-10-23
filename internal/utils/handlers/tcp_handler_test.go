@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/backpack/backpack/internal/web"
+	"github.com/backpack/backpack/internal/traffic"
 	"github.com/sirupsen/logrus"
 )
 
@@ -76,7 +76,7 @@ func TestRelayCarriesBothDirections(t *testing.T) {
 			done := make(chan struct{})
 			go func() {
 				defer close(done)
-				TCPConnectionHandler(ctx, false, from, to, quietLogger(), &web.Usage{}, 8080, tc.sniffer)
+				TCPConnectionHandler(ctx, false, from, to, quietLogger(), &traffic.Usage{}, 8080, tc.sniffer)
 			}()
 
 			// Big enough to cross more than one copy buffer in either path.
@@ -112,7 +112,7 @@ func TestRelayClosesBothEnds(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		TCPConnectionHandler(ctx, false, from, to, quietLogger(), &web.Usage{}, 8080, false)
+		TCPConnectionHandler(ctx, false, from, to, quietLogger(), &traffic.Usage{}, 8080, false)
 	}()
 	request := []byte("request finished by EOF")
 	if _, err := client.Write(request); err != nil {

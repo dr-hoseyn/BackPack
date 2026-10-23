@@ -13,7 +13,6 @@ import (
 	"github.com/backpack/backpack/internal/schedule"
 	"github.com/backpack/backpack/internal/telegram"
 	"github.com/backpack/backpack/internal/tui"
-	"github.com/backpack/backpack/internal/webui"
 )
 
 // autoRefreshMenu lives under Manage.
@@ -82,7 +81,6 @@ func uninstallMenu() {
 	for _, t := range manage.List() {
 		_ = manage.Delete(t.Name)
 	}
-	_ = webui.Disable()
 	_ = manage.DisableMonitorService()
 	_ = schedule.SetAutoRefresh(0)
 	_ = telegram.Disable()

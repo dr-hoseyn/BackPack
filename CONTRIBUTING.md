@@ -50,16 +50,10 @@ to read that code is usually trying to work out why it is the way it is.
 test's name should tell you what capability exists.
 
 **A guard that scans source is a legitimate test here.** Several exist —
-`TestEveryConfigKeyReachesCodeThatActsOnIt`, `TestEveryPanelAPIFunctionIsCalled`,
+`TestEveryConfigKeyReachesCodeThatActsOnIt`,
 `TestEveryPairingLoopTimesOutAndCleansUpOnShutdown`. They catch the class of bug
 this codebase actually produces: a feature wired on one side only. Three unwired
 entry points were found by hand before the last of those existed.
-
-`TestEveryPanelCallReachesAHandlerThatReadsWhatItSends` is the panel's version:
-it runs `panel/js/api.js` under node, records every request, and holds each one
-against the route it reaches and the fields that handler reads. A new export in
-`api.js` needs a sample call in `internal/webui/paneltest/apicalls.mjs`, with
-the arguments its view really passes.
 
 ## Things to know before you touch them
 
