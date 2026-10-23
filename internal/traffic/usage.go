@@ -197,25 +197,6 @@ func (m *Usage) getUsageFromFile() []PortUsage {
 	return usageData
 }
 
- {
-	var result []struct {
-		Port          int
-		ReadableUsage string
-	}
-
-	for _, portUsage := range usageData {
-		result = append(result, struct {
-			Port          int
-			ReadableUsage string
-		}{
-			Port:          portUsage.Port,
-			ReadableUsage: m.convertBytesToReadable(portUsage.Usage),
-		})
-	}
-
-	return result
-}
-
 // collectUsageDataFromSyncMap atomically takes each port's pending usage.
 // A writer may have loaded the counter before this pass, so keep its entry and
 // reset only the value. Deleting it would orphan that writer's next addition.
@@ -274,4 +255,3 @@ func (m *Usage) writeUsageData(data []byte) error {
 	}
 	return os.Rename(tmp, path)
 }
-
