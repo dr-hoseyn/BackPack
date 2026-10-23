@@ -7,12 +7,12 @@ import (
 	"net"
 
 	"github.com/backpack/backpack/internal/metrics"
+	"github.com/backpack/backpack/internal/traffic"
 	"github.com/backpack/backpack/internal/utils/network"
-	"github.com/backpack/backpack/internal/web"
 	"github.com/sirupsen/logrus"
 )
 
-func TCPConnectionHandler(ctx context.Context, proxyProtocol bool, from net.Conn, to net.Conn, logger *logrus.Logger, usage *web.Usage, remotePort int, sniffer bool) {
+func TCPConnectionHandler(ctx context.Context, proxyProtocol bool, from net.Conn, to net.Conn, logger *logrus.Logger, usage *traffic.Usage, remotePort int, sniffer bool) {
 	stop := context.AfterFunc(ctx, func() { from.Close(); to.Close() })
 	defer stop()
 
@@ -86,7 +86,7 @@ func awaitRelay(ctx context.Context, done <-chan struct{}, ends ...io.Closer) {
 // session, a websocket, a rate-limited conn, or any platform that is not
 // Linux — falls through to the buffered copy, which is also where the fast
 // path lands if the kernel declines it.
-func transferData(from net.Conn, to net.Conn, logger *logrus.Logger, usage *web.Usage, remotePort int, sniffer bool) {
+func transferData(from net.Conn, to net.Conn, logger *logrus.Logger, usage *traffic.Usage, remotePort int, sniffer bool) {
 	if spliceTransfer(from, to, logger, usage, remotePort, sniffer) {
 		countSpliced()
 		return
@@ -104,7 +104,7 @@ func transferData(from net.Conn, to net.Conn, logger *logrus.Logger, usage *web.
 // Leave that buffer untouched until the send loop releases its reference;
 // returning it to the pool would let another relay overwrite an in-flight frame.
 // Successful writes keep the normal allocation-free pool path.
-func transferBuffered(from net.Conn, to net.Conn, buf []byte, logger *logrus.Logger, usage *web.Usage, remotePort int, sniffer bool) bool {
+func transferBuffered(from net.Conn, to net.Conn, buf []byte, logger *logrus.Logger, usage *traffic.Usage, remotePort int, sniffer bool) bool {
 	for {
 		// Read data from the source connection
 		r, err := from.Read(buf)
@@ -138,7 +138,7 @@ func transferBuffered(from net.Conn, to net.Conn, buf []byte, logger *logrus.Log
 
 // writeAll puts one read's worth of bytes on the far side, reporting false when
 // the pair has been closed and the caller should stop.
-func writeAll(from, to net.Conn, data []byte, logger *logrus.Logger, usage *web.Usage, remotePort int, sniffer bool) bool {
+func writeAll(from, to net.Conn, data []byte, logger *logrus.Logger, usage *traffic.Usage, remotePort int, sniffer bool) bool {
 	totalWritten := 0
 	for totalWritten < len(data) {
 		// Write data to the destination connection
@@ -174,7 +174,7 @@ func writeAll(from, to net.Conn, data []byte, logger *logrus.Logger, usage *web.
 // spliceTransfer runs one direction through the kernel when both ends are plain
 // TCP sockets, and reports whether it did. A false return means nothing was
 // moved and the caller must copy the stream itself.
-func spliceTransfer(from net.Conn, to net.Conn, logger *logrus.Logger, usage *web.Usage, remotePort int, sniffer bool) bool {
+func spliceTransfer(from net.Conn, to net.Conn, logger *logrus.Logger, usage *traffic.Usage, remotePort int, sniffer bool) bool {
 	// Off unless the operator asked for it. See zerocopy.go for why the
 	// default is the slower path.
 	if !ZeroCopy() {

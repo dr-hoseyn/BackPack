@@ -49,7 +49,6 @@ type QuicConfig struct {
 	RetryInterval  time.Duration
 	DialTimeOut    time.Duration
 	ConnPoolSize   int
-	WebPort        int
 	AggressivePool bool
 	SO_RCVBUF      int
 	SO_SNDBUF      int
@@ -81,7 +80,7 @@ func NewQuicClient(parentCtx context.Context, config *QuicConfig, logger *logrus
 	}
 	// Seed the first generation through the same path a restart uses, so there is
 	// only one way this state is ever published.
-	client.firstGeneration(parentCtx, logger, usageSpec{webPort: config.WebPort, snifferLog: config.SnifferLog, sniffer: config.Sniffer})
+	client.firstGeneration(parentCtx, logger, usageSpec{snifferLog: config.SnifferLog, sniffer: config.Sniffer})
 	return client
 }
 
@@ -98,8 +97,8 @@ func (c *QuicTransport) getQUICConn() *quic.Conn {
 }
 
 func (c *QuicTransport) Start() {
-	if c.config.WebPort > 0 {
-		c.state.Go(c.state.Usage().Monitor)
+	if c.config.Sniffer {
+		c.state.Go(c.state.Usage().Run)
 	}
 
 	c.status.set("Disconnected (QUIC)")

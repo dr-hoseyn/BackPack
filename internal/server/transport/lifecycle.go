@@ -2,7 +2,6 @@ package transport
 
 import (
 	"context"
-	"fmt"
 	"runtime"
 	"strings"
 	"sync"
@@ -10,8 +9,8 @@ import (
 	"time"
 
 	"github.com/backpack/backpack/internal/metrics"
+	"github.com/backpack/backpack/internal/traffic"
 	"github.com/backpack/backpack/internal/utils/acceptloop"
-	"github.com/backpack/backpack/internal/web"
 	"github.com/sirupsen/logrus"
 )
 
@@ -92,14 +91,13 @@ func (l *lifecycle) seated(addr string) {
 
 // usageSpec is what a generation's usage monitor is built from.
 type usageSpec struct {
-	webPort    int
 	snifferLog string
 	sniffer    bool
 }
 
 // usageMonitor builds the usage monitor for a generation running on ctx.
-func (l *lifecycle) usageMonitor(ctx context.Context) *web.Usage {
-	return web.NewDataStore(fmt.Sprintf(":%v", l.usage.webPort), ctx, l.usage.snifferLog, l.usage.sniffer, l.status.get, l.logger)
+func (l *lifecycle) usageMonitor(ctx context.Context) *traffic.Usage {
+	return traffic.NewDataStore(ctx, l.usage.snifferLog, l.usage.sniffer, l.logger)
 }
 
 // firstGeneration installs the first run's context the same way every later

@@ -45,7 +45,6 @@ type KcpConfig struct {
 	MaxReceiveBuffer int
 	MaxStreamBuffer  int
 	ConnPoolSize     int
-	WebPort          int
 	AggressivePool   bool
 	SO_RCVBUF        int
 	SO_SNDBUF        int
@@ -135,13 +134,13 @@ func NewKcpClient(parentCtx context.Context, config *KcpConfig, logger *logrus.L
 	// the discovered egress and RST-guard status) in the tunnel log, so a client
 	// that never connects reports why instead of staying silent.
 	client.kcpSettings.Logf = logger.Infof
-	client.firstGeneration(parentCtx, logger, usageSpec{webPort: config.WebPort, snifferLog: config.SnifferLog, sniffer: config.Sniffer})
+	client.firstGeneration(parentCtx, logger, usageSpec{snifferLog: config.SnifferLog, sniffer: config.Sniffer})
 	return client
 }
 
 func (c *KcpTransport) Start() {
-	if c.config.WebPort > 0 {
-		c.state.Go(c.state.Usage().Monitor)
+	if c.config.Sniffer {
+		c.state.Go(c.state.Usage().Run)
 	}
 
 	c.status.set("Disconnected (" + c.transportLabel() + ")")

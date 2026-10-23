@@ -139,7 +139,7 @@ func ctSummary(rows []ConnTestResult) string {
 	}
 	parts := []string{}
 	for _, group := range []struct{ status, label string }{
-		{ctOK, "steady"}, {ctUnstable, "unstable"}, {ctDown, "down"},
+		{ctScreened, "screened"}, {ctOK, "steady"}, {ctUnstable, "unstable"}, {ctDown, "down"},
 		{ctTesting, "testing"}, {ctSkipped, "skipped"},
 	} {
 		if n := counts[group.status]; n > 0 {
@@ -182,6 +182,9 @@ func ctWriteWrapped(out io.Writer, prefix, continuation, text string) {
 // that carried everything.
 func ConnTestTable(results []ConnTestResult) string {
 	var b strings.Builder
+	if len(results) > 0 && results[0].Mode == ConnTestQuick {
+		b.WriteString("QUICK TEST: 30-second observation; speed measured for up to three finalists.\nSCREENED = traffic passed, speed not measured; excluded from automatic setup.\n\n")
+	}
 	b.WriteString(ctSummary(results) + "\n\n")
 	b.WriteString(ctHeader + "\n")
 	for _, group := range ctGroups(results) {
@@ -274,11 +277,13 @@ func ctHTTPSNotes(out io.Writer, results []ConnTestResult) {
 // first; what dropped, most echoes first; then what never came up, reverse and
 // direct apart; then what was not run.
 func ctGroups(results []ConnTestResult) [][]ConnTestResult {
-	var ok, unstable, downReverse, downDirect, downSpoof, skipped []ConnTestResult
+	var ok, screened, unstable, downReverse, downDirect, downSpoof, skipped []ConnTestResult
 	for _, r := range results {
 		switch r.Status {
 		case ctOK:
 			ok = append(ok, r)
+		case ctScreened:
+			screened = append(screened, r)
 		case ctDown:
 			switch r.Kind {
 			case "direct":
@@ -297,7 +302,7 @@ func ctGroups(results []ConnTestResult) [][]ConnTestResult {
 	sort.SliceStable(ok, func(i, j int) bool { return ok[i].Mbps > ok[j].Mbps })
 	sort.SliceStable(unstable, func(i, j int) bool { return unstable[i].OK > unstable[j].OK })
 	var out [][]ConnTestResult
-	for _, g := range [][]ConnTestResult{ok, unstable, downReverse, downDirect, downSpoof, skipped} {
+	for _, g := range [][]ConnTestResult{ok, screened, unstable, downReverse, downDirect, downSpoof, skipped} {
 		if len(g) > 0 {
 			out = append(out, g)
 		}

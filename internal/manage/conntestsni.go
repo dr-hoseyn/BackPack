@@ -57,7 +57,7 @@ func (c *connTestCase) caseKey() string {
 }
 
 func (c *connTestCase) initialResult() ConnTestResult {
-	r := ConnTestResult{Kind: c.kind, Transport: c.tr, Status: ctTesting, Total: connTestSoak}
+	r := ConnTestResult{Mode: c.mode, Kind: c.kind, Transport: c.tr, Status: ctTesting, Total: c.samples()}
 	if c.kind == "direct" && c.tr == "sni" {
 		r.SNIDomain = c.l3.SNIDomain
 		if c.caseKey() != c.tr {

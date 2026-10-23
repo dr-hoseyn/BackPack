@@ -14,6 +14,29 @@ import (
 func sample() Run {
 	return Run{Version: 1, At: time.Now().UTC(), Side: "iran", Preset: "turbo", Complete: true, Paths: []Path{{Host: "192.0.2.1", Peer: "198.51.100.1", Family: "IPv4", State: "done", Rows: []Measurement{{Kind: "reverse", Transport: "tcp", Status: "ok", Sent: 10, Received: 10, RTTms: 20, JitterMs: 2, JitterMeasured: true, Download: 100, Upload: 50}}}}}
 }
+
+func TestQuickHistoryKeepsItsScopeAndDoesNotCountScreeningAsFailure(t *testing.T) {
+	quick := sample()
+	quick.Mode = "quick"
+	quick.Paths[0].Rows = append(quick.Paths[0].Rows, Measurement{Kind: "reverse", Transport: "quic", Status: "screened", Sent: 30, Received: 30})
+	store := Store{Dir: t.TempDir()}
+	if err := store.Save(quick); err != nil {
+		t.Fatal(err)
+	}
+	runs, err := store.Load()
+	if err != nil || len(runs) != 1 || runs[0].Mode != "quick" || runs[0].Paths[0].Rows[1].Status != "screened" {
+		t.Fatalf("quick evidence lost: %+v, %v", runs, err)
+	}
+	summaries := Compare(append(runs, sample()))
+	if len(summaries) != 2 {
+		t.Fatalf("quick and full were mixed, or screened row counted as failure: %+v", summaries)
+	}
+	for _, s := range summaries {
+		if s.Runs != 1 || s.Steady != 1 || s.Transport != "tcp" {
+			t.Fatalf("unexpected evidence: %+v", s)
+		}
+	}
+}
 func TestConcurrentRunsRemainDistinctAndHistoryRetentionIsBounded(t *testing.T) {
 	store := Store{Dir: filepath.Join(t.TempDir(), "history")}
 	var wg sync.WaitGroup

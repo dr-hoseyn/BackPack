@@ -413,7 +413,7 @@ func installCommand(url string) string {
 func upgradeCommand(url, bin string) string {
 	return installCommand(url) +
 		" && " + quote(bin) + " --restart-all 2>&1" +
-		" && { systemctl try-restart " + app.MonitorService + " " + app.ProxyService + " " + app.WebUIService +
+		" && { systemctl try-restart " + app.MonitorService + " " + app.ProxyService +
 		" >/dev/null 2>&1; true; }"
 }
 

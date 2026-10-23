@@ -39,7 +39,6 @@ back up. Staying current is the supported configuration.
 
 - The tunnel protocols: the reverse transports, the layer-3 carriers, the
   handshakes, the replay windows, the nonce handling.
-- The web panel, its authentication, its API tokens and its audit record.
 - The updater and the release signing.
 - The Telegram bot and its permission model.
 - The managed-server fleet: the SSH runner, the sealed credentials, the

@@ -15,7 +15,6 @@ import (
 	"github.com/backpack/backpack/internal/tunnel/naive"
 	"github.com/backpack/backpack/internal/utils/handlers"
 	"github.com/backpack/backpack/internal/utils/network"
-	"github.com/backpack/backpack/internal/web"
 
 	"github.com/sirupsen/logrus"
 )
@@ -35,7 +34,6 @@ func NewClient(cfg *config.ClientConfig, parentCtx context.Context) *Client {
 	// Off unless this tunnel asked for it; see handlers/zerocopy.go.
 	handlers.SetZeroCopy(cfg.ZeroCopy)
 	// Loopback unless this tunnel asked otherwise; see web/monitorhttp.go.
-	web.SetMonitorBind(cfg.WebBind)
 	return &Client{
 		config: cfg,
 		ctx:    ctx,
@@ -246,7 +244,6 @@ func (c *Client) startTransport(ctx context.Context, tr config.TransportType, en
 			FixedPool:      fixedPool,
 			Token:          c.config.Token,
 			Sniffer:        c.config.Sniffer,
-			WebPort:        c.config.WebPort,
 			SnifferLog:     c.config.SnifferLog,
 			AggressivePool: c.config.AggressivePool,
 			MSS:            c.config.MSS,
@@ -277,7 +274,6 @@ func (c *Client) startTransport(ctx context.Context, tr config.TransportType, en
 			MaxReceiveBuffer: c.config.MaxReceiveBuffer,
 			MaxStreamBuffer:  c.config.MaxStreamBuffer,
 			Sniffer:          c.config.Sniffer,
-			WebPort:          c.config.WebPort,
 			SnifferLog:       c.config.SnifferLog,
 			AggressivePool:   c.config.AggressivePool,
 			MSS:              c.config.MSS,
@@ -305,7 +301,6 @@ func (c *Client) startTransport(ctx context.Context, tr config.TransportType, en
 			MaxReceiveBuffer: c.config.MaxReceiveBuffer,
 			MaxStreamBuffer:  c.config.MaxStreamBuffer,
 			Sniffer:          c.config.Sniffer,
-			WebPort:          c.config.WebPort,
 			SnifferLog:       c.config.SnifferLog,
 			AggressivePool:   c.config.AggressivePool,
 			SO_RCVBUF:        c.config.SO_RCVBUF,
@@ -340,7 +335,6 @@ func (c *Client) startTransport(ctx context.Context, tr config.TransportType, en
 			ConnPoolSize:   c.config.ConnectionPool,
 			Token:          c.config.Token,
 			Sniffer:        c.config.Sniffer,
-			WebPort:        c.config.WebPort,
 			SnifferLog:     c.config.SnifferLog,
 			AggressivePool: c.config.AggressivePool,
 			SO_RCVBUF:      c.config.SO_RCVBUF,
@@ -361,7 +355,6 @@ func (c *Client) startTransport(ctx context.Context, tr config.TransportType, en
 			ConnPoolSize:   c.config.ConnectionPool,
 			Token:          c.config.Token,
 			Sniffer:        c.config.Sniffer,
-			WebPort:        c.config.WebPort,
 			SnifferLog:     c.config.SnifferLog,
 			Mode:           tr,
 			SimpleAuth:     c.config.SimpleAuth,
@@ -389,7 +382,6 @@ func (c *Client) startTransport(ctx context.Context, tr config.TransportType, en
 			MaxReceiveBuffer: c.config.MaxReceiveBuffer,
 			MaxStreamBuffer:  c.config.MaxStreamBuffer,
 			Sniffer:          c.config.Sniffer,
-			WebPort:          c.config.WebPort,
 			SnifferLog:       c.config.SnifferLog,
 			Mode:             tr,
 			SimpleAuth:       c.config.SimpleAuth,
@@ -411,7 +403,6 @@ func (c *Client) startTransport(ctx context.Context, tr config.TransportType, en
 			ConnPoolSize:   c.config.ConnectionPool,
 			Token:          c.config.Token,
 			Sniffer:        c.config.Sniffer,
-			WebPort:        c.config.WebPort,
 			SnifferLog:     c.config.SnifferLog,
 			AggressivePool: c.config.AggressivePool,
 			SO_RCVBUF:      c.config.SO_RCVBUF,

@@ -190,7 +190,7 @@ func setupL3(side directSide) {
 		cfg.Ports = offerL3Sharing(cfg)
 		if busy := busyForwardPorts(cfg.Ports, cfg.PeerIP); len(busy) > 0 {
 			tui.Error("Already in use on this server: " + strings.Join(busy, ", ") +
-				" — the web panel's own port is the usual one. Pick other ports.")
+				" — another service is listening there. Pick other ports.")
 			tui.PressEnter()
 			return
 		}

@@ -10,9 +10,9 @@ import (
 	"github.com/xtaci/smux"
 
 	"github.com/backpack/backpack/internal/metrics"
+	"github.com/backpack/backpack/internal/traffic"
 	"github.com/backpack/backpack/internal/utils"
 	"github.com/backpack/backpack/internal/utils/handlers"
-	"github.com/backpack/backpack/internal/web"
 )
 
 // What a mux transport does with a session, written once.
@@ -55,7 +55,7 @@ import (
 type muxSession struct {
 	ctx        context.Context
 	local      chan LocalTCPConn
-	usage      *web.Usage
+	usage      *traffic.Usage
 	reqNewConn chan struct{}
 
 	// muxCon is how many streams one session may carry at once.

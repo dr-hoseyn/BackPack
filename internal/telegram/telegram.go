@@ -137,34 +137,7 @@ func StatusText() string {
 		b.WriteString(tunnelBlock(lang, t, health[t.Name]))
 	}
 
-	if manage.IsActive(app.WebUIService) {
-		b.WriteString(panelLine(lang))
-	}
 	return b.String()
-}
-
-// panelLine is what an unprompted message says about the web panel.
-//
-// Its own function so that "does this text carry the password" can be asked
-// without a machine that has tunnels on it: StatusText returns early when there
-// are none, which is every machine that runs the test suite, so a check on the
-// whole report would have passed without ever reaching this.
-func panelLine(lang string) string {
-	// The address, and deliberately not the password.
-	//
-	// This text is two things at once: the Overview screen, which is
-	// answered for anyone on the admin list and is what the bot opens on,
-	// and the scheduled report, which is sent unprompted to every recipient
-	// on a timer. Both reach a read-only admin — the account that exists
-	// precisely so somebody can see whether a tunnel is up without being
-	// able to touch anything — and the panel is root on this machine.
-	//
-	// So gating the Web Panel screen was not enough on its own: the
-	// credential was already on the screen in front of it and in a message
-	// that arrives without being asked for. The password lives on that one
-	// gated screen now. See secretScreens in ui.go.
-	_, url := webPanelInfo()
-	return "\n" + tr(lang, "Web Panel") + " : " + code(url) + "\n"
 }
 
 // stateIcon is the one place a health state becomes a colour, so the list, the
@@ -340,56 +313,6 @@ func helpText(lang string) string {
 	return out.String()
 }
 
-// webPanelInfo reads the web-panel password and port straight from disk to
-// avoid importing the webui package (which would create an import cycle).
-// webUIConfigPath is the panel's config file. A var, following confHistRoot and
-// optimize.sysctlFile, so a test can put a panel in front of this without one
-// existing on the machine running the test — and without which the checks that
-// this text does not carry a password quietly skip on any machine that has no
-// panel, which is every machine that runs the suite.
-var webUIConfigPath = app.WebUIConfig
-
-func webPanelInfo() (password, url string) {
-	// The panel's own file, read here rather than through webui.Load: webui
-	// imports this package for the settings screen, so this package cannot
-	// import it back. The fields are read by their JSON names, which is the
-	// contract the file already is.
-	var c struct {
-		Password  string `json:"password"`
-		Port      int    `json:"port"`
-		BasePath  string `json:"base_path"`
-		HTTPS     bool   `json:"https"`
-		TLSDomain string `json:"tls_domain"`
-	}
-	c.Port = app.WebUIPort
-	if data, err := os.ReadFile(webUIConfigPath); err == nil {
-		saved := c
-		if json.Unmarshal(data, &c) == nil {
-			if c.Port <= 0 {
-				c.Port = saved.Port
-			}
-		} else {
-			c = saved
-		}
-	}
-
-	scheme := "http"
-	if c.HTTPS {
-		scheme = "https"
-	}
-	host := c.TLSDomain
-	if host == "" {
-		host = manage.PublicIPv4()
-	}
-	path := strings.Trim(strings.TrimSpace(c.BasePath), "/")
-	if path != "" {
-		path = "/" + path
-	}
-	return c.Password, fmt.Sprintf("%s://%s:%d%s/", scheme, host, c.Port, path)
-}
-
-// SendStatusNow sends the current status to the configured admin. Called by
-// the `backpack --telegram-report` cron job.
 func SendStatusNow() error {
 	c := Load()
 	if c.Token == "" || c.AdminID == "" {
@@ -716,8 +639,6 @@ func commandRoute(name string) (string, bool) {
 		return "nav:health", true
 	case "history":
 		return "nav:history", true
-	case "webui":
-		return "nav:webui", true
 	case "support":
 		return "nav:support", true
 	case "backup":
@@ -726,22 +647,6 @@ func commandRoute(name string) (string, bool) {
 		return "nav:home", true
 	}
 	return "", false
-}
-
-// webUIText is the Web Panel screen: where the panel is, and the password.
-//
-// The address used to be built here as http://IP:PORT, which is two things
-// wrong for anyone whose panel is not the default. A panel behind TLS answers
-// https and refuses the plain scheme, and every panel is served under a secret
-// path segment now and answers nothing outside it — so the bot handed out an
-// address that 404s, on the screen whose whole purpose is to say where the
-// panel is. The CLI has printed the full address all along, which is why this
-// only ever showed up here.
-func webUIText(lang string) string {
-	pw, url := webPanelInfo()
-	return b("🖥 "+tr(lang, "Web Panel")) + "\n\n" +
-		tr(lang, "Address") + " : " + code(url) + "\n" +
-		tr(lang, "Password") + " : " + code(pw)
 }
 
 func supportText(lang string) string {

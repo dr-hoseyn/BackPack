@@ -21,12 +21,11 @@ long form. For *how to set a tunnel up*, use the
 | 2 | **Setup Kharej** | Create the **kharej-side** tunnel that holds the real service. Accepts a Setup Link directly, or opens manual setup. |
 | 3 | **Manage** | Everything about existing tunnels, plus the diagnostics. [↓](#3-manage) |
 | 4 | **Backup & Restore** | The whole configuration as one `.tar.gz`. [↓](#4-backup--restore) |
-| 5 | **Web Panel** | The monitoring dashboard — port, login, certificate. [↓](#5-web-panel) |
-| 6 | **Optimize** | Applies system-wide kernel/network tuning: BBR + fq, socket-buffer ceilings, file-descriptor limits. Answer yes and it prints each change. A reboot is recommended for the file-limit changes. It also keeps the kernel's own ephemeral port range (`32768 60999`) rather than widening it, and reserves the ports your tunnels listen on — see [what it does to ports](#optimize-and-your-service-ports) |
-| 7 | **Telegram Bot** | Reports, alerts and control from Iran. [↓](#7-telegram-bot) |
-| 8 | **Update** | Verified update with automatic rollback. [↓](#8-update) |
-| 9 | **Uninstall** | Removes everything Backpack installed. |
-| 10 | **Exit** | |
+| 5 | **Optimize** | Applies system-wide kernel/network tuning: BBR + fq, socket-buffer ceilings, file-descriptor limits. Answer yes and it prints each change. A reboot is recommended for the file-limit changes. It also keeps the kernel's own ephemeral port range (`32768 60999`) rather than widening it, and reserves the ports your tunnels listen on — see [what it does to ports](#optimize-and-your-service-ports) |
+| 6 | **Telegram Bot** | Reports, alerts and control from Iran. [↓](#6-telegram-bot) |
+| 7 | **Update** | Verified update with automatic rollback. [↓](#7-update) |
+| 8 | **Uninstall** | Removes everything Backpack installed. |
+| 9 | **Exit** | |
 
 Connection Test includes **Naive / HTTP2**, **XHTTP / TLS** and **REALITY / Vision**.
 
@@ -45,7 +44,7 @@ under their own columns.
 یعنی معکوس، مستقیم و تست جعل IP.
 
 Finished tests show separate recommendations for **Download**, **Games / calls**
-and **Stability**, in the terminal and web panel, per IP path and across the
+and **Stability**, in the terminal, per IP path and across the
 completed IPv4/IPv6 paths. Download ranks verified download throughput, then
 upload. Games/calls ranks echo loss, then round trip plus twice the measured
 jitter; it is an echo-based comparison, not an application or gaming benchmark.
@@ -171,7 +170,7 @@ server pastes. The Iran questions, in order:
 | **Select … Carrier** | ICMP: **xDi**; TCP: **PCK**, **SNI Spoofing**; UDP: **UDP**, **Quic**; HTTPS: **MASQUE (HTTP/3)**; IP Spoofing: **IP Spoofing**. Both ends choose the same carrier. Back returns to the family list. |
 | **Kharej IP Or Domain** | Iran dials out, so it needs no inbound port of its own |
 | **Tunnel Port** `[9000]` | what kharej binds and Iran reaches |
-| **Forwarded Ports (Blank For TUN)** | optional. Blank is a plain private network that routes what it is given. A port something here already listens on (the panel's `7777`) is refused |
+| **Forwarded Ports (Blank For TUN)** | optional. Blank is a plain private network that routes what it is given. A port something here already listens on (another service's port) is refused |
 | **Tunnel Name** | names the service and the config file |
 | **Security Token** | generated here — press Enter. The setup link carries it to kharej |
 | **Carry UDP As Well As TCP On Those Ports** `[y/N]` | only when ports were given |
@@ -310,38 +309,20 @@ behind the kharej is a common reason to run it.
 
 ## 4 — Backup & Restore
 
-A backup bundles **every tunnel, the web-panel password, Telegram settings, TLS
+A backup bundles **every tunnel, Telegram settings, TLS
 certificates and the auto-refresh schedule** into one portable `.tar.gz` under
 `/root/BackPack/backups`.
 
 | Option | Notes |
 |---|---|
-| **Create a backup file** | Choose the directory; the file is timestamped. **Keep it private — it contains tokens and the panel password.** |
+| **Create a backup file** | Choose the directory; the file is timestamped. **Keep it private — it contains tunnel tokens and keys.** |
 | **Restore from a backup file** | Pick one from the folder or enter a path. **Overwrites** existing tunnels and settings, after a confirm. The panel is restarted so a restored password takes effect. |
 
 [More](backup-restore.md)
 
 ---
 
-## 5 — Web Panel
-
-A monitoring-only dashboard, recommended on the **Iran** server. The header shows
-the URL, the login code and the state.
-
-| Option | Notes |
-|---|---|
-| **Change panel port** | default 7777 |
-| **Regenerate login code** | a new random 8-digit code |
-| **Set a custom password** | replaces the login code with your own |
-| **Certificate** | serve the panel over HTTPS |
-| **Restart panel** | also starts it when stopped |
-| **Stop panel** | disables the web UI. Monitoring, alerts and the watchdog keep running — they live in a separate service |
-
-[More](web-panel.md)
-
----
-
-## 7 — Telegram Bot
+## 6 — Telegram Bot
 
 The header shows the report interval, relay status, alert summary and admin
 count.
@@ -359,7 +340,7 @@ count.
 
 ---
 
-## 8 — Update
+## 7 — Update
 
 | Option | Notes |
 |---|---|
@@ -375,7 +356,7 @@ count.
 
 Asked at the end of both setup wizards behind
 **"Fine-Tune The Advanced Settings"** (default: no), and available
-per-tunnel in the web panel's **Fine Tune** drawer.
+per-tunnel under **Manage → Edit**.
 
 **You do not need any of these.** The preset has already filled in every value,
 and each prompt starts from the preset's answer — anything you leave alone keeps
@@ -500,7 +481,7 @@ range back.
 همه‌چیز از یک منو در دسترس است: `sudo backpack`.
 
 **منوی اصلی:** ۱) ساخت سرور ایران ۲) ساخت کلاینت خارج ۳) مدیریت ۴) پشتیبان‌گیری
-و بازگردانی ۵) پنل وب ۶) بهینه‌سازی کرنل (BBR، بافرها، محدودیت فایل) ۷) ربات
+و بازگردانی ۵) بهینه‌سازی کرنل (BBR، بافرها، محدودیت فایل) ۶) ربات
 تلگرام ۸) آپدیت (با بازگشت خودکار) ۹) حذف کامل.
 
 **منوی Manage** علاوه بر مدیریت تونل‌ها این‌ها را دارد: **Status** (جدول زنده)،
@@ -534,7 +515,7 @@ FEC؛ و zero-copy (فقط روی tcp ساده).
 
 ---
 
-*Last verified against Backpack v1.14.2.*
+*Last verified against Backpack v1.15.0.*
 
 
 Connection Test also provides [saved history and repeated-run comparison](connection-test-history.md)

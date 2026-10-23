@@ -11,32 +11,12 @@ import (
 	"github.com/backpack/backpack/internal/node"
 )
 
-// `backpack node ...` — the managed side of the panel-to-server channel.
-//
-// There is almost nothing here, and that is the change.
-//
-// This used to hold a setup command, an agent, a service unit and a way to stop
-// being managed, because the far server dialled the panel and had to be told
-// how: a port to reach, a key to present, a daemon to hold the connection open.
-// Every one of those was a thing to install on a machine the operator only
-// wanted to use, and a thing that could be wrong while the panel showed the
-// server as simply offline.
-//
-// The panel reaches servers over their own SSH now. That is already running,
-// already authenticated and already how the machine is administered — so the
-// far side needs no state at all, and what is left is the one command the panel
-// runs there.
-
-const nodeUsage = `backpack node — the panel-managed side of this server
+// node exec is the stdin/stdout RPC used by paired CLI setup over SSH.
+const nodeUsage = `backpack node - execute a management request over SSH
 
   backpack node exec -
-        Read one request from stdin, perform it and print the answer. Both
-        are JSON, base64 encoded. This is what a Backpack panel runs over
-        SSH; there is no reason to type it. (A request given as the argument
-        instead of - is still read, for an older panel.)
-
-Nothing needs to be set up here. A panel manages this server by logging in
-over SSH, so adding it to a fleet is done entirely from the panel.
+        Read one base64-encoded JSON request from stdin and print its response.
+        Intended for CLI automation and paired server setup.
 `
 
 func runNode(args []string) {

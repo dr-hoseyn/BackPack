@@ -9,10 +9,10 @@ import (
 
 	"github.com/backpack/backpack/internal/controlwire"
 	"github.com/backpack/backpack/internal/metrics"
+	"github.com/backpack/backpack/internal/traffic"
 	"github.com/backpack/backpack/internal/utils"
 	"github.com/backpack/backpack/internal/utils/handlers"
 	"github.com/backpack/backpack/internal/utils/network"
-	"github.com/backpack/backpack/internal/web"
 
 	"github.com/quic-go/quic-go"
 	"github.com/sirupsen/logrus"
@@ -27,7 +27,7 @@ type quicGen struct {
 	tunnelChannel  chan net.Conn // ready data streams waiting for a local conn
 	localChannel   chan LocalTCPConn
 	reqNewConnChan chan struct{}
-	usageMonitor   *web.Usage
+	usageMonitor   *traffic.Usage
 	// bye is said once the seated client has been told this run is ending;
 	// each client gets its own. See farewell.
 	bye atomic.Pointer[farewell]
@@ -73,7 +73,6 @@ type QuicConfig struct {
 	AcceptUDP     bool
 	Sniffer       bool
 	ChannelSize   int
-	WebPort       int
 	Heartbeat     time.Duration
 	KeepAlive     time.Duration
 	SO_RCVBUF     int
@@ -111,7 +110,7 @@ func NewQuicServer(parentCtx context.Context, config *QuicConfig, logger *logrus
 		lifecycle: lifecycle{
 			parentctx: parentCtx,
 			logger:    logger,
-			usage:     usageSpec{webPort: config.WebPort, snifferLog: config.SnifferLog, sniffer: config.Sniffer},
+			usage:     usageSpec{snifferLog: config.SnifferLog, sniffer: config.Sniffer},
 		},
 		limits: newLimiter(Limits{MaxConnections: config.MaxConnections, BandwidthMbps: config.BandwidthMbps}),
 	}
@@ -145,8 +144,8 @@ func (s *QuicTransport) Start() {
 // replace while this run is still using it.
 func (s *QuicTransport) start(g *quicGen) {
 	go sweepTunnelConns(g.ctx, g.tunnelChannel)
-	if s.config.WebPort > 0 {
-		go g.usageMonitor.Monitor()
+	if s.config.Sniffer {
+		go g.usageMonitor.Run()
 	}
 	s.status.set("Disconnected (QUIC)")
 

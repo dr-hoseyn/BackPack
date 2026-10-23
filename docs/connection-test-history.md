@@ -1,6 +1,6 @@
 # Connection Test history
 
-Terminal and web panel Connection Tests save measurements automatically on each server after a run.
+Terminal Connection Tests save measurements automatically on each server after a run.
 Open **Connection Test → History**, or use:
 
 ```sh
@@ -18,10 +18,12 @@ Corrupt or oversized samples produce a warning while valid samples stay readable
 No setup links, tokens, passwords, configurations or raw diagnostic errors are saved.
 Server IPs, the peer IP when available, SNI names and measured results are retained.
 
-Comparison separates the local role, preset, Iran IP, Kharej IP when known,
+Comparison separates Quick/Full depth, the local role, preset, Iran IP, Kharej IP when known,
 IP family, reverse/direct/spoof direction, protocol and SNI candidate. Cancelled
 runs and paths without a completed measurement are shown in history but excluded
-from comparison. Skipped and still-running protocol rows are also excluded.
+from comparison. Skipped, still-running and screened (speed not measured) rows are also excluded.
+Quick runs are labelled as 30-second observations; older saved runs are treated
+as Full when grouping comparisons.
 
 Loss is calculated from the total attempted and received echoes, not an average
 of percentages. RTT and per-run jitter are weighted by received echoes. Download
@@ -33,7 +35,7 @@ representative hours before choosing a carrier; the program does not schedule
 network traffic automatically.
 
 Existing stored configurations and coordinator links are unchanged. New peers
-include per-protocol jitter in the result; older peers omit it, and their jitter is shown as unmeasured. The panel Network page reads the same history and comparisons through authenticated APIs.
+include per-protocol jitter in the result; older peers omit it, and their jitter is shown as unmeasured. Use `backpack test history` and `backpack test compare` to inspect saved measurements.
 
 <div dir="rtl">
 
@@ -46,4 +48,4 @@ include per-protocol jitter in the result; older peers omit it, and their jitter
 
 </div>
 
-*Last verified against Backpack v1.14.2, 2026-10-18.*
+*Last verified against Backpack v1.15.0, 2026-10-18.*

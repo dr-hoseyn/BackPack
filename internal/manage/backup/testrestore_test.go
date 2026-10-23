@@ -53,9 +53,6 @@ func TestTheDrillReportsWhatTheBackupHolds(t *testing.T) {
 	if len(rep.Tunnels) != 2 {
 		t.Errorf("found %d tunnels, want 2: %v", len(rep.Tunnels), rep.Tunnels)
 	}
-	if !rep.WebUIConfig {
-		t.Error("the panel's settings were in the archive and were not reported")
-	}
 	if rep.Certificates != 1 {
 		t.Errorf("found %d certificates, want 1", rep.Certificates)
 	}

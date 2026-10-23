@@ -393,7 +393,7 @@ thing to try. Test it on your own route before committing to it.
 ## ICMP family
 
 xDi is available under **Reverse → ICMP → xDi (ICMP)** in the terminal and
-web panel. It needs Linux and root or `CAP_NET_RAW` on both endpoints.
+CLI. It needs Linux and root or `CAP_NET_RAW` on both endpoints.
 Direct xDi remains a separate option with the opposite connection direction.
 
 ### xDi (ICMP)
@@ -510,4 +510,4 @@ UDP را می‌بندد ولی ICMP را نه) و *IP Spoofing* که مبدأ �
 
 ---
 
-*Last verified against Backpack v1.14.2.*
+*Last verified against Backpack v1.15.0.*

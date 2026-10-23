@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/backpack/backpack/internal/web"
+	"github.com/backpack/backpack/internal/traffic"
 	"github.com/gorilla/websocket"
 )
 
@@ -26,7 +26,7 @@ func TestTCPRelayCancellationClosesBothEnds(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		TCPConnectionHandler(ctx, false, from, to, quietLogger(), &web.Usage{}, 8080, false)
+		TCPConnectionHandler(ctx, false, from, to, quietLogger(), &traffic.Usage{}, 8080, false)
 	}()
 
 	cancel()
@@ -54,7 +54,7 @@ func TestWSRelayCancellationClosesBothEnds(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		WSConnectionHandler(ctx, wsServer, tcpRelay, quietLogger(), &web.Usage{}, 8080, false)
+		WSConnectionHandler(ctx, wsServer, tcpRelay, quietLogger(), &traffic.Usage{}, 8080, false)
 	}()
 
 	cancel()
@@ -86,7 +86,7 @@ func TestRelayReturnsOnlyAfterBothCopiesStop(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		TCPConnectionHandler(ctx, false, from, to, quietLogger(), &web.Usage{}, 8080, false)
+		TCPConnectionHandler(ctx, false, from, to, quietLogger(), &traffic.Usage{}, 8080, false)
 	}()
 
 	// After one direction ends, cancellation still has to interrupt and join

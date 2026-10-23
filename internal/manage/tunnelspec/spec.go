@@ -135,13 +135,8 @@ type Spec struct {
 	// BandwidthMbps caps total tunnel throughput in Mbit/s (0 = unlimited).
 	BandwidthMbps int
 
-	// Sniffer web panel
+	// Optional per-port traffic accounting.
 	Sniffer bool
-	WebPort int
-	// WebBind is the address that page listens on. Empty means loopback, which
-	// is the default because the page has no authentication; see
-	// config.ServerConfig.WebBind.
-	WebBind string
 
 	// TLS (server, wss/wssmux only)
 	TLSCert string
@@ -168,18 +163,6 @@ type Spec struct {
 	// ZeroCopy hands forwarded traffic to the kernel instead of copying it
 	// through this process. Off by default — see config.ZeroCopy.
 	ZeroCopy bool
-}
-
-// monitorBind is the address the sniffer page is written out with. It is
-// emitted rather than left to the engine's default so that the knob is visible
-// in the file — an operator who wants the page on the network has to be able to
-// find out that they can have it, and a config the CLI rewrites is the only
-// place they will look.
-func monitorBind(configured string) string {
-	if configured == "" {
-		return "127.0.0.1"
-	}
-	return configured
 }
 
 // writeTuning emits the throughput/latency knobs shared by server and client.
@@ -344,10 +327,6 @@ func (s Spec) Render() string {
 			p("bandwidth_mbps = %d\n", s.BandwidthMbps)
 		}
 		p("sniffer = %t\n", s.Sniffer)
-		if s.WebPort > 0 {
-			p("web_port = %d\n", s.WebPort)
-			p("web_bind = %q\n", monitorBind(s.WebBind))
-		}
 		b.WriteString("ports = [\n")
 		for _, port := range s.Ports {
 			p("    %q,\n", port)
@@ -426,10 +405,6 @@ func (s Spec) Render() string {
 		p("mux_streambuffer = %d\n", s.MuxStreamBuffer)
 	}
 	p("sniffer = %t\n", s.Sniffer)
-	if s.WebPort > 0 {
-		p("web_port = %d\n", s.WebPort)
-		p("web_bind = %q\n", monitorBind(s.WebBind))
-	}
 	s.writeHelpers(&b)
 	return b.String()
 }

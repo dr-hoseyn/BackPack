@@ -238,7 +238,7 @@ them both ends have to agree on. This says what exists.
 | `simple_auth` | `bool` | SimpleAuth authorises a wss tunnel by the raw token instead of a proof bound to the TLS session. It exists for one deployment the binding otherwise makes impossible: a TLS-terminating reverse proxy — typically NGINX — in front of the tunnel, which holds a different TLS session from the client so a bound proof can never match. It is off by default because it hands the token to whoever terminates the TLS; turn it on only when a trusted proxy is doing so, and set it on both ends. |
 | `sing` | `SingClientConfig` | Sing selects a restricted managed Hysteria2, AnyTLS, ShadowTLS or TUIC carrier. |
 | `skip_optz` | `bool` | SkipOptz stops the engine applying its own socket and sysctl tuning at start, for a machine whose tuning is managed elsewhere. |
-| `sniffer` | `bool` | Sniffer records per-port traffic for the monitor page. Off by default: it costs a write per connection. |
+| `sniffer` | `bool` | Sniffer records per-port traffic in the usage log. Off by default: it costs a write per connection. |
 | `sniffer_log` | `string` | SnifferLog is where the per-port traffic record is written. |
 | `so_mark` | `int` | SOMark stamps an fwmark on their packets, which is what `ip rule` matches on — the way to put the tunnel on a routing table of its own without changing routing for the rest of the machine. Linux, and needs CAP_NET_ADMIN. Zero means none. |
 | `so_pin_tcp` | `bool` | SOPinTCP restores the old behaviour of pinning SO_RCVBUF/SO_SNDBUF on TCP sockets. Off by default: pinning them stops the kernel auto-tuning the window, which costs a large multiple of the throughput on a fast uplink. The datagram transports set their own buffers regardless. |
@@ -246,8 +246,6 @@ them both ends have to agree on. This says what exists.
 | `so_sndbuf` | `int` | SO_SNDBUF is the socket send buffer in bytes. 0 leaves the kernel's default. |
 | `token` | `string` | Token is the shared secret. Both ends must hold exactly the same one, and a mismatch is refused without saying so — a peer without the token learns nothing, not even that something is listening. |
 | `transport` | `TransportType` | Transport is the carrier this tunnel uses. Both ends must name the same one; see docs/transports.md for what each is for. |
-| `web_bind` | `string` | WebBind is the address the sniffer/monitor page listens on. It has no authentication of any kind and reports the host's CPU, memory, disk and network along with the tunnel's status and per-port traffic, so it defaults to 127.0.0.1 and is reached over an SSH tunnel: ssh -L 2060:127.0.0.1:2060 root@server Set it to 0.0.0.0 to serve it on every interface as it used to be, or to one address to serve it on a private network only. |
-| `web_port` | `int` | WebPort is the port the per-tunnel monitor page listens on. 0 turns it off. |
 | `xray` | `XrayClientConfig` | Xray optionally reaches the loopback reverse target through a restricted tunnel-owned XHTTP/TLS or RAW/REALITY helper. |
 | `zero_copy` | `bool` | ZeroCopy lets the kernel move the bytes of forwarded connections directly between the two sockets, without them passing through this process. It is faster and it is the least proven path here, so it is off by default and turned on per tunnel. |
 
@@ -495,7 +493,7 @@ them both ends have to agree on. This says what exists.
 | `simple_auth` | `bool` | SimpleAuth authorises a wss tunnel by the raw token instead of a proof bound to the TLS session. It exists for one deployment the binding otherwise makes impossible: a TLS-terminating reverse proxy — typically NGINX — in front of the tunnel, which holds a different TLS session from the client so a bound proof can never match. It is off by default because it hands the token to whoever terminates the TLS; turn it on only when a trusted proxy is doing so, and set it on both ends. |
 | `sing` | `SingServerConfig` | Sing selects a restricted managed Hysteria2, AnyTLS, ShadowTLS or TUIC carrier. |
 | `skip_optz` | `bool` | SkipOptz stops the engine applying its own socket and sysctl tuning at start. For a machine whose tuning is managed elsewhere. |
-| `sniffer` | `bool` | Sniffer records per-port traffic for the monitor page. Off by default: it costs a write per connection and the page is reachable over SSH only. |
+| `sniffer` | `bool` | Sniffer records per-port traffic in the usage log. Off by default: it costs a write per connection and the page is reachable over SSH only. |
 | `sniffer_log` | `string` | SnifferLog is where the per-port traffic record is written. |
 | `so_pin_tcp` | `bool` | SOPinTCP restores the old behaviour of pinning SO_RCVBUF/SO_SNDBUF on TCP sockets. Off by default: pinning them stops the kernel auto-tuning the window, which costs a large multiple of the throughput on a fast uplink. The datagram transports set their own buffers regardless. |
 | `so_rcvbuf` | `int` | SO_RCVBUF is the socket receive buffer in bytes. 0 leaves the kernel's default, which is right unless a measurement says otherwise. |
@@ -504,8 +502,6 @@ them both ends have to agree on. This says what exists.
 | `tls_key` | `string` | TLSKeyFile is the private key for tls_cert. |
 | `token` | `string` | Token is the shared secret. Both ends must hold exactly the same one, and a mismatch is refused without saying so — a peer without the token learns nothing, not even that something is listening. |
 | `transport` | `TransportType` | Transport is the carrier this tunnel uses. Both ends must name the same one; see docs/transports.md for what each is for. |
-| `web_bind` | `string` | WebBind is the address the sniffer/monitor page listens on. It has no authentication of any kind and reports the host's CPU, memory, disk and network along with the tunnel's status and per-port traffic, so it defaults to 127.0.0.1 and is reached over an SSH tunnel: ssh -L 2060:127.0.0.1:2060 root@server Set it to 0.0.0.0 to serve it on every interface as it used to be, or to one address to serve it on a private network only. |
-| `web_port` | `int` | WebPort is the port the per-tunnel monitor page listens on. 0 turns it off. |
 | `xray` | `XrayServerConfig` | Xray optionally wraps the loopback reverse TCP listener in XHTTP/TLS or RAW/REALITY using a tunnel-owned official helper. |
 | `zero_copy` | `bool` | ZeroCopy lets the kernel move the bytes of forwarded connections directly between the two sockets, without them passing through this process. It is faster and it is the least proven path here, so it is off by default and turned on per tunnel. |
 
@@ -532,4 +528,4 @@ them both ends have to agree on. This says what exists.
 
 ---
 
-*Generated from `config/` on 2026-10-18. Last verified against Backpack v1.14.2.*
+*Generated from `config/` on 2026-10-23. Last verified against Backpack v1.15.0.*

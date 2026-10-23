@@ -38,7 +38,6 @@ type WsConfig struct {
 	RetryInterval  time.Duration
 	DialTimeOut    time.Duration
 	ConnPoolSize   int
-	WebPort        int
 	Mode           config.TransportType
 	SimpleAuth     bool
 	AggressivePool bool
@@ -60,14 +59,14 @@ func NewWSClient(parentCtx context.Context, config *WsConfig, logger *logrus.Log
 		config: config,
 	}
 
-	client.firstGeneration(parentCtx, logger, usageSpec{webPort: config.WebPort, snifferLog: config.SnifferLog, sniffer: config.Sniffer})
+	client.firstGeneration(parentCtx, logger, usageSpec{snifferLog: config.SnifferLog, sniffer: config.Sniffer})
 	return client
 }
 
 func (c *WsTransport) Start() {
 	// for  webui
-	if c.config.WebPort > 0 {
-		c.state.Go(c.state.Usage().Monitor)
+	if c.config.Sniffer {
+		c.state.Go(c.state.Usage().Run)
 	}
 
 	c.status.set(fmt.Sprintf("Disconnected (%s)", c.config.Mode))

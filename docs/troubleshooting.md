@@ -190,44 +190,6 @@ Common causes, in order:
 
 ---
 
-## The panel will not open
-
-```
-systemctl status backpack-webui
-journalctl -u backpack-webui -n 50
-```
-
-The panel answers under a **secret path** and nowhere else, so a bookmark
-without it gets a 404 rather than a login page. The path is printed at startup
-and is shown in the menu:
-
-```
-sudo backpack        # → Web Panel
-```
-
-If the port was changed and the page did not come back, the address is in the
-same screen.
-
----
-
-## A managed server shows as offline
-
-The panel dials out over SSH; nothing is opened on the far side. So "offline"
-means one of:
-
-- **The machine is down**, or its SSH port changed.
-- **The password changed.** The panel keeps it sealed with a key that is
-  deliberately not in the backup, so restoring a panel onto a new machine
-  returns the fleet list without the credentials. See
-  [backup and restore](backup-restore.md) for the recovery.
-- **The host key changed.** The panel pins the key it first saw and refuses a
-  different one. If the server was rebuilt, this is expected — remove it from
-  the fleet and add it again.
-
-The card shows which of the three it is.
-
----
-
 ## After an update
 
 Backpack takes a snapshot before every update and rolls back on its own if the
@@ -291,7 +253,6 @@ These are not faults. Each is a check doing its job, and each says what it saw.
 ```
 journalctl -u backpack-<name> -f       # one tunnel, live
 journalctl -u backpack-monitor -n 100   # the watchdog, the bot, the alerts
-journalctl -u backpack-webui -n 100     # the panel
 ```
 
 The engine logs at `info` by default. For a fault you are actively chasing,
@@ -384,12 +345,6 @@ stall است؛ **هر دو یخ** یعنی تونل بیکار است، که خ�
 بد بالاتر ببر)، و **ری‌استارت‌شدنِ آن‌طرف** — قبل از دست‌زدن به این ماشین آن یکی را
 ببین.
 
-### پنل باز نمی‌شود
-
-`systemctl status backpack-webui` و `journalctl -u backpack-webui -n 50`. پنل زیر
-یک **مسیر مخفی** جواب می‌دهد و جای دیگری نه، پس bookmark بدون آن ۴۰۴ می‌گیرد نه
-صفحهٔ ورود. مسیر در `sudo backpack → Web Panel` نوشته شده.
-
 ### سرور مدیریت‌شده offline است
 
 پنل خودش SSH می‌زند و چیزی روی آن‌طرف باز نمی‌شود، پس offline یعنی یکی از سه چیز:
@@ -432,7 +387,6 @@ stall است؛ **هر دو یخ** یعنی تونل بیکار است، که خ�
 ```
 journalctl -u backpack-<name> -f
 journalctl -u backpack-monitor -n 100
-journalctl -u backpack-webui -n 100
 ```
 
 پیش‌فرض `info` است. برای خطایی که دنبالش هستی موقتاً `log_level = "debug"` بگذار و
@@ -453,4 +407,4 @@ journalctl -u backpack-webui -n 100
 
 ---
 
-*Last verified against Backpack v1.14.2.*
+*Last verified against Backpack v1.15.0.*

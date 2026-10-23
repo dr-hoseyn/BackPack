@@ -351,19 +351,9 @@ type ServerConfig struct {
 	// MaxStreamBuffer is the per-stream receive window, in bytes. Filled from a
 	// preset.
 	MaxStreamBuffer int `toml:"mux_streambuffer"`
-	// Sniffer records per-port traffic for the monitor page. Off by default: it
+	// Sniffer records per-port traffic in the usage log. Off by default: it
 	// costs a write per connection and the page is reachable over SSH only.
 	Sniffer bool `toml:"sniffer"`
-	// WebPort is the port the per-tunnel monitor page listens on. 0 turns it off.
-	WebPort int `toml:"web_port"`
-	// WebBind is the address the sniffer/monitor page listens on. It has no
-	// authentication of any kind and reports the host's CPU, memory, disk and
-	// network along with the tunnel's status and per-port traffic, so it
-	// defaults to 127.0.0.1 and is reached over an SSH tunnel:
-	//   ssh -L 2060:127.0.0.1:2060 root@server
-	// Set it to 0.0.0.0 to serve it on every interface as it used to be, or
-	// to one address to serve it on a private network only.
-	WebBind string `toml:"web_bind"`
 	// SnifferLog is where the per-port traffic record is written.
 	SnifferLog string `toml:"sniffer_log"`
 	// TLSCertFile is a certificate to present, for the transports that terminate
@@ -545,19 +535,9 @@ type ClientConfig struct {
 	// MaxStreamBuffer is the per-stream receive window, in bytes. Filled from a
 	// preset.
 	MaxStreamBuffer int `toml:"mux_streambuffer"`
-	// Sniffer records per-port traffic for the monitor page. Off by default: it
+	// Sniffer records per-port traffic in the usage log. Off by default: it
 	// costs a write per connection.
 	Sniffer bool `toml:"sniffer"`
-	// WebPort is the port the per-tunnel monitor page listens on. 0 turns it off.
-	WebPort int `toml:"web_port"`
-	// WebBind is the address the sniffer/monitor page listens on. It has no
-	// authentication of any kind and reports the host's CPU, memory, disk and
-	// network along with the tunnel's status and per-port traffic, so it
-	// defaults to 127.0.0.1 and is reached over an SSH tunnel:
-	//   ssh -L 2060:127.0.0.1:2060 root@server
-	// Set it to 0.0.0.0 to serve it on every interface as it used to be, or
-	// to one address to serve it on a private network only.
-	WebBind string `toml:"web_bind"`
 	// SnifferLog is where the per-port traffic record is written.
 	SnifferLog string `toml:"sniffer_log"`
 	// DialTimeout is how many seconds a single connection attempt may take. It is

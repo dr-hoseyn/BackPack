@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## v1.15.0 — 2026-10-23
+
+- Upgrade this CLI-only release from an SSH session or the installer; the browser updater is retired.
+- Remove the management web panel, browser terminal, authentication endpoints,
+  embedded UI assets and per-tunnel monitor HTTP pages. SSH/CLI is the management interface.
+- Keep tunnel transports, CLI metrics, per-port traffic accounting, the independent
+  watchdog and optional Telegram bot. The legacy web service is stopped and
+  disabled on install/menu launch/update; old settings remain inert backup files.
+- Add Quick Connection Test: a bounded 30-second observation with speed measurements
+  on up to three latency/jitter finalists. Full retains all healthy speed tests.
+  Screened rows are explicitly unmeasured and excluded from setup/recommendations.
+- Keep Quick/Full history comparisons separate and enforce traffic/discovery deadlines.
+- Update CLI menu numbering, documentation, dependencies and Linux regression checks.
+
+
 ## v1.14.2 — 2026-10-22 (dr-hoseyn fork)
 
 - Restore Reverse → ICMP → xDi (ICMP) in the terminal and web panel. Keep

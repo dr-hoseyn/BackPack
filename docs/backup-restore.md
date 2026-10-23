@@ -1,7 +1,6 @@
 # Backup & restore
 
-Everything in one portable `.tar.gz`: every tunnel and token, the web-panel
-password, Telegram settings, TLS certificates, and the auto-refresh schedule.
+Everything in one portable `.tar.gz`: every tunnel and token, Telegram settings, TLS certificates, and the auto-refresh schedule.
 Backups live in `/root/BackPack/backups`.
 
 ## Restoring onto a different machine
@@ -15,8 +14,8 @@ Restoring onto the same machine is unaffected: the key is already there and the
 restore leaves it alone.
 
 Restoring onto a **different** machine brings the fleet list back without the
-credentials, and the panel asks for each server's password again. That is the
-right default. If you would rather not re-enter them — the panel machine died
+credentials; recover the separately held fleet key through the CLI. That is the
+right default. If the original machine died
 and this is the recovery — keep the key yourself, separately:
 
 **On the machine that has the fleet, before you need it:**
@@ -46,10 +45,9 @@ from where the backup left off rather than resetting to zero.
 ## Where you can do it
 
 - the **CLI** — **Backup & Restore**,
-- the [web panel](web-panel.md) — **Settings**, or
 - the [Telegram bot](telegram-bot.md) — **Backup** button.
 
-> Keep a backup file private — it contains tokens and the panel password.
+> Keep a backup file private — it contains tunnel tokens and keys.
 
 ---
 
@@ -57,7 +55,7 @@ from where the backup left off rather than resetting to zero.
 
 ## خلاصهٔ فارسی
 
-همه‌چیز در یک فایل `.tar.gz` قابل‌حمل: تمام تونل‌ها و توکن‌ها، رمز پنل وب،
+همه‌چیز در یک فایل `.tar.gz` قابل‌حمل: تمام تونل‌ها و توکن‌ها،
 تنظیمات تلگرام، گواهی‌های TLS و زمان‌بندی ری‌فرش خودکار. فایل‌ها در
 `/root/BackPack/backups` ذخیره می‌شوند.
 
@@ -65,10 +63,9 @@ from where the backup left off rather than resetting to zero.
 جایی که بوده ادامه پیدا می‌کند، نه از صفر.
 
 از سه جا می‌شود انجامش داد: منوی CLI (گزینهٔ Backup & Restore)،
-[پنل وب](web-panel.md) در بخش Settings، یا دکمهٔ Backup در
 [ربات تلگرام](telegram-bot.md).
 
-> فایل پشتیبان را خصوصی نگه دار — توکن‌ها و رمز پنل داخلش است.
+> فایل پشتیبان را خصوصی نگه دار — توکن‌ها و کلیدها داخلش است.
 
 </div>
 
@@ -136,4 +133,4 @@ Run it after any change to what the machine holds, and once before you need it.
 
 ---
 
-*Last verified against Backpack v1.14.2.*
+*Last verified against Backpack v1.15.0.*
