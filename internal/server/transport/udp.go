@@ -69,6 +69,7 @@ type UdpTransport struct {
 	activeMu          sync.Mutex
 	controlChannel    netControl
 	limits            *limiter
+	overloadLog       udpOverloadLog
 }
 
 type UdpConfig struct {
@@ -233,36 +234,9 @@ func (s *UdpTransport) acceptTunnelConn(g *udpGen, listener *net.UDPConn) {
 			// Create a unique identifier for the connection based on IP and port
 			key := addr.String()
 
-			s.activeMu.Lock()
-			// Check if the connection is already active
-			if existingConn, exists := s.activeConnections[key]; exists {
-				// These bytes crossed the tunnel, so they are counted here —
-				// before the queue, which may not have room for them. A packet
-				// dropped below was still carried and still paid for, and a
-				// counter that hid it would show a tunnel losing traffic under
-				// load as a tunnel doing nothing.
-				//
-				// This transport reported 0 in and 0 out however much it
-				// carried: neither CountedConn nor AddBytes appeared in either
-				// of its files, because it never hands out a net.Conn for the
-				// wrapper to go around. The panel, the CLI, the Telegram report
-				// and the traffic history all read it as idle.
-				metrics.AddBytes(uint64(n), 0)
-				s.limits.waitBytes(g.ctx, n)
-
-				// Send the payload to the existing connection's payload channel
-				select {
-				case existingConn.payload <- append([]byte(nil), buf[:n]...): // Copy the packet to avoid data overwriting
-					s.logger.Tracef("buffered %d bytes for existing connection %s", n, addr.String())
-
-				default:
-					s.logger.Warnf("payload channel for connection %s is full, dropping UDP packet", addr.String())
-				}
-				s.activeMu.Unlock()
+			if s.deliverTunnelPayload(g.ctx, key, buf[:n]) {
 				continue
 			}
-
-			s.activeMu.Unlock()
 
 			if !tokenMatches(string(buf[:n]), s.config.Token) { // For new connections, validate the token
 				// Debug, not error: this port is public, and anything at all
@@ -297,7 +271,7 @@ func (s *UdpTransport) acceptTunnelConn(g *udpGen, listener *net.UDPConn) {
 				go s.keepAlive(g, &tunnelConn)
 				s.logger.Debugf("accepted tunnel connection from %s", addr.String())
 			default:
-				s.logger.Warn("UDP tunnel channel is full")
+				s.logUDPOverload("tunnel pool is full")
 				// Close the newly created connection as it couldn't be added.
 				// Under the lock: this map is read and written by every other
 				// datagram that arrives, and deleting from it unguarded is a
@@ -311,6 +285,39 @@ func (s *UdpTransport) acceptTunnelConn(g *udpGen, listener *net.UDPConn) {
 			}
 		}
 	}
+}
+
+// deliverTunnelPayload reports whether key names an established association.
+// Pacing may wait behind all other flows sharing the bandwidth cap. Never
+// hold the association lock across that wait: disconnect/adoption must be able
+// to retire flows while this generation's listener remains alive.
+func (s *UdpTransport) deliverTunnelPayload(ctx context.Context, key string, packet []byte) bool {
+	s.activeMu.Lock()
+	conn := s.activeConnections[key]
+	s.activeMu.Unlock()
+	if conn == nil {
+		return false
+	}
+	// Even a packet dropped after arrival crossed the tunnel.
+	metrics.AddBytes(uint64(len(packet)), 0)
+	s.limits.waitBytes(ctx, len(packet))
+	s.activeMu.Lock()
+	// The wait can outlive this association. Its channel may already be
+	// closed or replaced by a new flow using the same source address.
+	if ctx.Err() != nil || s.activeConnections[key] != conn {
+		s.activeMu.Unlock()
+		return true
+	}
+	queued := enqueueUDPPayload(conn.payload, packet)
+	s.activeMu.Unlock()
+	if queued {
+		if s.logger.IsLevelEnabled(logrus.TraceLevel) {
+			s.logger.Tracef("buffered %d bytes for existing connection %s", len(packet), key)
+		}
+	} else {
+		s.logUDPOverload("tunnel payload queue is full")
+	}
+	return true
 }
 
 // applyBuffers sizes a datagram socket to the configured SO_RCVBUF/SO_SNDBUF;

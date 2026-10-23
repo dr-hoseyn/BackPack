@@ -27,7 +27,7 @@ import (
 // that outlives its run from reaching into the run that replaced it.
 type wsMuxGen struct {
 	ctx            context.Context
-	tunnelChannel  chan *smux.Session
+	tunnelChannel  chan pooledMuxSession
 	localChannel   chan LocalTCPConn
 	reqNewConnChan chan struct{}
 	usageMonitor   *traffic.Usage
@@ -152,7 +152,7 @@ func (s *WsMuxTransport) Restart() {
 func (s *WsMuxTransport) newGen(ctx context.Context) *wsMuxGen {
 	return &wsMuxGen{
 		ctx:            ctx,
-		tunnelChannel:  make(chan *smux.Session, s.config.ChannelSize),
+		tunnelChannel:  make(chan pooledMuxSession, s.config.ChannelSize),
 		localChannel:   make(chan LocalTCPConn, s.config.ChannelSize),
 		reqNewConnChan: make(chan struct{}, s.config.ChannelSize),
 		usageMonitor:   s.usageMonitor(ctx),
@@ -243,6 +243,10 @@ func (s *WsMuxTransport) tunnelListener(g *wsMuxGen) {
 				return
 			}
 
+			var owner context.Context
+			if r.URL.Path != "/channel" {
+				owner = g.seat.client()
+			}
 			conn, err := upgrader.Upgrade(w, r, serverProof(r, s.config.Token, s.config.SimpleAuth))
 			if err != nil {
 				s.logger.Errorf("failed to upgrade connection from %s: %v", r.RemoteAddr, err)
@@ -270,11 +274,12 @@ func (s *WsMuxTransport) tunnelListener(g *wsMuxGen) {
 					conn.Close()
 					return
 				}
-				select {
-				case g.tunnelChannel <- session: // ok
-				default:
-					s.logger.Warnf("forwarded port: the queue is full, dropping a client from %s", conn.RemoteAddr().String())
-					conn.Close()
+				accepted := g.seat.admitFor(g.ctx, owner, func(ctx context.Context) bool {
+					return enqueueMuxSession(g.tunnelChannel, ctx, session)
+				})
+				if !accepted {
+					s.logger.Debugf("websocket mux pool is full or its client changed, closing connection from %s", conn.RemoteAddr().String())
+					session.Close()
 				}
 			}
 		}),
@@ -361,8 +366,8 @@ func (s *WsMuxTransport) handleLoop(g *wsMuxGen) {
 				continue
 			}
 
-			loop := s.session(g)
-			go loop.run(session)
+			loop := s.session(g, session.owner)
+			go loop.run(session.Session)
 		}
 	}
 }
@@ -387,9 +392,9 @@ func (s *WsMuxTransport) tlsSettings() network.TLSSettings {
 // loop. It is the whole of what is transport-specific about running a session.
 // Its context is the seated client's, so the session ends with the client that
 // opened it rather than with the generation — which now outlives its clients.
-func (s *WsMuxTransport) session(g *wsMuxGen) muxSession {
+func (s *WsMuxTransport) session(g *wsMuxGen, owner context.Context) muxSession {
 	return muxSession{
-		ctx:           g.seat.client(),
+		ctx:           owner,
 		local:         g.localChannel,
 		usage:         g.usageMonitor,
 		reqNewConn:    g.reqNewConnChan,

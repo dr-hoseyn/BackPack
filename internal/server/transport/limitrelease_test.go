@@ -50,7 +50,7 @@ func TestEveryPairingTimeoutFreesItsConnectionSlot(t *testing.T) {
 			// A transport that hands its session to muxsession.go has nothing
 			// of this shape left: the timeout, the release and the counter all
 			// live in one place and are tested by running them.
-			if strings.Contains(string(src), ".run(session)") {
+			if strings.Contains(string(src), ".run(session.Session)") {
 				return
 			}
 			if strings.Contains(string(src), "}.run()") {

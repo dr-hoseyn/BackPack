@@ -15,6 +15,36 @@ import (
 	"github.com/backpack/backpack/internal/utils/handlers"
 )
 
+// The owner travels through the queue with the session. Looking up the seat
+// after dequeue can bind a previous client's session to its replacement.
+type pooledMuxSession struct {
+	*smux.Session
+	owner context.Context
+}
+
+// enqueueMuxSession is called while the seat's admission lock is held.
+// Cancellation also closes queued sessions that a worker has not picked up.
+func enqueueMuxSession(queue chan pooledMuxSession, owner context.Context, session *smux.Session) bool {
+	if owner.Err() != nil {
+		session.Close()
+		return false
+	}
+	select {
+	case queue <- pooledMuxSession{Session: session, owner: owner}:
+		go func() {
+			select {
+			case <-owner.Done():
+				session.Close()
+			case <-session.CloseChan():
+			}
+		}()
+		return true
+	default:
+		session.Close()
+		return false
+	}
+}
+
 // What a mux transport does with a session, written once.
 //
 // `tcpmux`, `wsmux` and `kcp` all reach the same place by different roads: a
@@ -103,6 +133,11 @@ func (m muxSession) run(session *smux.Session) {
 	}()
 
 	for {
+		// A worker can start after its owner was replaced. Do not take a new
+		// user's connection when cancellation and the queue are both ready.
+		if m.ctx.Err() != nil {
+			return
+		}
 		// +1 for mux connection counter
 		select {
 		case counter <- struct{}{}:

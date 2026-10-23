@@ -68,10 +68,16 @@ func (l *Link) assemble(session [16]byte, p []byte) []byte {
 }
 
 func (l *Link) sendMessage(b []byte) error {
+	// Reassembly is scoped to a Noise session. Rekey may publish a new key
+	// during WriteTo; finish this datagram with the old key, which the peer
+	// keeps as its previous session, then adopt the new one for the next call.
+	l.wmu.Lock()
+	defer l.wmu.Unlock()
+	k, peer := l.sendKey()
 	var prefix [fragmentHeader]byte
 	if len(b) <= fragmentSize {
 		prefix[0] = 2
-		return l.sendParts(prefix[:1], b)
+		return l.sendPartsLocked(k, peer, prefix[:1], b)
 	}
 	id := l.messageSeq.Add(1)
 	count := (len(b) + fragmentSize - 1) / fragmentSize
@@ -83,7 +89,7 @@ func (l *Link) sendMessage(b []byte) error {
 		binary.BigEndian.PutUint16(p[9:11], uint16(index))
 		binary.BigEndian.PutUint16(p[11:13], uint16(count))
 		binary.BigEndian.PutUint32(p[13:17], uint32(len(b)))
-		if err := l.sendParts(p, b[offset:offset+min(fragmentSize, len(b)-offset)]); err != nil {
+		if err := l.sendPartsLocked(k, peer, p, b[offset:offset+min(fragmentSize, len(b)-offset)]); err != nil {
 			return err
 		}
 	}

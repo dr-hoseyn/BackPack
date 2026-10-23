@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+- Keep TCP Mux, WebSocket Mux and KCP sessions bound to the client that
+  admitted them, including a replacement between dequeue and worker startup.
+  Close queued sessions with their owner and reject KCP data handshakes that
+  span a client replacement. Extend repeated churn checks to TLS transports.
+- Aggregate raw UDP queue/connection-limit overload warnings across listeners
+  with one five-second reporting budget. Preserve suppressed-drop counts
+  without formatting and writing a warning for every discarded packet.
+- Avoid allocating native UDP backend payloads and target strings for packets
+  discarded because their bounded backend queue is already full.
+- Bind WS/WSS and websocket-mux pool admission to the client that owned the
+  HTTP upgrade. A delayed upgrade from a retired client cannot enter a new
+  client's pool after it was drained during replacement.
+- Keep every fragment of a native UDP datagram on the same Noise session
+  during rekey, and serialize nonce assignment with socket writes. Reuse a
+  bounded engine send buffer instead of allocating another payload per packet.
+- Preserve complete raw UDP targets, including long hostnames and backend
+  lists. Allow association retirement while bandwidth pacing waits, discard
+  packets belonging to replaced associations, and avoid copying packets when
+  their bounded receive queue is already full.
+- Update quic-go to v0.64.1 for congestion recovery, reordered-packet handling,
+  migration/MTU and cancellation fixes; update kcp-go to v5.6.73 for queued
+  segment preservation across MTU changes and reduced deadline timer overhead.
+
 ## v1.15.0 — 2026-10-23
 
 - Upgrade this CLI-only release from an SSH session or the installer; the browser updater is retired.

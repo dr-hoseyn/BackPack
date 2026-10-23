@@ -38,6 +38,8 @@ type Engine struct {
 	server            bool
 	max               int
 	limiter           *rate.Limiter
+	sendMu            sync.Mutex
+	sendBuf           []byte // at most maxPayload bytes, reused until Link.Write returns
 	mu                sync.Mutex
 	flows             map[uint64]*flow
 	sources           map[string]*flow
@@ -171,7 +173,16 @@ func (e *Engine) write(id uint64, target string, p []byte) {
 		e.drops.Add(1)
 		return
 	}
-	b := make([]byte, 10+len(target)+len(p))
+	// The link consumes the whole message synchronously. Reuse one bounded
+	// frame instead of allocating a payload-sized object for every datagram.
+	// Backend reply workers share this buffer, so keep it until Write returns.
+	e.sendMu.Lock()
+	defer e.sendMu.Unlock()
+	size := 10 + len(target) + len(p)
+	if cap(e.sendBuf) < size {
+		e.sendBuf = make([]byte, size)
+	}
+	b := e.sendBuf[:size]
 	binary.BigEndian.PutUint64(b, id)
 	binary.BigEndian.PutUint16(b[8:], uint16(len(target)))
 	copy(b[10:], target)
@@ -237,7 +248,7 @@ func (e *Engine) receive() {
 			e.drops.Add(1)
 			continue
 		}
-		target := string(b[10 : 10+size])
+		target := b[10 : 10+size]
 		payload := b[10+size : n]
 		if !e.allowed(len(payload)) {
 			e.drops.Add(1)
@@ -261,19 +272,26 @@ func (e *Engine) receive() {
 			}
 			continue
 		}
-		if f == nil && len(e.flows) < e.max && validTarget(target) {
-			f = &flow{id: id, target: target, queue: make(chan []byte, 4)}
+		if f == nil && len(e.flows) < e.max && validTarget(string(target)) {
+			f = &flow{id: id, target: string(target), queue: make(chan []byte, 4)}
 			f.last.Store(time.Now().UnixNano())
 			e.flows[id] = f
 			e.wg.Add(1)
 			go e.backend(f)
 		}
 		e.mu.Unlock()
-		if f == nil || target != f.target {
+		if f == nil || string(target) != f.target {
 			e.drops.Add(1)
 			continue
 		}
 		f.last.Store(time.Now().UnixNano())
+		// This loop is the only producer; the backend can only drain the
+		// queue. Select evaluates the copying send expression even when its
+		// default wins, so reject saturation before allocating a large copy.
+		if len(f.queue) == cap(f.queue) {
+			e.drops.Add(1)
+			continue
+		}
 		select {
 		case f.queue <- append([]byte(nil), payload...):
 			e.bytesIn.Add(uint64(len(payload)))

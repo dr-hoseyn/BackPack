@@ -92,6 +92,14 @@ Look for `cannot assign requested address`, queue-full drops and control-channel
 errors. A short clean observation is not evidence of long-term stability.
 Hourly restarts still disconnect existing users if the operator keeps them.
 
+Raw UDP overload warnings share one reporting budget across this tunnel's
+listeners. The first drop is reported immediately; while drops continue, later
+reports appear at most once every five seconds and include the suppressed drop
+count and the latest cause. A quiet journal therefore does not establish that
+no packets were dropped. The payload queues remain bounded and drop new packets
+when full, preserving those already queued. Raising a queue limit cannot create
+bandwidth or repair a backend that is no longer draining traffic.
+
 The optional regression test exhausts a small source-port range, enables the
 profile and connects to the same backend again in an isolated network namespace:
 
