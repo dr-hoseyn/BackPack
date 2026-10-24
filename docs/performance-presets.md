@@ -25,9 +25,9 @@ mux sessions stay warm until their connection or generation ends. They never
 discard future capacity requests as a substitute for retiring a busy session. Repair and demand-driven
 dials share one ceiling, including connections still being established.
 
-## Sizing for 400–500 Mbit/s
+## Sizing for 500–600 Mbit/s
 
-500 Mbit/s at 200 ms RTT needs **12.5 MB in flight**. The bulk profile's 32 MiB
+600 Mbit/s at 200 ms RTT needs **15 MB in flight**. The bulk profile's 32 MiB
 stream window exceeds this bandwidth-delay product. Its KCP-family send and
 receive windows remain 4,096 segments per physical session, with batched ACKs,
 a 20 ms tick and 10:1 FEC. Four parallel sessions cover that aggregate target.
@@ -93,4 +93,4 @@ calling a deployment a verified 500 Mbit/s link.
 
 [← Back to the docs index](README.md)
 
-*Last verified against Backpack v1.15.0 source with the throughput-capacity changes.*
+*Last verified against Backpack v1.15.1 source with the throughput-capacity changes.*

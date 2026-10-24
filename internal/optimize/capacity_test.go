@@ -11,15 +11,17 @@ import (
 
 func capacityFixture(t *testing.T) (*capacityState, *[]string) {
 	t.Helper()
-	oldFile, oldBackup, oldNet, oldIPv4, oldSet, oldLock := capacityFile, capacityBackup, procNetDir, procIPv4Dir, capacitySysctl, capacityLockFile
+	oldFile, oldBackup, oldNet, oldIPv4, oldCore, oldSet, oldLock := capacityFile, capacityBackup, procNetDir, procIPv4Dir, procCoreDir, capacitySysctl, capacityLockFile
 	t.Cleanup(func() {
 		capacityFile, capacityBackup, procNetDir, procIPv4Dir, capacitySysctl, capacityLockFile = oldFile, oldBackup, oldNet, oldIPv4, oldSet, oldLock
+		procCoreDir = oldCore
 	})
 	dir := t.TempDir()
 	capacityLockFile = filepath.Join(dir, "kernel-policy.lock")
 	capacityFile, capacityBackup = filepath.Join(dir, "sysctl.d", "capacity.conf"), filepath.Join(dir, "config", "backup.json")
 	procNetDir, procIPv4Dir = filepath.Join(dir, "net"), filepath.Join(dir, "ipv4")
-	for _, d := range []string{procNetDir, procIPv4Dir} {
+	procCoreDir = filepath.Join(dir, "core")
+	for _, d := range []string{procNetDir, procIPv4Dir, procCoreDir} {
 		if err := os.MkdirAll(d, 0755); err != nil {
 			t.Fatal(err)
 		}
@@ -45,12 +47,93 @@ func capacityFixture(t *testing.T) (*capacityState, *[]string) {
 		case "net.ipv4.ip_local_reserved_ports":
 			s.Reserved = value
 			write(filepath.Join(procIPv4Dir, "ip_local_reserved_ports"), value)
+		case "net.core.busy_read", "net.core.busy_poll":
+			write(filepath.Join(procCoreDir, strings.TrimPrefix(key, "net.core.")), value)
 		default:
 			t.Fatalf("unexpected kernel mutation %s", key)
 		}
 		return nil
 	}
 	return s, calls
+}
+
+func TestCapacityDisablesBusyPollingAndRestoresTheOriginalCPUTradeoff(t *testing.T) {
+	_, _ = capacityFixture(t)
+	for _, key := range []string{"busy_read", "busy_poll"} {
+		if err := os.WriteFile(filepath.Join(procCoreDir, key), []byte("50"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i := 0; i < 2; i++ {
+		if _, err := enableHighConcurrency(nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	current, err := currentCapacity()
+	if err != nil || *current.BusyRead != 0 || *current.BusyPoll != 0 {
+		t.Fatal(current, err)
+	}
+	live, _, err := capacityTuningRows(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(live) < 2 || live[len(live)-1] != [2]string{"net.core.busy_poll", "0"} {
+		t.Fatal(live)
+	}
+	profile, _ := os.ReadFile(capacityFile)
+	if !strings.Contains(string(profile), "net.core.busy_read = 0") || !strings.Contains(string(profile), "net.core.busy_poll = 0") {
+		t.Fatal(string(profile))
+	}
+	if err := restoreHighConcurrency(); err != nil {
+		t.Fatal(err)
+	}
+	current, err = currentCapacity()
+	if err != nil || *current.BusyRead != 50 || *current.BusyPoll != 50 {
+		t.Fatal(current, err)
+	}
+}
+
+func TestOldCapacityBackupsGainCPURollbackBeforeNewSettingsChange(t *testing.T) {
+	_, _ = capacityFixture(t)
+	if _, err := enableHighConcurrency(nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(procCoreDir, "busy_read"), []byte("75"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := enableHighConcurrency(nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := restoreHighConcurrency(); err != nil {
+		t.Fatal(err)
+	}
+	s, err := currentCapacity()
+	if err != nil || s.BusyRead == nil || *s.BusyRead != 75 || s.BusyPoll != nil {
+		t.Fatal(s, err)
+	}
+}
+
+func TestFailedCPUTuningRestoresPortsAndDoesNotPublishAnActiveProfile(t *testing.T) {
+	s, _ := capacityFixture(t)
+	for _, key := range []string{"busy_read", "busy_poll"} {
+		if err := os.WriteFile(filepath.Join(procCoreDir, key), []byte("50"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	set := capacitySysctl
+	capacitySysctl = func(key, value string) error {
+		if key == "net.core.busy_poll" && value == "0" {
+			return errors.New("busy poll refused")
+		}
+		return set(key, value)
+	}
+	if _, err := enableHighConcurrency(nil); err == nil {
+		t.Fatal("expected failure")
+	}
+	current, err := currentCapacity()
+	if err != nil || *current.BusyRead != 50 || *current.BusyPoll != 50 || s.Range != "32768 60999" || HighConcurrencyEnabled() {
+		t.Fatal(current, err)
+	}
 }
 
 func TestHighConcurrencyPreservesServicesAndOriginalRollback(t *testing.T) {

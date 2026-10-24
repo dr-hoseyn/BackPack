@@ -23,7 +23,8 @@ const tuneUsage = `usage:
 High concurrency reserves existing reservations, TCP listeners and configured
 tunnel ports before widening the ephemeral range to 10240-65535. Include fixed
 UDP services and stopped services with --reserve-ports. Existing tunnels and
-the auto-refresh schedule keep running.
+the auto-refresh schedule keep running. Supported busy_read/busy_poll settings
+are disabled to avoid busy-wait CPU overhead; restore also restores their originals.
 
 path-mtu uses the existing per-tunnel TCP MSS setting (MTU minus the fixed 40-byte
 IPv4/TCP headers; Linux accounts for TCP options). Apply on both ends; it restarts the named tunnel.
@@ -65,7 +66,7 @@ func runTune(args []string) Result {
 		if err != nil {
 			return fail(CodeFailed, "high-concurrency tuning failed: %v\n", err)
 		}
-		return ok(fmt.Sprintf("Ephemeral range: %s; reserved ports: %s\nApplied live and saved for boot. Tunnels and restart schedule unchanged.\n", optimize.HighConcurrencyRange, reserved))
+		return ok(fmt.Sprintf("Ephemeral range: %s; reserved ports: %s\nSupported busy polling disabled. Applied live and saved for boot.\nTunnels and restart schedule unchanged. Existing sockets may retain their old busy-read option until reconnected.\n", optimize.HighConcurrencyRange, reserved))
 	case "restore":
 		if len(args) != 1 {
 			return fail(CodeUsage, "%s", tuneUsage)
@@ -76,7 +77,7 @@ func runTune(args []string) Result {
 		if err := restoreHighConcurrency(); err != nil {
 			return fail(CodeFailed, "restore failed: %v\n", err)
 		}
-		return ok("Original port range and reservations restored. Restart schedule unchanged.\n")
+		return ok("Original port range, reservations and saved busy-poll settings restored. Restart schedule unchanged.\n")
 	case "path-mtu":
 		if len(args) != 3 {
 			return fail(CodeUsage, "%s", tuneUsage)

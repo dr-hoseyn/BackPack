@@ -24,7 +24,15 @@ such as `20000-20010` are accepted. Transient outbound sockets are not reserved.
 Reserve new fixed service ports before installing the service, or rerun the
 command after changing the service inventory.
 
-The command changes only these two host sysctls. It does not restart tunnels,
+On kernels supporting busy polling, the profile also sets `net.core.busy_read`
+and `net.core.busy_poll` to zero. This avoids spinning for packets on busy VPS
+CPUs. Their original values are backed up before modification and restored by
+`backpack tune restore`; kernels without these optional keys remain supported.
+Reapplying a profile made by v1.15.0 saves the original CPU settings before
+adding this policy. Existing sockets can retain their old busy-read option until
+reconnected; the command does not disconnect users to change it.
+
+The command changes these host sysctls. It does not restart tunnels,
 change auto-refresh/cron, grow buffers or queues, or promise a throughput gain.
 Bandwidth, CPU, memory, file descriptors and backend limits still apply. An
 installation forwarding more connections than one source IP can support will
@@ -39,7 +47,7 @@ rollback failures instead of claiming success. Host policy changes and Optimize
 share a process lock; a conflicting operation reports that another update is in
 progress before changing kernel settings or the rollback snapshot.
 
-Restore the original range and reservations with:
+Restore the original range, reservations and saved busy-poll policy with:
 
 ```sh
 sudo backpack tune restore
@@ -80,10 +88,11 @@ the menu/panel. A preset change does not remove the clamp.
 
 ## Verify under the actual workload
 
-Check the two sysctls, current backend connections and recent tunnel logs:
+Check the sysctls, current backend connections and recent tunnel logs:
 
 ```sh
 sysctl net.ipv4.ip_local_port_range net.ipv4.ip_local_reserved_ports
+sysctl net.core.busy_read net.core.busy_poll # when supported by this kernel
 ss -Hnt dst 127.0.0.1:443 | wc -l
 journalctl -u backpack-client-8443 --since '10 minutes ago'
 ```
@@ -108,6 +117,33 @@ sudo env "PATH=$PATH" BP_CAPACITY_NETNS_TEST=1 go test ./internal/optimize \
   -run '^TestHighConcurrencyRealLoopbackCapacity$' -count=1 -v
 ```
 
+## Validate a 500–600 Mbit/s target
+
+Use the throughput preset on both endpoints, keep CPU and backend headroom,
+and measure the actual path. A large connection pool cannot create bandwidth;
+connection churn and concurrent connections are separate limits. Stealth uses
+one encrypted physical TCP connection per forwarded stream; multiplexed
+transports reduce uplink socket count but still need backend source ports.
+
+The capacity workflow checks byte-for-byte application payloads over TCP,
+Stealth, TCP Mux, WS, WSS, WS Mux, WSS Mux, KCP and QUIC. Its eight-stream
+download measurement must reach 600 Mbit/s of application goodput, counting
+received and verified payload once. Echo measurements report full-duplex
+capacity separately and are not relabelled as a one-direction download:
+
+```sh
+BP_CAPACITY_BENCHMARK=1 BP_CAPACITY_MIN_MBPS=600 go test ./internal/e2e \
+  -run '^TestBulkProfileDownloadCapacity$' -count=3 -v -timeout 5m
+```
+
+This is a regression target for that test host, not a guarantee for every WAN,
+datagram carrier, helper protocol or hardware configuration. The separate
+60-second sustained-load test checks that fresh users remain admitted during
+bulk transfers. On a production pair, also sample per-process CPU (`pidstat`),
+host CPU (`mpstat`), traffic and recent errors after startup has settled. Linux
+process CPU of 100% means one core; 600% on an eight-core host means 75% of its
+CPU capacity. Do not judge a repair from the brief low-load period after restart.
+
 ---
 
 <div dir="rtl">
@@ -121,6 +157,11 @@ sudo env "PATH=$PATH" BP_CAPACITY_NETNS_TEST=1 go test ./internal/optimize \
 حدود ۵۵ هزار می‌رساند و رزروهای قبلی، پورت تونل‌ها و پورت سرویس‌های TCP فعال
 را حفظ می‌کند. پورت سرویس‌های خاموش و سرویس‌های ثابت UDP را هم صریحاً اضافه کن.
 این دستور تونل را ری‌استارت نمی‌کند و زمان‌بندی ری‌استارت ساعتی را تغییر نمی‌دهد.
+در کرنل‌های پشتیبانی‌شده، Busy Polling هم خاموش می‌شود تا انتظار فعال برای بسته‌ها
+CPU مصرف نکند. مقدار قبلی آن برای بازگردانی ذخیره می‌شود؛ سوکت‌های موجود ممکن است
+تا اتصال مجدد تنظیم قبلی را نگه دارند. تست ظرفیت، دادهٔ واقعی را در ۹ ترنسپورت
+با هدف ۶۰۰ مگابیت بر ثانیه روی میزبان تست بررسی می‌کند؛ سرعت مسیر اینترنت و
+همهٔ پروتکل‌های کمکی یا دیتاگرامی از این نتیجه قابل تضمین نیست.
 
 تنظیمات بعد از بوت و اجرای دوبارهٔ Optimize حفظ می‌شوند. با دستور
 `backpack tune restore` سیاست پورت‌ها به وضعیت پیش از اولین فعال‌سازی برمی‌گردد؛
@@ -140,4 +181,4 @@ sudo env "PATH=$PATH" BP_CAPACITY_NETNS_TEST=1 go test ./internal/optimize \
 
 </div>
 
-*Last verified against Backpack v1.15.0.*
+*Last verified against Backpack v1.15.1.*

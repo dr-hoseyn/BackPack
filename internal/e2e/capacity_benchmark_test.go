@@ -63,8 +63,9 @@ func TestBulkProfileTransportCapacity(t *testing.T) {
 				seconds := time.Since(start).Seconds()
 				// Report one-way-equivalent application goodput. Echo traffic
 				// also crosses back, so full-duplex wire traffic is about twice it.
-				t.Logf("CAPACITY transport=%s streams=%d goodput_mbps=%.1f seconds=%.3f", tr, streams,
-					float64(streams*len(payload)*8)/seconds/1e6, seconds)
+				goodput := float64(streams*len(payload)*8) / seconds / 1e6
+				t.Logf("CAPACITY transport=%s streams=%d goodput_mbps=%.1f seconds=%.3f", tr, streams, goodput, seconds)
+
 			}
 		})
 	}
@@ -148,18 +149,22 @@ func bulkProfileTunnel(t *testing.T, tr string) *tunnel {
 
 func bulkProfileConfigured(t *testing.T, tr string, tune func(*config.Config)) *tunnel {
 	t.Helper()
-	backend := startEchoBackend(t)
+	return bulkProfileForBackend(t, tr, startEchoBackend(t).addr, tune)
+}
+
+func bulkProfileForBackend(t *testing.T, tr, backendAddr string, tune func(*config.Config)) *tunnel {
+	t.Helper()
 	tunnelPort, entryPort := freePort(t), freePort(t)
 	const token = "bulk-capacity-measurement-token-0123456789"
 	cfg := config.Config{
-		Server: *baseServerConfig(tr, tunnelPort, entryPort, backend.addr, token),
+		Server: *baseServerConfig(tr, tunnelPort, entryPort, backendAddr, token),
 		Client: *baseClientConfig(tr, fmt.Sprintf("127.0.0.1:%d", tunnelPort), token, nil),
 	}
 	for _, role := range []string{"server", "client"} {
 		spec := tunnelspec.Spec{Role: role, Transport: tr, Token: token, SkipOptz: true,
 			BindAddr:   fmt.Sprintf("127.0.0.1:%d", tunnelPort),
 			RemoteAddr: fmt.Sprintf("127.0.0.1:%d", tunnelPort),
-			Ports:      []string{fmt.Sprintf("%d=%s", entryPort, backend.addr)},
+			Ports:      []string{fmt.Sprintf("%d=%s", entryPort, backendAddr)},
 		}
 		tunnelspec.ApplyPreset(&spec, tunnelspec.PresetThroughput)
 		if _, err := toml.Decode(spec.Render(), &cfg); err != nil {

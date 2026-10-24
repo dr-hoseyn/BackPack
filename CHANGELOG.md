@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## v1.15.1 — 2026-10-24
+
+- Extend the opt-in high-concurrency profile to disable supported kernel busy
+  polling, preserving original CPU settings for rollback and safely upgrading
+  older profile backups. Keep fixed service-port reservations and the expanded
+  ephemeral range across Optimize and reboot. Normal engine startup does not
+  change machine port or busy-poll policy.
+- Require 600 Mbit/s of verified application goodput in the eight-stream one-direction core
+  transport capacity workflow; retain sustained-load admission checks. Document
+  production CPU interpretation, connection limits and the distinction between
+  a loopback regression target and measured WAN capacity.
+
 - Keep TCP Mux, WebSocket Mux and KCP sessions bound to the client that
   admitted them, including a replacement between dequeue and worker startup.
   Close queued sessions with their owner and reject KCP data handshakes that

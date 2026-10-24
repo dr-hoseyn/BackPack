@@ -62,9 +62,10 @@ jobs:
         env:
           BP_CAPACITY_BENCHMARK: '1'
           BP_CAPACITY_DIAGNOSTICS: '1'
+          BP_CAPACITY_MIN_MBPS: '600'
         run: |
           set -o pipefail
-          go test ./internal/e2e -run '^TestBulkProfileTransportCapacity$' -count=8 -v -json -timeout 10m | tee "$RUNNER_TEMP/capacity-candidate.jsonl"
+          go test ./internal/e2e -run '^TestBulkProfile(Transport|Download)Capacity$' -count=8 -v -json -timeout 10m | tee "$RUNNER_TEMP/capacity-candidate.jsonl"
       - name: Measure the same transfers on the base revision
         if: github.event_name == 'pull_request'
         # The old revision can reproduce the admission/timeout bug this PR
@@ -93,7 +94,7 @@ jobs:
             [ -f "$report" ] || continue
             echo "### $(basename "$report")" >> "$GITHUB_STEP_SUMMARY"
             echo '```text' >> "$GITHUB_STEP_SUMMARY"
-            python3 -c 'import json,sys; [print(e["Output"].strip()) for l in open(sys.argv[1]) if "CAPACITY " in (e:=json.loads(l)).get("Output", "")]' "$report" >> "$GITHUB_STEP_SUMMARY"
+            python3 -c 'import json,sys; [print(e["Output"].strip()) for l in open(sys.argv[1]) if any(k in (e:=json.loads(l)).get("Output", "") for k in ("CAPACITY ", "CAPACITY_DOWNLOAD "))]' "$report" >> "$GITHUB_STEP_SUMMARY"
             echo '```' >> "$GITHUB_STEP_SUMMARY"
           done
       - uses: actions/upload-artifact@v7
