@@ -22,6 +22,7 @@ var (
 	capacityBackup   = "/etc/backpack/high-concurrency-backup.json"
 	procNetDir       = "/proc/net"
 	procIPv4Dir      = "/proc/sys/net/ipv4"
+	procCoreDir      = "/proc/sys/net/core"
 	capacitySysctl   = func(key, value string) error {
 		out, err := exec.Command("sysctl", "-w", key+"="+value).CombinedOutput()
 		if err != nil {
@@ -36,6 +37,10 @@ const capacityHeader = "# Managed by backpack high-concurrency; restore with bac
 type capacityState struct {
 	Range    string `json:"range"`
 	Reserved string `json:"reserved"`
+	// Pointers distinguish an unsupported kernel (or a pre-v1.15.1 backup)
+	// from a supported setting whose original value was zero.
+	BusyRead *int `json:"busy_read,omitempty"`
+	BusyPoll *int `json:"busy_poll,omitempty"`
 }
 
 // ParseReservedPorts validates Linux's comma-separated reservation syntax.
@@ -105,7 +110,50 @@ func currentCapacity() (capacityState, error) {
 		}
 		*target = strings.TrimSpace(string(b))
 	}
+	for key, target := range map[string]**int{"busy_read": &state.BusyRead, "busy_poll": &state.BusyPoll} {
+		b, err := os.ReadFile(filepath.Join(procCoreDir, key))
+		if errors.Is(err, os.ErrNotExist) {
+			continue // CONFIG_NET_RX_BUSY_POLL is optional.
+		}
+		if err != nil {
+			return state, err
+		}
+		v, err := strconv.Atoi(strings.TrimSpace(string(b)))
+		if err != nil || v < 0 {
+			return state, fmt.Errorf("invalid net.core.%s value", key)
+		}
+		*target = &v
+	}
 	return state, nil
+}
+
+// Busy polling burns CPU waiting for a packet instead of sleeping. At tens of
+// thousands of connections this is expensive on shared VPS CPUs. Only the
+// explicit capacity profile disables it; ordinary engine startup leaves host
+// policy alone. Omit unsupported keys, and retain the originals for rollback.
+func busyPollingRows(s capacityState, restore bool) [][2]string {
+	var rows [][2]string
+	for _, setting := range []struct {
+		key   string
+		value *int
+	}{{"net.core.busy_read", s.BusyRead}, {"net.core.busy_poll", s.BusyPoll}} {
+		if setting.value != nil {
+			value := "0"
+			if restore {
+				value = strconv.Itoa(*setting.value)
+			}
+			rows = append(rows, [2]string{setting.key, value})
+		}
+	}
+	return rows
+}
+
+func applyBusyPolling(s capacityState, restore bool) error {
+	var result error
+	for _, row := range busyPollingRows(s, restore) {
+		result = errors.Join(result, capacitySysctl(row[0], row[1]))
+	}
+	return result
 }
 
 func capacityReservations(extra []int) (string, error) {
@@ -135,9 +183,13 @@ func capacityReservations(extra []int) (string, error) {
 	return reservedList(ports), nil
 }
 
-func capacityConfig(reserved string) []byte {
+func capacityConfig(reserved string, state capacityState) []byte {
 	// Reservations must precede the wider range both at boot and live.
-	return []byte(capacityHeader + "net.ipv4.ip_local_reserved_ports = " + reserved + "\nnet.ipv4.ip_local_port_range = " + HighConcurrencyRange + "\n")
+	body := capacityHeader + "net.ipv4.ip_local_reserved_ports = " + reserved + "\nnet.ipv4.ip_local_port_range = " + HighConcurrencyRange + "\n"
+	for _, row := range busyPollingRows(state, false) {
+		body += row[0] + " = " + row[1] + "\n"
+	}
+	return []byte(body)
 }
 
 // Keep the ordinary optimizer's boot file at the pre-profile port policy.
@@ -157,7 +209,7 @@ func capacityTuningRows(reserve []int) (live, persisted [][2]string, err error) 
 		merged, err = capacityReservations(reserve)
 	}
 	if err == nil {
-		err = atomicCapacityWrite(capacityFile, capacityConfig(merged), 0644)
+		err = atomicCapacityWrite(capacityFile, capacityConfig(merged, baseline), 0644)
 	}
 	if err != nil {
 		// Leave both port sysctls alone if discovery or persistence fails.
@@ -177,6 +229,7 @@ func capacityTuningRows(reserve []int) (live, persisted [][2]string, err error) 
 			persisted[i][1] = baseline.Range
 		}
 	}
+	live = append(live, busyPollingRows(baseline, false)...)
 	return live, persisted, nil
 }
 
@@ -258,7 +311,20 @@ func enableHighConcurrency(extra []int) (string, error) {
 			return "", err
 		}
 	} else {
-		if _, err := readCapacityBackup(); err != nil {
+		baseline, err := readCapacityBackup()
+		if err != nil {
+			return "", err
+		}
+		// Upgrade old backups before changing either new setting. Reapplying
+		// must not replace an already saved original with the profile's zero.
+		if baseline.BusyRead == nil {
+			baseline.BusyRead = before.BusyRead
+		}
+		if baseline.BusyPoll == nil {
+			baseline.BusyPoll = before.BusyPoll
+		}
+		b, _ := json.Marshal(baseline)
+		if err := atomicCapacityWrite(capacityBackup, b, 0600); err != nil {
 			return "", err
 		}
 	}
@@ -269,6 +335,7 @@ func enableHighConcurrency(extra []int) (string, error) {
 		if errRange == nil {
 			errReserved = capacitySysctl("net.ipv4.ip_local_reserved_ports", before.Reserved)
 		}
+		errBusy := applyBusyPolling(before, true)
 		var errFile error
 		if readErr == nil {
 			errFile = atomicCapacityWrite(capacityFile, previous, 0644)
@@ -278,10 +345,10 @@ func enableHighConcurrency(extra []int) (string, error) {
 				errFile = nil
 			}
 		}
-		if first && errRange == nil && errReserved == nil && errFile == nil {
+		if first && errRange == nil && errReserved == nil && errBusy == nil && errFile == nil {
 			_ = os.Remove(capacityBackup)
 		}
-		return "", errors.Join(cause, errRange, errReserved, errFile)
+		return "", errors.Join(cause, errRange, errReserved, errBusy, errFile)
 	}
 	if err := capacitySysctl("net.ipv4.ip_local_reserved_ports", reserved); err != nil {
 		return rollback(err)
@@ -289,7 +356,10 @@ func enableHighConcurrency(extra []int) (string, error) {
 	if err := capacitySysctl("net.ipv4.ip_local_port_range", HighConcurrencyRange); err != nil {
 		return rollback(err)
 	}
-	if err := atomicCapacityWrite(capacityFile, capacityConfig(reserved), 0644); err != nil {
+	if err := applyBusyPolling(before, false); err != nil {
+		return rollback(err)
+	}
+	if err := atomicCapacityWrite(capacityFile, capacityConfig(reserved, before), 0644); err != nil {
 		return rollback(err)
 	}
 	return reserved, nil
@@ -314,6 +384,9 @@ func readCapacityBackup() (capacityState, error) {
 		return state, fmt.Errorf("invalid saved port range")
 	}
 	_, err = ParseReservedPorts(state.Reserved)
+	if (state.BusyRead != nil && *state.BusyRead < 0) || (state.BusyPoll != nil && *state.BusyPoll < 0) {
+		return state, fmt.Errorf("invalid saved busy-poll policy")
+	}
 	return state, err
 }
 
@@ -347,6 +420,9 @@ func restoreHighConcurrency() error {
 		return err
 	}
 	if err := capacitySysctl("net.ipv4.ip_local_reserved_ports", state.Reserved); err != nil {
+		return err
+	}
+	if err := applyBusyPolling(state, true); err != nil {
 		return err
 	}
 	if err := os.Remove(capacityFile); err != nil && !errors.Is(err, os.ErrNotExist) {
