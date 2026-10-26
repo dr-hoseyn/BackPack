@@ -184,4 +184,4 @@ forward‌های TCP گرسنه می‌مانند — سایت نصفه لود �
 
 ---
 
-*Last verified against Backpack v1.15.1.*
+*Last verified against Backpack v1.16.0*

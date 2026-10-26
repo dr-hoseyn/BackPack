@@ -132,4 +132,4 @@ tests establish implementation behavior, not resistance to every censor.
 
 ---
 
-*Last verified against Backpack v1.15.1.*
+*Last verified against Backpack v1.16.0*

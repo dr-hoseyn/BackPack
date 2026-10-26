@@ -510,4 +510,4 @@ UDP را می‌بندد ولی ICMP را نه) و *IP Spoofing* که مبدأ �
 
 ---
 
-*Last verified against Backpack v1.15.1.*
+*Last verified against Backpack v1.16.0*

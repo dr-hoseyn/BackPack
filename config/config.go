@@ -618,10 +618,10 @@ type ClientConfig struct {
 	// must reach the SAME server, since the control channel — and therefore
 	// the tunnel's identity — lives on one of them.
 	LoadBalance bool `toml:"load_balance"`
-	// HealthFailover scores every configured address on a timer and keeps
-	// traffic on the healthiest — the multi-exit gaming behaviour. It needs more
-	// than one address to do anything, and it overrides LoadBalance, because
-	// steering to one best exit is the opposite of spreading across all of them.
+	// HealthFailover scores the primary and backup addresses and reconnects the
+	// control channel and pool on the healthier route. Switching interrupts
+	// active sessions. It needs distinct backup addresses and overrides
+	// LoadBalance. TCP routes can use connect timing when ICMP is unavailable.
 	HealthFailover bool `toml:"health_failover"`
 	// Embedded so the kcp_* keys sit at the top level of the [client] table
 	// alongside every other tuning key.

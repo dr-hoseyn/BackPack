@@ -10,6 +10,27 @@ permissions:
   contents: read
 
 jobs:
+  address-failover:
+    name: IPv4 IPv6 address health and active mux failover
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Validate address lists, actual-route probes and cancellation
+        run: >-
+          go test -race ./config ./cmd ./internal/utils/network ./internal/client ./internal/manage
+          -run '^Test(NormalizeMixedFamilyBackups|FallbackConfigNormalizesIPv6|Health|TCPHealth|IPv6HealthFailover|AddressFailoverEdits)'
+          -count=2 -v -timeout 2m
+      - name: Carry real mux traffic from IPv4 to IPv6 and back
+        run: >-
+          go test -race ./internal/e2e
+          -run '^TestAddressHealthFailoverMovesActiveMuxBetweenIPv4AndIPv6$'
+          -count=2 -v -timeout 5m
+
   update-health:
     name: Update payload verification and rollback
     runs-on: ubuntu-latest

@@ -27,4 +27,4 @@ an HTTP service or install an agent. The former browser fleet dashboard is remov
 
 </div>
 
-Last verified against Backpack v1.15.1 (2026-10-23).
+Last verified against Backpack v1.16.0 (2026-10-26).

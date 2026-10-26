@@ -211,7 +211,7 @@ them both ends have to agree on. This says what exists.
 | `fallback_addrs` | `[]string` | FallbackAddrs are additional server addresses tried in order whenever the primary cannot be reached (a filtered IP, a blocked port, a CDN edge). |
 | `fallback_dwell` | `int` | FallbackDwell is how many seconds one transport candidate is held before the next is tried. 0 uses DefaultFallbackDwell. |
 | `fallback_transports` | `[]TransportType` | FallbackTransports and FallbackDwell mirror the server's; see there. They must match the server's list for the two ends to meet. |
-| `health_failover` | `bool` | HealthFailover scores every configured address on a timer and keeps traffic on the healthiest — the multi-exit gaming behaviour. It needs more than one address to do anything, and it overrides LoadBalance, because steering to one best exit is the opposite of spreading across all of them. |
+| `health_failover` | `bool` | HealthFailover scores the primary and backup addresses and reconnects the control channel and pool on the healthier route. Switching interrupts active sessions. It needs distinct backup addresses and overrides LoadBalance. TCP routes can use connect timing when ICMP is unavailable. |
 | `interface` | `string` | Interface pins those connections to a named device, for when the source address alone does not settle the route. Linux, and needs CAP_NET_RAW. |
 | `keepalive_period` | `int` | Keepalive is how often, in seconds, an idle connection is probed. It also decides how long a dead peer takes to notice — too low tears down a tunnel that is merely slow, which on a bad path is the difference between a working tunnel and one that flaps. |
 | `load_balance` | `bool` | LoadBalance spreads the pool's data connections over every configured address instead of putting them all on the live one. All the addresses must reach the SAME server, since the control channel — and therefore the tunnel's identity — lives on one of them. |
@@ -528,4 +528,4 @@ them both ends have to agree on. This says what exists.
 
 ---
 
-*Generated from `config/` on 2026-10-24. Last verified against Backpack v1.15.1.*
+*Generated from `config/` on 2026-10-26. Last verified against Backpack v1.16.0.*
