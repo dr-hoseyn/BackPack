@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -149,11 +150,12 @@ func newTunnel(t *testing.T, transport, edgeToken, originToken, backend string) 
 	}
 
 	port := freePort(t)
+	edgeLog, captured := testLoggerCapturing(t)
 	edge, err := NewEdge(Config{
 		Role: RoleEdge, Addr: bound.String(), Token: edgeToken, Transport: transport,
 		Ports:      []string{fmt.Sprintf("127.0.0.1:%d=%s", port, backend)},
 		RetryDelay: 200 * time.Millisecond,
-	}, quietLogger())
+	}, edgeLog)
 	if err != nil {
 		t.Fatalf("NewEdge: %v", err)
 	}
@@ -161,6 +163,20 @@ func newTunnel(t *testing.T, transport, edgeToken, originToken, backend string) 
 	edgeDone := make(chan struct{})
 	go func() { defer close(edgeDone); _ = edge.Run(ctx) }()
 	t.Cleanup(func() { cancel(); <-edgeDone })
+
+	// Sessions and listeners start on independent goroutines. A session count
+	// does not prove the forwarded port is bound, especially under -race.
+	// Wait for the listener's own bind event without making a probe connection:
+	// that would consume single-use backends and alter accepted-connection counts.
+	for deadline := time.Now().Add(3 * time.Second); ; {
+		if strings.Contains(captured.String(), "direct: forwarding 127.0.0.1:") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the forwarded port never bound: %s", captured.String())
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 
 	return &tunnel{edge: edge, origin: origin, port: port}
 }

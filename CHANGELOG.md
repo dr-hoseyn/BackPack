@@ -20,6 +20,9 @@
   remove equivalent duplicates, and disable balancing/health steering when
   the last backup is removed. Exercise real mux traffic switching between
   IPv4 and IPv6 and back, plus blocked ICMP and proxied route measurements.
+- Wait for the direct-tunnel fixture's forwarded listener as well as its
+  session before sending test traffic. Repeat the case under the race detector
+  so listener startup scheduling cannot falsely fail a healthy WS tunnel.
 
 ## v1.15.1 — 2026-10-24
 

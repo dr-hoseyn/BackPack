@@ -30,6 +30,10 @@ jobs:
           go test -race ./internal/e2e
           -run '^TestAddressHealthFailoverMovesActiveMuxBetweenIPv4AndIPv6$'
           -count=2 -v -timeout 5m
+      - name: Repeat direct forwarded-port readiness under the race detector
+        run: >-
+          go test -race ./internal/tunnel/direct
+          -run '^TestTunnelForwardsAPort$' -count=30 -v -timeout 2m
 
   update-health:
     name: Update payload verification and rollback
