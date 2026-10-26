@@ -5,6 +5,7 @@ import (
 	"net"
 	"strings"
 
+	"github.com/backpack/backpack/config"
 	"github.com/backpack/backpack/internal/app"
 	"github.com/backpack/backpack/internal/utils/network"
 )
@@ -120,44 +121,13 @@ func SetFallbackAddrs(name string, addrs []string, apply ...func(TunnelSpec) err
 		return fmt.Errorf("fallback addresses apply to client tunnels only")
 	}
 
-	primaryPort := addrPort(s.RemoteAddr)
-	var clean []string
-	seen := map[string]bool{strings.TrimSpace(s.RemoteAddr): true}
-	for _, a := range addrs {
-		a = strings.TrimSpace(a)
-		if a == "" {
-			continue
-		}
-		// Accept a bare host/IP by reusing the primary's port.
-		host, port := a, ""
-		if h, p, err := net.SplitHostPort(a); err == nil {
-			host, port = h, p
-		} else if strings.Count(a, ":") > 1 && !strings.HasPrefix(a, "[") {
-			host, port = a, "" // bare IPv6 literal
-		}
-		if port == "" {
-			if primaryPort == "" {
-				return fmt.Errorf("%q has no port and the primary address has none either", a)
-			}
-			port = primaryPort
-		}
-		if !validPort(port) {
-			return fmt.Errorf("invalid port in %q", a)
-		}
-		if host == "" {
-			return fmt.Errorf("invalid address %q", a)
-		}
-		if strings.Contains(host, ":") && !strings.HasPrefix(host, "[") {
-			host = "[" + host + "]" // IPv6 literal
-		}
-		full := net.JoinHostPort(strings.Trim(host, "[]"), port)
-		if seen[full] {
-			continue
-		}
-		seen[full] = true
-		clean = append(clean, full)
+	clean, err := config.NormalizeFallbackAddrs(s.RemoteAddr, addrs)
+	if err != nil {
+		return err
 	}
-
+	if len(clean) == 0 {
+		s.HealthFailover, s.LoadBalance = false, false
+	}
 	s.FallbackAddrs = clean
 	return applySpecUsing(s, apply)
 }

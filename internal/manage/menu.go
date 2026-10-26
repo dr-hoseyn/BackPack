@@ -249,6 +249,7 @@ func editPortsMenu(name string) {
 			tui.Info("Fallbacks      : " + chainSummary(spec.Transport, spec.FallbackTransports))
 			tui.Info("Preset         : " + presetLabel(spec.Preset))
 			tui.Info("Load Balancing : " + onOff(spec.LoadBalance))
+			tui.Info("Health Failover: " + onOff(spec.HealthFailover))
 			if !isDatagram(spec.Transport) {
 				tui.Info("TCP MSS Clamp  : " + mssLabel(spec.MSS))
 			}
@@ -261,6 +262,7 @@ func editPortsMenu(name string) {
 				{Title: "Iran Address", Desc: "IP or domain"},
 				{Title: "Transport", Desc: "keeps the token"},
 				{Title: "Backup Addresses", Desc: "failover when the main IP is blocked"},
+				{Title: "Automatic Address Failover", Desc: "switch IPv4/IPv6 on failure or poor quality"},
 				{Title: "Fallback Transports", Desc: "failover when the transport is blocked"},
 				{Title: "Preset", Desc: "Balance, Turbo or Aggressive"},
 				{Title: "Load Balancing", Desc: "use all addresses at once"},
@@ -270,6 +272,7 @@ func editPortsMenu(name string) {
 				func() { changeClientHost(name, spec) },
 				func() { changeTunnelTransport(name, spec) },
 				func() { changeFallbackAddrs(name, spec) },
+				func() { toggleHealthFailover(name, spec) },
 				func() { changeFallbackTransports(name, spec) },
 				func() { changeTunnelPreset(name, spec) },
 				func() { toggleLoadBalance(name, spec) },

@@ -33,6 +33,10 @@ stutter is a lost frame, latency alone is not. A new exit only takes over when i
 is at least **15% better for three checks in a row**, so the choice does not flap.
 
 Turn it on at setup when a tunnel has backup addresses, or later from the menu.
+For an existing tunnel use **Edit → Automatic Address Failover**. A health-based
+switch reconnects the control channel and connection pool so active mux sessions
+also leave the degraded route. Existing connections are interrupted during the
+reconnect; sessions are not migrated between IP addresses.
 It is the multi-exit setup for gaming, and it **replaces** load balancing — one
 picks the single best exit, the other spreads across all of them, so only one can
 be on at a time.
@@ -40,9 +44,45 @@ be on at a time.
 **Manage → Exit Health** scores and ranks every address on demand, and offers to
 pin the healthiest as the primary — the manual version of the same thing.
 
-> Scoring pings each address, so an exit that filters ICMP shows as unreachable
-> even when the tunnel through it works. Use plain failover or load balancing for
-> such a server.
+TCP-based control channels verify the tunnel port too. Direct routes use ping
+quality when available, and TCP connection timing when ICMP is blocked or ping
+is missing. Routes with a configured proxy or source/interface binding use TCP
+connection timing through that same route. For TCP measurements, loss means
+failed connection attempts rather than ICMP packet loss. Datagram-only carriers
+(KCP/QUIC/raw carriers) and the manual **Exit Health** view still rely on ICMP;
+use failure-only fallback if their endpoints block it. A successful TCP connect
+does not prove the tunnel's authentication handshake or payload works. A fixed
+WebSocket `edge_ip` still pins the physical destination; changing origin backup
+addresses cannot switch that fixed CDN edge between IPv4 and IPv6.
+
+## IPv4 primary with IPv6 backup
+
+IPv4 and IPv6 addresses can be mixed in the same reverse tunnel. On the client,
+keep IPv4 as the main address, add the **same server's** IPv6 under
+**Edit → Backup Addresses**, then enable **Edit → Automatic Address Failover**:
+
+```toml
+[client]
+remote_addr = "192.0.2.10:443"
+fallback_addrs = ["[2001:db8::10]:443"]
+health_failover = true
+```
+
+These are example addresses; replace them with your server's real addresses.
+Keep the rest of your existing transport and token settings. IPv6 addresses
+with a port must use brackets. Both addresses must reach the same tunnel
+listener and port, and the chosen transport must support both IP families.
+If the server is bound only to its IPv4 address, adjust its listener first;
+adding a client backup alone cannot make the server listen on IPv6. Both hosts
+also need working IPv6 routing and firewall access to the tunnel port.
+
+The client starts with the main address. Failed connection attempts try the
+backup; quality scoring switches when the other path is at least 15% better
+for three consecutive checks, or immediately after a check finds the current
+path unreachable and the backup healthy. The same rules can switch it back to
+IPv4. This selects the healthiest path, so a healthy but consistently better
+IPv6 route can also take over. It measures ping latency, jitter and loss, not
+available bandwidth. Leave `health_failover` off for failure-only fallback.
 
 ## Load balancing
 
@@ -104,9 +144,21 @@ for the full picture.
 پورت دیگرش، یا یک لبهٔ CDN جلویش. آدرس‌هایی که به ماشین دیگری می‌روند کار
 نمی‌کنند.
 
-**نکته:** امتیازدهی از پینگ استفاده می‌کند، پس خروجی‌ای که ICMP را می‌بندد
-«در دسترس نیست» دیده می‌شود حتی اگر تونلش کار کند — برای چنین سروری از فِیل‌اوور
-ساده یا لود بالانس استفاده کن.
+**نکته:** مسیرهای دارای کانال کنترل TCP، پورت تانل را هم بررسی می‌کنند و اگر
+پینگ بسته یا نصب نباشد، از زمان اتصال TCP استفاده می‌کنند. بررسی پراکسی و
+تنظیمات خروجی از همان مسیر واقعی عبور می‌کند. برای حامل‌های بدون کانال TCP و
+نمای دستی `Exit Health`، امتیازدهی همچنان به ICMP نیاز دارد. موفقیت اتصال TCP
+به‌تنهایی صحت احراز هویت و انتقال دادهٔ تانل را ثابت نمی‌کند. تنظیم ثابت
+`edge_ip` نیز مقصد CDN را ثابت نگه می‌دارد و با تغییر آدرس پشتیبان عوض نمی‌شود.
+
+**فالبک IPv4 به IPv6:** روی کلاینت، IPv4 را آدرس اصلی نگه دار و IPv6 همان سرور
+را به شکل `[2001:db8::10]:443` در `Edit → Backup Addresses` وارد کن. سپس
+`Edit → Automatic Address Failover` را فعال کن. سرور باید روی هر دو خانوادهٔ IP
+گوش بدهد و مسیر IPv6 و پورت تانل در دسترس باشد. هنگام تغییر مسیر، کانال کنترل و
+پول اتصال‌ها دوباره ساخته می‌شوند؛ اتصال‌های جاری ممکن است قطع شوند و مهاجرت
+بدون وقفهٔ سشن انجام نمی‌شود. بازگشت به IPv4 هم با همان معیار سلامت انجام می‌شود.
+این حالت تأخیر، جیتر و افت بسته را می‌سنجد، نه پهنای باند؛ برای فالبک فقط هنگام
+قطعی، `health_failover` را خاموش نگه دار و فقط آدرس پشتیبان را ثبت کن.
 
 </div>
 
@@ -115,4 +167,4 @@ for the full picture.
 
 ---
 
-*Last verified against Backpack v1.15.1.*
+*Last verified against Backpack v1.8.5.*

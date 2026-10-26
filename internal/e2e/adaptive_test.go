@@ -19,11 +19,16 @@ type controlledPath struct {
 	addr    string
 	delay   atomic.Int64
 	blocked atomic.Bool
+	bytes   atomic.Int64
 }
 
 func newControlledPath(t *testing.T, target string) *controlledPath {
+	return newControlledPathOn(t, target, "tcp", "127.0.0.1:0")
+}
+
+func newControlledPathOn(t *testing.T, target, network, bind string) *controlledPath {
 	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
+	l, err := net.Listen(network, bind)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +69,11 @@ func newControlledPath(t *testing.T, target string) *controlledPath {
 				stopRemote := context.AfterFunc(ctx, func() { remote.Close() })
 				defer stopRemote()
 				done := make(chan struct{})
-				go func() { defer close(done); io.Copy(remote, local); remote.(*net.TCPConn).CloseWrite() }()
+				go func() {
+					defer close(done)
+					io.Copy(pathTrafficWriter{remote, &p.bytes}, local)
+					remote.(*net.TCPConn).CloseWrite()
+				}()
 				io.Copy(local, remote)
 				local.(*net.TCPConn).CloseWrite()
 				local.Close()
@@ -75,6 +84,17 @@ func newControlledPath(t *testing.T, target string) *controlledPath {
 	}()
 	t.Cleanup(func() { cancel(); l.Close(); wg.Wait() })
 	return p
+}
+
+type pathTrafficWriter struct {
+	io.Writer
+	bytes *atomic.Int64
+}
+
+func (w pathTrafficWriter) Write(p []byte) (int, error) {
+	n, err := w.Writer.Write(p)
+	w.bytes.Add(int64(n))
+	return n, err
 }
 
 func waitSelectedPath(t *testing.T, want string, timeout time.Duration) {

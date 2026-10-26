@@ -276,6 +276,13 @@ func checkXray(cfg *config.Config) error {
 // chain is that nobody is watching when it rotates, so a silent skip would only
 // be discovered as an outage that never recovered.
 func checkFallbackChain(cfg *config.Config) error {
+	if len(cfg.Client.FallbackAddrs) > 0 {
+		clean, err := config.NormalizeFallbackAddrs(cfg.Client.RemoteAddr, cfg.Client.FallbackAddrs)
+		if err != nil {
+			return fmt.Errorf("[client] fallback_addrs: %w", err)
+		}
+		cfg.Client.FallbackAddrs = clean
+	}
 	if err := config.ValidateFallbackTransports(cfg.Server.Transport, cfg.Server.FallbackTransports); err != nil {
 		return fmt.Errorf("[server] %v", err)
 	}

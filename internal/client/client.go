@@ -81,7 +81,9 @@ func (c *Client) Start() {
 	// It overrides spread (it concentrates on one exit on purpose), so it is
 	// checked last and wins when both are set.
 	if c.config.HealthFailover && endpoints.Len() > 1 {
-		endpoints.EnableHealthSteering(c.ctx, 5*time.Second, func(m string) { c.logger.Info(m) })
+		healthCtx, stopHealth := context.WithCancel(c.ctx)
+		stopped := endpoints.EnableHealthSteering(healthCtx, 5*time.Second, func(m string) { c.logger.Info(m) })
+		defer func() { stopHealth(); <-stopped }()
 		c.logger.Infof("automatic health failover enabled across %d endpoints", endpoints.Len())
 	}
 
@@ -211,21 +213,27 @@ func buildOutbound(cfg *config.ClientConfig) (*network.Outbound, error) {
 	return out, nil
 }
 
-// runner is what a started transport gives the chain back: a way to ask
-// whether the control channel is up. Every transport already answers it — see
-// internal/client/transport/status.go.
-type runner interface{ Running() bool }
-
 // startTransport launches one transport under ctx and returns it. Cancelling
 // ctx tears it down; nothing else here reaches for c.ctx, so a chain can run
 // several of these one after another in the same process.
 func (c *Client) startTransport(ctx context.Context, tr config.TransportType, endpoints *network.Endpoints, outbound *network.Outbound) runner {
-	// Steering asks the tunnel port itself where it can, not only ping; which
-	// way depends on the transport running now. See SetReachProbe.
+	// TCP-based carriers measure the same route their tunnel actually uses.
+	endpoints.SetReachProbe(nil)
 	if tcpPortTransport(tr) {
-		endpoints.SetReachProbe(network.TCPReach(2 * time.Second))
+		endpoints.SetHealthProbe(network.TCPHealthProbe(outbound, 2*time.Second))
 	} else {
-		endpoints.SetReachProbe(nil)
+		endpoints.SetHealthProbe(nil)
+	}
+	start := func(r interface {
+		runner
+		Start()
+	}) runner {
+		endpoints.SetHealthSwitch(nil)
+		if c.config.HealthFailover {
+			endpoints.SetHealthSwitch(healthReconnect(ctx, r))
+		}
+		go r.Start()
+		return r
 	}
 	switch tr {
 	case config.TCP, config.STEALTH:
@@ -256,8 +264,7 @@ func (c *Client) startTransport(ctx context.Context, tr config.TransportType, en
 			ManagedHelper: c.config.Managed(),
 		}
 		tcpClient := transport.NewTCPClient(ctx, tcpConfig, c.logger)
-		go tcpClient.Start()
-		return tcpClient
+		return start(tcpClient)
 
 	case config.TCPMUX:
 		tcpMuxConfig := &transport.TcpMuxConfig{
@@ -282,8 +289,7 @@ func (c *Client) startTransport(ctx context.Context, tr config.TransportType, en
 			Outbound:         outbound,
 		}
 		tcpMuxClient := transport.NewMuxClient(ctx, tcpMuxConfig, c.logger)
-		go tcpMuxClient.Start()
-		return tcpMuxClient
+		return start(tcpMuxClient)
 
 	case config.KCP, config.XDI, config.PCK:
 		kcp := c.config.KCPConfig.WithDefaults()
@@ -322,8 +328,7 @@ func (c *Client) startTransport(ctx context.Context, tr config.TransportType, en
 			PckFlags:         c.config.PckFlags,
 		}
 		kcpClient := transport.NewKcpClient(ctx, kcpConfig, c.logger)
-		go kcpClient.Start()
-		return kcpClient
+		return start(kcpClient)
 
 	case config.QUIC:
 		quicConfig := &transport.QuicConfig{
@@ -341,8 +346,7 @@ func (c *Client) startTransport(ctx context.Context, tr config.TransportType, en
 			SO_SNDBUF:      c.config.SO_SNDBUF,
 		}
 		quicClient := transport.NewQuicClient(ctx, quicConfig, c.logger)
-		go quicClient.Start()
-		return quicClient
+		return start(quicClient)
 
 	case config.WS, config.WSS:
 		WsConfig := &transport.WsConfig{
@@ -364,8 +368,7 @@ func (c *Client) startTransport(ctx context.Context, tr config.TransportType, en
 			Outbound:       outbound,
 		}
 		WsClient := transport.NewWSClient(ctx, WsConfig, c.logger)
-		go WsClient.Start()
-		return WsClient
+		return start(WsClient)
 
 	case config.WSMUX, config.WSSMUX:
 		wsMuxConfig := &transport.WsMuxConfig{
@@ -391,8 +394,7 @@ func (c *Client) startTransport(ctx context.Context, tr config.TransportType, en
 			Outbound:         outbound,
 		}
 		wsMuxClient := transport.NewWSMuxClient(ctx, wsMuxConfig, c.logger)
-		go wsMuxClient.Start()
-		return wsMuxClient
+		return start(wsMuxClient)
 
 	case config.UDP:
 		udpConfig := &transport.UdpConfig{
@@ -409,8 +411,7 @@ func (c *Client) startTransport(ctx context.Context, tr config.TransportType, en
 			SO_SNDBUF:      c.config.SO_SNDBUF,
 		}
 		udpClient := transport.NewUDPClient(ctx, udpConfig, c.logger)
-		go udpClient.Start()
-		return udpClient
+		return start(udpClient)
 
 	default:
 		c.logger.Fatal("invalid transport type: ", tr)
@@ -422,7 +423,7 @@ func (c *Client) startTransport(ctx context.Context, tr config.TransportType, en
 // connection to it says whether it answers.
 func tcpPortTransport(tr config.TransportType) bool {
 	switch tr {
-	case config.TCP, config.TCPMUX, config.WS, config.WSS, config.WSMUX, config.WSSMUX, config.STEALTH:
+	case config.TCP, config.TCPMUX, config.WS, config.WSS, config.WSMUX, config.WSSMUX, config.STEALTH, config.UDP:
 		return true
 	}
 	return false

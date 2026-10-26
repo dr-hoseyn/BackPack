@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+## v1.16.0 — 2026-10-26
+
+- Add **Edit → Automatic Address Failover** for existing reverse client
+  tunnels, including IPv4 primary and IPv6 backup on the same server. Health
+  switches now rebuild the control channel and connection pool, so an active
+  mux tunnel leaves a degraded route instead of keeping old sessions there.
+  A switch interrupts existing sessions; it is not session migration.
+- Check TCP tunnel ports through the configured proxy, source address,
+  interface and routing mark. Use connection timing if ICMP is blocked or
+  ping is missing; retain ICMP latency, jitter and packet loss on direct routes
+  where available. Datagram-only carriers still require ICMP for scoring.
+- Bound concurrent health probes and cancel them on shutdown. Discard probe
+  batches from retired transports. Require three consecutive improvements
+  against the same active endpoint and reset the streak when all paths fail.
+- Normalize mixed IPv4/IPv6 backup lists, reject malformed addresses and ports,
+  remove equivalent duplicates, and disable balancing/health steering when
+  the last backup is removed. Exercise real mux traffic switching between
+  IPv4 and IPv6 and back, plus blocked ICMP and proxied route measurements.
+
 ## v1.15.1 — 2026-10-24
 
 - Extend the opt-in high-concurrency profile to disable supported kernel busy

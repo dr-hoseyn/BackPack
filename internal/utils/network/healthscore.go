@@ -3,10 +3,12 @@ package network
 import (
 	"context"
 	"net"
+	"os"
 	"os/exec"
 	"regexp"
 	"sort"
 	"strconv"
+	"sync"
 	"time"
 )
 
@@ -78,10 +80,19 @@ func parseScorePing(out string) EndpointScore {
 // ScoreEndpoint measures one exit with a short ICMP burst. An unreachable exit
 // comes back with Reachable=false and a score that sorts it last.
 func ScoreEndpoint(addr string, samples int) EndpointScore {
+	return scoreEndpoint(context.Background(), addr, samples)
+}
+
+func scoreEndpoint(ctx context.Context, addr string, samples int) EndpointScore {
 	if samples <= 0 {
 		samples = 5
 	}
-	cmd := exec.Command("ping", "-c", strconv.Itoa(samples), "-i", "0.2", "-W", "2", "-q", hostOf(addr))
+	// Bound DNS and ping itself, including installations with a broken ping.
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(samples)*200*time.Millisecond+3*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "ping", "-c", strconv.Itoa(samples), "-i", "0.2", "-W", "2", "-q", hostOf(addr))
+	cmd.WaitDelay = 100 * time.Millisecond
+	cmd.Env = append(os.Environ(), "LC_ALL=C")
 	out, _ := cmd.CombinedOutput() // non-zero exit on loss is expected; parse anyway
 	s := parseScorePing(string(out))
 	s.Addr = addr
@@ -107,15 +118,22 @@ func ScoreEndpoints(addrs []string, samples int) []EndpointScore {
 // the choice does not flap. It no-ops on a single endpoint, and it turns spread
 // off because steering and spreading are opposite intentions. The loop stops
 // when ctx is done. `log`, if non-nil, is called with a one-line note whenever
-// the preferred exit actually changes.
-func (e *Endpoints) EnableHealthSteering(ctx context.Context, interval time.Duration, log func(string)) {
+// the preferred exit actually changes. The returned channel closes after the
+// loop and its probe workers have stopped.
+func (e *Endpoints) EnableHealthSteering(ctx context.Context, interval time.Duration, log func(string)) <-chan struct{} {
+	stopped := make(chan struct{})
 	if e == nil || len(e.list) <= 1 {
-		return
+		close(stopped)
+		return stopped
 	}
 	e.spread.Store(false)
 	e.preferred.Store(e.idx.Load())
 	e.steer.Store(true)
-	go e.steerLoop(ctx, interval, log)
+	go func() {
+		defer close(stopped)
+		e.steerLoop(ctx, interval, log)
+	}()
+	return stopped
 }
 
 // steerLoop is the scoring cadence with its hysteresis. A challenger only takes
@@ -124,69 +142,115 @@ func (e *Endpoints) EnableHealthSteering(ctx context.Context, interval time.Dura
 // exception is a preferred exit that has gone unreachable: there is nothing to
 // protect, so the switch is immediate.
 func (e *Endpoints) steerLoop(ctx context.Context, interval time.Duration, log func(string)) {
-	const betterBy = 0.85 // a challenger must score at most 85% of the incumbent
-	const needStreak = 3  // ...for this many consecutive checks
-
+	defer e.steer.Store(false)
 	if interval <= 0 {
 		interval = 5 * time.Second
 	}
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
-	candidate := -1
-	streak := 0
+	choice := healthChoice{candidate: -1, incumbent: -1}
 
 	for {
 		select {
 		case <-ctx.Done():
-			e.steer.Store(false)
 			return
 		case <-ticker.C:
 		}
 
-		list := e.All()
-		scores := make([]EndpointScore, len(list))
-		best := -1
-		probe := e.reach.Load()
-		for i, a := range list {
-			scores[i] = ScoreEndpoint(a, 5)
-			if scores[i].Reachable && probe != nil && !(*probe)(a) {
-				scores[i].Reachable, scores[i].Score = false, 1e9 // answers ping, not the tunnel
-			}
-			if scores[i].Reachable && (best == -1 || scores[i].Score < scores[best].Score) {
-				best = i
-			}
+		probe, switched := e.healthProbe.Load(), e.healthSwitch.Load()
+		scores := e.measureHealth(ctx, probe)
+		if ctx.Err() != nil {
+			return
 		}
-		if best == -1 {
-			continue // nothing answered; keep whatever was preferred
+		if probe != e.healthProbe.Load() || switched != e.healthSwitch.Load() {
+			choice = healthChoice{candidate: -1, incumbent: -1}
+			continue // the transport changed while this batch was being measured
 		}
+		e.applyHealthScores(ctx, &choice, scores, log)
+	}
+}
 
-		cur := e.clampIdx(e.preferred.Load())
-		if best == cur {
-			candidate, streak = -1, 0
-			continue
-		}
-
-		curDead := !scores[cur].Reachable
-		clearlyBetter := scores[best].Score <= betterBy*scores[cur].Score
-		if !curDead && !clearlyBetter {
-			candidate, streak = -1, 0
-			continue
-		}
-
-		if candidate == best {
-			streak++
-		} else {
-			candidate, streak = best, 1
-		}
-		if curDead || streak >= needStreak {
-			e.preferred.Store(int64(best))
-			candidate, streak = -1, 0
-			if log != nil {
-				log("failover: steering to healthiest exit " + list[best] +
-					" (score " + strconv.FormatFloat(scores[best].Score, 'f', 0, 64) + ")")
+// Probe at most four routes at once. One blackholed IPv4 endpoint must not
+// delay measuring every IPv6 backup by its entire timeout.
+func (e *Endpoints) measureHealth(ctx context.Context, probe *func(context.Context, string, int) EndpointScore) []EndpointScore {
+	scores := make([]EndpointScore, len(e.list))
+	jobs := make(chan int)
+	var workers sync.WaitGroup
+	reach := e.reach.Load()
+	for n := 0; n < min(4, len(e.list)); n++ {
+		workers.Go(func() {
+			for i := range jobs {
+				if probe != nil {
+					scores[i] = (*probe)(ctx, e.list[i], 5)
+				} else {
+					scores[i] = scoreEndpoint(ctx, e.list[i], 5)
+				}
+				if scores[i].Reachable && reach != nil && !(*reach)(e.list[i]) {
+					scores[i].Reachable, scores[i].Score = false, 1e9
+				}
 			}
+		})
+	}
+	for i := range e.list {
+		select {
+		case jobs <- i:
+		case <-ctx.Done():
+			close(jobs)
+			workers.Wait()
+			return scores
 		}
+	}
+	close(jobs)
+	workers.Wait()
+	return scores
+}
+
+// healthChoice requires three consecutive improvements against the same
+// incumbent. Losing all probes or a dial selecting another endpoint resets it.
+type healthChoice struct {
+	candidate, incumbent, streak int
+}
+
+func (h *healthChoice) choose(scores []EndpointScore, cur int) (int, bool) {
+	best := -1
+	for i, s := range scores {
+		if s.Reachable && (best < 0 || s.Score < scores[best].Score) {
+			best = i
+		}
+	}
+	if best < 0 || best == cur || (scores[cur].Reachable &&
+		(scores[best].Score >= scores[cur].Score || scores[best].Score > 0.85*scores[cur].Score)) {
+		h.candidate, h.incumbent, h.streak = -1, cur, 0
+		return cur, false
+	}
+	if h.candidate == best && h.incumbent == cur {
+		h.streak++
+	} else {
+		h.candidate, h.incumbent, h.streak = best, cur, 1
+	}
+	if !scores[cur].Reachable || h.streak >= 3 {
+		h.candidate, h.incumbent, h.streak = -1, best, 0
+		return best, true
+	}
+	return cur, false
+}
+
+func (e *Endpoints) applyHealthScores(ctx context.Context, choice *healthChoice, scores []EndpointScore, log func(string)) {
+	previous := e.preferred.Load()
+	cur := e.clampIdx(previous)
+	best, change := choice.choose(scores, cur)
+	// Do not overwrite a dial's preference if it changes during this decision.
+	if !change || ctx.Err() != nil || !e.preferred.CompareAndSwap(previous, int64(best)) {
+		return
+	}
+	e.idx.Store(int64(best))
+	if log != nil {
+		log("failover: steering from " + e.list[cur] + " to healthiest exit " + e.list[best] +
+			" (score " + strconv.FormatFloat(scores[best].Score, 'f', 0, 64) + ")")
+	}
+	if f := e.healthSwitch.Load(); f != nil {
+		(*f)(e.list[cur], e.list[best])
 	}
 }
 

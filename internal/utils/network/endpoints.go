@@ -1,6 +1,7 @@
 package network
 
 import (
+	"context"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -38,6 +39,38 @@ type Endpoints struct {
 	// steering will count it as reachable: whether the tunnel port itself
 	// takes a connection. See SetReachProbe.
 	reach atomic.Pointer[func(addr string) bool]
+
+	// healthSwitch reconnects the active transport after a scoring decision.
+	// Dial races and ordinary retries do not trigger it.
+	healthSwitch atomic.Pointer[func(from, to string)]
+	healthProbe  atomic.Pointer[func(context.Context, string, int) EndpointScore]
+}
+
+// SetHealthProbe selects how the active transport measures its actual route.
+// A nil probe uses ICMP, as required by datagram carriers without a TCP port.
+func (e *Endpoints) SetHealthProbe(f func(context.Context, string, int) EndpointScore) {
+	if e == nil {
+		return
+	}
+	if f == nil {
+		e.healthProbe.Store(nil)
+		return
+	}
+	e.healthProbe.Store(&f)
+}
+
+// SetHealthSwitch installs the action taken after health scoring changes the
+// preferred endpoint. The callback runs on the scoring goroutine, after the
+// new address is published. Passing nil removes it.
+func (e *Endpoints) SetHealthSwitch(f func(from, to string)) {
+	if e == nil {
+		return
+	}
+	if f == nil {
+		e.healthSwitch.Store(nil)
+		return
+	}
+	e.healthSwitch.Store(&f)
 }
 
 // SetReachProbe sets how steering checks the tunnel port behind an endpoint
