@@ -95,9 +95,9 @@ type DirectConfig struct {
 	// second. 0 is unlimited.
 	BandwidthMbps int `toml:"bandwidth_mbps"`
 
-	// Preset is the name of the tuning profile the keys below came from. It is
-	// a label: the engine reads the individual values, not this. It exists so
-	// a management screen can say "Turbo" rather than reciting four numbers.
+	// Preset records the tuning profile. On Linux, throughput also enables
+	// persistent high-concurrency host tuning at startup and reload. Updating
+	// the binary preserves the individual transport values below.
 	Preset string `toml:"preset"`
 
 	// Sessions is how many mux sessions the Iran side keeps open, with new

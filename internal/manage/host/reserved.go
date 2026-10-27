@@ -27,12 +27,21 @@ import (
 func ReservedPorts() []int {
 	var out []int
 	for _, t := range listTunnels() {
-		if p := portNumber(addrPort(t.Addr)); p > 0 {
-			out = append(out, p)
-		}
-		for _, spec := range t.Ports {
-			out = append(out, listenPortsOf(spec)...)
-		}
+		out = append(out, ReservedPortsFor(t.Addr, t.Ports)...)
+	}
+	return out
+}
+
+// ReservedPortsFor also covers a tunnel loaded from outside the managed config
+// directory, before its listeners have opened. Mappings reserve only their
+// local side, including fixed UDP ports and ranges.
+func ReservedPortsFor(addr string, mappings []string) []int {
+	var out []int
+	if p := portNumber(addrPort(addr)); p > 0 {
+		out = append(out, p)
+	}
+	for _, spec := range mappings {
+		out = append(out, listenPortsOf(spec)...)
 	}
 	return out
 }

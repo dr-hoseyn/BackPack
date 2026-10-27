@@ -129,8 +129,9 @@ func currentCapacity() (capacityState, error) {
 
 // Busy polling burns CPU waiting for a packet instead of sleeping. At tens of
 // thousands of connections this is expensive on shared VPS CPUs. Only the
-// explicit capacity profile disables it; ordinary engine startup leaves host
-// policy alone. Omit unsupported keys, and retain the originals for rollback.
+// capacity profile disables it, either explicitly or through the Throughput
+// preset. Other engine presets leave host policy alone. Omit unsupported keys,
+// and retain the originals for rollback.
 func busyPollingRows(s capacityState, restore bool) [][2]string {
 	var rows [][2]string
 	for _, setting := range []struct {

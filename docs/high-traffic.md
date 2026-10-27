@@ -9,7 +9,15 @@ the tunnel's queue or restarting it does not increase this limit.
 
 ## Increase capacity without losing service ports
 
-On Linux, explicitly enable the high-concurrency host profile:
+On Linux, the **Throughput** performance preset automatically enables the
+high-concurrency host profile before a tunnel starts. This also applies to
+existing configurations that already contain `preset = "throughput"`: their
+first start on the updated binary enables capacity without rewriting manually
+adjusted transport settings. Changing to Throughput through the menu or panel,
+or reloading a saved config with that preset, has the same effect. Reverse
+tunnels with `skip_optz = true` retain their explicit host-tuning opt-out.
+
+Other presets can explicitly enable the same host profile:
 
 ```sh
 sudo backpack tune high-concurrency --reserve-ports 62050,62051
@@ -41,8 +49,8 @@ eventually need multiple local backend addresses, ports or source addresses.
 The profile is saved in `/etc/sysctl.d/zzzz-backpack-capacity.conf`, with its
 original port policy in `/etc/backpack/high-concurrency-backup.json`. Rerunning
 Optimize, applying a preset or updating preserves the selected capacity profile
-and refreshes its reservations. Ordinary installations keep their default
-range. Failed applications attempt to restore the live settings and report
+and refreshes its reservations. Other presets do not automatically select it.
+Failed applications attempt to restore the live settings and report
 rollback failures instead of claiming success. Host policy changes and Optimize
 share a process lock; a conflicting operation reports that another update is in
 progress before changing kernel settings or the rollback snapshot.
@@ -57,6 +65,10 @@ This leaves running tunnels and their restart schedule alone. It restores the
 snapshot from before the first successful profile application; review any
 manually added reservations before restoring. The separate MSS setting below
 is a per-tunnel configuration and is not affected by host-profile restore.
+Host policy is shared by every tunnel on the machine: changing one tunnel away
+from Throughput does not restore it automatically. Before restoring, change
+all Throughput tunnels to another preset (or set `skip_optz = true` for reverse
+tunnels), otherwise their next start or reload enables the profile again.
 
 ## Size TCP packets for the measured path
 

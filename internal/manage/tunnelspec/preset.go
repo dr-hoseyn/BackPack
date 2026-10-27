@@ -26,7 +26,7 @@ var PresetOptions = []PresetOption{
 	{"Balance", "light on CPU and RAM - small or shared VPS", PresetBalance, false},
 	{"Turbo", "recommended - tuned for distant links", PresetTurbo, false},
 	{"Aggressive", "more gaming headroom - needs CPU and RAM", PresetAggressive, false},
-	{"Throughput", "bulk traffic on fast distant links - needs RAM", PresetThroughput, false},
+	{"Throughput", "bulk traffic - enables host capacity tuning on Linux; needs RAM", PresetThroughput, false},
 }
 
 func ValidPreset(p string) bool {

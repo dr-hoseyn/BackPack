@@ -105,9 +105,8 @@ func Run(configPath string, ctx context.Context) {
 		logger.Fatalf("%v", err)
 	}
 
-	// The kernel tuning is process-wide and does not depend on anything in the
-	// file that a reload can change, so it is applied once rather than on every
-	// reload.
+	// Ordinary socket tuning is applied once. Throughput's explicit host
+	// capacity policy is checked separately on each generation, including reload.
 	tuned := false
 
 	// The local control socket, so that whatever is watching this tunnel has a
@@ -134,6 +133,8 @@ func Run(configPath string, ctx context.Context) {
 				}
 			}
 		}
+
+		applyThroughputHostTuning(cfg)
 
 		// The engine mutates the configuration it is given — the transports
 		// write their status back into it — so it gets its own copy and the

@@ -4,6 +4,15 @@ Presets expand into concrete settings when creating a tunnel or choosing
 **Edit → Change performance preset**. Apply the same profile on both ends.
 Updating the binary preserves existing configuration values and manual tuning.
 
+On Linux, **Throughput also selects the high-concurrency host profile**: reserve
+service ports, widen the ephemeral range to `10240–65535` and disable supported
+busy polling. Existing Throughput tunnels automatically gain this policy when
+they start on the updated binary; their manually adjusted transport settings
+remain intact. It also applies on a preset change or config reload. Reverse
+`skip_optz = true` opts out. This policy is host-wide and remains active when one
+tunnel changes profiles; see [high-traffic tuning](high-traffic.md) for rollback
+and additional reservations for stopped services or fixed UDP services.
+
 | Profile | Reverse pool / streams per mux session | Stream / session receive window | Use |
 |---|---:|---:|---|
 | Balance | 4 / 32 | 256 KiB / 4 MiB | Small VPS instances |
@@ -88,6 +97,12 @@ calling a deployment a verified 500 Mbit/s link.
 پروفایل Throughput را اعمال کنید. نصب نسخهٔ جدید به‌تنهایی مقادیر دستیِ
 کانفیگ موجود را تغییر نمی‌دهد. نتیجهٔ بنچمارک محلی تضمین سرعت ۵۰۰ مگابیت
 بین دو سرور نیست و باید با تست پایدار روی همان مسیر تأیید شود.
+
+در لینوکس، انتخاب Throughput تنظیمات ظرفیت سیستم‌عامل را هم فعال می‌کند:
+رزرو پورت سرویس‌ها، افزایش بازهٔ پورت موقت و غیرفعال‌کردن busy polling.
+تونل‌هایی که از قبل `preset = "throughput"` دارند، پس از آپدیت و اجرای نسخهٔ
+جدید این تنظیمات را خودکار می‌گیرند؛ سایر مقادیر دستی کانفیگ حفظ می‌شوند.
+گزینهٔ `skip_optz = true` در تونل Reverse این تنظیم خودکار را غیرفعال می‌کند.
 
 </div>
 

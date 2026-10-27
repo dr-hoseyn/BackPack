@@ -5,6 +5,14 @@ import (
 	"testing"
 )
 
+func TestReservedPortsForIncludesTheNewTunnelBeforeItListens(t *testing.T) {
+	got := ReservedPortsFor("[::]:21000", []string{"22000-22002=127.0.0.1:62050"})
+	want := []int{21000, 22000, 22001, 22002}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("reserved = %v, want %v", got, want)
+	}
+}
+
 // Only the left of a mapping is local. The right names a service on the far
 // side of the tunnel, and reserving its port here would protect a number this
 // machine never binds while telling the operator it had done something.
