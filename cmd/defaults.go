@@ -625,11 +625,9 @@ func transportIgnoresOutbound(t config.TransportType) bool {
 // and silently ignored by the library. Tuning that appears to work and does not
 // is worse than tuning that is refused.
 //
-// Only a pinned 1 is worth warning about. On auto the version is settled with
-// the server, and the answer is 2 whenever both ends are new enough to be
-// asked — so the setting will be applied unless the peer is too old, which is
-// reported on the control channel instead.
-const unusedStreamBufferWarning = "mux_streambuffer has no effect while mux_version is pinned to 1: smux only applies a per-stream window on version 2. Remove mux_version to let the two ends agree on it, or set it to 2 on both."
+// A pinned 1 is unambiguous. Auto may negotiate another version with the peer;
+// websocket auto retains 1 unless a peer explicitly selects 2.
+const unusedStreamBufferWarning = "mux_streambuffer has no effect while mux_version is pinned to 1: smux only applies a per-stream window on version 2. Set mux_version to 2 on both peers to apply it; keep version 1 if it performs better on this route."
 
 func warnUnusedStreamBuffer(cfg *config.Config) {
 	if cfg.Server.MaxStreamBuffer > 0 && cfg.Server.MuxVersion == 1 && cfg.Server.BindAddr != "" {

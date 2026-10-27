@@ -98,3 +98,23 @@ func TestConcurrentMuxRetirementPreservesFloorAndGeneration(t *testing.T) {
 		}
 	}
 }
+
+func TestMuxIdleTrafficPreservesWarmCapacityDuringTransfers(t *testing.T) {
+	var traffic muxIdleTraffic
+	now := time.Now()
+	if traffic.quiet(now, 100, 200) || traffic.quiet(now.Add(29*time.Second), 100, 200) {
+		t.Fatal("warm capacity retired without a full observation period")
+	}
+	if !traffic.quiet(now.Add(30*time.Second), 100, 200) {
+		t.Fatal("quiet tunnel retained excess idle capacity")
+	}
+	if traffic.quiet(now.Add(time.Minute), 101, 200) || traffic.quiet(now.Add(89*time.Second), 101, 200) {
+		t.Fatal("new forwarded traffic did not preserve warm capacity")
+	}
+	if !traffic.quiet(now.Add(90*time.Second), 101, 200) {
+		t.Fatal("retirement did not resume after traffic stopped")
+	}
+	if traffic.quiet(now.Add(2*time.Minute), 101, 201) {
+		t.Fatal("response-only traffic did not preserve warm capacity")
+	}
+}

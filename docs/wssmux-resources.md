@@ -14,14 +14,21 @@ interrupts idle reads, and both directions are joined before releasing quotas.
 ## Physical session growth and retirement
 
 WS Mux and WSS Mux sample the number of sessions with actual open streams once
-per second. Traffic volume alone does not open more sessions while an unused
-session is already available. Control-channel requests still grow the pool for
+per second. Traffic volume alone does not open more sessions once the
+configured warm reserve is available as unused physical sessions. Keeping only
+one spare and automatically switching the protocol failed the lossy-path
+quality comparisons; the release preserves both warm capacity and the existing
+automatic protocol choice. Control-channel requests still grow the pool for
 new users, using the existing burst policy and pending-dial ceiling.
 
 When both peers support retirement, the client lowers its repair target after
-30 seconds without new session demand, retaining at least `connection_pool`
+30 seconds without forwarded traffic or new session demand, retaining at least `connection_pool`
 and all occupied sessions. The server closes a surplus session only after it
-has no streams or relay workers for 60 seconds. The server's admission loop
+has no streams or relay workers for 60 seconds and the tunnel's forwarded
+traffic counters have been unchanged for a full 30-second observation period.
+The observation begins when an eligible idle session first checks, so release
+can take about 90–95 seconds after the last user finishes. Warm capacity stays
+available during ongoing transfers. The server's admission loop
 makes that decision, so it cannot race a newly opened stream. Simultaneous
 retirements reserve their removals under the existing counter lock and cannot
 cross the advertised pool floor. A silent open connection is still an occupied
@@ -30,9 +37,12 @@ stream and is preserved. KCP and TCP Mux retain their current retirement policy.
 ## Version agreement and older peers
 
 The authenticated HTTP upgrade on a WS Mux/WSS Mux **data connection** now
-offers supported smux versions. Two automatic peers prefer version 2, which
-enforces the configured per-stream flow-control window. Explicit version 1
-or 2 is honored. Incompatible explicit choices are rejected during setup.
+offers supported smux versions. Two automatic peers retain version 1. An
+explicit version 2 on either new peer negotiates version 2, which enforces the
+configured per-stream flow-control window. Explicit version 1 is honored;
+incompatible explicit choices are rejected during setup. Existing presets
+already pin version 2. A blanket automatic upgrade was rejected after the
+lossy-path comparison showed worse fresh-user tail latency.
 The control-channel framing, TLS ClientHello and session-bound credential stay
 unchanged.
 
@@ -70,9 +80,13 @@ its configured floor and then transfers more bytes on that same connection.
 The broader throughput workflow independently verifies one-direction capacity.
 An additional comparison uses disposable network namespaces with 40 ms delay
 in each direction, 0.1 percent packet loss and a 200 Mbit/s queue, applied only
-to the actual tunnel port. It keeps the application/backend hops local and
-compares three independent processes per version with 16 idle streams and
-automatic mux version selection, including the old-1/new-2 transition.
+to the actual tunnel port at receiver ingress through IFB. The isolated
+interfaces use MTU 1500 with TSO/GSO/GRO disabled and a fixed loss seed. This
+avoids the TCP Small Queues and giant-loopback-packet artifacts described in
+the [tc-netem manual](https://www.man7.org/linux/man-pages/man8/netem.8.html).
+It keeps the application/backend hops local and
+compares three independent processes per version with 16 idle streams in each
+of two modes: automatic version selection and explicitly pinned smux 2.
 
 Reproduce on Linux:
 
@@ -80,7 +94,7 @@ Reproduce on Linux:
 GOMAXPROCS=4 BP_RESOURCE_BENCHMARK=1 \
   go test ./internal/e2e -run '^TestWSMuxResourceProfile$' -count=1 -v
 BP_RESOURCE_RETIREMENT=1 \
-  go test ./internal/e2e -run '^TestWSMuxPoolRetiresAfterLoadWithoutDisconnectingQuietUser$' -count=1 -v -timeout 2m
+  go test ./internal/e2e -run '^TestWSMuxPoolRetiresAfterLoadWithoutDisconnectingQuietUser$' -count=1 -v -timeout 3m
 ```
 
 For a production workload, temporarily set `pprof = true` and capture a CPU

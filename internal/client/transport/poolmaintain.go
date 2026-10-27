@@ -144,7 +144,11 @@ func (p poolSizer) maintain() {
 			if p.sessions != nil {
 				active, tracked, canRetire = p.sessions.snapshot()
 			}
-			spareSession := tracked == openAvg && tracked > active
+			// One free physical connection is not enough headroom on a lossy
+			// path: fresh users would share its TCP loss recovery with bulk
+			// traffic. Preserve the configured warm reserve before suppressing
+			// the existing throughput growth trigger.
+			spareSession := tracked == openAvg && tracked-active >= max(p.size, 1)
 
 			// A mux session may be carrying a long transfer without asking for
 			// another stream. Retire it only after actual traffic goes quiet.
@@ -152,7 +156,7 @@ func (p poolSizer) maintain() {
 			if canRetire && tracked == openAvg {
 				// Low-rate but long-lived streams still occupy a session. Leave
 				// those alone; only lower the desired count of unused sessions.
-				quiet = taken == 0 && active < openAvg
+				quiet = taken == 0 && active < openAvg && mbps == 0
 			}
 			if !quiet {
 				quietSince = time.Time{}
