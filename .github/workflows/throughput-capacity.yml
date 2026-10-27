@@ -34,7 +34,8 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update -qq
-          sudo apt-get install -y -qq iproute2
+          sudo apt-get install -y -qq iproute2 ethtool
+          sudo modprobe ifb
           for sample in 1 2 3; do
             order="baseline candidate"
             if [ $((sample % 2)) -eq 0 ]; then order="candidate baseline"; fi

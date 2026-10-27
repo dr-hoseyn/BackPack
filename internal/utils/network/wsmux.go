@@ -23,7 +23,7 @@ type WSMuxOptions struct {
 }
 
 func (o *WSMuxOptions) offer(h http.Header) {
-	versions := "2,1"
+	versions := "1,2"
 	if o.Version == 1 || o.Version == 2 {
 		versions = strconv.Itoa(o.Version)
 	}
@@ -47,7 +47,9 @@ func (o *WSMuxOptions) accept(h http.Header) error {
 }
 
 // SelectWSMux settles the data connection before either side starts smux. An
-// old client sends no offer, retaining the static choice. Incompatible explicit
+// old client sends no offer, retaining the static choice. Auto also retains
+// version 1: changing flow control by default degraded lossy-path tail latency.
+// An explicit version 2 on either new peer negotiates 2. Incompatible explicit
 // choices fail during setup instead of silently carrying no traffic.
 func SelectWSMux(h http.Header, configured int) (version, floor int, err error) {
 	if h.Get(WSMuxOfferHeader) == "" {

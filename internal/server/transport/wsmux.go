@@ -27,6 +27,7 @@ import (
 // builds a fresh set for the next run, so carrying them here keeps a goroutine
 // that outlives its run from reaching into the run that replaced it.
 type wsMuxGen struct {
+	idleTraffic    muxIdleTraffic
 	ctx            context.Context
 	tunnelChannel  chan pooledMuxSession
 	localChannel   chan LocalTCPConn
@@ -392,6 +393,10 @@ func (s *WsMuxTransport) handleLoop(g *wsMuxGen) {
 			if session.idleFloor > 0 {
 				loop.idleTimeout = 60 * time.Second
 				loop.idleRetire = func() bool {
+					in, out := metrics.Traffic()
+					if !g.idleTraffic.quiet(time.Now(), in, out) {
+						return false
+					}
 					return s.retireIdleSession(g.ctx, session.owner, &s.sessionCounter, session.idleFloor)
 				}
 			}

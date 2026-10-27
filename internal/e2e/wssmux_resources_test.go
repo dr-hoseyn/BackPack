@@ -40,22 +40,32 @@ func resourceTunnel(t *testing.T) (*tunnel, int) {
 	srv.MaxStreamBuffer, cli.MaxStreamBuffer = 8<<20, 8<<20
 	srv.Nodelay, cli.Nodelay = true, true
 	if os.Getenv("BP_RESOURCE_NETEM") != "" {
-		// Called only inside the disposable network namespace in CI. Match
-		// the tunnel port so the application/backend hops stay local.
+		// Use receiver ingress, as tc-netem requires for realistic TCP/TSQ
+		// results. MTU and offload settings make loss apply to wire-sized
+		// packets instead of giant loopback/GSO packets. Everything below is
+		// confined to a disposable network namespace in CI.
 		commands := [][]string{
-			{"qdisc", "add", "dev", "lo", "root", "handle", "1:", "prio"},
-			{"qdisc", "add", "dev", "lo", "parent", "1:3", "handle", "30:", "netem", "delay", "40ms", "loss", "0.1%", "rate", "200mbit", "limit", "10000"},
+			{"ip", "link", "set", "lo", "mtu", "1500"},
+			{"ip", "link", "add", "bpifb", "type", "ifb"},
+			{"ip", "link", "set", "bpifb", "mtu", "1500", "up"},
+			{"ethtool", "-K", "lo", "tso", "off", "gso", "off", "gro", "off"},
+			{"ethtool", "-K", "bpifb", "tso", "off", "gso", "off", "gro", "off"},
+			{"tc", "qdisc", "add", "dev", "bpifb", "root", "netem", "delay", "40ms", "loss", "0.1%", "rate", "200mbit", "limit", "10000", "seed", "42"},
+			{"tc", "qdisc", "add", "dev", "lo", "handle", "ffff:", "ingress"},
 		}
 		for _, direction := range []string{"dport", "sport"} {
-			commands = append(commands, []string{"filter", "add", "dev", "lo", "protocol", "ip", "parent", "1:", "prio", "1", "u32",
-				"match", "ip", "protocol", "6", "0xff", "match", "ip", direction, strconv.Itoa(tunnelPort), "0xffff", "flowid", "1:3"})
+			commands = append(commands, []string{"tc", "filter", "add", "dev", "lo", "protocol", "ip", "parent", "ffff:", "prio", "1", "u32",
+				"match", "ip", "protocol", "6", "0xff", "match", "ip", direction, strconv.Itoa(tunnelPort), "0xffff", "action", "mirred", "egress", "redirect", "dev", "bpifb"})
 		}
 		for _, args := range commands {
-			if output, err := exec.Command("tc", args...).CombinedOutput(); err != nil {
+			if output, err := exec.Command(args[0], args[1:]...).CombinedOutput(); err != nil {
 				t.Fatalf("netem setup: %v: %s", err, output)
 			}
 		}
-		t.Cleanup(func() { _ = exec.Command("tc", "qdisc", "del", "dev", "lo", "root").Run() })
+		t.Cleanup(func() {
+			_ = exec.Command("tc", "qdisc", "del", "dev", "lo", "ingress").Run()
+			_ = exec.Command("ip", "link", "del", "bpifb").Run()
+		})
 	}
 	tun := runPair(t, srv, cli, entryPort, tunnelPort)
 	if err := tun.waitReady(tunnelReadyTimeout); err != nil {
@@ -251,7 +261,7 @@ func TestWSMuxPoolRetiresAfterLoadWithoutDisconnectingQuietUser(t *testing.T) {
 	if peak <= 4 {
 		t.Fatalf("fixture did not grow the pool: %d", peak)
 	}
-	deadline := time.Now().Add(90 * time.Second)
+	deadline := time.Now().Add(120 * time.Second)
 	for sessions() > 4 && time.Now().Before(deadline) {
 		time.Sleep(time.Second)
 	}
