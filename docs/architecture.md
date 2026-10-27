@@ -21,6 +21,12 @@ are.
 
 Everything except engine mode is management. Engine mode is the product.
 
+On Linux, a saved Throughput preset also selects the persistent high-concurrency
+host policy before opening a generation's listeners, including the first start
+after an update. Other transport values are not re-expanded; reverse
+`skip_optz` remains an opt-out. The process joins its control-socket server and
+finishes socket cleanup before returning from engine mode.
+
 **One process per tunnel.** Each tunnel is its own systemd unit running
 `backpack -c /etc/backpack/<name>.toml`. This is the single most valuable
 reliability property in the system and it is free: a panic, a leak or a bad
@@ -264,4 +270,4 @@ context)، پورت‌های فوروارد (`forward.go`)، حلقهٔ کانا
 
 ---
 
-*Last verified against Backpack v1.17.0*
+*Last verified against Backpack v1.18.0*

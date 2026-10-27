@@ -165,6 +165,9 @@ CPU capacity. Do not judge a repair from the brief low-load period after restart
 اگر تونل متصل است ولی اتصال به سرویس محلی با خطای
 `cannot assign requested address` شکست می‌خورد، ممکن است پورت‌های موقت تمام
 شده باشند. محدودهٔ پیش‌فرض حدود ۲۸ هزار پورت برای هر ترکیب مبدأ و مقصد دارد.
+در لینوکس، پروفایل Throughput همین تنظیم ظرفیت را خودکار فعال می‌کند؛ تونل‌های
+دارای این پروفایل پس از آپدیت و اجرای نسخهٔ جدید نیز آن را می‌گیرند. در Reverse،
+`skip_optz = true` این تنظیم خودکار را غیرفعال می‌کند.
 دستور `backpack tune high-concurrency --reserve-ports 62050,62051` ظرفیت را به
 حدود ۵۵ هزار می‌رساند و رزروهای قبلی، پورت تونل‌ها و پورت سرویس‌های TCP فعال
 را حفظ می‌کند. پورت سرویس‌های خاموش و سرویس‌های ثابت UDP را هم صریحاً اضافه کن.
@@ -193,4 +196,4 @@ CPU مصرف نکند. مقدار قبلی آن برای بازگردانی ذخ
 
 </div>
 
-*Last verified against Backpack v1.17.0*
+*Last verified against Backpack v1.18.0*

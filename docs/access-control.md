@@ -19,4 +19,4 @@ permission. There is no panel-password command or browser credential to disclose
 
 </div>
 
-Last verified against Backpack v1.17.0 (2026-10-26).
+Last verified against Backpack v1.18.0 (2026-10-27).

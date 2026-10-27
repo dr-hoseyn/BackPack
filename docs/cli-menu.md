@@ -21,7 +21,7 @@ long form. For *how to set a tunnel up*, use the
 | 2 | **Setup Kharej** | Create the **kharej-side** tunnel that holds the real service. Accepts a Setup Link directly, or opens manual setup. |
 | 3 | **Manage** | Everything about existing tunnels, plus the diagnostics. [↓](#3-manage) |
 | 4 | **Backup & Restore** | The whole configuration as one `.tar.gz`. [↓](#4-backup--restore) |
-| 5 | **Optimize** | Applies system-wide kernel/network tuning: BBR + fq, socket-buffer ceilings, file-descriptor limits. Answer yes and it prints each change. A reboot is recommended for the file-limit changes. It also keeps the kernel's own ephemeral port range (`32768 60999`) rather than widening it, and reserves the ports your tunnels listen on — see [what it does to ports](#optimize-and-your-service-ports) |
+| 5 | **Optimize** | Applies system-wide kernel/network tuning: BBR + fq, socket-buffer ceilings, file-descriptor limits. Answer yes and it prints each change. A reboot is recommended for the file-limit changes. The default ephemeral range is `32768 60999`; a selected high-concurrency profile is preserved. Throughput selects that profile automatically on Linux. See [service ports](#optimize-and-your-service-ports) |
 | 6 | **Telegram Bot** | Reports, alerts and control from Iran. [↓](#6-telegram-bot) |
 | 7 | **Update** | Verified update with automatic rollback. [↓](#7-update) |
 | 8 | **Uninstall** | Removes everything Backpack installed. |
@@ -429,13 +429,15 @@ The shard counts must match on both ends. [More](../tutorial/udp-kcp-fec.md)
 
 ## Optimize and your service ports
 
-Optimize tunes the kernel for a machine carrying a lot of connections. One of
-the things it deliberately does **not** do is widen the ephemeral port range,
-and it is worth knowing why.
+Optimize tunes the kernel for a machine carrying a lot of connections. Its
+default policy keeps the normal ephemeral range. Throughput, or the explicit
+high-concurrency command, selects a wider range with service-port reservations;
+Optimize preserves that choice. See [high-traffic tuning](high-traffic.md).
 
 The ephemeral range is the set of ports the kernel hands out as the *source*
 port of outgoing connections. On Linux it is `32768 60999` by default, and
-Optimize leaves it there. Widening it — which this used to do, to `1024 65535` —
+Optimize leaves it there unless the capacity profile is selected. Widening it
+without reservations — which this used to do, to `1024 65535` —
 means every service port on the machine is inside the range something can be
 given, and **a port held as the source of an outgoing connection cannot be bound
 by the service that owns it**.
@@ -464,14 +466,14 @@ range can never be taken this way either.
 **If a service on your server cannot bind its port**, check the range first:
 
 ```bash
-cat /proc/sys/net/ipv4/ip_local_port_range      # expect: 32768   60999
+cat /proc/sys/net/ipv4/ip_local_port_range      # default: 32768 60999; capacity: 10240 65535
 grep -r ip_local_port_range /etc/sysctl.conf /etc/sysctl.d/
 ss -tnp | grep <the port>                       # -tnp, not -tlnp
 ```
 
-A range wider than the default, from any source, puts every service above
-`32768` at risk. Reserve those ports in `ip_local_reserved_ports` or put the
-range back.
+A wider range must preserve fixed service ports in `ip_local_reserved_ports`.
+The capacity profile reserves existing TCP listeners and configured tunnel
+ports before widening; add stopped services and fixed UDP services explicitly.
 
 ---
 
@@ -516,7 +518,7 @@ FEC؛ و zero-copy (فقط روی tcp ساده).
 
 ---
 
-*Last verified against Backpack v1.17.0*
+*Last verified against Backpack v1.18.0*
 
 
 Connection Test also provides [saved history and repeated-run comparison](connection-test-history.md)
