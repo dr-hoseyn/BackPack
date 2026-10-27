@@ -81,10 +81,8 @@ func (c *Client) Start() {
 	// It overrides spread (it concentrates on one exit on purpose), so it is
 	// checked last and wins when both are set.
 	if c.config.HealthFailover && endpoints.Len() > 1 {
-		healthCtx, stopHealth := context.WithCancel(c.ctx)
-		stopped := endpoints.EnableHealthSteering(healthCtx, 5*time.Second, func(m string) { c.logger.Info(m) })
-		defer func() { stopHealth(); <-stopped }()
-		c.logger.Infof("automatic health failover enabled across %d endpoints", endpoints.Len())
+		stopHealth := startHealthSteering(c.ctx, c.config.Transport, endpoints, 5*time.Second, func(m string) { c.logger.Info(m) })
+		defer stopHealth()
 	}
 
 	// Built once for every transport that can use it. The configuration was
@@ -222,7 +220,10 @@ func (c *Client) startTransport(ctx context.Context, tr config.TransportType, en
 	if tcpPortTransport(tr) {
 		endpoints.SetHealthProbe(network.TCPHealthProbe(outbound, 2*time.Second))
 	} else {
-		endpoints.SetHealthProbe(nil)
+		// A TCP-primary carrier chain may already have a scorer running. A
+		// datagram fallback must suspend its decisions instead of reverting
+		// that scorer to ICMP-only evidence for a disruptive reconnect.
+		endpoints.SetHealthProbe(datagramHealthProbe)
 	}
 	start := func(r interface {
 		runner
@@ -422,9 +423,5 @@ func (c *Client) startTransport(ctx context.Context, tr config.TransportType, en
 // tcpPortTransport reports whether a transport's tunnel port is TCP, so a
 // connection to it says whether it answers.
 func tcpPortTransport(tr config.TransportType) bool {
-	switch tr {
-	case config.TCP, config.TCPMUX, config.WS, config.WSS, config.WSMUX, config.WSSMUX, config.STEALTH, config.UDP:
-		return true
-	}
-	return false
+	return config.HasTCPControl(tr)
 }

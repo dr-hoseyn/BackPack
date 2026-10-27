@@ -49,8 +49,12 @@ quality when available, and TCP connection timing when ICMP is blocked or ping
 is missing. Routes with a configured proxy or source/interface binding use TCP
 connection timing through that same route. For TCP measurements, loss means
 failed connection attempts rather than ICMP packet loss. Datagram-only carriers
-(KCP/QUIC/raw carriers) and the manual **Exit Health** view still rely on ICMP;
-use failure-only fallback if their endpoints block it. A successful TCP connect
+(KCP/QUIC/raw carriers) retain ordinary dial-failure fallback and do not enable
+disruptive health-scored switching: a host can answer ping while its tunnel
+port is closed. Existing `health_failover = true` configs on those carriers
+also keep their working backup until a real dial fails. Raw UDP forwarding is
+different: its TCP control port supports health-scored switching. The manual
+**Exit Health** view still uses ICMP for diagnostics. A successful TCP connect
 does not prove the tunnel's authentication handshake or payload works. A fixed
 WebSocket `edge_ip` still pins the physical destination; changing origin backup
 addresses cannot switch that fixed CDN edge between IPv4 and IPv6.

@@ -626,6 +626,8 @@ type ClientConfig struct {
 	// control channel and pool on the healthier route. Switching interrupts
 	// active sessions. It needs distinct backup addresses and overrides
 	// LoadBalance. TCP routes can use connect timing when ICMP is unavailable.
+	// KCP, QUIC and raw-packet carriers keep dial-failure fallback instead of
+	// disruptive ICMP-only switching, because ping cannot validate their port.
 	HealthFailover bool `toml:"health_failover"`
 	// Embedded so the kcp_* keys sit at the top level of the [client] table
 	// alongside every other tuning key.

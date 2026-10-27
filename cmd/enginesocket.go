@@ -170,10 +170,14 @@ func (errNoGenerationType) Error() string {
 // socket is a convenience for whatever is watching the tunnel; a tunnel that
 // refused to carry traffic because /run was not writable would be trading the
 // product for the diagnostic.
-func serveEngineControl(ctx context.Context, e *engineControl) {
+func serveEngineControl(ctx context.Context, e *engineControl) func() {
+	ctx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
 	go func() {
+		defer close(done)
 		if err := enginectl.Serve(ctx, e.name, e); err != nil {
 			logger.Debugf("control socket unavailable: %v", err)
 		}
 	}()
+	return func() { cancel(); <-done }
 }

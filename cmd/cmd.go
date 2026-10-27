@@ -115,7 +115,8 @@ func Run(configPath string, ctx context.Context) {
 	// it is between transports should get an answer, not a closed socket.
 	// See internal/enginectl.
 	ctl := &engineControl{name: tunnelNameFromPath(configPath)}
-	serveEngineControl(ctx, ctl)
+	stopControl := serveEngineControl(ctx, ctl)
+	defer stopControl()
 
 	for {
 		// A tunnel that has used its traffic limit up does not start until the

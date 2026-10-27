@@ -341,7 +341,7 @@ func askConnectionOptions(s *TunnelSpec, remotePort string) {
 	if len(s.FallbackAddrs) > 0 {
 		// Every address must reach the SAME server — a second IP of it,
 		// another port, or a CDN edge in front of it.
-		if tui.Confirm("Automatic Failover To The Healthiest Address", false) {
+		if config.HasTCPControl(config.TransportType(s.Transport)) && tui.Confirm("Automatic Failover To The Healthiest Address", false) {
 			s.HealthFailover = true
 		} else {
 			s.LoadBalance = tui.Confirm("Load Balance Over All Addresses", false)
@@ -453,7 +453,7 @@ func reverseClientFromLink(link ShareLink, host string) TunnelSpec {
 		s.FallbackAddrs = append(s.FallbackAddrs, h)
 	}
 	if len(s.FallbackAddrs) > 0 {
-		s.HealthFailover = true
+		s.HealthFailover = config.HasTCPControl(config.TransportType(s.Transport))
 	}
 	// The carrier chain is paired: the kharej sweeps the list the Iran side
 	// holds, in the same order.

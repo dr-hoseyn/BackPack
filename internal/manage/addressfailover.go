@@ -25,6 +25,9 @@ func setHealthFailover(s *TunnelSpec, on bool) error {
 		return fmt.Errorf("automatic address failover is a client-side setting")
 	}
 	if on {
+		if !config.HasTCPControl(config.TransportType(s.Transport)) {
+			return fmt.Errorf("health-based switching requires a TCP control port; %s keeps ordinary dial-failure fallback through its backup addresses", s.Transport)
+		}
 		clean, err := config.NormalizeFallbackAddrs(s.RemoteAddr, s.FallbackAddrs)
 		if err != nil {
 			return err
@@ -49,7 +52,7 @@ func toggleHealthFailover(name string, spec TunnelSpec) {
 	tui.Info("Now     : " + onOff(spec.HealthFailover))
 	tui.Info("For IPv4 to IPv6: add [IPv6]:port in Backup Addresses first.")
 	tui.Info("All addresses must reach the same server, listening on both IP families.")
-	tui.Info("Measures latency, jitter and loss; TCP routes also work when ping is blocked.")
+	tui.Info("Requires a TCP control port; ping alone cannot prove a datagram tunnel is healthy.")
 	tui.Warn("A switch reconnects the tunnel and interrupts existing connections.")
 	verb := "Enable"
 	if spec.HealthFailover {
