@@ -19,18 +19,23 @@ import (
 // after dequeue can bind a previous client's session to its replacement.
 type pooledMuxSession struct {
 	*smux.Session
-	owner context.Context
+	owner     context.Context
+	idleFloor int
 }
 
 // enqueueMuxSession is called while the seat's admission lock is held.
 // Cancellation also closes queued sessions that a worker has not picked up.
-func enqueueMuxSession(queue chan pooledMuxSession, owner context.Context, session *smux.Session) bool {
+func enqueueMuxSession(queue chan pooledMuxSession, owner context.Context, session *smux.Session, idleFloor ...int) bool {
 	if owner.Err() != nil {
 		session.Close()
 		return false
 	}
+	floor := 0
+	if len(idleFloor) > 0 {
+		floor = idleFloor[0]
+	}
 	select {
-	case queue <- pooledMuxSession{Session: session, owner: owner}:
+	case queue <- pooledMuxSession{Session: session, owner: owner, idleFloor: floor}:
 		go func() {
 			select {
 			case <-owner.Done():
@@ -100,6 +105,10 @@ type muxSession struct {
 	streams  *int32
 	sessions *int32
 	count    func(*int32, int32)
+	// Only negotiated websocket-mux peers enable retirement. The callback
+	// atomically reserves one excess session's removal above the pool floor.
+	idleRetire  func() bool
+	idleTimeout time.Duration
 }
 
 func (m muxSession) add(counter *int32, delta int32) {
@@ -122,6 +131,15 @@ func (m muxSession) run(session *smux.Session) {
 	counter := make(chan struct{}, max(m.muxCon, 1))
 	var workers sync.WaitGroup
 	retired := false
+	var activity chan struct{}
+	idleSince := time.Now()
+	var idleTick <-chan time.Time
+	if m.idleRetire != nil && m.idleTimeout > 0 {
+		activity = make(chan struct{}, 1)
+		ticker := time.NewTicker(min(m.idleTimeout, 5*time.Second))
+		defer ticker.Stop()
+		idleTick = ticker.C
+	}
 	stop := context.AfterFunc(m.ctx, func() { session.Close() })
 	defer func() {
 		stop()
@@ -158,7 +176,24 @@ func (m muxSession) run(session *smux.Session) {
 		case <-session.CloseChan():
 			return
 
+		case <-activity:
+			idleSince = time.Now()
+			<-counter
+			continue
+
+		case now := <-idleTick:
+			// This loop is the only stream opener. Release its speculative
+			// slot and retire only when no worker or stream remains; checking
+			// NumStreams from a concurrent client-side timer cannot do that.
+			<-counter
+			if len(counter) == 0 && session.NumStreams() == 0 && now.Sub(idleSince) >= m.idleTimeout && m.idleRetire() {
+				retired = true
+				return
+			}
+			continue
+
 		case incomingConn := <-m.local:
+			idleSince = time.Now()
 			if nowMillis()-incomingConn.timeCreated > pairingTimeout.Milliseconds() {
 				m.log.Debugf("timeouted local connection: %d ms", nowMillis()-incomingConn.timeCreated)
 				incomingConn.conn.Close()
@@ -219,6 +254,10 @@ func (m muxSession) run(session *smux.Session) {
 					localForwardPort(incomingConn.conn), m.sniffer)
 				m.add(m.streams, -1)
 				<-counter // read signal from the channel
+				select {
+				case activity <- struct{}{}:
+				default:
+				}
 			}()
 		}
 	}

@@ -15,7 +15,7 @@ import (
 	utls "github.com/refraction-networking/utls"
 )
 
-func WebSocketDialer(ctx context.Context, out *Outbound, addr string, edgeIP string, path string, timeout time.Duration, keepalive time.Duration, nodelay bool, token string, mode config.TransportType, simpleAuth bool, retry int, SO_RCVBUF int, SO_SNDBUF int, mss int) (*websocket.Conn, error) {
+func WebSocketDialer(ctx context.Context, out *Outbound, addr string, edgeIP string, path string, timeout time.Duration, keepalive time.Duration, nodelay bool, token string, mode config.TransportType, simpleAuth bool, retry int, SO_RCVBUF int, SO_SNDBUF int, mss int, mux ...*WSMuxOptions) (*websocket.Conn, error) {
 	var tunnelWSConn *websocket.Conn
 	var err error
 
@@ -24,7 +24,7 @@ func WebSocketDialer(ctx context.Context, out *Outbound, addr string, edgeIP str
 
 	for i := 0; i < retries; i++ {
 		// Attempt to dial the WebSocket
-		tunnelWSConn, err = attemptDialWebSocket(ctx, out, addr, edgeIP, path, timeout, keepalive, nodelay, token, mode, simpleAuth, SO_RCVBUF, SO_SNDBUF, mss)
+		tunnelWSConn, err = attemptDialWebSocket(ctx, out, addr, edgeIP, path, timeout, keepalive, nodelay, token, mode, simpleAuth, SO_RCVBUF, SO_SNDBUF, mss, mux...)
 		if err == nil {
 			// If successful, return the connection
 			if ctx.Err() != nil {
@@ -53,7 +53,7 @@ func WebSocketDialer(ctx context.Context, out *Outbound, addr string, edgeIP str
 	return nil, err
 }
 
-func attemptDialWebSocket(ctx context.Context, out *Outbound, addr string, edgeIP string, path string, timeout time.Duration, keepalive time.Duration, nodelay bool, token string, mode config.TransportType, simpleAuth bool, SO_RCVBUF int, SO_SNDBUF int, mss int) (result *websocket.Conn, resultErr error) {
+func attemptDialWebSocket(ctx context.Context, out *Outbound, addr string, edgeIP string, path string, timeout time.Duration, keepalive time.Duration, nodelay bool, token string, mode config.TransportType, simpleAuth bool, SO_RCVBUF int, SO_SNDBUF int, mss int, mux ...*WSMuxOptions) (result *websocket.Conn, resultErr error) {
 	// Socket setup, both possible TLS handshakes and HTTP Upgrade share one
 	// budget. gorilla applies a deadline to Upgrade I/O but does not interrupt
 	// that I/O when a context without a deadline is cancelled.
@@ -156,6 +156,13 @@ func attemptDialWebSocket(ctx context.Context, out *Outbound, addr string, edgeI
 	headers := http.Header{}
 	headers.Add("X-User-Id", fmt.Sprintf("%d", randomUserID))
 	headers.Add("User-Agent", randomUserAgent)
+	var muxOptions *WSMuxOptions
+	if (mode == config.WSMUX || mode == config.WSSMUX) && path != "/channel" && len(mux) > 0 {
+		muxOptions = mux[0]
+		if muxOptions != nil {
+			muxOptions.offer(headers)
+		}
+	}
 
 	var wsURL string
 	dialer := websocket.Dialer{}
@@ -300,6 +307,12 @@ func attemptDialWebSocket(ctx context.Context, out *Outbound, addr string, edgeI
 	}
 	if ekm != nil {
 		if err := checkWSSServer(ekm, token, addr, resp.Header.Get(WSSServerProofHeader)); err != nil {
+			tunnelWSConn.Close()
+			return nil, err
+		}
+	}
+	if muxOptions != nil {
+		if err := muxOptions.accept(resp.Header); err != nil {
 			tunnelWSConn.Close()
 			return nil, err
 		}

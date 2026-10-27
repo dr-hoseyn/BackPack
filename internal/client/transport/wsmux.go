@@ -23,6 +23,7 @@ type WsMuxTransport struct {
 
 	config     *WsMuxConfig
 	smuxConfig *smux.Config
+	sessions   muxPoolSessions
 }
 type WsMuxConfig struct {
 	RemoteAddr string
@@ -146,6 +147,7 @@ func (c *WsMuxTransport) poolMaintainer() {
 		spawn:      c.state.Go,
 		pending:    &c.dialingConnections,
 		maxSize:    muxPoolLimit(c.config.ConnPoolSize),
+		sessions:   &c.sessions,
 	}.maintain()
 }
 
@@ -170,7 +172,8 @@ func (c *WsMuxTransport) tunnelDialer() {
 	// Next() rather than Current(): with load balancing enabled the pool
 	// spreads its connections over every configured endpoint, so one
 	// congested route only slows its own share of the traffic.
-	tunnelWSConn, err := network.WebSocketDialer(c.state.Ctx(), c.config.Outbound, c.config.Endpoints.Next(), c.config.EdgeIP, "/tunnel", c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay, c.config.Token, c.config.Mode, c.config.SimpleAuth, 3, 2*1024*1024, 2*1024*1024, c.config.MSS)
+	mux := network.WSMuxOptions{Version: c.config.MuxVersion, PoolSize: c.config.ConnPoolSize}
+	tunnelWSConn, err := network.WebSocketDialer(c.state.Ctx(), c.config.Outbound, c.config.Endpoints.Next(), c.config.EdgeIP, "/tunnel", c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay, c.config.Token, c.config.Mode, c.config.SimpleAuth, 3, 2*1024*1024, 2*1024*1024, c.config.MSS, &mux)
 	if err != nil {
 		c.logger.Errorf("tunnel server dialer: %v", err)
 
@@ -183,21 +186,24 @@ func (c *WsMuxTransport) tunnelDialer() {
 	atomic.AddInt32(&c.poolConnections, 1)
 	ready()
 
-	c.handleSession(tunnelWSConn)
+	c.handleSession(tunnelWSConn, mux)
 }
 
-func (c *WsMuxTransport) handleSession(tunnelConn *websocket.Conn) {
+func (c *WsMuxTransport) handleSession(tunnelConn *websocket.Conn, mux network.WSMuxOptions) {
 	defer func() {
 		atomic.AddInt32(&c.poolConnections, -1)
 	}()
 
 	// SMUX server
-	session, err := smux.Server(tunnelConn.NetConn(), c.smuxConfig)
+	cfg := *c.smuxConfig
+	cfg.Version = mux.NegotiatedVersion
+	session, err := smux.Server(tunnelConn.NetConn(), &cfg)
 	if err != nil {
 		c.logger.Errorf("failed to create mux session: %v", err)
 		return
 	}
 
+	defer c.sessions.add(session, mux.Retirement)()
 	c.serveSession(session, tunnelConn.RemoteAddr(), c.backend())
 }
 

@@ -165,7 +165,7 @@ jobs:
           set -eu
           for attempt in $(seq 1 80); do
             ready=true
-            for workflow in ci.yml protocol-suite.yml recovery-regressions.yml next-protocols.yml conntest-setup.yml throughput-capacity.yml high-concurrency.yml cli-only.yml; do
+            for workflow in ci.yml protocol-suite.yml recovery-regressions.yml next-protocols.yml conntest-setup.yml throughput-capacity.yml high-concurrency.yml cli-only.yml wssmux-resources.yml; do
               result="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?head_sha=$GITHUB_SHA&per_page=20" \
                 --jq '.workflow_runs | sort_by(.run_number) | last | [.status, .conclusion] | @tsv')"
               case "$result" in

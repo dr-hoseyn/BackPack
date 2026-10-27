@@ -77,6 +77,16 @@ func (l *lifecycle) countGeneration(ctx context.Context, counter *int32, delta i
 	return true
 }
 
+func (l *lifecycle) retireIdleSession(generation, owner context.Context, counter *int32, floor int) bool {
+	l.counterMutex.Lock()
+	defer l.counterMutex.Unlock()
+	if generation.Err() != nil || owner.Err() != nil || floor < 1 || atomic.LoadInt32(counter) <= int32(floor) {
+		return false
+	}
+	atomic.AddInt32(counter, -1)
+	return true
+}
+
 // seated records the client that has just taken the seat: the engine reports
 // it as the peer (see metrics.Snapshot.Connected), and two clients taking
 // turns are named in the log.

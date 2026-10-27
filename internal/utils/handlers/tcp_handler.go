@@ -93,9 +93,9 @@ func transferData(from net.Conn, to net.Conn, logger *logrus.Logger, usage *traf
 	}
 	countBuffered()
 
-	bufp := getRelayBuffer()
-	if transferBuffered(from, to, *bufp, logger, usage, remotePort, sniffer) {
-		putRelayBuffer(bufp)
+	buf := newRelayCopyBuffer()
+	if copyBuffered(from, to, &buf, logger, usage, remotePort, sniffer) {
+		buf.release()
 	}
 }
 
@@ -105,7 +105,12 @@ func transferData(from net.Conn, to net.Conn, logger *logrus.Logger, usage *traf
 // returning it to the pool would let another relay overwrite an in-flight frame.
 // Successful writes keep the normal allocation-free pool path.
 func transferBuffered(from net.Conn, to net.Conn, buf []byte, logger *logrus.Logger, usage *traffic.Usage, remotePort int, sniffer bool) bool {
+	return copyBuffered(from, to, &relayCopyBuffer{p: &buf}, logger, usage, remotePort, sniffer)
+}
+
+func copyBuffered(from net.Conn, to net.Conn, buffer *relayCopyBuffer, logger *logrus.Logger, usage *traffic.Usage, remotePort int, sniffer bool) bool {
 	for {
+		buf := *buffer.p
 		// Read data from the source connection
 		r, err := from.Read(buf)
 		// A Read is allowed to return bytes and an error together, and io.Reader
@@ -133,6 +138,7 @@ func transferBuffered(from net.Conn, to net.Conn, buf []byte, logger *logrus.Log
 			finishDirection(from, to, err)
 			return true
 		}
+		buffer.grow(r)
 	}
 }
 
