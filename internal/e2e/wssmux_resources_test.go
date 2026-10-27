@@ -150,7 +150,7 @@ func TestWSMuxResourceProfile(t *testing.T) {
 	appBytes := float64(workers * rounds * len(payload))
 	cpu := cpuAfter.Total() - cpuBefore.Total()
 	t.Logf("RESOURCE_MIXED app_bytes=%.0f echo_mbps=%.1f cpu_seconds=%.6f cpu_seconds_per_gib=%.6f probe_p99_ms=%.3f gc_cycles=%d gc_pause_ms=%.3f", appBytes,
-		appBytes*8/seconds/1e6, cpu, cpu/(appBytes/(1<<30)), float64(latencies[99])/float64(time.Millisecond), after.NumGC-idle.NumGC,
+		appBytes*8/seconds/1e6, cpu, cpu/(appBytes/(1<<30)), float64(latencies[(len(latencies)*99+99)/100-1])/float64(time.Millisecond), after.NumGC-idle.NumGC,
 		float64(after.PauseTotalNs-idle.PauseTotalNs)/1e6)
 	for _, c := range connections {
 		c.Close()

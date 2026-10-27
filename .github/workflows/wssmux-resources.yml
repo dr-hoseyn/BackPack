@@ -25,6 +25,7 @@ jobs:
           cache: true
       - name: Prove buffer ownership, negotiation and idle retirement
         run: |
+          go test ./internal/utils/handlers -run '^TestAdaptiveRelay' -count=5 -v -timeout 1m
           go test -race ./internal/utils/handlers ./internal/utils/network ./internal/client/transport ./internal/server/transport \
             -run '^Test(AdaptiveRelay|WSMux|MuxIdle|ConcurrentMux|MuxPool)' -count=5 -v -timeout 3m
           go test -race ./internal/e2e -run '^TestWSMuxNegotiatedVersionsCarryRealTraffic$' -count=2 -v -timeout 3m

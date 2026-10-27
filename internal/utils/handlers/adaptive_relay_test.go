@@ -65,6 +65,11 @@ func TestAdaptiveRelayFailedWriteDoesNotRecycleQueuedBytes(t *testing.T) {
 }
 
 func TestAdaptiveRelayWarmPoolDoesNotAllocate(t *testing.T) {
+	if raceEnabled {
+		// sync.Pool deliberately drops 1/4 of Put calls under -race. Two
+		// pools therefore measure injected cold allocations, not reuse cost.
+		t.Skip("allocation budget runs without race-injected pool discards")
+	}
 	b := newRelayCopyBuffer()
 	b.grow(smallRelayBufferSize)
 	b.release()
