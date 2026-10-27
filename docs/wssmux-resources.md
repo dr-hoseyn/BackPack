@@ -58,12 +58,18 @@ improvement. Loopback measurements establish regressions, not WAN capacity.
 The `WSS Mux resource verification` workflow alternates five independent
 baseline (`v1.16.0`) and candidate processes on one runner. Each holds 1,000
 verified idle TCP streams while eight workers transfer random payloads and
-new users send probes. Every echo is checked byte-for-byte. CPU covers the
+new users send probes. Both revisions use smux 2, as existing presets do, to
+isolate resource policy from protocol changes. Every echo is checked byte-for-byte. CPU covers the
 combined client/server process; echo goodput counts one direction's application
 bytes once. The report includes GC cycles and pause time. A separate real
 60-second retirement test keeps one user silent, verifies the pool returns to
 its configured floor and then transfers more bytes on that same connection.
 The broader throughput workflow independently verifies one-direction capacity.
+An additional comparison uses disposable network namespaces with 40 ms delay
+in each direction, 0.1 percent packet loss and a 200 Mbit/s queue, applied only
+to the actual tunnel port. It keeps the application/backend hops local and
+compares three independent processes per version with 16 idle streams and
+automatic mux version selection, including the old-1/new-2 transition.
 
 Reproduce on Linux:
 
@@ -105,5 +111,4 @@ and a p99/throughput comparison justify a per-service setting.
 
 </div>
 
-Last verified against Backpack v1.16.0 (2026-10-27); implementation and Linux
-verification commands for the next resource release.
+Last verified against Backpack v1.17.0 (2026-10-27).

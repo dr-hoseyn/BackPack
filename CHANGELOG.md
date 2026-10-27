@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+## v1.17.0 — 2026-10-27
+
+- Start TCP relay directions with a pooled 16 KiB buffer and grow immediately
+  to the existing 64 KiB bulk buffer after a full read. Preserve byte ordering,
+  directional EOF, cancellation, accounting and failed-mux-write ownership.
+- Negotiate WS Mux/WSS Mux smux versions in the authenticated data upgrade.
+  Automatic new peers prefer version 2; explicit choices are honored and older
+  peers retain their legacy version. Keep TLS fingerprinting and credential
+  binding unchanged. A version conflict fails during setup.
+- Size WS Mux/WSS Mux growth using actual stream occupancy. Lower the repair
+  target after demand subsides and retire only excess sessions without streams
+  or workers for 60 seconds, retaining the configured pool floor and preserving
+  silent open users. Enable retirement only with a supporting peer.
+- Gate publication on a same-runner comparison against v1.16.0 of memory for
+  1,000 idle streams, CPU per GiB, verified concurrent bulk transfers, fresh-user
+  p99 latency and real idle-session retirement. Preserve CPU/heap profiles and
+  raw measurements; keep GC settings and application windows unchanged.
+
 ## v1.16.0 — 2026-10-26
 
 - Add **Edit → Automatic Address Failover** for existing reverse client

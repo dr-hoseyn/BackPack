@@ -52,6 +52,19 @@ jobs:
           done
           python3 .github/scripts/compare-wssmux-resources.py "$RUNNER_TEMP" | tee "$RUNNER_TEMP/resource-comparison.json"
           cat "$RUNNER_TEMP/resource-comparison.json" >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve CPU and idle-heap profiles outside the timed comparison
+        env:
+          BP_RESOURCE_BENCHMARK: '1'
+          BP_RESOURCE_PROFILE_DIR: ${{ runner.temp }}
+        run: |
+          set -euo pipefail
+          for kind in baseline candidate; do
+            BP_RESOURCE_PROFILE_NAME="$kind" "$RUNNER_TEMP/resource-$kind" \
+              -test.run '^TestWSMuxResourceProfile$' -test.v -test.timeout 2m \
+              | tee "$RUNNER_TEMP/resource-profile-$kind.txt"
+            go tool pprof -top -nodecount=30 "$RUNNER_TEMP/resource-$kind" \
+              "$RUNNER_TEMP/resource-$kind-cpu.pprof" > "$RUNNER_TEMP/resource-$kind-cpu.txt"
+          done
       - name: Retire excess physical sessions while preserving a silent user
         env:
           BP_RESOURCE_RETIREMENT: '1'
@@ -59,13 +72,39 @@ jobs:
           set -o pipefail
           "$RUNNER_TEMP/resource-candidate" -test.run '^TestWSMuxPoolRetiresAfterLoadWithoutDisconnectingQuietUser$' \
             -test.v -test.timeout 2m | tee "$RUNNER_TEMP/resource-retirement.txt"
+      - name: Compare quality with delay, loss and a fixed link rate
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq iproute2
+          for sample in 1 2 3; do
+            order="baseline candidate"
+            if [ $((sample % 2)) -eq 0 ]; then order="candidate baseline"; fi
+            for kind in $order; do
+              sudo env GOMAXPROCS=4 BP_RESOURCE_BENCHMARK=1 BP_RESOURCE_IDLE_CONNECTIONS=16 \
+                BP_RESOURCE_ROUNDS=2 BP_RESOURCE_NETEM=1 BP_RESOURCE_MUX_AUTO=1 BIN="$RUNNER_TEMP/resource-$kind" \
+                unshare --net -- bash -eu -c 'ip link set lo up; ulimit -n 16384; exec "$BIN" -test.run "^TestWSMuxResourceProfile$" -test.v -test.timeout 2m' \
+                | tee "$RUNNER_TEMP/delayed-$kind-$sample.txt"
+            done
+          done
+          python3 .github/scripts/compare-wssmux-resources.py "$RUNNER_TEMP" delayed | tee "$RUNNER_TEMP/delayed-comparison.json"
+          cat "$RUNNER_TEMP/delayed-comparison.json" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: wssmux-resources
-          path: ${{ runner.temp }}/resource-*.txt
+          path: |
+            ${{ runner.temp }}/resource-*.txt
+            ${{ runner.temp }}/delayed-*.txt
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: wssmux-profiles
+          path: ${{ runner.temp }}/resource-*.pprof
       - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: wssmux-resource-comparison
-          path: ${{ runner.temp }}/resource-comparison.json
+          path: |
+            ${{ runner.temp }}/resource-comparison.json
+            ${{ runner.temp }}/delayed-comparison.json

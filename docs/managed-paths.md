@@ -148,4 +148,4 @@ certificate renewal still require validation in your deployment.
 
 </div>
 
-*Last verified against Backpack v1.16.0, 2026-10-26.*
+*Last verified against Backpack v1.17.0, 2026-10-26.*

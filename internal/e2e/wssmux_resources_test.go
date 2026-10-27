@@ -6,7 +6,10 @@ import (
 	"io"
 	"net"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"runtime"
+	"runtime/pprof"
 	"sort"
 	"strconv"
 	"sync"
@@ -27,10 +30,33 @@ func resourceTunnel(t *testing.T) (*tunnel, int) {
 	cli := baseClientConfig("wssmux", fmt.Sprintf("127.0.0.1:%d", tunnelPort), token, nil)
 	srv.MuxCon, cli.ConnectionPool = 32, 4
 	srv.ChannelSize = 4096
-	srv.MuxVersion, cli.MuxVersion = 0, 0
+	// Presets already pin version 2. Keep the same protocol on both revisions
+	// so this comparison isolates resource policy from protocol negotiation.
+	srv.MuxVersion, cli.MuxVersion = 2, 2
+	if os.Getenv("BP_RESOURCE_MUX_AUTO") != "" {
+		srv.MuxVersion, cli.MuxVersion = 0, 0
+	}
 	srv.MaxReceiveBuffer, cli.MaxReceiveBuffer = 16<<20, 16<<20
 	srv.MaxStreamBuffer, cli.MaxStreamBuffer = 8<<20, 8<<20
 	srv.Nodelay, cli.Nodelay = true, true
+	if os.Getenv("BP_RESOURCE_NETEM") != "" {
+		// Called only inside the disposable network namespace in CI. Match
+		// the tunnel port so the application/backend hops stay local.
+		commands := [][]string{
+			{"qdisc", "add", "dev", "lo", "root", "handle", "1:", "prio"},
+			{"qdisc", "add", "dev", "lo", "parent", "1:3", "handle", "30:", "netem", "delay", "40ms", "loss", "0.1%", "rate", "200mbit", "limit", "10000"},
+		}
+		for _, direction := range []string{"dport", "sport"} {
+			commands = append(commands, []string{"filter", "add", "dev", "lo", "protocol", "ip", "parent", "1:", "prio", "1", "u32",
+				"match", "ip", "protocol", "6", "0xff", "match", "ip", direction, strconv.Itoa(tunnelPort), "0xffff", "flowid", "1:3"})
+		}
+		for _, args := range commands {
+			if output, err := exec.Command("tc", args...).CombinedOutput(); err != nil {
+				t.Fatalf("netem setup: %v: %s", err, output)
+			}
+		}
+		t.Cleanup(func() { _ = exec.Command("tc", "qdisc", "del", "dev", "lo", "root").Run() })
+	}
 	tun := runPair(t, srv, cli, entryPort, tunnelPort)
 	if err := tun.waitReady(tunnelReadyTimeout); err != nil {
 		t.Fatal(err)
@@ -94,17 +120,51 @@ func TestWSMuxResourceProfile(t *testing.T) {
 	}
 	t.Logf("RESOURCE_IDLE connections=%d heap_delta_bytes=%d heap_bytes=%d rss_bytes=%d goroutines=%d", count,
 		int64(idle.HeapAlloc)-int64(before.HeapAlloc), idle.HeapAlloc, mem.RSS, runtime.NumGoroutine())
+	profileDir := os.Getenv("BP_RESOURCE_PROFILE_DIR")
+	profileName := os.Getenv("BP_RESOURCE_PROFILE_NAME")
+	if profileDir != "" {
+		f, err := os.Create(filepath.Join(profileDir, "resource-"+profileName+"-heap.pprof"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := pprof.WriteHeapProfile(f); err != nil {
+			t.Fatal(err)
+		}
+		if err := f.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
 
 	payload := randomPayload(t, 4<<20)
 	if err := tun.roundTrip(payload); err != nil {
 		t.Fatal(err)
+	}
+	stopCPU := func() {}
+	if profileDir != "" {
+		f, err := os.Create(filepath.Join(profileDir, "resource-"+profileName+"-cpu.pprof"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := pprof.StartCPUProfile(f); err != nil {
+			f.Close()
+			t.Fatal(err)
+		}
+		stopCPU = sync.OnceFunc(func() { pprof.StopCPUProfile(); f.Close() })
+		defer stopCPU()
 	}
 	cpuBefore, err := self.Times()
 	if err != nil {
 		t.Fatal(err)
 	}
 	started := time.Now()
-	const workers, rounds = 8, 16
+	const workers = 8
+	rounds := 16
+	if value := os.Getenv("BP_RESOURCE_ROUNDS"); value != "" {
+		rounds, err = strconv.Atoi(value)
+		if err != nil || rounds < 1 || rounds > 64 {
+			t.Fatal("invalid resource transfer rounds")
+		}
+	}
 	results := make(chan error, workers)
 	var probes sync.WaitGroup
 	var latencies []time.Duration
@@ -141,6 +201,7 @@ func TestWSMuxResourceProfile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	stopCPU()
 	probes.Wait()
 	if probeErr != nil {
 		t.Fatal(probeErr)

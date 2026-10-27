@@ -46,11 +46,9 @@ func ResolveMuxVersion(configured int) int {
 }
 
 // ResolveStaticMuxVersion is the choice for every mux transport that cannot
-// negotiate — KCP and xDi (whose control channel is itself a smux session, so
-// there is no muxless channel to agree over) and the websocket-mux transports
-// (which were simply never given a negotiation handshake). Both ends resolve
-// independently and must land on the same number from the same config, which
-// they do because the resolution is deterministic.
+// negotiate — KCP and xDi (whose control channel is itself a smux session),
+// plus websocket-mux connections to older peers without upgrade negotiation.
+// Both legacy ends resolve independently from their configuration.
 //
 // Auto becomes 1, not 2, and the difference is the whole point: these transports
 // used version 1 on the previous release, so a 1.7.0 end meeting a 1.6.5 end has
