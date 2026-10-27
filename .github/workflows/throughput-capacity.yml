@@ -3,23 +3,18 @@ on:
   push:
     branches: [main]
   pull_request:
-    paths:
-      - 'internal/client/**'
-      - 'internal/server/**'
-      - 'internal/manage/**'
-      - 'internal/utils/network/**'
-      - 'internal/e2e/**'
-      - '.github/workflows/throughput-capacity.yml'
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: capacity-${{ github.ref }}
+  group: wssmux-resources-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  capacity:
+  resources:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 20
+    env:
+      GOMAXPROCS: '4'
     steps:
       - uses: actions/checkout@v7
         with:
@@ -28,81 +23,46 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Apply the same host tuning as Optimize
+      - name: Build candidate and identical measurement on v1.16.0
         run: |
-          set -o pipefail
-          sudo modprobe tcp_bbr || true
-          mkdir .capacity-kernel
-          trap 'rm -f .capacity-kernel/main.go; rmdir .capacity-kernel' EXIT
-          cat > .capacity-kernel/main.go <<'GO'
-          package main
-          import ("fmt"; "github.com/backpack/backpack/internal/optimize")
-          func main() { for _, row := range optimize.FullTuning() { fmt.Printf("%s=%s\n", row[0], row[1]) } }
-          GO
-          go run ./.capacity-kernel | while IFS= read -r setting; do sudo sysctl -w "$setting" || true; done
-          sysctl net.ipv4.tcp_available_congestion_control net.ipv4.tcp_congestion_control
-      - name: Capacity regressions with the race detector
+          set -euo pipefail
+          git worktree add --detach "$RUNNER_TEMP/resource-base" v1.16.0
+          cp internal/e2e/wssmux_resources_test.go "$RUNNER_TEMP/resource-base/internal/e2e/"
+          go test -c -o "$RUNNER_TEMP/resource-candidate" ./internal/e2e
+          (cd "$RUNNER_TEMP/resource-base" && go test -c -o "$RUNNER_TEMP/resource-baseline" ./internal/e2e)
+      - name: Compare quality with delay, loss and a fixed link rate
         run: |
-          sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
-          sudo sysctl -w net.core.rmem_max=268435456 net.core.wmem_max=268435456
-          go test -race ./internal/client/transport ./internal/server/transport ./internal/utils/network ./internal/manage/tunnelspec -timeout 8m
-          go test -race ./internal/e2e -run '^TestMuxCapacityGrowsWhileExistingForwardsStayOpen$' -count=1 -v -timeout 3m
-          go test -race ./internal/e2e -run '^TestTransportConcurrentConnections/wsmux$' -count=25 -timeout 3m
-      - name: Verify host TCP without any tunnel
-        env:
-          BP_CAPACITY_BENCHMARK: '1'
-          BP_CAPACITY_DIAGNOSTICS: '1'
-        run: |
-          set -o pipefail
-          uname -a
-          sysctl net.ipv4.tcp_rmem net.ipv4.tcp_wmem net.ipv4.tcp_mem
-          go test ./internal/e2e -run '^TestDirectBackendBulkCapacity$' -count=50 -v -json -timeout 4m | tee "$RUNNER_TEMP/capacity-direct.jsonl"
-      - name: Measure candidate goodput
-        id: candidate
-        env:
-          BP_CAPACITY_BENCHMARK: '1'
-          BP_CAPACITY_DIAGNOSTICS: '1'
-          BP_CAPACITY_MIN_MBPS: '600'
-        run: |
-          set -o pipefail
-          go test ./internal/e2e -run '^TestBulkProfile(Transport|Download)Capacity$' -count=8 -v -json -timeout 10m | tee "$RUNNER_TEMP/capacity-candidate.jsonl"
-      - name: Measure the same transfers on the base revision
-        if: github.event_name == 'pull_request'
-        # The old revision can reproduce the admission/timeout bug this PR
-        # fixes. Preserve its failed measurements without skipping the new
-        # revision's mandatory sustained-load check.
-        continue-on-error: true
-        env:
-          BP_CAPACITY_BENCHMARK: '1'
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: |
-          set -o pipefail
-          git worktree add --detach "$RUNNER_TEMP/capacity-base" "$BASE_SHA"
-          cp internal/e2e/capacity_benchmark_test.go internal/e2e/harness_test.go "$RUNNER_TEMP/capacity-base/internal/e2e/"
-          cd "$RUNNER_TEMP/capacity-base"
-          go test ./internal/e2e -run '^TestBulkProfileTransportCapacity$' -count=3 -v -json -timeout 6m | tee "$RUNNER_TEMP/capacity-base.jsonl"
-      - name: Keep fresh users working during sustained bulk traffic
-        env:
-          BP_CAPACITY_SOAK_SECONDS: '60'
-        run: |
-          set -o pipefail
-          go test ./internal/e2e -run '^TestBulkProfileKeepsAcceptingUsersUnderSustainedLoad$' -count=1 -v -timeout 6m | tee "$RUNNER_TEMP/capacity-soak.txt"
-      - name: Publish measurements
-        if: always()
-        run: |
-          for report in "$RUNNER_TEMP"/capacity-*.jsonl; do
-            [ -f "$report" ] || continue
-            echo "### $(basename "$report")" >> "$GITHUB_STEP_SUMMARY"
-            echo '```text' >> "$GITHUB_STEP_SUMMARY"
-            python3 -c 'import json,sys; [print(e["Output"].strip()) for l in open(sys.argv[1]) if any(k in (e:=json.loads(l)).get("Output", "") for k in ("CAPACITY ", "CAPACITY_DOWNLOAD "))]' "$report" >> "$GITHUB_STEP_SUMMARY"
-            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq iproute2
+          for sample in 1 2 3; do
+            order="baseline candidate"
+            if [ $((sample % 2)) -eq 0 ]; then order="candidate baseline"; fi
+            for kind in $order; do
+              sudo env GOMAXPROCS=4 BP_RESOURCE_BENCHMARK=1 BP_RESOURCE_IDLE_CONNECTIONS=16 \
+                BP_RESOURCE_ROUNDS=2 BP_RESOURCE_NETEM=1 BP_RESOURCE_MUX_AUTO=1 BIN="$RUNNER_TEMP/resource-$kind" \
+                unshare --net -- bash -eu -c 'ip link set lo up; ulimit -n 16384; exec "$BIN" -test.run "^TestWSMuxResourceProfile$" -test.v -test.timeout 2m' \
+                | tee "$RUNNER_TEMP/delayed-$kind-$sample.txt"
+            done
           done
+          python3 .github/scripts/compare-wssmux-resources.py "$RUNNER_TEMP" delayed | tee "$RUNNER_TEMP/delayed-comparison.json"
+          cat "$RUNNER_TEMP/delayed-comparison.json" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: throughput-capacity
+          name: wssmux-resources
           path: |
-            ${{ runner.temp }}/capacity-candidate.jsonl
-            ${{ runner.temp }}/capacity-base.jsonl
-            ${{ runner.temp }}/capacity-soak.txt
-            ${{ runner.temp }}/capacity-direct.jsonl
+            ${{ runner.temp }}/resource-*.txt
+            ${{ runner.temp }}/delayed-*.txt
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: wssmux-profiles
+          path: ${{ runner.temp }}/resource-*.pprof
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: wssmux-resource-comparison
+          path: |
+            ${{ runner.temp }}/resource-comparison.json
+            ${{ runner.temp }}/delayed-comparison.json
