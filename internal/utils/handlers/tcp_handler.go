@@ -27,22 +27,17 @@ func TCPConnectionHandler(ctx context.Context, proxyProtocol bool, from net.Conn
 		}
 	}
 
-	// Both directions run in their own goroutine so that cancellation is seen
-	// even when the connection is completely idle. Running one of them here
-	// meant the ctx case was not reached until that Read returned, and an idle
-	// Read returns when the peer sends something — which on a connection
-	// nobody is using is never. A tunnel could shut down or reload and leave
-	// the previous generation's forwarded connections open behind it, holding
-	// their descriptors and their goroutines for as long as the process ran.
+	// The cancellation callback above interrupts even an idle synchronous
+	// Read. Reuse the caller for one direction instead of parking it beside
+	// two additional goroutines for the lifetime of every forwarded stream.
+	// Still join both copies, preserving directional EOF and quota lifetime.
 	done := make(chan struct{}, 2)
 	go func() {
 		transferData(from, to, logger, usage, remotePort, sniffer)
 		done <- struct{}{}
 	}()
-	go func() {
-		transferData(to, from, logger, usage, remotePort, sniffer)
-		done <- struct{}{}
-	}()
+	transferData(to, from, logger, usage, remotePort, sniffer)
+	done <- struct{}{}
 
 	if halfCloser(from) != nil && halfCloser(to) != nil {
 		awaitDirectionalRelay(ctx, done, from, to)

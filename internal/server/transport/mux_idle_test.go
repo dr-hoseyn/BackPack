@@ -63,11 +63,15 @@ func TestMuxIdleRetirementNeverClosesAnOpenStream(t *testing.T) {
 	if _, err := io.ReadFull(app, got); err != nil || string(got) != "still alive" {
 		t.Fatalf("quiet user's transfer failed: %q, %v", got, err)
 	}
+	closedAt := time.Now()
 	stream.Close()
 	select {
 	case <-done:
 	case <-time.After(time.Second):
 		t.Fatal("excess session was not retired after its final stream ended")
+	}
+	if time.Since(closedAt) < loop.idleTimeout {
+		t.Fatal("long-lived stream did not get a full idle interval after closing")
 	}
 	if atomic.LoadInt32(&sessions) != 1 || atomic.LoadInt32(&streams) != 0 {
 		t.Fatalf("retirement counters = %d sessions, %d streams", sessions, streams)

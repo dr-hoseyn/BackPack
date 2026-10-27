@@ -7,6 +7,9 @@ Directions that never fill the small buffer retain one quarter of the previous
 copy-buffer memory. This is a buffer-size calculation, not a claim that process
 RSS falls by 75 percent: mux queues, TLS, stacks, sockets and other state remain.
 Buffers held by a failed mux write are never recycled into another transfer.
+The TCP relay also reuses its caller for one direction instead of keeping a
+third goroutine parked beside two copies. The existing cancellation callback
+interrupts idle reads, and both directions are joined before releasing quotas.
 
 ## Physical session growth and retirement
 

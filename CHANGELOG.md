@@ -7,6 +7,8 @@
 - Start TCP relay directions with a pooled 16 KiB buffer and grow immediately
   to the existing 64 KiB bulk buffer after a full read. Preserve byte ordering,
   directional EOF, cancellation, accounting and failed-mux-write ownership.
+  Reuse the relay caller for one direction, removing one parked goroutine per
+  forwarded TCP stream per endpoint while retaining cancellation and joins.
 - Negotiate WS Mux/WSS Mux smux versions in the authenticated data upgrade.
   Automatic new peers prefer version 2; explicit choices are honored and older
   peers retain their legacy version. Keep TLS fingerprinting and credential

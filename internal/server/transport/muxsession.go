@@ -176,16 +176,19 @@ func (m muxSession) run(session *smux.Session) {
 		case <-session.CloseChan():
 			return
 
-		case <-activity:
-			idleSince = time.Now()
-			<-counter
-			continue
-
 		case now := <-idleTick:
 			// This loop is the only stream opener. Release its speculative
 			// slot and retire only when no worker or stream remains; checking
 			// NumStreams from a concurrent client-side timer cannot do that.
 			<-counter
+			// Completion is queued before its worker returns the slot. Drain
+			// it here even when the timer wins select, so a long-lived stream
+			// that just ended gets a full idle period before retirement.
+			select {
+			case <-activity:
+				idleSince = time.Now()
+			default:
+			}
 			if len(counter) == 0 && session.NumStreams() == 0 && now.Sub(idleSince) >= m.idleTimeout && m.idleRetire() {
 				retired = true
 				return
@@ -253,11 +256,11 @@ func (m muxSession) run(session *smux.Session) {
 					incomingConn.conn, metrics.CountedConn(stream), m.log, m.usage,
 					localForwardPort(incomingConn.conn), m.sniffer)
 				m.add(m.streams, -1)
-				<-counter // read signal from the channel
 				select {
 				case activity <- struct{}{}:
 				default:
 				}
+				<-counter // publish completion only after its idle notification
 			}()
 		}
 	}
