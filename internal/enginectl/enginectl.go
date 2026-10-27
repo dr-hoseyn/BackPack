@@ -165,11 +165,21 @@ func Serve(ctx context.Context, name string, h Handler) error {
 		return fmt.Errorf("enginectl: %w", err)
 	}
 
+	stop := make(chan struct{})
+	stopped := make(chan struct{})
 	go func() {
-		<-ctx.Done()
+		defer close(stopped)
+		select {
+		case <-ctx.Done():
+		case <-stop:
+		}
 		ln.Close()
 		_ = os.Remove(path)
 	}()
+	// The next engine may reuse this path as soon as Serve returns. Finish the
+	// old listener's removal first, and do not leave a closer waiting forever
+	// if Accept itself fails before the parent context ends.
+	defer func() { close(stop); <-stopped }()
 
 	for {
 		conn, err := ln.Accept()

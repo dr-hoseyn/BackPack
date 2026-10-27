@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+## v1.18.0 — 2026-10-27
+
+- Automatically enable persistent high-concurrency host tuning for the
+  Throughput preset on Linux, including existing Throughput tunnels starting
+  after an update and preset changes picked up by config reload. Preserve
+  manual transport tuning and reverse `skip_optz` opt-outs. Reserve configured
+  ports before opening listeners, retain the original host rollback snapshot,
+  and leave the shared policy active when another preset is selected.
+
+- Join the engine control socket and finish removing its listener before the
+  engine returns, preventing shutdown races and stale cleanup of a replacement
+  socket.
+- Keep KCP, QUIC and raw-packet tunnels on their working backup instead of
+  interrupting traffic based only on ICMP reachability. Ordinary dial-failure
+  fallback remains enabled; TCP control carriers, including raw UDP forwarding,
+  retain health-scored switching.
+
 ## v1.17.0 — 2026-10-27
 
 - Start TCP relay directions with a pooled 16 KiB buffer and grow immediately

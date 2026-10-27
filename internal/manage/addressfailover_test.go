@@ -47,6 +47,20 @@ func TestHealthFailoverRequiresClientWithBackup(t *testing.T) {
 	}
 }
 
+func TestHealthFailoverRejectsICMPOnlyCarriersWithoutChangingTheSpec(t *testing.T) {
+	for _, tr := range []string{"kcp", "quic", "xdi", "pck", "spoof"} {
+		s := TunnelSpec{Role: "client", Transport: tr, RemoteAddr: "192.0.2.1:443", FallbackAddrs: []string{"192.0.2.2:443"}}
+		if err := setHealthFailover(&s, true); err == nil || s.HealthFailover || len(s.FallbackAddrs) != 1 {
+			t.Fatalf("enabled ICMP-only disruptive switching for %s: %v", tr, err)
+		}
+	}
+	// Raw UDP forwarding uses TCP signaling and can verify its control port.
+	s := TunnelSpec{Role: "client", Transport: "udp", RemoteAddr: "192.0.2.1:443", FallbackAddrs: []string{"192.0.2.2:443"}}
+	if err := setHealthFailover(&s, true); err != nil || !s.HealthFailover {
+		t.Fatalf("raw UDP TCP control health was rejected: %v", err)
+	}
+}
+
 func TestAddressFailoverEditsUseTheSharedSafeApply(t *testing.T) {
 	previous := LoadSpec
 	defer func() { LoadSpec = previous }()

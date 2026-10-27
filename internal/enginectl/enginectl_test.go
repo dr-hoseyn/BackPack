@@ -35,10 +35,11 @@ func serveTest(t *testing.T, h Handler) string {
 	t.Cleanup(func() { Dir = prev })
 
 	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
+	done := make(chan struct{})
+	t.Cleanup(func() { cancel(); <-done })
 
 	ready := make(chan error, 1)
-	go func() { ready <- Serve(ctx, "fr-relay", h) }()
+	go func() { defer close(done); ready <- Serve(ctx, "fr-relay", h) }()
 
 	// Serve blocks in Accept, so its readiness is the socket existing.
 	deadline := time.Now().Add(5 * time.Second)
@@ -223,7 +224,9 @@ func TestTheSocketIsRemovedWhenTheEngineStops(t *testing.T) {
 	t.Cleanup(func() { Dir = prev })
 
 	ctx, cancel := context.WithCancel(context.Background())
-	go func() { _ = Serve(ctx, "fr-relay", &fakeEngine{}) }()
+	done := make(chan struct{})
+	go func() { defer close(done); _ = Serve(ctx, "fr-relay", &fakeEngine{}) }()
+	t.Cleanup(func() { cancel(); <-done })
 
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
@@ -233,6 +236,10 @@ func TestTheSocketIsRemovedWhenTheEngineStops(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	cancel()
+	<-done
+	if _, err := os.Stat(SocketPath("fr-relay")); !os.IsNotExist(err) {
+		t.Fatalf("Serve returned before removing its socket: %v", err)
+	}
 
 	deadline = time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {

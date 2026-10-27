@@ -129,8 +129,9 @@ type L3Config struct {
 	// carriers do not take it — they already vary their source per packet.
 	Paths int `toml:"paths"`
 
-	// Preset is the name of the tuning profile the two keys below came from.
-	// It is a label: the engine reads the values, not this.
+	// Preset records the tuning profile. On Linux, throughput also enables
+	// persistent high-concurrency host tuning at startup and reload. Updating
+	// the binary preserves the individual transport values below.
 	Preset string `toml:"preset"`
 
 	// TxQueueLen is how many packets the kernel may hold for the interface

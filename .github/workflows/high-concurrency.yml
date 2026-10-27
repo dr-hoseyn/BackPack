@@ -5,8 +5,12 @@ on:
     branches: [main]
   pull_request:
     paths:
+      - 'cmd/**'
+      - 'config/**'
       - 'internal/optimize/**'
       - 'internal/cli/**'
+      - 'internal/manage/host/**'
+      - 'internal/manage/tunnelspec/preset*'
       - 'internal/manage/health/**'
       - '.github/workflows/high-concurrency.yml'
   workflow_dispatch:
@@ -26,5 +30,7 @@ jobs:
           cache: true
       - name: Reserve ports, failure rollback, optimizer compatibility and CLI
         run: go test -race ./internal/optimize ./internal/cli -count=1 -timeout 3m
+      - name: Existing Throughput configs, preset reload and pre-listen reservations
+        run: go test -race ./cmd ./internal/manage/host -run '^(TestThroughput|TestReservedPortsFor|TestListenPortsOf)' -count=1 -timeout 1m
       - name: Exhaust and recover real backend source ports in a private network namespace
         run: sudo env "PATH=$PATH" BP_CAPACITY_NETNS_TEST=1 go test ./internal/optimize -run '^TestHighConcurrencyRealLoopbackCapacity$' -count=1 -v -timeout 1m

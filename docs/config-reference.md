@@ -211,7 +211,7 @@ them both ends have to agree on. This says what exists.
 | `fallback_addrs` | `[]string` | FallbackAddrs are additional server addresses tried in order whenever the primary cannot be reached (a filtered IP, a blocked port, a CDN edge). |
 | `fallback_dwell` | `int` | FallbackDwell is how many seconds one transport candidate is held before the next is tried. 0 uses DefaultFallbackDwell. |
 | `fallback_transports` | `[]TransportType` | FallbackTransports and FallbackDwell mirror the server's; see there. They must match the server's list for the two ends to meet. |
-| `health_failover` | `bool` | HealthFailover scores the primary and backup addresses and reconnects the control channel and pool on the healthier route. Switching interrupts active sessions. It needs distinct backup addresses and overrides LoadBalance. TCP routes can use connect timing when ICMP is unavailable. |
+| `health_failover` | `bool` | HealthFailover scores the primary and backup addresses and reconnects the control channel and pool on the healthier route. Switching interrupts active sessions. It needs distinct backup addresses and overrides LoadBalance. TCP routes can use connect timing when ICMP is unavailable. KCP, QUIC and raw-packet carriers keep dial-failure fallback instead of disruptive ICMP-only switching, because ping cannot validate their port. |
 | `interface` | `string` | Interface pins those connections to a named device, for when the source address alone does not settle the route. Linux, and needs CAP_NET_RAW. |
 | `keepalive_period` | `int` | Keepalive is how often, in seconds, an idle connection is probed. It also decides how long a dead peer takes to notice — too low tears down a tunnel that is merely slow, which on a bad path is the difference between a working tunnel and one that flaps. |
 | `load_balance` | `bool` | LoadBalance spreads the pool's data connections over every configured address instead of putting them all on the live one. All the addresses must reach the SAME server, since the control channel — and therefore the tunnel's identity — lives on one of them. |
@@ -230,7 +230,7 @@ them both ends have to agree on. This says what exists.
 | `path_policy` | `PathPolicy` | PathPolicy tunes verified probing, hysteresis and failover for Paths only. |
 | `paths` | `[]ManagedClientPath` | Paths keeps paired managed carriers warm and selects verified healthy paths. |
 | `pprof` | `bool` | PPROF exposes Go's profiling endpoint on loopback. Off by default, and loopback-only on purpose: its heap dump contains this tunnel's token. |
-| `preset` | `string` | Preset records which performance profile the tuning values came from — balance, turbo or aggressive. A label: the engine reads the values, never this. |
+| `preset` | `string` | Preset records the performance profile: balance, turbo, aggressive or throughput. On Linux, throughput also enables persistent high-concurrency host tuning at startup and reload unless skip_optz is true. Existing transport values are not re-expanded when the binary is updated. |
 | `proxy` | `string` | Proxy routes the connection to the tunnel server through a local or nearby proxy, for a client that cannot open an arbitrary outbound connection itself. One URL: "socks5://127.0.0.1:1080" or "http://user:pass@10.0.0.1:8080". Empty means dial the server directly. |
 | `remote_addr` | `string` | RemoteAddr is the server's address and port, as the client dials it. The port must match the server's bind_addr. |
 | `retry_interval` | `int` | RetryInterval is how many seconds to wait before dialling again after a failed attempt. |
@@ -268,7 +268,7 @@ them both ends have to agree on. This says what exists.
 | `mux_version` | `int` | MuxVersion, MaxFrameSize, MaxReceiveBuffer and MaxStreamBuffer tune the mux session. They are the same keys the reverse mux transports take. |
 | `nodelay` | `bool` | Nodelay disables Nagle on the tunnel connection. |
 | `ports` | `[]string` | Ports are the forwarded port mappings, served on the Iran side, in the same syntax the reverse tunnel uses. A target with no host of its own means the loopback of the kharej machine, where the real service listens. The kharej side needs none: every target arrives on the stream that asks for it. |
-| `preset` | `string` | Preset is the name of the tuning profile the keys below came from. It is a label: the engine reads the individual values, not this. It exists so a management screen can say "Turbo" rather than reciting four numbers. |
+| `preset` | `string` | Preset records the tuning profile. On Linux, throughput also enables persistent high-concurrency host tuning at startup and reload. Updating the binary preserves the individual transport values below. |
 | `retry_interval` | `int` | RetryInterval is how long to wait before redialling a dropped session, in seconds. Zero takes the default. |
 | `role` | `string` | Role is "iran" or "kharej". Empty means there is no direct tunnel in this configuration, which is how every pre-existing config reads. |
 | `server_name` | `string` | ServerName is the name the Iran side presents in SNI and the Host header on ws and wss — the domain in front of a CDN. Empty uses the host of Addr and, on wss, skips certificate verification: the tunnel authenticates on the token rather than the certificate, so a self-signed origin is the expected case. Setting it turns verification on. |
@@ -300,7 +300,7 @@ them both ends have to agree on. This says what exists.
 | `paths` | `int` | Paths spreads the udp carrier over this many sockets, on consecutive ports starting at the one in Addr. One (or zero) is a single socket. |
 | `peer_ip` | `string` | PeerIP is the other end's address on the tunnel. |
 | `ports` | `[]string` | Ports are forwarded port mappings served over the tunnel, in the same syntax as the reverse tunnel's: "443", "443=8443", "10000-10009", and "443=10.0.0.1:80\|10.0.0.2:80" for several backends. A target with no host of its own means PeerIP, which is what almost every mapping wants. |
-| `preset` | `string` | Preset is the name of the tuning profile the two keys below came from. It is a label: the engine reads the values, not this. |
+| `preset` | `string` | Preset records the tuning profile. On Linux, throughput also enables persistent high-concurrency host tuning at startup and reload. Updating the binary preserves the individual transport values below. |
 | `qdisc` | `string` | Qdisc is the queueing discipline on the interface, and is the setting that actually decides jitter. Empty takes fq_codel, which drops when packets start waiting instead of letting the queue grow into delay. |
 | `sni_domain` | `string` | SNIDomain is the server name the "sni" carrier puts in that hello. Empty uses the built-in default. It has to be a domain the path already lets through — which one that is depends on the route, so it is the operator's to choose and to test. |
 | `sockbuf` | `int` | SockBuf sizes the carrier's socket buffers in bytes. Zero takes the carrier default of 4 MiB. |
@@ -487,7 +487,7 @@ them both ends have to agree on. This says what exists.
 | `paths` | `[]ManagedServerPath` | Paths keeps 2..8 independent managed public carriers alive for one Reverse engine. |
 | `ports` | `[]string` | Ports are the forwarded ports this server exposes, as "443", "8080=127.0.0.1:80", "443-450" or "10.0.0.5:443". See docs/port-mappings.md for every form. |
 | `pprof` | `bool` | PPROF exposes Go's profiling endpoint on 127.0.0.1:6060. Off by default and loopback-only: its heap dump contains this tunnel's token. |
-| `preset` | `string` | Preset records which performance profile the tuning values came from — balance, turbo or aggressive. A label: the engine reads the values, never this. Set by hand only if you want the menu to stop offering to change them. |
+| `preset` | `string` | Preset records the performance profile: balance, turbo, aggressive or throughput. On Linux, throughput also enables persistent high-concurrency host tuning at startup and reload unless skip_optz is true. Existing transport values are not re-expanded when the binary is updated. |
 | `proxy_protocol` | `bool` | ProxyProtocol prefixes each forwarded connection with a PROXY protocol header, so the service behind the tunnel sees the user's real address rather than the tunnel's. The service has to be configured to expect it. |
 | `short` | `ShortServerConfig` | Short selects bounded fresh HTTPS requests for TCP Reverse. |
 | `simple_auth` | `bool` | SimpleAuth authorises a wss tunnel by the raw token instead of a proof bound to the TLS session. It exists for one deployment the binding otherwise makes impossible: a TLS-terminating reverse proxy — typically NGINX — in front of the tunnel, which holds a different TLS session from the client so a bound proof can never match. It is off by default because it hands the token to whoever terminates the TLS; turn it on only when a trusted proxy is doing so, and set it on both ends. |
@@ -528,4 +528,4 @@ them both ends have to agree on. This says what exists.
 
 ---
 
-*Generated from `config/` on 2026-10-27. Last verified against Backpack v1.17.0.*
+*Generated from `config/` on 2026-10-27. Last verified against Backpack v1.18.0.*

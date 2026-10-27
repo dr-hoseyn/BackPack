@@ -7,6 +7,8 @@ behavior. See [resource behavior and verification](docs/wssmux-resources.md).
 
 **v1.16.0:** automatic IPv4/IPv6 address failover now reconnects active tunnel pools when a path degrades. Enable **Edit → Automatic Address Failover** after adding the same server's IPv6 as a backup. TCP route checks follow configured proxies/source bindings and work when ping is blocked. Switching interrupts existing sessions. [Setup and limits](docs/failover-load-balancing.md).
 
+**v1.18.0:** Throughput automatically enables persistent host capacity tuning, including existing tunnels after update. Engine control shutdown is joined, and datagram failover no longer interrupts a working backup on ping evidence alone. See [high-traffic tuning](docs/high-traffic.md).
+
 **v1.15.1:** high-concurrency tuning also disables supported busy polling and restores the original CPU policy on rollback. The capacity suite separately verifies 600 Mbit/s one-direction downloads across nine core transports; full-duplex echo and WAN capacity are measured separately. See [high-traffic tuning](docs/high-traffic.md).
 
 **v1.15.0:** CLI-only management. The web dashboard and per-tunnel monitor pages are removed. Connection Test defaults to Quick (30 seconds plus speed on three finalists); Full remains available. Upgrading retires the legacy web service.

@@ -49,8 +49,12 @@ quality when available, and TCP connection timing when ICMP is blocked or ping
 is missing. Routes with a configured proxy or source/interface binding use TCP
 connection timing through that same route. For TCP measurements, loss means
 failed connection attempts rather than ICMP packet loss. Datagram-only carriers
-(KCP/QUIC/raw carriers) and the manual **Exit Health** view still rely on ICMP;
-use failure-only fallback if their endpoints block it. A successful TCP connect
+(KCP/QUIC/raw carriers) retain ordinary dial-failure fallback and do not enable
+disruptive health-scored switching: a host can answer ping while its tunnel
+port is closed. Existing `health_failover = true` configs on those carriers
+also keep their working backup until a real dial fails. Raw UDP forwarding is
+different: its TCP control port supports health-scored switching. The manual
+**Exit Health** view still uses ICMP for diagnostics. A successful TCP connect
 does not prove the tunnel's authentication handshake or payload works. A fixed
 WebSocket `edge_ip` still pins the physical destination; changing origin backup
 addresses cannot switch that fixed CDN edge between IPv4 and IPv6.
@@ -146,8 +150,10 @@ for the full picture.
 
 **نکته:** مسیرهای دارای کانال کنترل TCP، پورت تانل را هم بررسی می‌کنند و اگر
 پینگ بسته یا نصب نباشد، از زمان اتصال TCP استفاده می‌کنند. بررسی پراکسی و
-تنظیمات خروجی از همان مسیر واقعی عبور می‌کند. برای حامل‌های بدون کانال TCP و
-نمای دستی `Exit Health`، امتیازدهی همچنان به ICMP نیاز دارد. موفقیت اتصال TCP
+تنظیمات خروجی از همان مسیر واقعی عبور می‌کند. حامل‌های بدون کانال کنترل TCP، مثل
+KCP و QUIC، فالبک هنگام شکست اتصال را حفظ می‌کنند؛ پاسخ ping به‌تنهایی باعث قطع
+مسیر پشتیبان سالم نمی‌شود. در نمای دستی `Exit Health` همچنان از ICMP استفاده
+می‌شود. UDP خام کانال کنترل TCP دارد و از امتیازدهی پورت پشتیبانی می‌کند. موفقیت اتصال TCP
 به‌تنهایی صحت احراز هویت و انتقال دادهٔ تانل را ثابت نمی‌کند. تنظیم ثابت
 `edge_ip` نیز مقصد CDN را ثابت نگه می‌دارد و با تغییر آدرس پشتیبان عوض نمی‌شود.
 
@@ -167,4 +173,4 @@ for the full picture.
 
 ---
 
-*Last verified against Backpack v1.17.0*
+*Last verified against Backpack v1.18.0*

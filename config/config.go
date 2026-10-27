@@ -430,9 +430,10 @@ type ServerConfig struct {
 	MaxConnections int `toml:"max_connections"`
 	// BandwidthMbps caps total tunnel throughput in Mbit/s (0 = unlimited).
 	BandwidthMbps int `toml:"bandwidth_mbps"`
-	// Preset records which performance profile the tuning values came from —
-	// balance, turbo or aggressive. A label: the engine reads the values, never
-	// this. Set by hand only if you want the menu to stop offering to change them.
+	// Preset records the performance profile: balance, turbo, aggressive or
+	// throughput. On Linux, throughput also enables persistent high-concurrency
+	// host tuning at startup and reload unless skip_optz is true. Existing
+	// transport values are not re-expanded when the binary is updated.
 	Preset string `toml:"preset"`
 	// Embedded so the kcp_* keys sit at the top level of the [server] table
 	// alongside every other tuning key.
@@ -611,9 +612,10 @@ type ClientConfig struct {
 	// limit — anything else quietly keeps the buffered path.
 	ZeroCopy bool `toml:"zero_copy"`
 
-	// Preset records which performance profile the tuning values came from —
-	// balance, turbo or aggressive. A label: the engine reads the values, never
-	// this.
+	// Preset records the performance profile: balance, turbo, aggressive or
+	// throughput. On Linux, throughput also enables persistent high-concurrency
+	// host tuning at startup and reload unless skip_optz is true. Existing
+	// transport values are not re-expanded when the binary is updated.
 	Preset string `toml:"preset"`
 	// LoadBalance spreads the pool's data connections over every configured
 	// address instead of putting them all on the live one. All the addresses
@@ -624,6 +626,8 @@ type ClientConfig struct {
 	// control channel and pool on the healthier route. Switching interrupts
 	// active sessions. It needs distinct backup addresses and overrides
 	// LoadBalance. TCP routes can use connect timing when ICMP is unavailable.
+	// KCP, QUIC and raw-packet carriers keep dial-failure fallback instead of
+	// disruptive ICMP-only switching, because ping cannot validate their port.
 	HealthFailover bool `toml:"health_failover"`
 	// Embedded so the kcp_* keys sit at the top level of the [client] table
 	// alongside every other tuning key.
