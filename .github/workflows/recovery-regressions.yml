@@ -10,6 +10,21 @@ permissions:
   contents: read
 
 jobs:
+  udp-readiness:
+    name: Direct UDP listener readiness under race scheduling
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Repeat UDP startup, stable flows, boundaries and large datagrams
+        run: >-
+          go test -race ./internal/tunnel/direct
+          -run '^(TestTunnelForwardsUDP|TestUDPFlowIsStableAcrossDatagrams|TestUDPPreservesDatagramBoundaries|TestUDPCarriesALargeDatagram)$'
+          -count=100 -v -timeout 3m
   address-failover:
     name: IPv4 IPv6 address health and active mux failover
     runs-on: ubuntu-latest

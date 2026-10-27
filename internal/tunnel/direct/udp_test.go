@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"strings"
 	"testing"
 	"time"
 )
@@ -63,12 +64,13 @@ func newUDPTunnel(t *testing.T, backend string) *tunnel {
 	}
 
 	port := freePort(t)
+	edgeLog, captured := testLoggerCapturing(t)
 	edge, err := NewEdge(Config{
 		Role: RoleEdge, Addr: bound.String(), Token: token,
 		Ports:      []string{fmt.Sprintf("127.0.0.1:%d=%s", port, backend)},
 		AcceptUDP:  true,
 		RetryDelay: 200 * time.Millisecond,
-	}, testLogger(t))
+	}, edgeLog)
 	if err != nil {
 		t.Fatalf("NewEdge: %v", err)
 	}
@@ -78,6 +80,20 @@ func newUDPTunnel(t *testing.T, backend string) *tunnel {
 
 	tn := &tunnel{edge: edge, origin: origin, port: port}
 	tn.awaitSession(t, 5*time.Second)
+	// UDP bind and session establishment run independently. Sending before
+	// bind can queue an ICMP port-unreachable on this connected socket; forty
+	// reads can then fail immediately, well before a timeout has elapsed.
+	// Wait for the actual UDP listener event, just as the TCP fixture does,
+	// without sending a probe that would create a flow or contaminate replies.
+	for deadline := time.Now().Add(3 * time.Second); ; {
+		if strings.Contains(captured.String(), "direct: forwarding udp ") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the forwarded UDP port never bound: %s", captured.String())
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 	return tn
 }
 

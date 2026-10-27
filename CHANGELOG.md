@@ -24,6 +24,10 @@
   1,000 idle streams, CPU per GiB, verified concurrent bulk transfers, fresh-user
   p99 latency and real idle-session retirement. Preserve CPU/heap profiles and
   raw measurements; keep GC settings and application windows unchanged.
+- Wait for the direct UDP test fixture's listener bind before sending through
+  its connected socket. Repeat startup, stable flows and datagram boundaries
+  under the race detector so early ICMP refusals cannot masquerade as a broken
+  tunnel. Production UDP behavior is unchanged.
 
 ## v1.16.0 — 2026-10-26
 
