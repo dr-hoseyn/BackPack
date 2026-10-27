@@ -40,7 +40,7 @@ jobs:
             if [ $((sample % 2)) -eq 0 ]; then order="candidate baseline"; fi
             for kind in $order; do
               sudo env GOMAXPROCS=4 BP_RESOURCE_BENCHMARK=1 BP_RESOURCE_IDLE_CONNECTIONS=16 \
-                BP_RESOURCE_ROUNDS=2 BP_RESOURCE_NETEM=1 BP_RESOURCE_MUX_AUTO=1 BIN="$RUNNER_TEMP/resource-$kind" \
+                BP_RESOURCE_ROUNDS=2 BP_RESOURCE_NETEM=1 BIN="$RUNNER_TEMP/resource-$kind" \
                 unshare --net -- bash -eu -c 'ip link set lo up; ulimit -n 16384; exec "$BIN" -test.run "^TestWSMuxResourceProfile$" -test.v -test.timeout 2m' \
                 | tee "$RUNNER_TEMP/delayed-$kind-$sample.txt"
             done
