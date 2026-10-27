@@ -64,12 +64,12 @@ func SelectWSMux(h http.Header, configured int) (version, floor int, err error) 
 			return 0, 0, fmt.Errorf("websocket mux: invalid version offer")
 		}
 	}
-	version = ResolveMuxVersion(configured)
+	version = ResolveStaticMuxVersion(configured)
 	if !supported[version] {
-		if configured == 1 || configured == 2 || !supported[1] {
+		if configured == 1 || configured == 2 || !supported[2] {
 			return 0, 0, fmt.Errorf("websocket mux: no common protocol version")
 		}
-		version = 1
+		version = 2
 	}
 	if raw := h.Get(WSMuxPoolHeader); raw != "" {
 		floor, err = strconv.Atoi(raw)

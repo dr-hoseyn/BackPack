@@ -11,7 +11,7 @@ func TestWSMuxNegotiationAndLegacyFallback(t *testing.T) {
 		name                 string
 		server, client, want int
 	}{
-		{"auto", 0, 0, 2}, {"old preference", 0, 1, 1},
+		{"auto", 0, 0, 1}, {"old preference", 0, 1, 1},
 		{"server v1", 1, 0, 1}, {"server v2", 2, 0, 2},
 		{"both v1", 1, 1, 1}, {"both v2", 2, 2, 2},
 	} {
