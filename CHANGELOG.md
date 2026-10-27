@@ -14,7 +14,8 @@
   Conflicting explicit choices are rejected and older
   peers retain their legacy version. Keep TLS fingerprinting and credential
   binding unchanged. A version conflict fails during setup.
-- Size WS Mux/WSS Mux growth using actual stream occupancy. Lower the repair
+- Track WS Mux/WSS Mux stream occupancy while preserving growth under load.
+  Avoid stale growth once all streams have ended. Lower the repair
   target after demand subsides and retire only excess sessions without streams
   or workers for 60 seconds after observing a quiet tunnel. Preserve the warm
   reserve during ongoing transfers, retaining the configured pool floor and

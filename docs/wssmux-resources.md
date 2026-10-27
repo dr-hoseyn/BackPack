@@ -14,12 +14,12 @@ interrupts idle reads, and both directions are joined before releasing quotas.
 ## Physical session growth and retirement
 
 WS Mux and WSS Mux sample the number of sessions with actual open streams once
-per second. Traffic volume alone does not open more sessions once the
-configured warm reserve is available as unused physical sessions. Keeping only
-one spare and automatically switching the protocol failed the lossy-path
-quality comparisons; the release preserves both warm capacity and the existing
-automatic protocol choice. Control-channel requests still grow the pool for
-new users, using the existing burst policy and pending-dial ceiling.
+per second. While users are present, the established request and throughput
+growth policy is retained: limiting physical TCP paths can shift loss-recovery
+queues onto fresh users. Occupancy prevents stale byte-rate growth after all
+streams have ended and preserves occupied sessions when lowering the repair
+target. Warm capacity and the existing automatic protocol choice are retained;
+new-user bursts still use the existing pending-dial ceiling.
 
 When both peers support retirement, the client lowers its repair target after
 30 seconds without forwarded traffic or new session demand, retaining at least `connection_pool`

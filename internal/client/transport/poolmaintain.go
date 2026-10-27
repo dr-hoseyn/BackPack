@@ -144,11 +144,11 @@ func (p poolSizer) maintain() {
 			if p.sessions != nil {
 				active, tracked, canRetire = p.sessions.snapshot()
 			}
-			// One free physical connection is not enough headroom on a lossy
-			// path: fresh users would share its TCP loss recovery with bulk
-			// traffic. Preserve the configured warm reserve before suppressing
-			// the existing throughput growth trigger.
-			spareSession := tracked == openAvg && tracked-active >= max(p.size, 1)
+			// Retain the established throughput-growth policy while users are
+			// present: fewer physical TCP paths can shift loss-recovery queues
+			// onto fresh users. Occupancy only suppresses stale byte-rate growth
+			// after all streams have ended and warm capacity is already present.
+			spareSession := tracked == openAvg && active == 0 && tracked >= max(p.size, 1)
 
 			// A mux session may be carrying a long transfer without asking for
 			// another stream. Retire it only after actual traffic goes quiet.
