@@ -224,7 +224,7 @@ them both ends have to agree on. This says what exists.
 | `mux_recievebuffer` | `int` | MaxReceiveBuffer is the per-session receive window, in bytes. Filled from a preset. (The spelling is a typo that shipped; it cannot be corrected without breaking every existing config.) |
 | `mux_session` | `int` | MuxSession is how many multiplexed sessions the tunnel keeps open. Only the mux transports read it; a preset fills it in. |
 | `mux_streambuffer` | `int` | MaxStreamBuffer is the per-stream receive window, in bytes. Filled from a preset. |
-| `mux_version` | `int` | MuxVersion is the smux protocol version. Negotiated with the peer, so the two ends may differ and the lower wins. |
+| `mux_version` | `int` | MuxVersion selects smux 1 or 2; 0 negotiates where supported. TCP Mux uses the server's choice. WS Mux/WSS Mux auto retains 1; explicit 2 on either new peer negotiates 2. Legacy websocket and KCP peers need matching versions. |
 | `naive` | `NaiveClientConfig` | Naive optionally reaches the loopback reverse target through a tunnel-owned official Chromium Naive helper; experimental and disabled when empty. |
 | `nodelay` | `bool` | Nodelay disables Nagle's algorithm on the tunnel's sockets. Off unless set; every preset sets it. It trades a little bandwidth for latency, which is what an interactive session wants and a bulk transfer does not notice. |
 | `path_policy` | `PathPolicy` | PathPolicy tunes verified probing, hysteresis and failover for Paths only. |
@@ -480,7 +480,7 @@ them both ends have to agree on. This says what exists.
 | `mux_recievebuffer` | `int` | MaxReceiveBuffer is the per-session receive window, in bytes. Filled from a preset. |
 | `mux_session` | `int` | MuxSession is how many multiplexed sessions the tunnel keeps open. Only the mux transports read it; a preset fills it in. |
 | `mux_streambuffer` | `int` | MaxStreamBuffer is the per-stream receive window, in bytes. Filled from a preset. |
-| `mux_version` | `int` | MuxVersion is the smux protocol version. Negotiated with the peer, so the two ends may differ and the lower wins. |
+| `mux_version` | `int` | MuxVersion selects smux 1 or 2; 0 negotiates where supported. TCP Mux uses the server's choice. WS Mux/WSS Mux auto retains 1; explicit 2 on either new peer negotiates 2. Legacy websocket and KCP peers need matching versions. |
 | `naive` | `NaiveServerConfig` | Naive optionally wraps the loopback TCP reverse listener in HTTP/2 with a tunnel-owned sing-box helper; experimental and disabled when empty. |
 | `nodelay` | `bool` | Nodelay disables Nagle's algorithm on the tunnel's sockets. Off unless set; every preset sets it. It trades a little bandwidth for latency, which is what an interactive session wants and what a bulk transfer does not notice. |
 | `path_profile` | `string` | PathProfile selects economy or full for the peer's initial managed probe policy. |
@@ -528,4 +528,4 @@ them both ends have to agree on. This says what exists.
 
 ---
 
-*Generated from `config/` on 2026-10-26. Last verified against Backpack v1.16.0.*
+*Generated from `config/` on 2026-10-27. Last verified against Backpack v1.17.0.*

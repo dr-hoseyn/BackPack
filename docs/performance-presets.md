@@ -93,4 +93,4 @@ calling a deployment a verified 500 Mbit/s link.
 
 [← Back to the docs index](README.md)
 
-*Last verified against Backpack v1.16.0 source with the throughput-capacity changes.*
+*Last verified against Backpack v1.17.0 source with the throughput-capacity changes.*

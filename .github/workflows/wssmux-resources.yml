@@ -1,0 +1,115 @@
+name: WSS Mux resource verification
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: wssmux-resources-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  resources:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GOMAXPROCS: '4'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Prove buffer ownership, negotiation and idle retirement
+        run: |
+          go test ./internal/utils/handlers -run '^TestAdaptiveRelay' -count=5 -v -timeout 1m
+          go test -race ./internal/utils/handlers ./internal/utils/network ./internal/client/transport ./internal/server/transport \
+            -run '^Test(AdaptiveRelay|WSMux|MuxIdle|ConcurrentMux|MuxPool)' -count=5 -v -timeout 3m
+          go test -race ./internal/e2e -run '^TestWSMuxNegotiatedVersionsCarryRealTraffic$' -count=2 -v -timeout 3m
+      - name: Build candidate and identical measurement on v1.16.0
+        run: |
+          set -euo pipefail
+          git worktree add --detach "$RUNNER_TEMP/resource-base" v1.16.0
+          cp internal/e2e/wssmux_resources_test.go "$RUNNER_TEMP/resource-base/internal/e2e/"
+          go test -c -o "$RUNNER_TEMP/resource-candidate" ./internal/e2e
+          (cd "$RUNNER_TEMP/resource-base" && go test -c -o "$RUNNER_TEMP/resource-baseline" ./internal/e2e)
+      - name: Alternate five independent baseline and candidate processes
+        env:
+          BP_RESOURCE_BENCHMARK: '1'
+        run: |
+          set -euo pipefail
+          ulimit -n 16384
+          for sample in 1 2 3 4 5; do
+            order="baseline candidate"
+            if [ $((sample % 2)) -eq 0 ]; then order="candidate baseline"; fi
+            for kind in $order; do
+              "$RUNNER_TEMP/resource-$kind" -test.run '^TestWSMuxResourceProfile$' -test.v -test.timeout 2m \
+                | tee "$RUNNER_TEMP/resource-$kind-$sample.txt"
+            done
+          done
+          python3 .github/scripts/compare-wssmux-resources.py "$RUNNER_TEMP" | tee "$RUNNER_TEMP/resource-comparison.json"
+          cat "$RUNNER_TEMP/resource-comparison.json" >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve CPU and idle-heap profiles outside the timed comparison
+        env:
+          BP_RESOURCE_BENCHMARK: '1'
+          BP_RESOURCE_PROFILE_DIR: ${{ runner.temp }}
+        run: |
+          set -euo pipefail
+          for kind in baseline candidate; do
+            BP_RESOURCE_PROFILE_NAME="$kind" "$RUNNER_TEMP/resource-$kind" \
+              -test.run '^TestWSMuxResourceProfile$' -test.v -test.timeout 2m \
+              | tee "$RUNNER_TEMP/resource-profile-$kind.txt"
+            go tool pprof -top -nodecount=30 "$RUNNER_TEMP/resource-$kind" \
+              "$RUNNER_TEMP/resource-$kind-cpu.pprof" > "$RUNNER_TEMP/resource-$kind-cpu.txt"
+          done
+      - name: Retire excess physical sessions while preserving a silent user
+        env:
+          BP_RESOURCE_RETIREMENT: '1'
+        run: |
+          set -o pipefail
+          "$RUNNER_TEMP/resource-candidate" -test.run '^TestWSMuxPoolRetiresAfterLoadWithoutDisconnectingQuietUser$' \
+            -test.v -test.timeout 3m | tee "$RUNNER_TEMP/resource-retirement.txt"
+      - name: Compare quality with delay, loss and a fixed link rate
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq iproute2 ethtool
+          sudo modprobe ifb
+          for mode in auto1 pinned2; do
+            auto=""
+            if [ "$mode" = auto1 ]; then auto=1; fi
+            for sample in 1 2 3; do
+              order="baseline candidate"
+              if [ $((sample % 2)) -eq 0 ]; then order="candidate baseline"; fi
+              for kind in $order; do
+                sudo env GOMAXPROCS=4 BP_RESOURCE_BENCHMARK=1 BP_RESOURCE_IDLE_CONNECTIONS=16 \
+                  BP_RESOURCE_ROUNDS=2 BP_RESOURCE_NETEM=1 BP_RESOURCE_MUX_AUTO="$auto" BIN="$RUNNER_TEMP/resource-$kind" \
+                  unshare --net -- bash -eu -c 'ip link set lo up; ulimit -n 16384; exec "$BIN" -test.run "^TestWSMuxResourceProfile$" -test.v -test.timeout 2m' \
+                  | tee "$RUNNER_TEMP/delayed-$mode-$kind-$sample.txt"
+              done
+            done
+            python3 .github/scripts/compare-wssmux-resources.py "$RUNNER_TEMP" "delayed-$mode" | tee "$RUNNER_TEMP/delayed-$mode-comparison.json"
+            cat "$RUNNER_TEMP/delayed-$mode-comparison.json" >> "$GITHUB_STEP_SUMMARY"
+          done
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: wssmux-resources
+          path: |
+            ${{ runner.temp }}/resource-*.txt
+            ${{ runner.temp }}/delayed-*.txt
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: wssmux-profiles
+          path: ${{ runner.temp }}/resource-*.pprof
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: wssmux-resource-comparison
+          path: |
+            ${{ runner.temp }}/resource-comparison.json
+            ${{ runner.temp }}/delayed-*-comparison.json

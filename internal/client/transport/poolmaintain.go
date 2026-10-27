@@ -76,6 +76,8 @@ type poolSizer struct {
 	spawn   func(func())
 	pending *int32
 	maxSize int
+	// Only peers that negotiated safe retirement participate in mux shrink.
+	sessions *muxPoolSessions
 }
 
 func (p poolSizer) launch() {
@@ -138,10 +140,24 @@ func (p poolSizer) maintain() {
 			// process per tunnel and every one of them counts its bytes into
 			// the same place — through CountedConn or through AddBytes.
 			mbps := load.mbps()
+			active, tracked, canRetire := 0, 0, false
+			if p.sessions != nil {
+				active, tracked, canRetire = p.sessions.snapshot()
+			}
+			// Retain the established throughput-growth policy while users are
+			// present: fewer physical TCP paths can shift loss-recovery queues
+			// onto fresh users. Occupancy only suppresses stale byte-rate growth
+			// after all streams have ended and warm capacity is already present.
+			spareSession := tracked == openAvg && active == 0 && tracked >= max(p.size, 1)
 
 			// A mux session may be carrying a long transfer without asking for
 			// another stream. Retire it only after actual traffic goes quiet.
 			quiet := float64(taken+x) < float64(openAvg)*y && mbps < max(openAvg, 1)*(poolScaleMbpsPerConn/2) && (!p.mux || mbps == 0)
+			if canRetire && tracked == openAvg {
+				// Low-rate but long-lived streams still occupy a session. Leave
+				// those alone; only lower the desired count of unused sessions.
+				quiet = taken == 0 && active < openAvg && mbps == 0
+			}
 			if !quiet {
 				quietSince = time.Time{}
 			} else if quietSince.IsZero() {
@@ -155,7 +171,7 @@ func (p poolSizer) maintain() {
 			// An empty pool after failed dials needs repair, not exponential
 			// growth without demand. Otherwise a carrier outage becomes a dial storm.
 			grow := newPoolSize < ceiling && ((taken > 0 && (taken+a) > openAvg*b) ||
-				load.wantsMore(mbps, openAvg, newPoolSize, p.size))
+				(!spareSession && load.wantsMore(mbps, openAvg, newPoolSize, p.size)))
 
 			switch {
 			case grow:
@@ -169,6 +185,13 @@ func (p poolSizer) maintain() {
 					}
 				}
 				newPoolSize = next
+
+			case canRetire && quiet && time.Since(quietSince) >= 30*time.Second && newPoolSize > max(p.size, active):
+				// The server owns stream admission and closes only idle excess
+				// sessions after 60 seconds. Lower the repair target first so
+				// those deliberate closures do not cause replacement handshakes.
+				newPoolSize = max(p.size, active)
+				quietSince = time.Now()
 
 			case !p.mux && quiet && time.Since(quietSince) >= 30*time.Second && newPoolSize > p.size:
 				quietSince = time.Now()

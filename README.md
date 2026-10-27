@@ -1,12 +1,17 @@
 # dr-hoseyn fork
 
+**v1.17.0:** quiet TCP relay directions use smaller pooled buffers and grow for
+bulk traffic. WS Mux/WSS Mux negotiate smux versions and retire surplus sessions
+without disconnecting silent open users. Older peers retain their previous wire
+behavior. See [resource behavior and verification](docs/wssmux-resources.md).
+
 **v1.16.0:** automatic IPv4/IPv6 address failover now reconnects active tunnel pools when a path degrades. Enable **Edit → Automatic Address Failover** after adding the same server's IPv6 as a backup. TCP route checks follow configured proxies/source bindings and work when ping is blocked. Switching interrupts existing sessions. [Setup and limits](docs/failover-load-balancing.md).
 
 **v1.15.1:** high-concurrency tuning also disables supported busy polling and restores the original CPU policy on rollback. The capacity suite separately verifies 600 Mbit/s one-direction downloads across nine core transports; full-duplex echo and WAN capacity are measured separately. See [high-traffic tuning](docs/high-traffic.md).
 
 **v1.15.0:** CLI-only management. The web dashboard and per-tunnel monitor pages are removed. Connection Test defaults to Quick (30 seconds plus speed on three finalists); Full remains available. Upgrading retires the legacy web service.
 
-This fork combines upstream BackPack v1.9.0 with PRs [#104](https://github.com/AminMGMT/BackPack/pull/104), [#98](https://github.com/AminMGMT/BackPack/pull/98), and [#108](https://github.com/AminMGMT/BackPack/pull/108). Fork release **v1.15.1** installs and updates from `dr-hoseyn/BackPack`. Managed Short HTTPS is available for Reverse TCP. The source also includes [advanced XHTTP settings](docs/xhttp-advanced.md) and [managed AmneziaWG setup](docs/amneziawg.md).
+This fork combines upstream BackPack v1.9.0 with PRs [#104](https://github.com/AminMGMT/BackPack/pull/104), [#98](https://github.com/AminMGMT/BackPack/pull/98), and [#108](https://github.com/AminMGMT/BackPack/pull/108). Fork release **v1.17.0** installs and updates from `dr-hoseyn/BackPack`. Managed Short HTTPS is available for Reverse TCP. The source also includes [advanced XHTTP settings](docs/xhttp-advanced.md) and [managed AmneziaWG setup](docs/amneziawg.md).
 
 
 **v1.14.2:** restores Reverse → ICMP → xDi in the CLI, includes

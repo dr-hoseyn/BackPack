@@ -27,6 +27,42 @@ import "sync"
 // relayBufferSize is how much a forwarded connection copies at a time.
 const relayBufferSize = 64 * 1024
 
+// Quiet and short-lived directions need only a small read buffer. Grow after
+// a full read, without waiting to gather data or changing connection deadlines.
+const smallRelayBufferSize = 16 * 1024
+
+var smallRelayBuffers = sync.Pool{New: func() any {
+	b := make([]byte, smallRelayBufferSize)
+	return &b
+}}
+
+type relayCopyBuffer struct {
+	p        *[]byte
+	adaptive bool
+}
+
+func newRelayCopyBuffer() relayCopyBuffer {
+	return relayCopyBuffer{p: smallRelayBuffers.Get().(*[]byte), adaptive: true}
+}
+
+func (b *relayCopyBuffer) grow(n int) {
+	if b.adaptive && n == len(*b.p) && n == smallRelayBufferSize {
+		old := b.p
+		b.p = getRelayBuffer()
+		smallRelayBuffers.Put(old)
+	}
+}
+
+// Failed writes may leave smux holding the slice. The caller deliberately
+// discards that buffer rather than returning it to either pool.
+func (b *relayCopyBuffer) release() {
+	if len(*b.p) == smallRelayBufferSize {
+		smallRelayBuffers.Put(b.p)
+	} else {
+		putRelayBuffer(b.p)
+	}
+}
+
 // relayBuffers hands out reusable copy buffers.
 //
 // It stores *[]byte rather than []byte: putting a slice into a sync.Pool

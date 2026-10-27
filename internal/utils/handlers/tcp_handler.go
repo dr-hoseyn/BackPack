@@ -27,22 +27,17 @@ func TCPConnectionHandler(ctx context.Context, proxyProtocol bool, from net.Conn
 		}
 	}
 
-	// Both directions run in their own goroutine so that cancellation is seen
-	// even when the connection is completely idle. Running one of them here
-	// meant the ctx case was not reached until that Read returned, and an idle
-	// Read returns when the peer sends something — which on a connection
-	// nobody is using is never. A tunnel could shut down or reload and leave
-	// the previous generation's forwarded connections open behind it, holding
-	// their descriptors and their goroutines for as long as the process ran.
+	// The cancellation callback above interrupts even an idle synchronous
+	// Read. Reuse the caller for one direction instead of parking it beside
+	// two additional goroutines for the lifetime of every forwarded stream.
+	// Still join both copies, preserving directional EOF and quota lifetime.
 	done := make(chan struct{}, 2)
 	go func() {
 		transferData(from, to, logger, usage, remotePort, sniffer)
 		done <- struct{}{}
 	}()
-	go func() {
-		transferData(to, from, logger, usage, remotePort, sniffer)
-		done <- struct{}{}
-	}()
+	transferData(to, from, logger, usage, remotePort, sniffer)
+	done <- struct{}{}
 
 	if halfCloser(from) != nil && halfCloser(to) != nil {
 		awaitDirectionalRelay(ctx, done, from, to)
@@ -93,9 +88,9 @@ func transferData(from net.Conn, to net.Conn, logger *logrus.Logger, usage *traf
 	}
 	countBuffered()
 
-	bufp := getRelayBuffer()
-	if transferBuffered(from, to, *bufp, logger, usage, remotePort, sniffer) {
-		putRelayBuffer(bufp)
+	buf := newRelayCopyBuffer()
+	if copyBuffered(from, to, &buf, logger, usage, remotePort, sniffer) {
+		buf.release()
 	}
 }
 
@@ -105,7 +100,12 @@ func transferData(from net.Conn, to net.Conn, logger *logrus.Logger, usage *traf
 // returning it to the pool would let another relay overwrite an in-flight frame.
 // Successful writes keep the normal allocation-free pool path.
 func transferBuffered(from net.Conn, to net.Conn, buf []byte, logger *logrus.Logger, usage *traffic.Usage, remotePort int, sniffer bool) bool {
+	return copyBuffered(from, to, &relayCopyBuffer{p: &buf}, logger, usage, remotePort, sniffer)
+}
+
+func copyBuffered(from net.Conn, to net.Conn, buffer *relayCopyBuffer, logger *logrus.Logger, usage *traffic.Usage, remotePort int, sniffer bool) bool {
 	for {
+		buf := *buffer.p
 		// Read data from the source connection
 		r, err := from.Read(buf)
 		// A Read is allowed to return bytes and an error together, and io.Reader
@@ -133,6 +133,7 @@ func transferBuffered(from net.Conn, to net.Conn, buf []byte, logger *logrus.Log
 			finishDirection(from, to, err)
 			return true
 		}
+		buffer.grow(r)
 	}
 }
 

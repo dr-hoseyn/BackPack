@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -26,6 +27,7 @@ import (
 // builds a fresh set for the next run, so carrying them here keeps a goroutine
 // that outlives its run from reaching into the run that replaced it.
 type wsMuxGen struct {
+	idleTraffic    muxIdleTraffic
 	ctx            context.Context
 	tunnelChannel  chan pooledMuxSession
 	localChannel   chan LocalTCPConn
@@ -247,7 +249,26 @@ func (s *WsMuxTransport) tunnelListener(g *wsMuxGen) {
 			if r.URL.Path != "/channel" {
 				owner = g.seat.client()
 			}
-			conn, err := upgrader.Upgrade(w, r, serverProof(r, s.config.Token, s.config.SimpleAuth))
+			response := serverProof(r, s.config.Token, s.config.SimpleAuth)
+			version, floor := s.smuxConfig.Version, 0
+			if r.URL.Path != "/channel" {
+				var err error
+				version, floor, err = network.SelectWSMux(r.Header, s.config.MuxVersion)
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+				if r.Header.Get(network.WSMuxOfferHeader) != "" {
+					if response == nil {
+						response = make(http.Header)
+					}
+					response.Set(network.WSMuxVersionHeader, strconv.Itoa(version))
+					if floor > 0 {
+						response.Set(network.WSMuxPoolHeader, strconv.Itoa(floor))
+					}
+				}
+			}
+			conn, err := upgrader.Upgrade(w, r, response)
 			if err != nil {
 				s.logger.Errorf("failed to upgrade connection from %s: %v", r.RemoteAddr, err)
 				return
@@ -268,14 +289,16 @@ func (s *WsMuxTransport) tunnelListener(g *wsMuxGen) {
 				g.serving.Do(func() { s.serveGeneration(s.forwarder(g), func() { s.handleLoop(g) }) })
 
 			} else if strings.HasPrefix(r.URL.Path, "/tunnel") {
-				session, err := smux.Client(conn.NetConn(), s.smuxConfig)
+				cfg := *s.smuxConfig
+				cfg.Version = version
+				session, err := smux.Client(conn.NetConn(), &cfg)
 				if err != nil {
 					s.logger.Errorf("failed to create MUX session for connection %s: %v", conn.RemoteAddr().String(), err)
 					conn.Close()
 					return
 				}
 				accepted := g.seat.admitFor(g.ctx, owner, func(ctx context.Context) bool {
-					return enqueueMuxSession(g.tunnelChannel, ctx, session)
+					return enqueueMuxSession(g.tunnelChannel, ctx, session, floor)
 				})
 				if !accepted {
 					s.logger.Debugf("websocket mux pool is full or its client changed, closing connection from %s", conn.RemoteAddr().String())
@@ -367,6 +390,16 @@ func (s *WsMuxTransport) handleLoop(g *wsMuxGen) {
 			}
 
 			loop := s.session(g, session.owner)
+			if session.idleFloor > 0 {
+				loop.idleTimeout = 60 * time.Second
+				loop.idleRetire = func() bool {
+					in, out := metrics.Traffic()
+					if !g.idleTraffic.quiet(time.Now(), in, out) {
+						return false
+					}
+					return s.retireIdleSession(g.ctx, session.owner, &s.sessionCounter, session.idleFloor)
+				}
+			}
 			go loop.run(session.Session)
 		}
 	}

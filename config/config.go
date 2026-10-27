@@ -340,8 +340,9 @@ type ServerConfig struct {
 	// MuxSession is how many multiplexed sessions the tunnel keeps open. Only the
 	// mux transports read it; a preset fills it in.
 	MuxSession int `toml:"mux_session"`
-	// MuxVersion is the smux protocol version. Negotiated with the peer, so the
-	// two ends may differ and the lower wins.
+	// MuxVersion selects smux 1 or 2; 0 negotiates where supported. TCP Mux uses
+	// the server's choice. WS Mux/WSS Mux auto retains 1; explicit 2 on either
+	// new peer negotiates 2. Legacy websocket and KCP peers need matching versions.
 	MuxVersion int `toml:"mux_version"`
 	// MaxFrameSize caps one smux frame, in bytes. Filled from a preset.
 	MaxFrameSize int `toml:"mux_framesize"`
@@ -523,8 +524,9 @@ type ClientConfig struct {
 	// MuxSession is how many multiplexed sessions the tunnel keeps open. Only the
 	// mux transports read it; a preset fills it in.
 	MuxSession int `toml:"mux_session"`
-	// MuxVersion is the smux protocol version. Negotiated with the peer, so the
-	// two ends may differ and the lower wins.
+	// MuxVersion selects smux 1 or 2; 0 negotiates where supported. TCP Mux uses
+	// the server's choice. WS Mux/WSS Mux auto retains 1; explicit 2 on either
+	// new peer negotiates 2. Legacy websocket and KCP peers need matching versions.
 	MuxVersion int `toml:"mux_version"`
 	// MaxFrameSize caps one smux frame, in bytes. Filled from a preset.
 	MaxFrameSize int `toml:"mux_framesize"`
