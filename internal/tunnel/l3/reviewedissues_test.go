@@ -102,6 +102,11 @@ func TestReviewedMultipathOnlyLearnsAuthenticatedSources(t *testing.T) {
 			t.Fatal(err)
 		}
 		logical := confirmCarrierPeer(carrier, from)
+		owner := &Tunnel{carrier: carrier, peer: from, log: quietLogger()}
+		owner.notePeer(from)
+		if _, provisional := owner.peerAddr().(*receivedPath); provisional {
+			t.Fatal("authenticated peer stayed pinned to one path")
+		}
 		stray.WriteTo([]byte("junk"), a.LocalAddr())
 		_, untrusted, err := mp.ReadFrom(buf)
 		if err != nil {

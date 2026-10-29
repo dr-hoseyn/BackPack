@@ -235,6 +235,11 @@ func (t *Tunnel) notePeer(from net.Addr) {
 	}
 	t.mu.RLock()
 	same := sameAddr(t.peer, from)
+	// The provisional handshake peer routes replies to one ingress path.
+	// Replace it with the logical peer even when both render the same address.
+	if _, provisional := t.peer.(*receivedPath); provisional {
+		same = false
+	}
 	t.mu.RUnlock()
 	if same {
 		return
