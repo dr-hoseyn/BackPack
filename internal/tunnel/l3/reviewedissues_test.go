@@ -107,6 +107,11 @@ func TestReviewedMultipathOnlyLearnsAuthenticatedSources(t *testing.T) {
 		if _, provisional := owner.peerAddr().(*receivedPath); provisional {
 			t.Fatal("authenticated peer stayed pinned to one path")
 		}
+		owner.peer = &fecRecoveredAddr{from}
+		owner.notePeer(from)
+		if _, provisional := owner.peerAddr().(*fecRecoveredAddr); provisional {
+			t.Fatal("recovered handshake peer stayed provisional")
+		}
 		stray.WriteTo([]byte("junk"), a.LocalAddr())
 		_, untrusted, err := mp.ReadFrom(buf)
 		if err != nil {
@@ -236,5 +241,39 @@ func TestReviewedMultipathDeadlineCanBeExtendedAndCleared(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("updated deadline did not wake read")
+	}
+}
+
+func TestReviewedFECRecoveredIngressCanReceiveReply(t *testing.T) {
+	for _, multipath := range []bool{false, true} {
+		t.Run(fmt.Sprint(multipath), func(t *testing.T) {
+			a, b := localUDP(t), localUDP(t)
+			var below DatagramCarrier = reviewedUDPPath(a)
+			var source net.Addr = b.LocalAddr()
+			if multipath {
+				below = newMultipathCarrier([]DatagramCarrier{&pinnedCarrier{DatagramCarrier: below}, &pinnedCarrier{DatagramCarrier: reviewedUDPPath(localUDP(t))}}, nil)
+				source = &receivedPath{Addr: source, owner: below.(*multipathCarrier), index: 0}
+			}
+			tx, err := newFECCarrier(below, FECConfig{Data: 2, Parity: 1})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer tx.Close()
+			rx, err := newFECCarrier(reviewedUDPPath(b), FECConfig{Data: 2, Parity: 1})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer rx.Close()
+			rx.SetReadDeadline(time.Now().Add(time.Second))
+			payload := []byte("reply to recovered init")
+			if _, err = tx.WriteTo(payload, &fecRecoveredAddr{source}); err != nil {
+				t.Fatal(err)
+			}
+			buf := make([]byte, 128)
+			n, _, err := rx.ReadFrom(buf)
+			if err != nil || !bytes.Equal(buf[:n], payload) {
+				t.Fatalf("recovered reply: %q %v", buf[:n], err)
+			}
+		})
 	}
 }
