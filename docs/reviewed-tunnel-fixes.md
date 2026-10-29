@@ -25,6 +25,8 @@ Full CI separately checks compatibility, allocation budgets, throughput and TUN.
 
 ---
 
+<div dir="rtl">
+
 ## خلاصهٔ فارسی
 
 این اصلاحات قالب بسته‌ها و پیش‌فرض تنظیمات را تغییر نمی‌دهند. مقصد UDP پس از
@@ -32,3 +34,7 @@ Full CI separately checks compatibility, allocation budgets, throughput and TUN.
 امتحان می‌کند. اصلاح ساختار FEC حفاظت کامل در برابر بسته جعلی معتبرنما نیست.
 تغییر بافر، batching، pacing و رزرو پورت نیازمند آزمون و اندازه‌گیری جداست.
 افزایش سرعتی برای این اصلاحات ادعا نمی‌شود.
+
+</div>
+
+Last verified against Backpack v1.18.0 (2026-10-29).
