@@ -69,7 +69,7 @@ func TestReviewedFECMalformedShardCannotConsumeAValidSlot(t *testing.T) {
 
 func TestReviewedMultipathReadDeadlineWakesPendingRead(t *testing.T) {
 	a, b := localUDP(t), localUDP(t)
-	mp := newMultipathCarrier([]DatagramCarrier{&udpCarrier{UDPConn: a}, &udpCarrier{UDPConn: b}}, nil)
+	mp := newMultipathCarrier([]DatagramCarrier{reviewedUDPPath(a), reviewedUDPPath(b)}, nil)
 	defer mp.Close()
 	done := make(chan error, 1)
 	go func() { _, _, err := mp.ReadFrom(make([]byte, 64)); done <- err }()
@@ -89,7 +89,7 @@ func TestReviewedMultipathOnlyLearnsAuthenticatedSources(t *testing.T) {
 	for _, fec := range []bool{false, true} {
 		a, b := localUDP(t), localUDP(t)
 		genuine, stray := localUDP(t), localUDP(t)
-		mp := newMultipathCarrier([]DatagramCarrier{&pinnedCarrier{DatagramCarrier: &udpCarrier{UDPConn: a}}, &pinnedCarrier{DatagramCarrier: &udpCarrier{UDPConn: b}}}, nil)
+		mp := newMultipathCarrier([]DatagramCarrier{&pinnedCarrier{DatagramCarrier: reviewedUDPPath(a)}, &pinnedCarrier{DatagramCarrier: reviewedUDPPath(b)}}, nil)
 		var carrier DatagramCarrier = mp
 		if fec {
 			carrier = &fecCarrier{below: mp}
@@ -201,4 +201,10 @@ func TestReviewedMultipathTunnelCarriesTrafficWithStrayPackets(t *testing.T) {
 			}
 		})
 	}
+}
+
+func reviewedUDPPath(conn *net.UDPConn) *udpCarrier {
+	c := &udpCarrier{UDPConn: conn}
+	c.enableBatch()
+	return c
 }
