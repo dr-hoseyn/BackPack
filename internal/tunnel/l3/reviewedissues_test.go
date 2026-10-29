@@ -2,7 +2,10 @@ package l3
 
 import (
 	"bytes"
+	"context"
+	"fmt"
 	"net"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -125,5 +128,77 @@ func TestReviewedMultipathOnlyLearnsAuthenticatedSources(t *testing.T) {
 			t.Fatal("authenticated roaming stopped working")
 		}
 		mp.Close()
+	}
+}
+func TestReviewedMultipathTunnelCarriesTrafficWithStrayPackets(t *testing.T) {
+	for _, withFEC := range []bool{false, true} {
+		t.Run(fmt.Sprint(withFEC), func(t *testing.T) {
+			var address string
+			for i := 0; i < 20; i++ {
+				a := localUDP(t)
+				port := a.LocalAddr().(*net.UDPAddr).Port
+				if port == 65535 {
+					a.Close()
+					continue
+				}
+				second, err := net.ListenPacket("udp4", net.JoinHostPort("127.0.0.1", strconv.Itoa(port+1)))
+				if err != nil {
+					a.Close()
+					continue
+				}
+				address = a.LocalAddr().String()
+				a.Close()
+				second.Close()
+				break
+			}
+			if address == "" {
+				t.Fatal("no pair of consecutive test ports")
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			left, right := newFakeDevice(1400), newFakeDevice(1400)
+			fec := FECConfig{}
+			if withFEC {
+				fec = FECConfig{Data: 2, Parity: 1}
+			}
+			listener, err := New(Config{Mode: ModeListen, Addr: address, Token: "reviewed-multipath", LocalIP: "10.10.0.2/30", PeerIP: "10.10.0.1", Multipath: MultipathConfig{Paths: 2}, FEC: fec}, quietLogger())
+			if err != nil {
+				t.Fatal(err)
+			}
+			listener.openDevice = func(deviceSpec) (packetDevice, error) { return right, nil }
+			start(t, ctx, cancel, listener, right)
+			awaitBind(t, listener)
+			dialer, err := New(Config{Mode: ModeDial, Addr: address, Token: "reviewed-multipath", LocalIP: "10.10.0.1/30", PeerIP: "10.10.0.2", Multipath: MultipathConfig{Paths: 2}, FEC: fec}, quietLogger())
+			if err != nil {
+				t.Fatal(err)
+			}
+			dialer.openDevice = func(deviceSpec) (packetDevice, error) { return left, nil }
+			start(t, ctx, cancel, dialer, left)
+			awaitSession(t, dialer, 5*time.Second)
+			stray := localUDP(t)
+			dest, _ := net.ResolveUDPAddr("udp", address)
+			for i := 0; i < 8; i++ {
+				stray.WriteTo([]byte("not authenticated"), dest)
+				want := ipv4Packet(byte(i))
+				left.inject <- want
+				select {
+				case got := <-right.emitted:
+					if !bytes.Equal(got, want) {
+						t.Fatal("upload changed")
+					}
+				case <-time.After(3 * time.Second):
+					t.Fatal("upload stalled")
+				}
+				right.inject <- want
+				select {
+				case got := <-left.emitted:
+					if !bytes.Equal(got, want) {
+						t.Fatal("download changed")
+					}
+				case <-time.After(3 * time.Second):
+					t.Fatal("download stalled")
+				}
+			}
+		})
 	}
 }

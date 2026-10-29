@@ -89,21 +89,9 @@ type multipathCarrier struct {
 	sendMu  sync.Mutex
 	queueMu sync.Mutex
 
-	// The address reported upward, guarded by mu. It is one address for the
-	// life of the tunnel, deliberately: the layer above follows a peer that
-	// moves, and several paths arriving from several ports would otherwise read
-	// as a peer moving on every packet. Each path knows its own peer; nothing
-	// above needs to.
-	//
-	// The dialling side knows it at construction. The listening side does not —
-	// it has nobody to report until somebody arrives — so it starts nil and is
-	// pinned to the first address seen. That is not a detail: reporting nil is
-	// what broke this carrier. The tunnel learns where its peer is from the
-	// address handed up with a received packet (handleInit), and its outbound
-	// pump drops every packet while that is nil. So with more than one path the
-	// handshake completed, both ends logged an established session, and not one
-	// byte of data could leave — a tunnel that reports itself healthy and
-	// carries nothing.
+	// One logical peer is reported after authentication; per-packet ingress
+	// addresses stay separate until the tunnel validates them. Diallers start
+	// with their configured peer; listeners learn only from authenticated data.
 	reported net.Addr
 
 	in      chan pathPacket
@@ -424,7 +412,8 @@ func (c *multipathCarrier) ReadFrom(p []byte) (int, net.Addr, error) {
 			stop()
 			continue
 		case <-timeout:
-			return 0, nil, timeoutError{}
+			// Re-read the deadline: it may have been extended concurrently.
+			continue
 		}
 	}
 
