@@ -114,11 +114,47 @@ type multipathCarrier struct {
 
 	mu       sync.Mutex
 	deadline time.Time
+	wake     chan struct{}
 }
 
 type pathHealth struct {
 	retryAt atomic.Int64
 	dead    atomic.Bool
+}
+
+// receivedPath keeps ingress identity until the tunnel authenticates the packet.
+// A pump reuses this immutable value while its source stays the same.
+type receivedPath struct {
+	net.Addr
+	owner *multipathCarrier
+	index int
+}
+
+// confirmPeer is called only after AEAD and replay validation, never by a read.
+func (c *multipathCarrier) confirmPeer(from net.Addr) net.Addr {
+	source, ok := from.(*receivedPath)
+	if !ok || source.owner != c {
+		return from
+	}
+	if pinned, ok := c.paths[source.index].(*pinnedCarrier); ok {
+		pinned.mu.Lock()
+		pinned.peer = source.Addr
+		pinned.mu.Unlock()
+	}
+	return c.stableAddr(source.Addr)
+}
+
+// Reply on the ingress socket without teaching unrelated data paths a peer.
+func (c *multipathCarrier) replyPath(from net.Addr) (DatagramCarrier, net.Addr, bool) {
+	source, ok := from.(*receivedPath)
+	if !ok || source.owner != c {
+		return nil, nil, false
+	}
+	path := c.paths[source.index]
+	if pinned, ok := path.(*pinnedCarrier); ok {
+		path = pinned.DatagramCarrier
+	}
+	return path, source.Addr, true
 }
 
 type pathPacket struct {
@@ -139,6 +175,7 @@ func newMultipathCarrier(paths []DatagramCarrier, reported net.Addr) DatagramCar
 		in:       make(chan pathPacket, pathQueue),
 		closed:   make(chan struct{}),
 		allDead:  make(chan struct{}),
+		wake:     make(chan struct{}),
 	}
 	c.readers.Store(int32(len(paths)))
 	for i, p := range paths {
@@ -173,6 +210,7 @@ func (c *multipathCarrier) pumpPath(i int, p DatagramCarrier) {
 	for j := range bufs {
 		bufs[j] = make([]byte, maxMTU+256)
 	}
+	var source *receivedPath
 	for {
 		var count int
 		var err error
@@ -188,10 +226,8 @@ func (c *multipathCarrier) pumpPath(i int, p DatagramCarrier) {
 			if sizes[j] < 0 || sizes[j] > len(bufs[j]) {
 				continue
 			}
-			if isPinned && froms[j] != nil {
-				pinned.mu.Lock()
-				pinned.peer = froms[j]
-				pinned.mu.Unlock()
+			if source == nil || !sameAddr(source.Addr, froms[j]) {
+				source = &receivedPath{Addr: froms[j], owner: c, index: i}
 			}
 			c.queueMu.Lock()
 			select {
@@ -206,7 +242,7 @@ func (c *multipathCarrier) pumpPath(i int, p DatagramCarrier) {
 			}
 			frame := network.GetDatagramBuffer(sizes[j])
 			copy(frame, bufs[j][:sizes[j]])
-			c.in <- pathPacket{frame, froms[j]}
+			c.in <- pathPacket{frame, source}
 			c.queueMu.Unlock()
 		}
 		if err == nil {
@@ -248,9 +284,12 @@ func (c *multipathCarrier) pathFailed(i int, err error) {
 }
 
 // WriteTo retries only an unsent datagram; a partial write is never replayed.
-func (c *multipathCarrier) WriteTo(p []byte, _ net.Addr) (int, error) {
+func (c *multipathCarrier) WriteTo(p []byte, addr net.Addr) (int, error) {
 	c.sendMu.Lock()
 	defer c.sendMu.Unlock()
+	if path, peer, ok := c.replyPath(addr); ok {
+		return path.WriteTo(p, peer)
+	}
 	select {
 	case <-c.closed:
 		return 0, net.ErrClosed
@@ -280,9 +319,25 @@ func (c *multipathCarrier) WriteTo(p []byte, _ net.Addr) (int, error) {
 
 // WriteBatch keeps the reported prefix contiguous. Each chunk uses one path's
 // sendmmsg/GSO capability; subsequent chunks rotate to the next usable path.
-func (c *multipathCarrier) WriteBatch(bufs [][]byte, _ net.Addr) (int, error) {
+func (c *multipathCarrier) WriteBatch(bufs [][]byte, addr net.Addr) (int, error) {
 	c.sendMu.Lock()
 	defer c.sendMu.Unlock()
+	if path, peer, ok := c.replyPath(addr); ok {
+		if writer := asBatchWriter(path); writer != nil {
+			return writer.WriteBatch(bufs, peer)
+		}
+		for i, p := range bufs {
+			n, err := path.WriteTo(p, peer)
+			if err != nil {
+				return i, err
+			}
+			if n != len(p) {
+				return i, fmt.Errorf("l3: short datagram write")
+			}
+		}
+		return len(bufs), nil
+	}
+
 	sent := 0
 	for sent < len(bufs) {
 		select {
@@ -328,39 +383,51 @@ func (c *multipathCarrier) WriteBatch(bufs [][]byte, _ net.Addr) (int, error) {
 // ReadFrom returns the next datagram from any path, honouring the read deadline
 // the tunnel sets on it.
 func (c *multipathCarrier) ReadFrom(p []byte) (int, net.Addr, error) {
-	c.mu.Lock()
-	dl := c.deadline
-	c.mu.Unlock()
-
-	var timeout <-chan time.Time
-	if !dl.IsZero() {
-		t := time.NewTimer(time.Until(dl))
-		defer t.Stop()
-		timeout = t.C
-	}
-	select {
-	case pkt := <-c.in:
-		// The address reported is the stable one, not the path's: see the
-		// comment on the field.
-		n := copy(p, pkt.data)
-		network.PutDatagramBuffer(pkt.data)
-		return n, c.stableAddr(pkt.addr), nil
-	case <-c.closed:
-		return 0, nil, net.ErrClosed
-	case <-c.allDead:
-		// Every pump has stopped, so nothing more can enter the queue. Deliver
-		// its remaining packets before reporting the permanent carrier failure.
+	for {
+		c.mu.Lock()
+		dl, wake := c.deadline, c.wake
+		c.mu.Unlock()
+		if !dl.IsZero() && !time.Now().Before(dl) {
+			return 0, nil, timeoutError{}
+		}
+		var timer *time.Timer
+		var timeout <-chan time.Time
+		if !dl.IsZero() {
+			timer = time.NewTimer(time.Until(dl))
+			timeout = timer.C
+		}
+		stop := func() {
+			if timer != nil {
+				timer.Stop()
+			}
+		}
 		select {
 		case pkt := <-c.in:
+			stop()
 			n := copy(p, pkt.data)
 			network.PutDatagramBuffer(pkt.data)
-			return n, c.stableAddr(pkt.addr), nil
-		default:
+			return n, pkt.addr, nil
+		case <-c.closed:
+			stop()
 			return 0, nil, net.ErrClosed
+		case <-c.allDead:
+			stop()
+			select {
+			case pkt := <-c.in:
+				n := copy(p, pkt.data)
+				network.PutDatagramBuffer(pkt.data)
+				return n, pkt.addr, nil
+			default:
+				return 0, nil, net.ErrClosed
+			}
+		case <-wake:
+			stop()
+			continue
+		case <-timeout:
+			return 0, nil, timeoutError{}
 		}
-	case <-timeout:
-		return 0, nil, timeoutError{}
 	}
+
 }
 
 // ReadBatch drains queued datagrams after the first, without a timer or extra latency.
@@ -378,7 +445,7 @@ func (c *multipathCarrier) ReadBatch(bufs [][]byte, sizes []int, froms []net.Add
 		select {
 		case pkt := <-c.in:
 			sizes[count] = copy(bufs[count], pkt.data)
-			froms[count] = c.stableAddr(pkt.addr)
+			froms[count] = pkt.addr
 			network.PutDatagramBuffer(pkt.data)
 			count++
 		default:
@@ -447,12 +514,16 @@ func (c *multipathCarrier) CarrierName() string {
 }
 
 func (c *multipathCarrier) SetDeadline(t time.Time) error {
-	return c.SetReadDeadline(t)
+	return errors.Join(c.SetReadDeadline(t), c.SetWriteDeadline(t))
 }
 
 func (c *multipathCarrier) SetReadDeadline(t time.Time) error {
 	c.mu.Lock()
 	c.deadline = t
+	if c.wake != nil {
+		close(c.wake)
+	}
+	c.wake = make(chan struct{})
 	c.mu.Unlock()
 	return nil
 }

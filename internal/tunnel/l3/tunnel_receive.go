@@ -1,6 +1,7 @@
 package l3
 
 import (
+	"bytes"
 	"net"
 	"time"
 )
@@ -20,7 +21,12 @@ func (t *Tunnel) handleInit(h header, body []byte, from net.Addr) {
 	t.mu.Lock()
 	if h.session == t.lastInitID && t.lastReply != nil {
 		reply := t.lastReply
+		exact := h.counter == t.lastInitCounter && bytes.Equal(body, t.lastInitBody)
 		t.mu.Unlock()
+		if !exact {
+			t.stats.dropped.Add(1)
+			return
+		}
 		_, _ = t.carrier.WriteTo(reply, from)
 		return
 	}
@@ -108,6 +114,8 @@ func (t *Tunnel) handleInit(h header, body []byte, from net.Addr) {
 	t.mu.Lock()
 	t.pending = sess
 	t.lastInitID = h.session
+	t.lastInitCounter = h.counter
+	t.lastInitBody = append(t.lastInitBody[:0], body...)
 	t.lastReply = reply
 	// The address is provisional until a data packet confirms it, which is
 	// also what promotes the session.
@@ -221,6 +229,7 @@ func (t *Tunnel) handleData(plain []byte, h header, body []byte, from net.Addr) 
 // notePeer follows a peer that has moved, which is safe only because the
 // caller has already authenticated the packet the address came from.
 func (t *Tunnel) notePeer(from net.Addr) {
+	from = confirmCarrierPeer(t.carrier, from)
 	if from == nil {
 		return
 	}

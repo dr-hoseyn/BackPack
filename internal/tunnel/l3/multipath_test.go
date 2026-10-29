@@ -69,7 +69,7 @@ func TestMultipathLearnsAnAddressWhenBuiltWithoutOne(t *testing.T) {
 		t.Fatal("a nil address was reported: the tunnel above cannot learn its peer " +
 			"from this, and drops every outbound packet while it is unset")
 	}
-	first := addr.String()
+	first := confirmCarrierPeer(mp, addr).String()
 
 	// A packet from the other path, whose own peer differs, must not change what
 	// is reported. Several sockets are one peer to the layer above, and an
@@ -77,7 +77,7 @@ func TestMultipathLearnsAnAddressWhenBuiltWithoutOne(t *testing.T) {
 	b.in <- []byte("two")
 	if _, addr2, err := mp.ReadFrom(buf); err != nil {
 		t.Fatal(err)
-	} else if addr2 == nil || addr2.String() != first {
+	} else if addr2 == nil || confirmCarrierPeer(mp, addr2).String() != first {
 		t.Errorf("second read reported %v, want the pinned %s", addr2, first)
 	}
 }
@@ -146,7 +146,7 @@ func TestMultipathReportsOneStableAddress(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if addr.String() != stable.String() {
+		if confirmCarrierPeer(mp, addr).String() != stable.String() {
 			t.Errorf("read %d reported %s, want the stable %s", i, addr, stable)
 		}
 	}

@@ -1,0 +1,22 @@
+name: Reviewed tunnel issue regressions
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'internal/tunnel/l3/**'
+      - 'internal/client/transport/**'
+      - '.github/workflows/reviewed-tunnel-issues.yml'
+permissions:
+  contents: read
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Repeat authenticated routing, FEC, deadlines and failover regressions
+        run: go test -race ./internal/tunnel/l3 ./internal/client/transport -run 'TestReviewed|TestFEC|TestMultipath|TestTunnelCarries' -count=3 -timeout 5m

@@ -286,8 +286,10 @@ type Tunnel struct {
 	// The listening side answers a retransmitted first message with the
 	// identical reply rather than starting a second handshake, which would
 	// derive keys the initiator has no way to arrive at.
-	lastInitID uint32
-	lastReply  []byte
+	lastInitID      uint32
+	lastInitCounter uint64
+	lastInitBody    []byte
+	lastReply       []byte
 
 	// seenInits refuses a handshake this end has already answered, for the
 	// legacy handshake an older dialler still sends; a v2 dialler's handshake
