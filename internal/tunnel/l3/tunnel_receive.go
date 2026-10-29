@@ -248,6 +248,9 @@ func (t *Tunnel) notePeer(from net.Addr) {
 	previous := t.peer
 	t.peer = from
 	t.mu.Unlock()
+	if ingress, ok := previous.(*receivedPath); ok {
+		previous = ingress.Addr
+	}
 	if previous != nil && !sameHost(previous, from) {
 		t.log.Infof("l3: peer moved from %s to %s", previous, from)
 	}

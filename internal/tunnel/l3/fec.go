@@ -201,6 +201,11 @@ func (c *fecCarrier) SetWriteDeadline(t time.Time) error { return c.below.SetWri
 // this layer costs bandwidth and CPU but not a millisecond of latency on the
 // packet the application is waiting for.
 func (c *fecCarrier) WriteTo(p []byte, addr net.Addr) (int, error) {
+	// Recovered ingress metadata must not become a learned data route, but a
+	// successfully authenticated init may still receive an immediate response.
+	if recovered, ok := addr.(*fecRecoveredAddr); ok {
+		addr = recovered.Addr
+	}
 	c.sendMu.Lock()
 	defer c.sendMu.Unlock()
 	if len(p) > 65535 {

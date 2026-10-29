@@ -213,3 +213,28 @@ func reviewedUDPPath(conn *net.UDPConn) *udpCarrier {
 	c.enableBatch()
 	return c
 }
+func TestReviewedMultipathDeadlineCanBeExtendedAndCleared(t *testing.T) {
+	a, b := localUDP(t), localUDP(t)
+	mp := newMultipathCarrier([]DatagramCarrier{reviewedUDPPath(a), reviewedUDPPath(b)}, nil)
+	defer mp.Close()
+	mp.SetReadDeadline(time.Now().Add(80 * time.Millisecond))
+	done := make(chan error, 1)
+	go func() { _, _, err := mp.ReadFrom(make([]byte, 64)); done <- err }()
+	time.Sleep(20 * time.Millisecond)
+	mp.SetReadDeadline(time.Now().Add(time.Second))
+	mp.SetReadDeadline(time.Time{})
+	select {
+	case err := <-done:
+		t.Fatalf("old deadline survived extension/clear: %v", err)
+	case <-time.After(120 * time.Millisecond):
+	}
+	mp.SetReadDeadline(time.Now().Add(-time.Second))
+	select {
+	case err := <-done:
+		if ne, ok := err.(net.Error); !ok || !ne.Timeout() {
+			t.Fatalf("expected timeout: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("updated deadline did not wake read")
+	}
+}
