@@ -11,6 +11,26 @@ import (
 	"time"
 )
 
+func TestDecoyStaticMethodProbesStayConsistent(t *testing.T) {
+	p := newDecoyProfile("method-probe-token")
+	for _, tc := range []struct {
+		method, path string
+		status       int
+	}{
+		{"GET", "/", 200}, {"HEAD", "/", 200}, {"POST", "/", 405}, {"POST", "/index.html", 405},
+		{"POST", "/missing", 404}, {"PUT", "/", 405}, {"OPTIONS", "/index.html", 405}, {"DELETE", "/missing", 405},
+	} {
+		r := httptest.NewRecorder()
+		p.serve(r, httptest.NewRequest(tc.method, tc.path, nil))
+		if r.Code != tc.status {
+			t.Fatalf("%s %s = %d, want %d", tc.method, tc.path, r.Code, tc.status)
+		}
+		if tc.status == 405 && (!strings.Contains(r.Body.String(), "405 Not Allowed") || !strings.Contains(r.Body.String(), r.Header().Get("Server"))) {
+			t.Fatal("inconsistent method error page")
+		}
+	}
+}
+
 // The whole point of deriving the decoy from the token: two servers must not
 // present the same identity, or the fleet is findable with one scan for one
 // exact response.

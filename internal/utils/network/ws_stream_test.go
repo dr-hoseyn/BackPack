@@ -176,3 +176,46 @@ func TestWSMuxStreamDeadlineInterruptsBlockedFrame(t *testing.T) {
 		t.Fatal("framing reset the stream's write deadline")
 	}
 }
+
+func TestWSMuxScatterGatherPreservesCallerBuffers(t *testing.T) {
+	header := []byte("12345678")
+	payload := bytes.Repeat([]byte("p"), 65535)
+	want := append(append([]byte{}, header...), payload...)
+	received := make(chan []byte, 1)
+	up := websocket.Upgrader{Subprotocols: []string{WSMuxBinaryProtocol}, WriteBufferSize: wsWriteBufferSize}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c, e := up.Upgrade(WSMuxResponse(w), r, nil)
+		if e != nil {
+			return
+		}
+		defer c.Close()
+		_, p, e := c.ReadMessage()
+		if e == nil {
+			received <- p
+		}
+	}))
+	defer srv.Close()
+	c, e := WebSocketDialer(context.Background(), nil, srv.Listener.Addr().String(), "", "/tunnel", time.Second, time.Second, true, "token", config.WSMUX, false, 1, 0, 0, 0)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer c.Close()
+	stream := WSMuxStream(c).(*webSocketStream)
+	if n, e := stream.WriteBuffers(nil); n != 0 || e != nil {
+		t.Fatal("empty vector was not a no-op")
+	}
+	if n, e := stream.WriteBuffers([][]byte{header, nil, payload}); e != nil || n != len(want) {
+		t.Fatalf("vector write: %d, %v", n, e)
+	}
+	select {
+	case got := <-received:
+		if !bytes.Equal(got, want) {
+			t.Fatal("vector changed message bytes")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("vector message not received")
+	}
+	if !bytes.Equal(header, []byte("12345678")) || !bytes.Equal(payload, bytes.Repeat([]byte("p"), 65535)) {
+		t.Fatal("masking modified caller-owned data")
+	}
+}

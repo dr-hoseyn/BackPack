@@ -65,16 +65,37 @@ func (c *webSocketStream) Write(p []byte) (int, error) {
 	if len(p) == 0 {
 		return 0, nil
 	}
+	return c.WriteBuffers([][]byte{p})
+}
+
+// WriteBuffers lets smux write its eight-byte header and payload into the same
+// binary message without first copying them into a private 64 KiB/session
+// staging buffer. All bytes are consumed synchronously before returning.
+func (c *webSocketStream) WriteBuffers(v [][]byte) (int, error) {
+	hasData := false
+	for _, p := range v {
+		if len(p) > 0 {
+			hasData = true
+			break
+		}
+	}
+	if !hasData {
+		return 0, nil
+	}
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
 	w, err := c.conn.NextWriter(websocket.BinaryMessage)
 	if err != nil {
 		return 0, err
 	}
-	n, err := w.Write(p)
-	if err != nil {
-		_ = w.Close()
-		return n, err
+	n := 0
+	for _, p := range v {
+		written, err := w.Write(p)
+		n += written
+		if err != nil {
+			_ = w.Close()
+			return n, err
+		}
 	}
 	return n, w.Close()
 }

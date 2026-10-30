@@ -36,6 +36,7 @@ jobs:
           BP_RESOURCE_BENCHMARK: '1'
           BP_WSSMUX_BOUNDED: '1'
           BP_RESOURCE_IDLE_CONNECTIONS: '1000'
+          BP_RESOURCE_TARGET_MBPS: '600'
         run: |
           set -o pipefail
           go test ./internal/e2e -run '^TestWSMuxResourceProfile$' -count=1 -v -timeout 3m | tee wssmux-resources.log

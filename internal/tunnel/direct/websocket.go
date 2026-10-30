@@ -54,7 +54,7 @@ func dialWebSocket(ctx context.Context, cfg *Config) (net.Conn, error) {
 
 	dialer := &websocket.Dialer{
 		Subprotocols:   []string{network.WSMuxBinaryProtocol},
-		ReadBufferSize: 16 << 10, WriteBufferSize: 64 << 10, WriteBufferPool: directWSWritePool,
+		ReadBufferSize: 16 << 10, WriteBufferSize: 64*1024 + 8, WriteBufferPool: directWSWritePool,
 		HandshakeTimeout: wsHandshakeTimeout,
 		NetDialContext: func(ctx context.Context, netw, addr string) (net.Conn, error) {
 			d := net.Dialer{Timeout: cfg.DialTimeout}
@@ -166,7 +166,7 @@ func listenWebSocket(cfg *Config, log *logrus.Logger) (*wsListener, error) {
 
 	upgrader := websocket.Upgrader{
 		Subprotocols:   []string{network.WSMuxBinaryProtocol},
-		ReadBufferSize: 16 << 10, WriteBufferSize: 64 << 10, WriteBufferPool: directWSWritePool,
+		ReadBufferSize: 16 << 10, WriteBufferSize: 64*1024 + 8, WriteBufferPool: directWSWritePool,
 		HandshakeTimeout: wsHandshakeTimeout,
 		// The tunnel is not a browser API, so the browser's origin rule
 		// protects nobody here; the token does that, inside.

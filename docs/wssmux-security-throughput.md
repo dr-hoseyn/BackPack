@@ -5,6 +5,10 @@ and carry smux bytes in RFC 6455 binary messages. Frames retain client masking;
 control frames and message boundaries are processed by Gorilla. The stream
 adapter has no batching timer, uses the existing pooled 64 KiB writers, and
 does not enable per-message compression for already encrypted proxy traffic.
+The adapter exposes smux's scatter/gather interface: the mux header and payload
+share one message without a private 64 KiB staging buffer per physical session.
+The pooled writer fits a maximum smux payload plus its eight-byte header, so
+maximum-size payloads do not create a second tiny WebSocket fragment.
 Direct WS/WSS peers use the same negotiated framing.
 
 An older peer that does not acknowledge `binary` retains its raw wire format.
@@ -41,6 +45,8 @@ on both sides of a trusted terminating proxy and verify its public certificate;
 do not try to repair exporter binding by suppressing an authentication failure.
 Use an actual web server/site when web responses are required; the built-in
 decoy's nginx header does not emulate nginx's entire TLS/HTTP implementation.
+Static GET/HEAD, POST-to-missing and unsupported-method responses are checked
+against nginx's static-handler behavior, including consistent 405 error pages.
 
 ## TLS and HTTP consistency
 
@@ -54,7 +60,8 @@ needs HTTP/1.1 fallback because this implementation does not implement RFC 8441.
 That capability is cached for ten minutes, with at most 128 entries, keyed by
 origin, dial destination and TLS name; a handshake failure invalidates it.
 Pool connections reuse the control connection's decision. The cache contains
-no credentials and never bypasses certificate/proof checks. HTTP/1.1-only ALPN
+no credentials and is populated only after successful authentication; an
+unproven peer cannot change the next connection's ALPN behavior. HTTP/1.1-only ALPN
 does change the ClientHello; caching removes repeated unusable handshakes, not
 that fingerprint tradeoff.
 
@@ -117,8 +124,11 @@ physical session remains.
 The `WSS Mux security and capacity` workflow runs race-checked authentication,
 framing, message-aware proxy and reconnection regressions, then the bounded
 profile's byte-verified download measurement with a 600 Mbit/s requested floor.
-A separate workload holds 1,000 open users, transfers bulk payloads concurrently
-and records CPU-seconds/application-GiB, sampled peak RSS and new-user p99 latency.
+A separate workload holds 1,000 open users, paces offered application load at
+600 Mbit/s in 32 KiB writes with a shared 64 KiB burst, and transfers payloads concurrently
+and records CPU-seconds/application-GiB, sampled peak RSS and new-user p99 latency
+throughout the bulk phase. The existing resource-comparison workflow also
+measures unbounded bulk traffic and namespace-isolated delay/loss.
 The quiet-user retirement test verifies that excess sessions disappear without
 closing the remaining user. Logs are retained as workflow artifacts.
 
@@ -127,7 +137,7 @@ On a disposable Linux host, not a loaded production host:
 ```sh
 BP_CAPACITY_BENCHMARK=1 BP_WSSMUX_BOUNDED=1 BP_CAPACITY_MIN_MBPS=600 \
   go test ./internal/e2e -run '^TestBulkProfileDownloadCapacity/wssmux$' -count=1 -v
-BP_RESOURCE_BENCHMARK=1 BP_WSSMUX_BOUNDED=1 \
+BP_RESOURCE_BENCHMARK=1 BP_WSSMUX_BOUNDED=1 BP_RESOURCE_TARGET_MBPS=600 \
   go test ./internal/e2e -run '^TestWSMuxResourceProfile$' -count=1 -v
 ```
 

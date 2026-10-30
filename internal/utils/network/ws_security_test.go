@@ -151,3 +151,35 @@ func TestWSSCachesH2FallbackWithoutChangingDirectOffer(t *testing.T) {
 		t.Fatal("unbounded cache")
 	}
 }
+
+func TestWSSUnprovenPeerCannotPopulateALPNCache(t *testing.T) {
+	var requests atomic.Int32
+	up := websocket.Upgrader{}
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		c, e := up.Upgrade(w, r, nil)
+		if e == nil {
+			c.Close()
+		}
+	}))
+	srv.EnableHTTP2 = true
+	srv.StartTLS()
+	defer srv.Close()
+	addr := srv.Listener.Addr().String()
+	key := addr + "\x00" + addr + "\x00"
+	wssALPN.forget(key)
+	defer wssALPN.forget(key)
+	c, e := WebSocketDialer(context.Background(), nil, addr, "", "/channel", time.Second, time.Second, true, "secret-not-known-to-peer", config.WSS, false, 3, 0, 0, 0)
+	if c != nil {
+		c.Close()
+	}
+	if e == nil {
+		t.Fatal("unproven peer accepted")
+	}
+	if requests.Load() != 1 {
+		t.Fatal("same unproven peer was retried inside the dial attempt")
+	}
+	if wssALPN.http11(key, time.Now()) {
+		t.Fatal("unauthenticated peer changed future ClientHello behavior")
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -32,6 +33,11 @@ func WebSocketDialer(ctx context.Context, out *Outbound, addr string, edgeIP str
 				return nil, ctx.Err()
 			}
 			return tunnelWSConn, nil
+		}
+		// Retrying the same unauthenticated peer cannot repair a missing or
+		// invalid proof. Let the owning reconnect/failover loop decide next.
+		if errors.Is(err, errWSSServerUnproven) {
+			return nil, err
 		}
 
 		// If this is the last retry, return the error
@@ -131,6 +137,7 @@ func attemptDialWebSocket(ctx context.Context, out *Outbound, addr string, edgeI
 	// ekm is the TLS session's keying material on a bound wss dial, for
 	// checking the server's answer; nil otherwise.
 	var ekm []byte
+	var learnedALPN string
 	rawMux := path != "/channel" && (mode == config.WSMUX || mode == config.WSSMUX)
 
 	// Handle edgeIP assignment
@@ -232,7 +239,7 @@ func attemptDialWebSocket(ctx context.Context, out *Outbound, addr string, edgeI
 				wssALPN.forget(cacheKey)
 				return nil, err
 			}
-			wssALPN.remember(cacheKey, time.Now())
+			learnedALPN = cacheKey
 		}
 
 		// With a trusted TLS-terminating proxy in front of the server (NGINX,
@@ -294,6 +301,9 @@ func attemptDialWebSocket(ctx context.Context, out *Outbound, addr string, edgeI
 			return nil, err
 		}
 	}
+	if learnedALPN != "" {
+		wssALPN.remember(learnedALPN, time.Now())
+	}
 	return tunnelWSConn, nil
 }
 
@@ -301,7 +311,7 @@ func attemptDialWebSocket(ctx context.Context, out *Outbound, addr string, edgeI
 // wsWriteBufferSize for why these sizes and why the write buffers are pooled.
 const (
 	wsReadBufferSize  = 16 * 1024
-	wsWriteBufferSize = 64 * 1024
+	wsWriteBufferSize = 64*1024 + 8 // one maximum smux payload plus its header
 )
 
 var wsWriteBuffers = &sync.Pool{}

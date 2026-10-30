@@ -237,7 +237,7 @@ type TunnelUDPConn struct {
 // relay buffer.
 const (
 	wsReadBufferSize  = 16 * 1024
-	wsWriteBufferSize = 64 * 1024
+	wsWriteBufferSize = 64*1024 + 8 // one maximum smux payload plus its header
 )
 
 var wsWriteBuffers = &sync.Pool{}

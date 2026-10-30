@@ -5,6 +5,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -29,9 +30,22 @@ func TestWSSMuxDedicatedLivePath(t *testing.T) {
 	var wg sync.WaitGroup
 	defer wg.Wait()
 	defer cancel()
+	port := func(key string, fallback int) int {
+		if raw := os.Getenv(key); raw != "" {
+			v, e := strconv.Atoi(raw)
+			if e != nil || v < 1024 || v > 65535 {
+				t.Fatalf("invalid %s", key)
+			}
+			return v
+		}
+		return fallback
+	}
+	backendPort := port("BP_WSSMUX_LIVE_BACKEND_PORT", 21992)
+	tunnelPort := port("BP_WSSMUX_LIVE_TUNNEL_PORT", 21991)
+	entryPort := port("BP_WSSMUX_LIVE_ENTRY_PORT", 21993)
 	switch role {
 	case "client":
-		backend, err := net.Listen("tcp", "127.0.0.1:49192")
+		backend, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(backendPort)))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -52,14 +66,14 @@ func TestWSSMuxDedicatedLivePath(t *testing.T) {
 		wg.Go(engine.Start)
 		<-ctx.Done()
 	case "server":
-		cfg := baseServerConfig("wssmux", 49191, 49193, "127.0.0.1:49192", token)
-		cfg.BindAddr = "0.0.0.0:49191"
-		cfg.Ports = []string{"127.0.0.1:49193=127.0.0.1:49192"}
+		cfg := baseServerConfig("wssmux", tunnelPort, entryPort, net.JoinHostPort("127.0.0.1", strconv.Itoa(backendPort)), token)
+		cfg.BindAddr = net.JoinHostPort("0.0.0.0", strconv.Itoa(tunnelPort))
+		cfg.Ports = []string{net.JoinHostPort("127.0.0.1", strconv.Itoa(entryPort)) + "=" + net.JoinHostPort("127.0.0.1", strconv.Itoa(backendPort))}
 		cfg.MuxCon, cfg.MaxConnections, cfg.BandwidthMbps = 8, 4, 20
 		cfg.LogLevel = "error"
 		engine := server.NewServer(cfg, ctx)
 		wg.Go(engine.Start)
-		tun := &tunnel{Entry: "127.0.0.1:49193"}
+		tun := &tunnel{Entry: net.JoinHostPort("127.0.0.1", strconv.Itoa(entryPort))}
 		if err := tun.waitReady(25 * time.Second); err != nil {
 			t.Fatal(err)
 		}
