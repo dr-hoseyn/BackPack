@@ -30,6 +30,7 @@ func TestWSSSimpleAuthCarriesTraffic(t *testing.T) {
 			cliCfg := baseClientConfig(transport,
 				fmt.Sprintf("127.0.0.1:%d", tunnelPort), token, nil)
 			cliCfg.SimpleAuth = true
+			cliCfg.WSSCAFile = certPath
 
 			tun := runPair(t, srvCfg, cliCfg, entryPort, tunnelPort)
 			if err := tun.waitReady(tunnelReadyTimeout); err != nil {
@@ -63,6 +64,7 @@ func TestWSSSimpleAuthMustAgree(t *testing.T) {
 	cliCfg := baseClientConfig("wss",
 		fmt.Sprintf("127.0.0.1:%d", tunnelPort), token, nil)
 	cliCfg.SimpleAuth = true
+	cliCfg.WSSCAFile = certPath
 
 	tun := runPair(t, srvCfg, cliCfg, entryPort, tunnelPort)
 	if err := tun.waitReady(12 * time.Second); err == nil {

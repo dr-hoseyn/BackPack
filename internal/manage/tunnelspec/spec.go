@@ -150,7 +150,13 @@ type Spec struct {
 	EdgeIP string
 	// SimpleAuth authorises a wss tunnel by the raw token, for a server behind
 	// a TLS-terminating proxy like NGINX. Off by default. See config.SimpleAuth.
-	SimpleAuth bool
+	SimpleAuth           bool
+	WSSCAFile            string
+	WSSServerName        string
+	WSSAllowLegacyServer bool
+	WSSHTTP11Only        bool
+	WSMuxMaxSessions     int
+
 	// Proxy is the optional socks5:// or http:// URL the client reaches the
 	// tunnel server through. Empty means dial it directly.
 	Proxy string
@@ -382,6 +388,24 @@ func (s Spec) Render() string {
 	if needsTLS(s.Transport) && s.SimpleAuth {
 		p("simple_auth = true\n")
 	}
+	if needsTLS(s.Transport) {
+		if s.WSSCAFile != "" {
+			p("wss_ca_file = %q\n", s.WSSCAFile)
+		}
+		if s.WSSServerName != "" {
+			p("wss_server_name = %q\n", s.WSSServerName)
+		}
+		if s.WSSAllowLegacyServer {
+			p("wss_allow_legacy_server = true\n")
+		}
+		if s.WSSHTTP11Only {
+			p("wss_http11_only = true\n")
+		}
+	}
+	if (s.Transport == "wsmux" || s.Transport == "wssmux") && s.WSMuxMaxSessions > 0 {
+		p("wsmux_max_sessions = %d\n", s.WSMuxMaxSessions)
+	}
+
 	if s.Proxy != "" {
 		p("proxy = %q\n", s.Proxy)
 	}

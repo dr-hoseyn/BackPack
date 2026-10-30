@@ -6,8 +6,6 @@ import (
 	"crypto/tls"
 	"encoding/hex"
 	"errors"
-	"fmt"
-	"sync"
 
 	utls "github.com/refraction-networking/utls"
 )
@@ -90,13 +88,8 @@ func WSSServerProof(cs *tls.ConnectionState, token string) (string, error) {
 // material), domain-separated so it can never be the client's proof reflected
 // back — and the client checks it.
 //
-// A header, because an older client ignores headers it does not know: the
-// server can be upgraded first, as the QUIC binding already asks. An older
-// server sends none, and a new client cannot tell that from something on the
-// path that stripped it — so it accepts a missing answer from a server it has
-// never had one from, and refuses one from a server that has answered before
-// (in this process). That closes the path for every tunnel whose server is up
-// to date, from its first successful connection on.
+// Missing proofs are rejected even on the first connection. Legacy mode is
+// explicit and its dialer verifies the TLS certificate before sending HTTP.
 
 // WSSServerProofHeader carries the server's answer on the upgrade response.
 const WSSServerProofHeader = "X-Backpack-Proof"
@@ -121,28 +114,17 @@ func WSSServerAnswer(cs *tls.ConnectionState, token string) (string, error) {
 	return wssServerAnswer(ekm, token), nil
 }
 
-// wssAnswered remembers the servers that have proved themselves, by address.
-var wssAnswered sync.Map
+var errWSSServerUnproven = errors.New("wss: missing or invalid server proof; upgrade the server first (verified legacy TLS requires explicit wss_allow_legacy_server)")
 
-// errWSSServerUnproven is a server that did not prove it holds the token.
-var errWSSServerUnproven = errors.New("wss: the server did not prove it holds the tunnel token — " +
-	"something on the path is terminating the TLS, or the token differs")
-
-// checkWSSServer judges the server's answer to an upgrade: a wrong one is
-// refused, a missing one is refused from a server that has answered before, and
-// a right one is remembered.
-func checkWSSServer(ekm []byte, token, server, answer string) error {
+func checkWSSServer(ekm []byte, token, server, answer string, allowLegacy ...bool) error {
 	if answer == "" {
-		if _, before := wssAnswered.Load(server); before {
-			return fmt.Errorf("%w: it answered before in this run and this time it did not — "+
-				"or the server was rolled back to a build that does not answer (restart this "+
-				"client to accept an older server again)", errWSSServerUnproven)
+		if len(allowLegacy) > 0 && allowLegacy[0] {
+			return nil
 		}
-		return nil // an older server; see above
+		return errWSSServerUnproven
 	}
 	if !hmac.Equal([]byte(answer), []byte(wssServerAnswer(ekm, token))) {
 		return errWSSServerUnproven
 	}
-	wssAnswered.Store(server, struct{}{})
 	return nil
 }

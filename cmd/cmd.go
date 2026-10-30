@@ -135,6 +135,12 @@ func Run(configPath string, ctx context.Context) {
 			}
 		}
 
+		// Parent cancellation and a generation ending can become ready together.
+		// Do not apply host tuning or start another generation on shutdown,
+		// even if the watcher happened to report a restart first.
+		if ctx.Err() != nil {
+			return
+		}
 		applyThroughputHostTuning(cfg)
 
 		// The engine mutates the configuration it is given — the transports

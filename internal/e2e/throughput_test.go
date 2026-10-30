@@ -19,7 +19,7 @@ func TestTransportThroughput(t *testing.T) {
 	}
 	const size = 32 << 20
 	payload := randomPayload(t, size)
-	for _, transport := range []string{"tcp", "tcpmux", "ws", "wsmux", "kcp", "quic"} {
+	for _, transport := range []string{"tcp", "tcpmux", "ws", "wsmux", "wss", "wssmux", "kcp", "quic"} {
 		t.Run(transport, func(t *testing.T) {
 			backend := startEchoBackend(t)
 			tun := startTunnel(t, transport, backend, tunnelOptions{})

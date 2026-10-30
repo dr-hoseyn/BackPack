@@ -1,0 +1,58 @@
+name: WSS Mux security and capacity
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  wssmux:
+    name: Framed WSS authentication and 600 Mbit capacity
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Authenticate before HTTP and validate real binary frames
+        run: >-
+          go test -race ./internal/utils/network ./internal/client/transport ./internal/e2e
+          -run '^(TestWSS|TestWSMux|TestWebSocket|TestAWSS|TestMuxUpgrade|TestTLSTransports|TestMuxCapacityGrows)'
+          -count=1 -timeout 4m
+      - name: Provision private trust in real setup-link bearer clients
+        run: >-
+          go test -race ./internal/manage
+          -run '^TestAKharejMadeFromTheSetupLinkCarriesTraffic/(wss|wssmux)/simple_auth/'
+          -count=1 -timeout 3m
+      - name: Measure bounded-profile download capacity
+        env:
+          BP_CAPACITY_BENCHMARK: '1'
+          BP_WSSMUX_BOUNDED: '1'
+          BP_CAPACITY_MIN_MBPS: '600'
+        run: |
+          set -o pipefail
+          go test ./internal/e2e -run '^TestBulkProfileDownloadCapacity/wssmux$' -count=1 -v -timeout 2m | tee wssmux-capacity.log
+      - name: Measure CPU, memory and new-user latency with 1000 open users
+        env:
+          BP_RESOURCE_BENCHMARK: '1'
+          BP_WSSMUX_BOUNDED: '1'
+          BP_RESOURCE_IDLE_CONNECTIONS: '1000'
+          BP_RESOURCE_TARGET_MBPS: '600'
+        run: |
+          set -o pipefail
+          go test ./internal/e2e -run '^TestWSMuxResourceProfile$' -count=1 -v -timeout 3m | tee wssmux-resources.log
+      - name: Retain quiet users while excess sessions retire
+        env:
+          BP_RESOURCE_RETIREMENT: '1'
+          BP_WSSMUX_BOUNDED: '1'
+        run: go test ./internal/e2e -run '^TestWSMuxPoolRetiresAfterLoadWithoutDisconnectingQuietUser$' -count=1 -v -timeout 3m
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: wssmux-measurements
+          path: wssmux-*.log
+          retention-days: 14

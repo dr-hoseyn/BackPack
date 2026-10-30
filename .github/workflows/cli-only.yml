@@ -21,6 +21,11 @@ jobs:
           cache: true
       - name: Prepare private configuration fixtures
         run: sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
+      - name: Repeat shutdown and throughput reload regressions
+        run: >-
+          go test -race ./cmd
+          -run '^Test(CancelledRunDoesNotApplyThroughputTuning|ThroughputReloadEnablesCapacityBeforeStartingTheNewGeneration)$'
+          -count=10 -timeout 3m
       - name: CLI, migration, accounting and legacy configuration regressions
         run: go test -race -short ./cmd ./config ./internal/menu ./internal/manage/... ./internal/traffic ./internal/telegram ./internal/cli ./internal/app -count=1 -timeout 6m
       - name: Measure independent CLI host checks

@@ -442,8 +442,8 @@ Two things make these more than "WS with TLS":
 
 - **Browser TLS fingerprint.** A WSS tunnel is meant to look like ordinary
   HTTPS, but Go's default TLS ClientHello has a fingerprint of its own that
-  filtering can pick out. Backpack sends a current **Chrome** fingerprint
-  instead, so the handshake blends into normal browser traffic.
+  filtering can pick out. Backpack uses a pinned **Chrome 133** ClientHello and matching UA.
+  This reduces a Go-specific signature but does not emulate an entire browser.
 - **Session-bound credential.** The certificate is not verified (the tunnel
   trusts its token, and the cert is often self-signed), which would leave a
   bearer token readable by anything that terminates the TLS on the path. So the
@@ -451,16 +451,18 @@ Two things make these more than "WS with TLS":
   the client proves it holds the token with an HMAC over that material. A man in
   the middle has a different session and cannot replay it. The server proves
   itself back the same way, in the upgrade response, and the client refuses a
-  wrong answer — and a missing one from a server that has answered it since the
-  client process started. An older server sends no answer, so a new client
-  still reaches it; upgrade the Iran server to close the gap. (With Simple
-  Token Auth neither proof applies.)
+  wrong or missing answer from the very first connection. Upgrade the Iran
+  server before the client. Explicit `wss_allow_legacy_server` permits a missing
+  answer only with verified TLS. Simple Token Auth instead requires certificate
+  and hostname verification before sending the token; private certificates use
+  the client's `wss_ca_file`. See [authentication and capacity](wssmux-security-throughput.md).
+
 - **Decoy site.** Anything that is not a genuine tunnel connection — a browser,
-  a scanner, a probe with the wrong token — is answered by a stock **nginx**:
+  a scanner, a probe with the wrong token — receives a built-in **nginx-style response**:
   the "Welcome to nginx!" page at `/`, a normal `404` everywhere else, with the
   headers a real file carries. Each install derives its own nginx version, page
-  date and `ETag` from its token, so no two servers answer alike and the fleet
-  cannot be found with one scan. Built in and always on. See
+  date and `ETag` from its token, to reduce identical canned responses; this is not a guarantee against
+  scanning or TLS/HTTP fingerprinting. Built in and always on. See
   [Decoy site (WSS camouflage)](camouflage.md).
 
 **Certificate:** at setup you can get a **Let's Encrypt** certificate

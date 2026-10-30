@@ -122,8 +122,15 @@ func TestThroughputReloadEnablesCapacityBeforeStartingTheNewGeneration(t *testin
 	old := enableThroughputCapacity
 	t.Cleanup(func() { enableThroughputCapacity = old })
 	applied := make(chan struct{}, 1)
-	enableThroughputCapacity = func([]int) (string, error) { applied <- struct{}{}; return "", nil }
 	ctx, cancel := context.WithTimeout(context.Background(), 6*configPollInterval)
+	enableThroughputCapacity = func([]int) (string, error) {
+		select {
+		case applied <- struct{}{}:
+			return "", nil
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
+	}
 	done := make(chan struct{})
 	go func() { defer close(done); Run(path, ctx) }()
 	t.Cleanup(func() { cancel(); <-done })
@@ -141,5 +148,24 @@ func TestThroughputReloadEnablesCapacityBeforeStartingTheNewGeneration(t *testin
 	case <-applied:
 	case <-ctx.Done():
 		t.Fatal("Throughput reload did not apply host capacity")
+	}
+}
+
+func TestCancelledRunDoesNotApplyThroughputTuning(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("host capacity is Linux-only")
+	}
+	path := filepath.Join(t.TempDir(), "cancelled.toml")
+	writeConfig(t, path, "[server]\nbind_addr = '127.0.0.1:0'\ntransport = 'tcp'\ntoken = 'cancelled-run-test'\npreset = 'throughput'\n")
+	oldDir, oldEnable := enginectl.Dir, enableThroughputCapacity
+	enginectl.Dir = t.TempDir()
+	t.Cleanup(func() { enginectl.Dir, enableThroughputCapacity = oldDir, oldEnable })
+	calls := 0
+	enableThroughputCapacity = func([]int) (string, error) { calls++; return "", nil }
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	Run(path, ctx)
+	if calls != 0 {
+		t.Fatalf("cancelled run applied host capacity %d times", calls)
 	}
 }

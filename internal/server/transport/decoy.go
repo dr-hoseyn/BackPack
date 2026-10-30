@@ -128,6 +128,14 @@ func (p decoyProfile) etag() string {
 // serve answers one non-tunnel request the way the nginx this profile claims to
 // be would answer it.
 func (p decoyProfile) serve(w http.ResponseWriter, r *http.Request) {
+	// The static handler allows GET/HEAD, returns 404 for POST to a missing
+	// file, and 405 for POST to the index or unsupported methods. ServeContent
+	// alone would incorrectly serve the index for POST/PUT/OPTIONS probes.
+	if r.Method != http.MethodGet && r.Method != http.MethodHead &&
+		(r.Method != http.MethodPost || r.URL.Path == "/" || r.URL.Path == "/index.html") {
+		p.serveError(w, r, http.StatusMethodNotAllowed, "405 Not Allowed")
+		return
+	}
 	if r.URL.Path != "/" && r.URL.Path != "/index.html" {
 		p.serveNotFound(w, r)
 		return
@@ -155,12 +163,16 @@ func (p decoyProfile) serve(w http.ResponseWriter, r *http.Request) {
 // every other path answered wrongly too. Being a 404 among 404s hides it
 // properly.
 func (p decoyProfile) serveNotFound(w http.ResponseWriter, r *http.Request) {
-	body := fmt.Sprintf(p.notFound, p.server)
+	p.serveError(w, r, http.StatusNotFound, "404 Not Found")
+}
+
+func (p decoyProfile) serveError(w http.ResponseWriter, r *http.Request, status int, title string) {
+	body := fmt.Sprintf(strings.ReplaceAll(p.notFound, "404 Not Found", title), p.server)
 
 	w.Header().Set("Server", p.server)
 	w.Header().Set("Content-Type", "text/html")
 	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
-	w.WriteHeader(http.StatusNotFound)
+	w.WriteHeader(status)
 	_, _ = io.WriteString(w, body) // dropped by net/http for HEAD, as nginx does
 }
 

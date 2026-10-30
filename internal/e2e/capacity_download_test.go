@@ -3,6 +3,7 @@ package e2e
 import (
 	"bytes"
 	"fmt"
+	"github.com/backpack/backpack/config"
 	"io"
 	"math"
 	"net"
@@ -58,7 +59,11 @@ func TestBulkProfileDownloadCapacity(t *testing.T) {
 					}()
 				}
 			}()
-			tun := bulkProfileForBackend(t, tr, backend.Addr().String(), nil)
+			var tune func(*config.Config)
+			if tr == "wssmux" && os.Getenv("BP_WSSMUX_BOUNDED") != "" {
+				tune = func(c *config.Config) { configureBoundedWSMux(&c.Server, &c.Client) }
+			}
+			tun := bulkProfileForBackend(t, tr, backend.Addr().String(), tune)
 			time.Sleep(time.Second)
 			const streams = 8
 			connections := make([]net.Conn, streams)

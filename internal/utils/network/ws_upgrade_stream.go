@@ -3,14 +3,15 @@ package network
 import (
 	"bufio"
 	"net"
+	"time"
 )
 
-// Mux transports use HTTP Upgrade followed by the existing raw smux wire
-// format. Gorilla's response reader may prefetch the first smux frames along
-// with HTTP 101; NetConn then bypasses that reader and loses those frames.
+// Mux transports negotiate framed or legacy raw smux after HTTP Upgrade.
+// Gorilla's response reader may prefetch the first payload along with HTTP
+// 101; a legacy NetConn reader would bypass and lose those bytes.
 // Bound the reader's input at the HTTP header and keep any prefetched payload
-// on the connection that NetConn exposes. Framed websocket/control paths must
-// retain Gorilla's normal reader and never use this adapter.
+// on the underlying connection. A framed peer then reads it through Gorilla;
+// a legacy peer reads it directly. No mode is chosen before the response.
 type muxUpgradeConn struct {
 	net.Conn
 	reader *bufio.Reader
@@ -19,7 +20,11 @@ type muxUpgradeConn struct {
 }
 
 func muxUpgradeStream(conn net.Conn) net.Conn {
-	return &muxUpgradeConn{Conn: conn, reader: bufio.NewReader(conn)}
+	return &muxUpgradeConn{Conn: &streamDeadlineConn{Conn: conn}, reader: bufio.NewReader(conn)}
+}
+
+func (c *muxUpgradeConn) setStreamWriteDeadline(t time.Time) error {
+	return c.Conn.(*streamDeadlineConn).setStreamWriteDeadline(t)
 }
 
 func (c *muxUpgradeConn) Read(p []byte) (int, error) {
@@ -44,3 +49,6 @@ func (c *muxUpgradeConn) Read(p []byte) (int, error) {
 	}
 	return len(p), nil
 }
+
+// WSMuxUpgradeStream bounds the HTTP reader and preserves stream deadlines.
+func WSMuxUpgradeStream(conn net.Conn) net.Conn { return muxUpgradeStream(conn) }

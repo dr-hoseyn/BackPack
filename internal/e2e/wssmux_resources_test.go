@@ -2,8 +2,12 @@ package e2e
 
 import (
 	"bytes"
+	"context"
 	"fmt"
+	"github.com/BurntSushi/toml"
+	"golang.org/x/time/rate"
 	"io"
+	"math"
 	"net"
 	"os"
 	"os/exec"
@@ -17,6 +21,7 @@ import (
 	"time"
 
 	"github.com/shirou/gopsutil/v4/process"
+	"sync/atomic"
 )
 
 // This fixture intentionally uses only public engine configuration so exactly
@@ -39,6 +44,19 @@ func resourceTunnel(t *testing.T) (*tunnel, int) {
 	srv.MaxReceiveBuffer, cli.MaxReceiveBuffer = 16<<20, 16<<20
 	srv.MaxStreamBuffer, cli.MaxStreamBuffer = 8<<20, 8<<20
 	srv.Nodelay, cli.Nodelay = true, true
+	if os.Getenv("BP_WSSMUX_BOUNDED") != "" {
+		// This fixture is also copied verbatim to the baseline release.
+		// Decode the new optional cap rather than referring to its Go field.
+		srv.MuxVersion, cli.MuxVersion = 2, 2
+		srv.MuxCon, cli.ConnectionPool = 128, 8
+		srv.MaxFrameSize, cli.MaxFrameSize = 32768, 32768
+		srv.MaxReceiveBuffer, cli.MaxReceiveBuffer = 32<<20, 32<<20
+		srv.MaxStreamBuffer, cli.MaxStreamBuffer = 16<<20, 16<<20
+		cli.AggressivePool = false
+		if _, err := toml.Decode("wsmux_max_sessions = 16\nwss_http11_only = true", cli); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if os.Getenv("BP_RESOURCE_NETEM") != "" {
 		// Use receiver ingress, as tc-netem requires for realistic TCP/TSQ
 		// results. MTU and offload settings make loss apply to wire-sized
@@ -166,8 +184,41 @@ func TestWSMuxResourceProfile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	var peakRSS atomic.Uint64
+	peakRSS.Store(mem.RSS)
+	stopSample, sampleDone := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(sampleDone)
+		tick := time.NewTicker(50 * time.Millisecond)
+		defer tick.Stop()
+		for {
+			select {
+			case <-stopSample:
+				return
+			case <-tick.C:
+				if m, e := self.MemoryInfo(); e == nil {
+					for old := peakRSS.Load(); m.RSS > old; old = peakRSS.Load() {
+						if peakRSS.CompareAndSwap(old, m.RSS) {
+							break
+						}
+					}
+				}
+			}
+		}
+	}()
+	stopSampling := sync.OnceFunc(func() { close(stopSample); <-sampleDone })
+	defer stopSampling()
 	started := time.Now()
 	const workers = 8
+	var offered *rate.Limiter
+	if raw := os.Getenv("BP_RESOURCE_TARGET_MBPS"); raw != "" {
+		target, e := strconv.ParseFloat(raw, 64)
+		if e != nil || math.IsNaN(target) || math.IsInf(target, 0) || target <= 0 || target > 10000 {
+			t.Fatal("invalid resource target Mbps")
+		}
+		offered = rate.NewLimiter(rate.Limit(target*1e6/8), 64<<10)
+		t.Logf("RESOURCE_TARGET application_mbps=%.1f", target)
+	}
 	rounds := 16
 	if value := os.Getenv("BP_RESOURCE_ROUNDS"); value != "" {
 		rounds, err = strconv.Atoi(value)
@@ -179,8 +230,18 @@ func TestWSMuxResourceProfile(t *testing.T) {
 	var probes sync.WaitGroup
 	var latencies []time.Duration
 	var probeErr error
+	bulkDone := make(chan struct{})
+	finishBulk := sync.OnceFunc(func() { close(bulkDone) })
+	defer finishBulk()
 	probes.Go(func() {
-		for range 100 {
+		for probe := 0; ; probe++ {
+			if probe >= 100 {
+				select {
+				case <-bulkDone:
+					return
+				default:
+				}
+			}
 			start := time.Now()
 			if err := tun.roundTrip(payload[:128]); err != nil {
 				probeErr = err
@@ -193,7 +254,7 @@ func TestWSMuxResourceProfile(t *testing.T) {
 	for range workers {
 		go func() {
 			for range rounds {
-				if err := tun.roundTrip(payload); err != nil {
+				if err := resourceOfferedRoundTrip(tun, payload, offered); err != nil {
 					results <- err
 					return
 				}
@@ -207,11 +268,14 @@ func TestWSMuxResourceProfile(t *testing.T) {
 		}
 	}
 	seconds := time.Since(started).Seconds()
+	finishBulk()
 	cpuAfter, err := self.Times()
 	if err != nil {
 		t.Fatal(err)
 	}
 	stopCPU()
+	stopSampling()
+	t.Logf("RESOURCE_PEAK sampled_peak_rss_bytes=%d", peakRSS.Load())
 	probes.Wait()
 	if probeErr != nil {
 		t.Fatal(probeErr)
@@ -240,7 +304,11 @@ func TestWSMuxPoolRetiresAfterLoadWithoutDisconnectingQuietUser(t *testing.T) {
 		t.Fatal(err)
 	}
 	tun, port := resourceTunnel(t)
-	connections := resourceIdleConnections(t, tun, 256)
+	floor, idleCount := 4, 256
+	if os.Getenv("BP_WSSMUX_BOUNDED") != "" {
+		floor, idleCount = 8, 1152
+	}
+	connections := resourceIdleConnections(t, tun, idleCount)
 	for _, c := range connections[1:] {
 		c.Close()
 	}
@@ -258,15 +326,15 @@ func TestWSMuxPoolRetiresAfterLoadWithoutDisconnectingQuietUser(t *testing.T) {
 		return n - 1 // exclude the control channel
 	}
 	peak := sessions()
-	if peak <= 4 {
+	if peak <= floor {
 		t.Fatalf("fixture did not grow the pool: %d", peak)
 	}
 	deadline := time.Now().Add(120 * time.Second)
-	for sessions() > 4 && time.Now().Before(deadline) {
+	for sessions() > floor && time.Now().Before(deadline) {
 		time.Sleep(time.Second)
 	}
-	if got := sessions(); got != 4 {
-		t.Fatalf("pool retained %d sessions, want configured floor 4 (peak %d)", got, peak)
+	if got := sessions(); got != floor {
+		t.Fatalf("pool retained %d sessions, want configured floor %d (peak %d)", got, floor, peak)
 	}
 	// The remaining stream has been silent longer than the retirement period.
 	c := connections[0]
@@ -279,5 +347,57 @@ func TestWSMuxPoolRetiresAfterLoadWithoutDisconnectingQuietUser(t *testing.T) {
 	if _, err := io.ReadFull(c, got); err != nil || !bytes.Equal(got, want) {
 		t.Fatalf("quiet user: %q, %v", got, err)
 	}
-	t.Logf("RESOURCE_RETIREMENT peak_sessions=%d final_sessions=4 quiet_user=ok", peak)
+	t.Logf("RESOURCE_RETIREMENT peak_sessions=%d final_sessions=%d quiet_user=ok", peak, floor)
+}
+
+// Shared offered-load pacing applies to small writes, not entire 4 MB bursts.
+// Readers remain concurrent so flow control and echo backpressure are real.
+func resourceOfferedRoundTrip(tun *tunnel, payload []byte, limiter *rate.Limiter) error {
+	if limiter == nil {
+		return tun.roundTrip(payload)
+	}
+	conn, err := net.DialTimeout("tcp", tun.Entry, 3*time.Second)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	conn.SetDeadline(time.Now().Add(30 * time.Second))
+	written := make(chan error, 1)
+	go func() {
+		for offset := 0; offset < len(payload); {
+			end := min(offset+32*1024, len(payload))
+			if e := limiter.WaitN(ctx, end-offset); e != nil {
+				written <- e
+				return
+			}
+			for offset < end {
+				n, e := conn.Write(payload[offset:end])
+				offset += n
+				if e != nil {
+					written <- e
+					return
+				}
+				if n == 0 {
+					written <- io.ErrShortWrite
+					return
+				}
+			}
+		}
+		written <- nil
+	}()
+	got := make([]byte, len(payload))
+	_, err = io.ReadFull(conn, got)
+	if err != nil {
+		cancel()
+		conn.Close()
+	}
+	if writeErr := <-written; err == nil {
+		err = writeErr
+	}
+	if err == nil && !bytes.Equal(got, payload) {
+		return fmt.Errorf("paced transfer corrupted")
+	}
+	return err
 }

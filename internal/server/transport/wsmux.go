@@ -213,6 +213,7 @@ func (s *WsMuxTransport) tunnelListener(g *wsMuxGen) {
 
 	addr := s.config.BindAddr
 	upgrader := websocket.Upgrader{
+		Subprotocols:     []string{network.WSMuxBinaryProtocol},
 		ReadBufferSize:   wsReadBufferSize,
 		WriteBufferSize:  wsWriteBufferSize,
 		WriteBufferPool:  wsWriteBuffers,
@@ -229,8 +230,10 @@ func (s *WsMuxTransport) tunnelListener(g *wsMuxGen) {
 
 	// Create an HTTP server
 	server := &http.Server{
-		Addr:              addr,
-		IdleTimeout:       -1,
+		Addr: addr,
+		// Bound idle public HTTP keepalives. Hijacked WebSocket tunnels are
+		// no longer managed by http.Server, so their lifetime is unchanged.
+		IdleTimeout:       75 * time.Second,
 		ReadHeaderTimeout: tunnelHeaderTimeout,
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			s.logger.Tracef("received http request from %s", r.RemoteAddr)
@@ -268,7 +271,7 @@ func (s *WsMuxTransport) tunnelListener(g *wsMuxGen) {
 					}
 				}
 			}
-			conn, err := upgrader.Upgrade(w, r, response)
+			conn, err := upgrader.Upgrade(network.WSMuxResponse(w), r, response)
 			if err != nil {
 				s.logger.Errorf("failed to upgrade connection from %s: %v", r.RemoteAddr, err)
 				return
@@ -291,7 +294,7 @@ func (s *WsMuxTransport) tunnelListener(g *wsMuxGen) {
 			} else if strings.HasPrefix(r.URL.Path, "/tunnel") {
 				cfg := *s.smuxConfig
 				cfg.Version = version
-				session, err := smux.Client(conn.NetConn(), &cfg)
+				session, err := smux.Client(network.WSMuxStream(conn), &cfg)
 				if err != nil {
 					s.logger.Errorf("failed to create MUX session for connection %s: %v", conn.RemoteAddr().String(), err)
 					conn.Close()

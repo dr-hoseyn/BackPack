@@ -67,10 +67,12 @@ jobs:
           set -o pipefail
           go test ./internal/e2e -run '^TestBulkProfile(Transport|Download)Capacity$' -count=8 -v -json -timeout 10m | tee "$RUNNER_TEMP/capacity-candidate.jsonl"
       - name: Measure the same transfers on the base revision
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && !cancelled()
         # The old revision can reproduce the admission/timeout bug this PR
         # fixes. Preserve its failed measurements without skipping the new
-        # revision's mandatory sustained-load check.
+        # revision's mandatory sustained-load check. Run this comparison even
+        # after a failed candidate measurement, including download goodput, so
+        # host-limited protocols can be distinguished from PR regressions.
         continue-on-error: true
         env:
           BP_CAPACITY_BENCHMARK: '1'
@@ -80,8 +82,9 @@ jobs:
           git worktree add --detach "$RUNNER_TEMP/capacity-base" "$BASE_SHA"
           cp internal/e2e/capacity_benchmark_test.go internal/e2e/harness_test.go "$RUNNER_TEMP/capacity-base/internal/e2e/"
           cd "$RUNNER_TEMP/capacity-base"
-          go test ./internal/e2e -run '^TestBulkProfileTransportCapacity$' -count=3 -v -json -timeout 6m | tee "$RUNNER_TEMP/capacity-base.jsonl"
+          go test ./internal/e2e -run '^TestBulkProfile(Transport|Download)Capacity$' -count=3 -v -json -timeout 6m | tee "$RUNNER_TEMP/capacity-base.jsonl"
       - name: Keep fresh users working during sustained bulk traffic
+        if: ${{ !cancelled() }}
         env:
           BP_CAPACITY_SOAK_SECONDS: '60'
         run: |

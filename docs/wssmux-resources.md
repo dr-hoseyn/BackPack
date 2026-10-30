@@ -43,8 +43,12 @@ configured per-stream flow-control window. Explicit version 1 is honored;
 incompatible explicit choices are rejected during setup. Existing presets
 already pin version 2. A blanket automatic upgrade was rejected after the
 lossy-path comparison showed worse fresh-user tail latency.
-The control-channel framing, TLS ClientHello and session-bound credential stay
-unchanged.
+The control-channel framing and session-bound credential stay unchanged.
+New data peers now negotiate RFC 6455 binary framing, and reverse clients
+require server authentication on their first connection. See
+[WSS authentication and capacity](wssmux-security-throughput.md) for the server-first
+upgrade order, certificate trust behind TLS terminators, and a bounded 600 Mbit/s
+profile.
 
 An older peer sends no negotiation headers. That connection retains the legacy
 static choice: auto uses version 1; an explicit version uses that number. Both

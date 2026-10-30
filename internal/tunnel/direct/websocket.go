@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/backpack/backpack/internal/utils/network"
 	"github.com/gorilla/websocket"
 	"github.com/sirupsen/logrus"
 )
@@ -22,18 +23,10 @@ import (
 // it is a websocket it is willing to proxy, which is what lets a tunnel reach
 // a kharej server through an edge network rather than directly.
 //
-// # Only the handshake is a websocket
-//
-// Once the upgrade has completed, this takes the connection out from under
-// gorilla and uses the raw stream beneath it. Websocket framing would cost two
-// to fourteen bytes per message and buy nothing: smux above already has its
-// own framing, and the two ends have already agreed what the connection is
-// for. The reverse mux transports do exactly the same thing, for the same
-// reason — see their use of NetConn.
-//
-// So the shape is: HTTP upgrade for camouflage, then the byte stream, then the
-// token proof, then smux. What travels is identical to the tcp transport; only
-// the way the connection opens differs.
+// New peers carry the stream in RFC 6455 binary messages. The standard
+// binary subprotocol is acknowledged before either side chooses framing, so
+// an older peer still receives the legacy raw stream. TLS and the inner token
+// authentication are independent of this framing choice.
 //
 // # What TLS is and is not doing here
 //
@@ -51,7 +44,7 @@ const wsPath = "/tunnel"
 const wsHandshakeTimeout = 15 * time.Second
 
 // dialWebSocket opens the edge's side of a ws or wss connection and hands back
-// the raw stream underneath it.
+// the negotiated byte stream.
 func dialWebSocket(ctx context.Context, cfg *Config) (net.Conn, error) {
 	scheme := "ws"
 	if cfg.Transport == TransportWSS {
@@ -60,14 +53,19 @@ func dialWebSocket(ctx context.Context, cfg *Config) (net.Conn, error) {
 	endpoint := url.URL{Scheme: scheme, Host: cfg.Addr, Path: wsPath}
 
 	dialer := &websocket.Dialer{
+		Subprotocols:   []string{network.WSMuxBinaryProtocol},
+		ReadBufferSize: 16 << 10, WriteBufferSize: 64*1024 + 8, WriteBufferPool: directWSWritePool,
 		HandshakeTimeout: wsHandshakeTimeout,
-		NetDialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+		NetDialContext: func(ctx context.Context, netw, addr string) (net.Conn, error) {
 			d := net.Dialer{Timeout: cfg.DialTimeout}
-			conn, err := d.DialContext(ctx, network, addr)
+			conn, err := d.DialContext(ctx, netw, addr)
 			if err != nil {
 				return nil, err
 			}
 			tuneConn(conn, cfg)
+			if cfg.Transport != TransportWSS {
+				return network.WSMuxUpgradeStream(conn), nil
+			}
 			return conn, nil
 		},
 	}
@@ -81,6 +79,21 @@ func dialWebSocket(ctx context.Context, cfg *Config) (net.Conn, error) {
 			// expect, which is the case where it can actually mean something.
 			InsecureSkipVerify: cfg.ServerName == "",
 			MinVersion:         tls.VersionTLS12,
+		}
+	}
+
+	if cfg.Transport == TransportWSS {
+		dialer.NetDialTLSContext = func(ctx context.Context, netw, addr string) (net.Conn, error) {
+			raw, err := dialer.NetDialContext(ctx, netw, addr)
+			if err != nil {
+				return nil, err
+			}
+			conn := tls.Client(raw, dialer.TLSClientConfig)
+			if err = conn.HandshakeContext(ctx); err != nil {
+				raw.Close()
+				return nil, err
+			}
+			return network.WSMuxUpgradeStream(conn), nil
 		}
 	}
 
@@ -100,8 +113,8 @@ func dialWebSocket(ctx context.Context, cfg *Config) (net.Conn, error) {
 		return nil, fmt.Errorf("direct: websocket upgrade to %s: %w", cfg.Addr, err)
 	}
 
-	// From here the websocket framing is not used; the stream underneath is.
-	return conn.NetConn(), nil
+	// Both peers choose the same framed or legacy format from the upgrade.
+	return network.WSMuxStream(conn), nil
 }
 
 // serverName is the name to present in SNI, falling back to the host of the
@@ -152,6 +165,8 @@ func listenWebSocket(cfg *Config, log *logrus.Logger) (*wsListener, error) {
 	}
 
 	upgrader := websocket.Upgrader{
+		Subprotocols:   []string{network.WSMuxBinaryProtocol},
+		ReadBufferSize: 16 << 10, WriteBufferSize: 64*1024 + 8, WriteBufferPool: directWSWritePool,
 		HandshakeTimeout: wsHandshakeTimeout,
 		// The tunnel is not a browser API, so the browser's origin rule
 		// protects nobody here; the token does that, inside.
@@ -160,13 +175,13 @@ func listenWebSocket(cfg *Config, log *logrus.Logger) (*wsListener, error) {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc(wsPath, func(w http.ResponseWriter, r *http.Request) {
-		conn, err := upgrader.Upgrade(w, r, nil)
+		conn, err := upgrader.Upgrade(network.WSMuxResponse(w), r, nil)
 		if err != nil {
 			// Upgrade has already written a response.
 			log.Debugf("direct: websocket upgrade from %s failed: %v", r.RemoteAddr, err)
 			return
 		}
-		raw := conn.NetConn()
+		raw := network.WSMuxStream(conn)
 		select {
 		case l.accepted <- raw:
 			// Handed to the session loop, which now owns it. The handler
@@ -222,3 +237,5 @@ func (l *wsListener) Close() error {
 func isClosed(err error) bool {
 	return err == http.ErrServerClosed || strings.Contains(err.Error(), "use of closed network connection")
 }
+
+var directWSWritePool = &sync.Pool{}
