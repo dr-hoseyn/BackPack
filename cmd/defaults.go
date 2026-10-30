@@ -219,6 +219,9 @@ func warnIgnoredProxyProtocol(cfg *config.Config) {
 // exited again. The first load still treats an error as fatal; a reload logs
 // it and keeps what is running. See reload.go.
 func validateConfig(cfg *config.Config) error {
+	if err := checkWSSPrivateToken(cfg); err != nil {
+		return err
+	}
 	if cfg.Client.WSMuxMaxSessions < 0 || cfg.Client.WSMuxMaxSessions > 65536 {
 		return fmt.Errorf("wsmux_max_sessions must be between 0 and 65536")
 	}
@@ -245,6 +248,32 @@ func validateConfig(cfg *config.Config) error {
 	} {
 		if err := check(cfg); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+// The built-in compatibility token is public source, not a trust anchor. An
+// active probe can compute exporter proofs with it and claim the control seat.
+// Refuse it for active WSS endpoints, including a configured WSS fallback.
+func checkWSSPrivateToken(cfg *config.Config) error {
+	for _, side := range []struct {
+		name, addr, token string
+		primary           config.TransportType
+		fallbacks         []config.TransportType
+	}{
+		{"server", cfg.Server.BindAddr, cfg.Server.Token, cfg.Server.Transport, cfg.Server.FallbackTransports},
+		{"client", cfg.Client.RemoteAddr, cfg.Client.Token, cfg.Client.Transport, cfg.Client.FallbackTransports},
+	} {
+		if side.addr == "" {
+			continue
+		}
+		secure := side.primary == config.WSS || side.primary == config.WSSMUX
+		for _, tr := range side.fallbacks {
+			secure = secure || tr == config.WSS || tr == config.WSSMUX
+		}
+		if secure && (strings.TrimSpace(side.token) == "" || side.token == defaultToken) {
+			return fmt.Errorf("%s WSS requires a private token; set the same strong random token on both peers instead of the public built-in default", side.name)
 		}
 	}
 	return nil

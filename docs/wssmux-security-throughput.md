@@ -19,6 +19,12 @@ is sent on the reverse control channel, which already uses real WebSockets.
 
 ## Server authentication and upgrade order
 
+WSS endpoints, including a WSS fallback, reject an empty token or the public
+built-in compatibility token. A known default lets a probe compute both exporter
+proofs and claim the tunnel; TLS cannot turn a public token into authentication.
+Provision the same strong, independently generated private token on both peers.
+The existing plain-TCP compatibility policy is unchanged.
+
 Reverse WSS/WSS Mux now require a valid session-bound server proof on the very
 first connection. Upgrade the server before the client. Self-signed direct
 origins remain usable because both sides prove the high-entropy tunnel token
