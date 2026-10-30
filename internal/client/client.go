@@ -387,6 +387,7 @@ func (c *Client) startTransport(ctx context.Context, tr config.TransportType, en
 			Token:            c.config.Token,
 			MuxVersion:       c.config.MuxVersion,
 			MaxFrameSize:     c.config.MaxFrameSize,
+			WriteBatch:       c.config.WSMuxWriteBatch,
 			MaxReceiveBuffer: c.config.MaxReceiveBuffer,
 			MaxStreamBuffer:  c.config.MaxStreamBuffer,
 			Sniffer:          c.config.Sniffer,

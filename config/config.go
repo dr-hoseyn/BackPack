@@ -346,6 +346,9 @@ type ServerConfig struct {
 	MuxVersion int `toml:"mux_version"`
 	// MaxFrameSize caps one smux frame, in bytes. Filled from a preset.
 	MaxFrameSize int `toml:"mux_framesize"`
+	// WSMuxWriteBatch combines only already-queued framed WS mux writes, bounded
+	// to 16 frames/64 KiB with no waiting timer. Off until explicitly measured.
+	WSMuxWriteBatch bool `toml:"wsmux_write_batch"`
 	// MaxReceiveBuffer is the per-session receive window, in bytes. Filled from a
 	// preset.
 	MaxReceiveBuffer int `toml:"mux_recievebuffer"`
@@ -531,6 +534,9 @@ type ClientConfig struct {
 	MuxVersion int `toml:"mux_version"`
 	// MaxFrameSize caps one smux frame, in bytes. Filled from a preset.
 	MaxFrameSize int `toml:"mux_framesize"`
+	// WSMuxWriteBatch combines only already-queued framed WS mux writes, bounded
+	// to 16 frames/64 KiB with no waiting timer. Off until explicitly measured.
+	WSMuxWriteBatch bool `toml:"wsmux_write_batch"`
 	// MaxReceiveBuffer is the per-session receive window, in bytes. Filled from a
 	// preset. (The spelling is a typo that shipped; it cannot be corrected
 	// without breaking every existing config.)

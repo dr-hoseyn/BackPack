@@ -73,6 +73,7 @@ type WsMuxConfig struct {
 	MuxCon           int
 	MuxVersion       int
 	MaxFrameSize     int
+	WriteBatch       bool
 	MaxReceiveBuffer int
 	MaxStreamBuffer  int
 	Mode             config.TransportType // ws or wss
@@ -294,7 +295,7 @@ func (s *WsMuxTransport) tunnelListener(g *wsMuxGen) {
 			} else if strings.HasPrefix(r.URL.Path, "/tunnel") {
 				cfg := *s.smuxConfig
 				cfg.Version = version
-				session, err := smux.Client(network.WSMuxStream(conn), &cfg)
+				session, err := smux.Client(network.WSMuxStream(conn, s.config.WriteBatch), &cfg)
 				if err != nil {
 					s.logger.Errorf("failed to create MUX session for connection %s: %v", conn.RemoteAddr().String(), err)
 					conn.Close()

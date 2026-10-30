@@ -57,6 +57,14 @@ func resourceTunnel(t *testing.T) (*tunnel, int) {
 			t.Fatal(err)
 		}
 	}
+	if os.Getenv("BP_WSSMUX_WRITE_BATCH") != "" {
+		if _, err := toml.Decode("wsmux_write_batch = true", srv); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := toml.Decode("wsmux_write_batch = true", cli); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if os.Getenv("BP_RESOURCE_NETEM") != "" {
 		// Use receiver ingress, as tc-netem requires for realistic TCP/TSQ
 		// results. MTU and offload settings make loss apply to wire-sized

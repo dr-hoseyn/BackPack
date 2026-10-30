@@ -247,6 +247,7 @@ them both ends have to agree on. This says what exists.
 | `token` | `string` | Token is the shared secret. Both ends must hold exactly the same one, and a mismatch is refused without saying so — a peer without the token learns nothing, not even that something is listening. |
 | `transport` | `TransportType` | Transport is the carrier this tunnel uses. Both ends must name the same one; see docs/transports.md for what each is for. |
 | `wsmux_max_sessions` | `int` | WSMuxMaxSessions bounds physical ws/wss mux sessions, including pending dials. Zero keeps demand-driven growth. A nonzero limit must be at least connection_pool. Receive windows are lazy; size this together with expected active streams and mux_recievebuffer, rather than treating idle windows as RSS. |
+| `wsmux_write_batch` | `bool` | WSMuxWriteBatch combines only already-queued framed WS mux writes, bounded to 16 frames/64 KiB with no waiting timer. Off until explicitly measured. |
 | `wss_allow_legacy_server` | `bool` | WSSAllowLegacyServer permits a missing server proof only with verified TLS. Off by default; prefer upgrading the server before upgrading the client. |
 | `wss_ca_file` | `string` | WSSCAFile adds trusted PEM certificates for wss/wssmux. Required for a private CA/self-signed server when simple_auth or verified legacy mode is used. |
 | `wss_http11_only` | `bool` | WSSHTTP11Only offers HTTP/1.1 on the first WSS handshake, matching a Chromium fresh-WebSocket path and avoiding an unusable h2 probe. Off keeps the existing full HTTPS preset with authenticated capability fallback. |
@@ -507,6 +508,7 @@ them both ends have to agree on. This says what exists.
 | `tls_key` | `string` | TLSKeyFile is the private key for tls_cert. |
 | `token` | `string` | Token is the shared secret. Both ends must hold exactly the same one, and a mismatch is refused without saying so — a peer without the token learns nothing, not even that something is listening. |
 | `transport` | `TransportType` | Transport is the carrier this tunnel uses. Both ends must name the same one; see docs/transports.md for what each is for. |
+| `wsmux_write_batch` | `bool` | WSMuxWriteBatch combines only already-queued framed WS mux writes, bounded to 16 frames/64 KiB with no waiting timer. Off until explicitly measured. |
 | `xray` | `XrayServerConfig` | Xray optionally wraps the loopback reverse TCP listener in XHTTP/TLS or RAW/REALITY using a tunnel-owned official helper. |
 | `zero_copy` | `bool` | ZeroCopy lets the kernel move the bytes of forwarded connections directly between the two sockets, without them passing through this process. It is faster and it is the least proven path here, so it is off by default and turned on per tunnel. |
 

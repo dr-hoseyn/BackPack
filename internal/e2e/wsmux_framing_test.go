@@ -73,6 +73,7 @@ func TestWSMuxCarriesTrafficThroughAFramingProxy(t *testing.T) {
 	defer proxy.Close()
 	s := baseServerConfig("wsmux", tunnelPort, entryPort, backend.addr, token)
 	c := baseClientConfig("wsmux", proxy.Listener.Addr().String(), token, nil)
+	s.WSMuxWriteBatch, c.WSMuxWriteBatch = true, true
 	tun := runPair(t, s, c, entryPort, tunnelPort)
 	if err := tun.waitReady(tunnelReadyTimeout); err != nil {
 		t.Fatal(err)

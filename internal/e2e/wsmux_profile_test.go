@@ -1,6 +1,10 @@
 package e2e
 
-import "github.com/backpack/backpack/config"
+import (
+	"os"
+
+	"github.com/backpack/backpack/config"
+)
 
 // A reproducible 600 Mbit/s candidate for a path with RTT up to about 200 ms.
 // The bandwidth-delay product of one 600 Mbit/s stream is about 15 MB. This
@@ -14,4 +18,7 @@ func configureBoundedWSMux(s *config.ServerConfig, c *config.ClientConfig) {
 	s.Nodelay, c.Nodelay = true, true
 	c.AggressivePool = false
 	c.WSSHTTP11Only = true
+	if os.Getenv("BP_WSSMUX_WRITE_BATCH") != "" {
+		s.WSMuxWriteBatch, c.WSMuxWriteBatch = true, true
+	}
 }

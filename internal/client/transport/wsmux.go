@@ -43,6 +43,7 @@ type WsMuxConfig struct {
 	MaxStreamBuffer  int
 	ConnPoolSize     int
 	MaxSessions      int
+	WriteBatch       bool
 	Mode             config.TransportType
 	SimpleAuth       bool
 	WSS              *network.WSSClientOptions
@@ -199,7 +200,7 @@ func (c *WsMuxTransport) handleSession(tunnelConn *websocket.Conn, mux network.W
 	// SMUX server
 	cfg := *c.smuxConfig
 	cfg.Version = mux.NegotiatedVersion
-	session, err := smux.Server(network.WSMuxStream(tunnelConn), &cfg)
+	session, err := smux.Server(network.WSMuxStream(tunnelConn, c.config.WriteBatch), &cfg)
 	if err != nil {
 		c.logger.Errorf("failed to create mux session: %v", err)
 		return

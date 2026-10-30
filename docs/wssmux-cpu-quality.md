@@ -1,71 +1,91 @@
 # WSS mux CPU optimization with quality gates
 
-This candidate changes compilation through Go PGO. It does not change TLS,
-authentication, WebSocket masking, mux framing, compression, timers or windows.
-It is an experiment until the paired CPU/quality workflow establishes a win.
+This experiment adds opt-in aggregation of ready SMUX data frames in framed
+WebSocket mux connections. It is disabled by default. Enable separately on
+both roles with `wsmux_write_batch = true` only after workload-specific quality
+and CPU comparisons pass. One upgraded role can interoperate with an older
+peer: the ordered SMUX byte stream and protocol negotiation stay compatible.
+Legacy unframed connections and all other carriers keep the upstream send loop.
 
-## Profile provenance
+## Bounded synchronous writes
 
-`default.pgo` merges four 30-second CPU profiles from the already-deployed
-`61eb57a48f9d3b012c7038400460915554f16d66` Linux/amd64 binary, built with
-Go 1.26.10 without PGO. Two profiles were collected per role on 2026-10-30
-starting around 15:31 UTC, during real high-concurrency WSS mux traffic.
-Only CPU stacks were collected; no heap dumps, tunnel credentials or payloads
-are in the profile. `go tool pprof -tags default.pgo` reports no labels.
-The merged profile covers 120 seconds of wall sampling and 438.36 CPU seconds.
+The sender joins only requests already available in SMUX's existing shaper.
+There is no batching timer, extra queue or asynchronous write acknowledgement.
+A lone interactive write is sent immediately. Each group contains at most
+16 frames and 64 KiB, except an individual maximum-size upstream frame which
+is still sent intact. Controls leave separately; round-robin stream ordering
+is preserved. Borrowed payloads are consumed synchronously, per-request partial
+write counts exclude headers, and idle sessions release old payload references.
+
+TLS, authentication, WebSocket masking, compression, mux windows and deadlines
+are unchanged. This does change WebSocket message grouping when enabled; it
+is not a claim of improved resistance to traffic classification. Correct
+framing and authenticated negotiation remain required.
+
+The small extension lives in a pinned local copy of `github.com/xtaci/smux
+v1.5.57`, including its tests and MIT license. See
+`third_party/smux/BACKPACK_PATCH.md` for provenance and update instructions.
+Future upstream updates require rebasing the extension and rerunning both the
+upstream tests and BackPack quality checks. Normal BackPack binary updates
+remain unchanged; config editing preserves the optional flag.
+
+## Rejected compiler experiment and profile provenance
+
+Production-trained PGO was tested first and rejected. In workflow 41082850400,
+six alternating equal-load pairs showed a median paired CPU/GiB change of
+-1.22%, below the required 3% reduction. On the delayed/lossy automatic-mux
+fixture, median goodput fell from 76.7 to 73.6 Mbit/s. The candidate was not
+deployed. Its result is retained; the batching comparison must pass the same
+gates without PGO.
+
+`profiles/wssmux-production.pgo` retains the diagnostic production profile;
+its non-default name prevents automatic use in ordinary builds. It merges four
+30-second CPU profiles from deployed commit
+`61eb57a48f9d3b012c7038400460915554f16d66`, Go 1.26.10 Linux/amd64 without PGO.
+Two were collected per role on 2026-10-30 starting around 15:31 UTC, during real
+high-concurrency WSS mux traffic. Only CPU stacks were collected: no heap dumps,
+tunnel credentials, payloads or pprof labels. Sampling covers 120 seconds of
+wall time and 438.36 CPU seconds. Profiling was then disabled and the original
+production configuration restored.
 
 Profile SHA-256: `9b695104dbb3c6ac1ecce0addadb356cf0e0e82a9719df271c0d1285597f765b`.
-
-The production profile has substantial syscall and runtime-scheduling costs;
-WebSocket masking accounts for less than one percent in each role's first
-sample. Optimizing masking alone is therefore not the initial production
-candidate. A compiler speedup also cannot remove kernel work.
-
-## Reproducible builds
-
-Go automatically uses `default.pgo` for the main package. The release Makefile
-and source installer build that package, so the same profile remains available
-to subsequent builds. An explicit baseline is `go build -pgo=off`; an explicit
-candidate is `go build -pgo="$PWD/default.pgo"`.
-
-CPU profiles are not hardware binaries. Go can ignore unmatched functions on
-other architectures or after source changes; the performance result must still
-be measured for the intended architecture and workload. Do not assume the
-same benefit for every carrier or future Go version. Refresh representative
-profiles and repeat the comparison when the workload or toolchain changes.
-
-The measurement binary must also be compiled with explicit `-pgo` flags:
-`go test -c ./internal/e2e` does not automatically use the main package's profile.
+Syscalls and scheduling dominate these samples; WebSocket masking accounts for
+less than one percent in each role's first sample. A masking microbenchmark
+therefore cannot establish a useful end-to-end gain for this workload.
 
 ## Acceptance before deployment
 
-The CPU-quality workflow compares the same source with PGO off/on. It runs
-race-checked authentication, binary framing, proxy, cancellation and buffer
-ownership regressions. It alternates six independent pairs with 1,000 held-open
-users, eight verified bulk workers, and the same 600 Mbit/s offered load.
-Both binaries must carry identical verified payload counts.
+The CPU-quality workflow compares the deployed base revision against the
+candidate with batching enabled, using the identical resource fixture and
+explicit `-pgo=off` in both builds. It runs the pinned SMUX upstream suite and
+benchmarks plus race-checked authentication, framing-proxy, cancellation,
+concurrent streams and borrowed-buffer regressions.
 
-The candidate must reduce the median paired CPU/GiB ratio by at least 3%,
-with the upper 97.5th percentile of a fixed-seed paired-bootstrap median below
-one. Equal-load goodput, sampled peak RSS and fresh-user p99 must also meet
-the comparison's stated measurement tolerances. A CPU reduction obtained by
-delivering fewer bytes is rejected. Saturated download must still exceed the
-existing 600 Mbit/s floor. Separate isolated-network runs compare delay/loss
-quality with automatic mux negotiation and pinned version 2.
+Six independent pairs alternate process order with 1,000 held-open users,
+eight verified bulk workers and the same 600 Mbit/s offered load. Both must
+carry identical verified payload counts. The candidate must reduce median
+paired CPU/GiB by at least 3%, with the upper 97.5th percentile of a fixed-seed
+paired-bootstrap median below one. Goodput, peak sampled RSS and fresh-user
+p99 must also pass the comparator's stated measurement tolerances. Delivering
+fewer bytes cannot qualify as a CPU improvement.
 
-These are conservative deployment decisions, not a claim that a finite test
-proves no possible regression. The raw samples and rejected candidates are
-retained as artifacts. No existing CI gate is relaxed. Never deploy just
-because the PGO build compiles, and never infer production savings from an
-isolated mask microbenchmark.
+Saturated downloads must still pass the existing 600 Mbit/s floor. Separate
+isolated-network runs check delay/loss with automatic mux negotiation and
+pinned version 2. Results from both modes are retained even if one fails.
+No existing quality gate is relaxed. These finite measurements are conservative
+deployment decisions, not proof against every possible regression. Keep this
+option off if any quality check fails, even when CPU improves.
 
 Last verified against Backpack v1.18.0.
 
 <div dir="rtl">
 
-پروفایل از CPU واقعی دو سمت گرفته شده است. کاهش CPU فقط وقتی پذیرفته می‌شود
-که حجم داده یکسان باشد و تأخیر، حافظه، سرعت و صحت داده از آزمون‌های کیفیت عبور
-کنند. تا پیش از نتیجهٔ مقایسه، این ساخت یک گزینهٔ آزمایشی است. تغییر قالب شبکه
-یا ضعیف‌کردن TLS برای کم‌کردن CPU انجام نمی‌شود.
+## خلاصهٔ فارسی
+
+اولویت، کیفیت و صحت داده است. تجمیع فقط برای فریم‌های آماده و بدون تایمر انجام
+می‌شود و پیش‌فرض خاموش است. کاهش CPU باید همراه با حفظ سرعت، تأخیر و مصرف حافظه
+در آزمون‌های برابر اثبات شود. آزمایش PGO به دلیل نتیجهٔ ناکافی و افت سرعت در
+مسیر دارای تأخیر رد شد و روی سرویس فعال نصب نشد. پروفایل آن صرفاً برای تحلیل
+نگهداری می‌شود و در ساخت عادی خودکار فعال نیست.
 
 </div>

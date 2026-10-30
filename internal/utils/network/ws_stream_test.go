@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -16,6 +17,81 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/xtaci/smux"
 )
+
+func TestWSMuxReadyBatchPreservesConcurrentStreams(t *testing.T) {
+	const streams = 48
+	cfg := smux.DefaultConfig()
+	cfg.Version = 2
+	up := websocket.Upgrader{Subprotocols: []string{WSMuxBinaryProtocol},
+		ReadBufferSize: wsReadBufferSize, WriteBufferSize: wsWriteBufferSize, WriteBufferPool: wsWriteBuffers}
+	serverDone := make(chan error, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := up.Upgrade(WSMuxResponse(w), r, nil)
+		if err != nil {
+			serverDone <- err
+			return
+		}
+		defer conn.Close()
+		session, err := smux.Server(WSMuxStream(conn, true), cfg)
+		if err != nil {
+			serverDone <- err
+			return
+		}
+		defer session.Close()
+		var workers sync.WaitGroup
+		for i := 0; i < streams; i++ {
+			stream, err := session.AcceptStream()
+			if err != nil {
+				serverDone <- err
+				return
+			}
+			workers.Add(1)
+			go func() { defer workers.Done(); defer stream.Close(); io.Copy(stream, stream) }()
+		}
+		workers.Wait()
+		serverDone <- nil
+	}))
+	defer srv.Close()
+	conn, err := WebSocketDialer(context.Background(), nil, srv.Listener.Addr().String(), "", "/tunnel", 3*time.Second, time.Second, true, "private-test", config.WSMUX, false, 1, 0, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	session, err := smux.Client(WSMuxStream(conn, true), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+	results := make(chan error, streams)
+	for i := 0; i < streams; i++ {
+		go func(i int) {
+			stream, err := session.OpenStream()
+			if err != nil {
+				results <- err
+				return
+			}
+			defer stream.Close()
+			stream.SetDeadline(time.Now().Add(15 * time.Second))
+			payload := bytes.Repeat([]byte{byte(i)}, 32768+i)
+			if _, err = stream.Write(payload); err == nil {
+				got := make([]byte, len(payload))
+				_, err = io.ReadFull(stream, got)
+				if err == nil && !bytes.Equal(payload, got) {
+					err = io.ErrUnexpectedEOF
+				}
+			}
+			results <- err
+		}(i)
+	}
+	for i := 0; i < streams; i++ {
+		if err := <-results; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := <-serverDone; err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestWSMuxBinaryStreamAndLegacyCompatibility(t *testing.T) {
 	for _, framed := range []bool{true, false} {
@@ -32,7 +108,7 @@ func TestWSMuxBinaryStreamAndLegacyCompatibility(t *testing.T) {
 					return
 				}
 				defer c.Close()
-				s, e := smux.Server(WSMuxStream(c), nil)
+				s, e := smux.Server(WSMuxStream(c, true), nil)
 				if e != nil {
 					serverDone <- e
 					return
@@ -55,7 +131,7 @@ func TestWSMuxBinaryStreamAndLegacyCompatibility(t *testing.T) {
 			if (c.Subprotocol() == WSMuxBinaryProtocol) != framed {
 				t.Fatal("framing disagreement")
 			}
-			s, e := smux.Client(WSMuxStream(c), nil)
+			s, e := smux.Client(WSMuxStream(c, true), nil)
 			if e != nil {
 				t.Fatal(e)
 			}

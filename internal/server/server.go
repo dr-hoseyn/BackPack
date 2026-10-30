@@ -356,6 +356,7 @@ func (s *Server) startTransport(ctx context.Context, tr config.TransportType) ru
 			MuxCon:           s.config.MuxCon,
 			MuxVersion:       s.config.MuxVersion,
 			MaxFrameSize:     s.config.MaxFrameSize,
+			WriteBatch:       s.config.WSMuxWriteBatch,
 			MaxReceiveBuffer: s.config.MaxReceiveBuffer,
 			MaxStreamBuffer:  s.config.MaxStreamBuffer,
 			Sniffer:          s.config.Sniffer,

@@ -1,7 +1,8 @@
 """Reject CPU candidates unless equal-load measurements also preserve quality.
 
 Inputs are independent, alternating runs of the exact same e2e binary workload.
-The baseline is the same source built with -pgo=off, not an older wire format.
+Both builds disable PGO. The deployed baseline and opt-in batch candidate use
+the identical resource fixture and wire protocol.
 """
 import json
 import math
@@ -65,7 +66,7 @@ def compare(root, prefix="paced", count=6):
             "cpu_median_improves_at_least_3_percent": statistics.median(ratios) <= .97,
             "paired_bootstrap_upper_below_one": upper < 1,
         })
-    return {"scope": "same source and workload; -pgo=off versus explicit production CPU profile; combined client/server/echo",
+    return {"scope": "identical workload; deployed baseline versus opt-in ready batching; PGO off; combined client/server/echo",
             "prefix": prefix, "runs": runs, "medians": medians, "cpu_paired_ratios": ratios,
             "cpu_paired_median_change_percent": 100 * (statistics.median(ratios) - 1),
             "cpu_bootstrap_median_ratio_upper_97_5_percent": upper,

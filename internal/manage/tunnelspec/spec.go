@@ -156,6 +156,7 @@ type Spec struct {
 	WSSAllowLegacyServer bool
 	WSSHTTP11Only        bool
 	WSMuxMaxSessions     int
+	WSMuxWriteBatch      bool
 
 	// Proxy is the optional socks5:// or http:// URL the client reaches the
 	// tunnel server through. Empty means dial it directly.
@@ -313,6 +314,9 @@ func (s Spec) Render() string {
 				p("simple_auth = true\n")
 			}
 		}
+		if (s.Transport == "wsmux" || s.Transport == "wssmux") && s.WSMuxWriteBatch {
+			p("wsmux_write_batch = true\n")
+		}
 		if isMux(s.Transport) {
 			p("mux_con = %d\n", s.MuxCon)
 			p("mux_version = %d\n", s.MuxVersion)
@@ -401,6 +405,9 @@ func (s Spec) Render() string {
 		if s.WSSHTTP11Only {
 			p("wss_http11_only = true\n")
 		}
+	}
+	if (s.Transport == "wsmux" || s.Transport == "wssmux") && s.WSMuxWriteBatch {
+		p("wsmux_write_batch = true\n")
 	}
 	if (s.Transport == "wsmux" || s.Transport == "wssmux") && s.WSMuxMaxSessions > 0 {
 		p("wsmux_max_sessions = %d\n", s.WSMuxMaxSessions)

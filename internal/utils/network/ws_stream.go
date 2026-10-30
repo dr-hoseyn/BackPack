@@ -13,17 +13,17 @@ import (
 // It adds no batching timer: a small write leaves immediately, while Gorilla's
 // pooled 64 KiB writer coalesces the frame header with bulk data. smux owns one
 // reader and one writer; its keepalives also keep control frames being read.
-func WebSocketStream(conn *websocket.Conn) net.Conn {
-	return &webSocketStream{conn: conn}
+func WebSocketStream(conn *websocket.Conn, batch ...bool) net.Conn {
+	return &webSocketStream{conn: conn, batch: len(batch) != 0 && batch[0]}
 }
 
 const WSMuxBinaryProtocol = "binary"
 
 // Older peers did not frame their data. Select the format only after the
 // authenticated upgrade has acknowledged the standard binary subprotocol.
-func WSMuxStream(conn *websocket.Conn) net.Conn {
+func WSMuxStream(conn *websocket.Conn, batch ...bool) net.Conn {
 	if conn.Subprotocol() == WSMuxBinaryProtocol {
-		return WebSocketStream(conn)
+		return WebSocketStream(conn, batch...)
 	}
 	return conn.NetConn()
 }
@@ -32,6 +32,16 @@ type webSocketStream struct {
 	conn    *websocket.Conn
 	reader  io.Reader
 	writeMu sync.Mutex
+	batch   bool
+}
+
+// Only explicit framed-mux users opt into ready-only aggregation. smux keeps
+// synchronous completion and the current wire stream; no waiting timer exists.
+func (c *webSocketStream) WriteBufferBatchLimits() (frames, bytes int) {
+	if c.batch {
+		return 16, 64 * 1024
+	}
+	return 0, 0
 }
 
 func (c *webSocketStream) Read(p []byte) (int, error) {

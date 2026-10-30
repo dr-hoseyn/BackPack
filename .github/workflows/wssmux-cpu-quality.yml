@@ -3,7 +3,11 @@ name: WSS Mux CPU quality experiment
 on:
   pull_request:
     paths:
-      - default.pgo
+      - profiles/**
+      - third_party/smux/**
+      - internal/**
+      - config/**
+      - go.mod
       - '.github/workflows/wssmux-cpu-quality.yml'
       - '.github/scripts/compare-wssmux-cpu-quality.py'
   workflow_dispatch:
@@ -18,27 +22,42 @@ concurrency:
 jobs:
   compare:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
       GOMAXPROCS: '4'
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
       - name: Verify the quality gate rejects misleading wins
         run: python3 .github/scripts/test_compare_wssmux_cpu_quality.py
-      - name: Build identical sources with PGO off and on
+      - name: Verify the pinned smux implementation and extension
+        run: |
+          (cd third_party/smux && go test -race ./... -count=1 -timeout 3m)
+          (cd third_party/smux && go test -run '^TestReadyBatch' -count=20 -timeout 1m)
+          (cd third_party/smux && go test -run '^$' -bench . -benchtime=10x -timeout 3m)
+      - name: Build the deployed baseline and opt-in batching candidate without PGO
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || '61eb57a48f9d3b012c7038400460915554f16d66' }}
         run: |
           set -euo pipefail
-          go test -c -pgo=off -o "$RUNNER_TEMP/quality-baseline" ./internal/e2e
-          go test -c -pgo="$PWD/default.pgo" -o "$RUNNER_TEMP/quality-candidate" ./internal/e2e
-          go build -trimpath -o "$RUNNER_TEMP/backpack-pgo" .
-          go version -m "$RUNNER_TEMP/backpack-pgo" | tee "$RUNNER_TEMP/pgo-build.txt"
-      - name: Preserve authentication, framing, ownership and cancellation with PGO
+          git worktree add --detach "$RUNNER_TEMP/quality-base" "$BASE_SHA"
+          # The identical fixture decodes the optional flag through TOML, so
+          # an older baseline can ignore the unknown option without source edits.
+          cp internal/e2e/wssmux_resources_test.go "$RUNNER_TEMP/quality-base/internal/e2e/"
+          (cd "$RUNNER_TEMP/quality-base" && go test -c -pgo=off -o "$RUNNER_TEMP/quality-baseline" ./internal/e2e)
+          go test -c -pgo=off -o "$RUNNER_TEMP/quality-candidate" ./internal/e2e
+          go build -trimpath -pgo=off -o "$RUNNER_TEMP/backpack-batch" .
+          go version -m "$RUNNER_TEMP/backpack-batch" | tee "$RUNNER_TEMP/candidate-build.txt"
+      - name: Preserve authentication, framing, ownership and cancellation
+        env:
+          BP_WSSMUX_WRITE_BATCH: '1'
         run: >-
-          go test -race -pgo="$PWD/default.pgo" ./internal/utils/network ./internal/utils/handlers ./internal/client/transport ./internal/e2e
+          go test -race -pgo=off ./internal/utils/network ./internal/utils/handlers ./internal/client/transport ./internal/e2e
           -run '^(TestWSS|TestWSMux|TestWebSocket|TestMuxUpgrade|TestTLSTransports|TestAdaptiveRelay|TestMuxCapacityGrows)'
           -count=2 -timeout 5m
       - name: Alternate six equal-load pairs at 600 Mbit with 1000 open users
@@ -54,7 +73,8 @@ jobs:
             order="baseline candidate"
             if [ $((sample % 2)) -eq 0 ]; then order="candidate baseline"; fi
             for kind in $order; do
-              "$RUNNER_TEMP/quality-$kind" -test.run '^TestWSMuxResourceProfile$' -test.v -test.timeout 2m \
+              batch=""; if [ "$kind" = candidate ]; then batch=1; fi
+              BP_WSSMUX_WRITE_BATCH="$batch" "$RUNNER_TEMP/quality-$kind" -test.run '^TestWSMuxResourceProfile$' -test.v -test.timeout 2m \
                 | tee "$RUNNER_TEMP/paced-$kind-$sample.txt"
             done
           done
@@ -69,7 +89,8 @@ jobs:
         run: |
           set -euo pipefail
           for kind in baseline candidate; do
-            "$RUNNER_TEMP/quality-$kind" -test.run '^TestBulkProfileDownloadCapacity/wssmux$' \
+            batch=""; if [ "$kind" = candidate ]; then batch=1; fi
+            BP_WSSMUX_WRITE_BATCH="$batch" "$RUNNER_TEMP/quality-$kind" -test.run '^TestBulkProfileDownloadCapacity/wssmux$' \
               -test.count 3 -test.v -test.timeout 2m | tee "$RUNNER_TEMP/download-$kind.txt"
           done
       - name: Preserve quality with delay and packet loss
@@ -79,6 +100,7 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq iproute2 ethtool
           sudo modprobe ifb
+          status=0
           for mode in auto1 pinned2; do
             auto=""
             if [ "$mode" = auto1 ]; then auto=1; fi
@@ -86,7 +108,8 @@ jobs:
               order="baseline candidate"
               if [ $((sample % 2)) -eq 0 ]; then order="candidate baseline"; fi
               for kind in $order; do
-                sudo env GOMAXPROCS=4 BP_RESOURCE_BENCHMARK=1 BP_RESOURCE_IDLE_CONNECTIONS=16 \
+                batch=""; if [ "$kind" = candidate ]; then batch=1; fi
+                sudo env GOMAXPROCS=4 BP_WSSMUX_WRITE_BATCH="$batch" BP_RESOURCE_BENCHMARK=1 BP_RESOURCE_IDLE_CONNECTIONS=16 \
                   BP_RESOURCE_ROUNDS=2 BP_RESOURCE_NETEM=1 BP_RESOURCE_MUX_AUTO="$auto" \
                   BIN="$RUNNER_TEMP/quality-$kind" unshare --net -- bash -eu -c \
                   'ip link set lo up; exec "$BIN" -test.run "^TestWSMuxResourceProfile$" -test.v -test.timeout 2m' \
@@ -94,8 +117,9 @@ jobs:
               done
             done
             python3 .github/scripts/compare-wssmux-cpu-quality.py "$RUNNER_TEMP" "delayed-$mode" 3 \
-              | tee "$RUNNER_TEMP/delayed-$mode-quality.json"
+              | tee "$RUNNER_TEMP/delayed-$mode-quality.json" || status=1
           done
+          exit "$status"
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -105,4 +129,4 @@ jobs:
             ${{ runner.temp }}/delayed-*.txt
             ${{ runner.temp }}/download-*.txt
             ${{ runner.temp }}/*quality.json
-            ${{ runner.temp }}/pgo-build.txt
+            ${{ runner.temp }}/candidate-build.txt
