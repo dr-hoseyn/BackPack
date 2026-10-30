@@ -324,9 +324,8 @@ func openUDPPathsContext(ctx context.Context, cfg Config) (DatagramCarrier, net.
 // pinnedCarrier remembers the address one path talks to, so the multipath layer
 // above can hand it a datagram without saying where it goes.
 //
-// Only multipath (paths > 1, opt-in) uses it. It learns from unauthenticated
-// datagrams, which is the price of spreading one tunnel over several sockets
-// the tunnel above cannot tell apart; a single path is never wrapped.
+// Only multipath (paths > 1, opt-in) uses it. Its destination changes only after the tunnel
+// authenticates a packet tagged with its ingress path; a single path is never wrapped.
 //
 // The dialling side is given its peer up front. The listening side learns it
 // from the first datagram that arrives on that path and answers there, which is
@@ -354,13 +353,7 @@ func (c *pinnedCarrier) WriteTo(p []byte, addr net.Addr) (int, error) {
 }
 
 func (c *pinnedCarrier) ReadFrom(p []byte) (int, net.Addr, error) {
-	n, addr, err := c.DatagramCarrier.ReadFrom(p)
-	if err == nil && addr != nil {
-		c.mu.Lock()
-		c.peer = addr
-		c.mu.Unlock()
-	}
-	return n, addr, err
+	return c.DatagramCarrier.ReadFrom(p)
 }
 
 // closeAll shuts the paths opened so far, for the error paths above.
@@ -394,4 +387,19 @@ func (c *pinnedCarrier) WriteBatch(bufs [][]byte, addr net.Addr) (int, error) {
 		}
 	}
 	return len(bufs), nil
+}
+
+// Authentication must reach through FEC before a multipath destination changes.
+func confirmCarrierPeer(c DatagramCarrier, from net.Addr) net.Addr {
+	if _, recovered := from.(*fecRecoveredAddr); recovered {
+		return nil
+	}
+	switch carrier := c.(type) {
+	case *fecCarrier:
+		return confirmCarrierPeer(carrier.below, from)
+	case *multipathCarrier:
+		return carrier.confirmPeer(from)
+	default:
+		return from
+	}
 }

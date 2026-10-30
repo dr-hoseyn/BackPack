@@ -116,6 +116,7 @@ func (c *TcpTransport) channelDialer() {
 	// One backoff for this reconnect loop: retries start at the configured
 	// interval and stretch as the outage persists, instead of a fixed drumbeat.
 	bo := newBackoff(c.config.RetryInterval)
+	var failedHandshakes map[string]bool
 
 	for {
 		select {
@@ -133,7 +134,7 @@ func (c *TcpTransport) channelDialer() {
 			//
 			//set default behaviour of control channel to nodelay, also using default buffer parameters
 			rawConn, won, err := network.Race(c.state.Ctx(),
-				c.config.Endpoints.InPreferenceOrder(), network.RaceStagger,
+				controlCandidates(c.config.Endpoints, &failedHandshakes), network.RaceStagger,
 				func(ctx context.Context, addr string) (net.Conn, error) {
 					return network.TcpDialerVia(ctx, c.config.Outbound, addr,
 						c.config.DialTimeOut, c.config.KeepAlive, true, 3, 0, 0, 0)
@@ -160,6 +161,7 @@ func (c *TcpTransport) channelDialer() {
 			if err != nil {
 				c.logger.Errorf("channel dialer: stealth handshake failed: %v", err)
 				rawConn.Close()
+				rejectControlCandidate(&failedHandshakes, won)
 				bo.Wait(c.state.Ctx())
 				continue
 			}
@@ -172,6 +174,7 @@ func (c *TcpTransport) channelDialer() {
 			if err != nil {
 				c.logger.Errorf("failed to send security token: %v", err)
 				tunnelTCPConn.Close()
+				rejectControlCandidate(&failedHandshakes, won)
 				bo.Wait(c.state.Ctx())
 				continue
 			}
@@ -180,6 +183,7 @@ func (c *TcpTransport) channelDialer() {
 			if err := tunnelTCPConn.SetReadDeadline(time.Now().Add(controlAckTimeout)); err != nil {
 				c.logger.Errorf("failed to set read deadline: %v", err)
 				tunnelTCPConn.Close()
+				rejectControlCandidate(&failedHandshakes, won)
 				bo.Wait(c.state.Ctx())
 				continue
 			}
@@ -194,6 +198,7 @@ func (c *TcpTransport) channelDialer() {
 					c.legacyServer.miss(c.logger, signal)
 				}
 				tunnelTCPConn.Close() // Close connection on error or timeout
+				rejectControlCandidate(&failedHandshakes, won)
 				bo.Wait(c.state.Ctx())
 				continue
 			}

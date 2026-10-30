@@ -133,6 +133,9 @@ type fecCarrier struct {
 }
 
 // fecReady is a rebuilt packet and the address it is attributed to.
+// Reconstructed packets authenticate their bytes, not the source of a missing shard.
+type fecRecoveredAddr struct{ net.Addr }
+
 type fecReady struct {
 	data []byte
 	addr net.Addr
@@ -198,6 +201,11 @@ func (c *fecCarrier) SetWriteDeadline(t time.Time) error { return c.below.SetWri
 // this layer costs bandwidth and CPU but not a millisecond of latency on the
 // packet the application is waiting for.
 func (c *fecCarrier) WriteTo(p []byte, addr net.Addr) (int, error) {
+	// Recovered ingress metadata must not become a learned data route, but a
+	// successfully authenticated init may still receive an immediate response.
+	if recovered, ok := addr.(*fecRecoveredAddr); ok {
+		addr = recovered.Addr
+	}
 	c.sendMu.Lock()
 	defer c.sendMu.Unlock()
 	if len(p) > 65535 {
@@ -346,6 +354,16 @@ func (c *fecCarrier) absorb(kind byte, group uint32, index byte, body []byte, ad
 		(kind != fecKindData && kind != fecKindParity) {
 		return nil, false
 	}
+	// Reject malformed lengths before they can occupy a shard or mark it delivered.
+	// This is structural validation; the outer FEC format is not authenticated.
+	if kind == fecKindData {
+		if _, ok := trimShard(body); !ok {
+			return nil, false
+		}
+	}
+	if len(body) < fecLenPrefix {
+		return nil, false
+	}
 	g := c.groups[group]
 	if g == nil {
 		g = &fecGroup{
@@ -418,7 +436,7 @@ func (c *fecCarrier) rebuild(g *fecGroup) {
 		}
 		if payload, ok := trimShard(work[i]); ok {
 			g.delivered[i] = true
-			c.pending = append(c.pending, fecReady{data: append([]byte(nil), payload...), addr: g.addr})
+			c.pending = append(c.pending, fecReady{data: append([]byte(nil), payload...), addr: &fecRecoveredAddr{g.addr}})
 		}
 	}
 }

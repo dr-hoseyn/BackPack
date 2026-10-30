@@ -1,6 +1,7 @@
 package l3
 
 import (
+	"bytes"
 	"net"
 	"time"
 )
@@ -20,7 +21,12 @@ func (t *Tunnel) handleInit(h header, body []byte, from net.Addr) {
 	t.mu.Lock()
 	if h.session == t.lastInitID && t.lastReply != nil {
 		reply := t.lastReply
+		exact := h.counter == t.lastInitCounter && bytes.Equal(body, t.lastInitBody)
 		t.mu.Unlock()
+		if !exact {
+			t.stats.dropped.Add(1)
+			return
+		}
 		_, _ = t.carrier.WriteTo(reply, from)
 		return
 	}
@@ -108,6 +114,8 @@ func (t *Tunnel) handleInit(h header, body []byte, from net.Addr) {
 	t.mu.Lock()
 	t.pending = sess
 	t.lastInitID = h.session
+	t.lastInitCounter = h.counter
+	t.lastInitBody = append(t.lastInitBody[:0], body...)
 	t.lastReply = reply
 	// The address is provisional until a data packet confirms it, which is
 	// also what promotes the session.
@@ -221,11 +229,18 @@ func (t *Tunnel) handleData(plain []byte, h header, body []byte, from net.Addr) 
 // notePeer follows a peer that has moved, which is safe only because the
 // caller has already authenticated the packet the address came from.
 func (t *Tunnel) notePeer(from net.Addr) {
+	from = confirmCarrierPeer(t.carrier, from)
 	if from == nil {
 		return
 	}
 	t.mu.RLock()
 	same := sameAddr(t.peer, from)
+	// The provisional handshake peer routes replies to one ingress path.
+	// Replace it with the logical peer even when both render the same address.
+	switch t.peer.(type) {
+	case *receivedPath, *fecRecoveredAddr:
+		same = false
+	}
 	t.mu.RUnlock()
 	if same {
 		return
@@ -234,6 +249,12 @@ func (t *Tunnel) notePeer(from net.Addr) {
 	previous := t.peer
 	t.peer = from
 	t.mu.Unlock()
+	if recovered, ok := previous.(*fecRecoveredAddr); ok {
+		previous = recovered.Addr
+	}
+	if ingress, ok := previous.(*receivedPath); ok {
+		previous = ingress.Addr
+	}
 	if previous != nil && !sameHost(previous, from) {
 		t.log.Infof("l3: peer moved from %s to %s", previous, from)
 	}
