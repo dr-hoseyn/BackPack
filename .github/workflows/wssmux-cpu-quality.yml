@@ -20,6 +20,18 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  smux-upstream-race:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Verify the complete upstream suite including both 8 GiB transfers under race detection
+        working-directory: third_party/smux
+        run: go test -race ./... -count=1 -timeout 15m
   compare:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -37,10 +49,12 @@ jobs:
         run: python3 .github/scripts/test_compare_wssmux_cpu_quality.py
       - name: Verify the pinned smux implementation and extension
         run: |
-          (cd third_party/smux && go test -race ./... -count=1 -timeout 3m)
+          (cd third_party/smux && go test ./... -count=1 -timeout 5m)
+          (cd third_party/smux && go test -race -run '^TestReadyBatch' -count=20 -timeout 1m)
           (cd third_party/smux && go test -run '^TestReadyBatch' -count=20 -timeout 1m)
           (cd third_party/smux && go test -run '^$' -bench . -benchtime=10x -timeout 3m)
       - name: Build the deployed baseline and opt-in batching candidate without PGO
+        id: build
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || '61eb57a48f9d3b012c7038400460915554f16d66' }}
         run: |
@@ -81,7 +95,7 @@ jobs:
           python3 .github/scripts/compare-wssmux-cpu-quality.py "$RUNNER_TEMP" \
             | tee "$RUNNER_TEMP/paced-quality.json"
       - name: Verify download capacity without offered-load pacing
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         env:
           BP_CAPACITY_BENCHMARK: '1'
           BP_WSSMUX_BOUNDED: '1'
@@ -94,7 +108,7 @@ jobs:
               -test.count 3 -test.v -test.timeout 2m | tee "$RUNNER_TEMP/download-$kind.txt"
           done
       - name: Preserve quality with delay and packet loss
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: |
           set -euo pipefail
           sudo apt-get update -qq

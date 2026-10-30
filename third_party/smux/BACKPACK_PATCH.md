@@ -3,7 +3,9 @@
 Runtime sources, upstream tests, license and project instructions are copied
 from `github.com/xtaci/smux v1.5.57`. The module path and public upstream APIs
 are unchanged. `go.mod` pins this local copy to make the small experimental
-extension reproducible without editing a shared module cache.
+extension reproducible without editing a shared module cache. The replacement
+is version-specific: bumping the upstream requirement cannot silently keep an
+older local implementation. Rebase the patch explicitly to retain batching.
 
 Changes: `Session.sendLoop` recognizes an optional connection interface with
 `WriteBufferBatchLimits() (frames, bytes int)`. Only a framed WS mux explicitly

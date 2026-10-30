@@ -45,4 +45,4 @@ require (
 	golang.zx2c4.com/wintun v0.0.0-20230126152724-0fa3db229ce2 // indirect
 )
 
-replace github.com/xtaci/smux => ./third_party/smux
+replace github.com/xtaci/smux v1.5.57 => ./third_party/smux
