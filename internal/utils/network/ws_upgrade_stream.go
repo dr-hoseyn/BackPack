@@ -6,12 +6,12 @@ import (
 	"time"
 )
 
-// Mux transports use HTTP Upgrade followed by the existing raw smux wire
-// format. Gorilla's response reader may prefetch the first smux frames along
-// with HTTP 101; NetConn then bypasses that reader and loses those frames.
+// Mux transports negotiate framed or legacy raw smux after HTTP Upgrade.
+// Gorilla's response reader may prefetch the first payload along with HTTP
+// 101; a legacy NetConn reader would bypass and lose those bytes.
 // Bound the reader's input at the HTTP header and keep any prefetched payload
-// on the connection that NetConn exposes. Framed websocket/control paths must
-// retain Gorilla's normal reader and never use this adapter.
+// on the underlying connection. A framed peer then reads it through Gorilla;
+// a legacy peer reads it directly. No mode is chosen before the response.
 type muxUpgradeConn struct {
 	net.Conn
 	reader *bufio.Reader

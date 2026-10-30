@@ -77,11 +77,21 @@ func pinClientALPNToHTTP11(uconn *utls.UConn) error {
 	if err := uconn.BuildHandshakeState(); err != nil {
 		return fmt.Errorf("wss: building the client hello: %w", err)
 	}
+	extensions := uconn.Extensions[:0]
 	for _, ext := range uconn.Extensions {
+		// ALPS only describes protocols also offered through ALPN. Chrome's
+		// HTTPS preset carries h2 settings, which must not survive an h1-only
+		// WebSocket offer (BoringSSL SSL_add_application_settings contract).
+		switch ext.(type) {
+		case *utls.ApplicationSettingsExtension, *utls.ApplicationSettingsExtensionNew:
+			continue
+		}
 		if alpn, ok := ext.(*utls.ALPNExtension); ok {
 			alpn.AlpnProtocols = []string{"http/1.1"}
 		}
+		extensions = append(extensions, ext)
 	}
+	uconn.Extensions = extensions
 	// The handshake re-marshals the hello from these extensions, so the change
 	// is on the wire without anything else being touched.
 	return nil

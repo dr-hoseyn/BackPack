@@ -77,6 +77,11 @@ See the [Chromium implementation](https://chromium.googlesource.com/chromium/src
 This option is explicit so existing deployments retain their selected behavior.
 It changes the ClientHello; neither ALPN choice proves resistance to blocking.
 Both modes have TLS-handshake tests, and authentication is always independent.
+The HTTP/1.1-only offer also removes the preset's h2-only ALPS extension.
+Advertising application settings for an unoffered protocol conflicts with
+[BoringSSL's ALPS contract](https://boringssl.googlesource.com/boringssl/+/HEAD/include/openssl/ssl.h).
+A serialized-ClientHello regression test checks ALPN/ALPS consistency; the full
+HTTPS preset retains its h2 settings.
 
 These changes improve protocol consistency and authentication. They do not
 guarantee resistance to traffic analysis or blocking. Timing, volume, endpoint
