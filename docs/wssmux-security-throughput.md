@@ -55,15 +55,20 @@ instead of choosing inconsistent UA families and sending a custom user-id
 header. This is a pinned implementation, not an automatically current browser.
 Review the ClientHello and UA together when updating uTLS.
 
-Direct peers still see the preset's full ALPN offer. An endpoint selecting h2
-needs HTTP/1.1 fallback because this implementation does not implement RFC 8441.
-That capability is cached for ten minutes, with at most 128 entries, keyed by
-origin, dial destination and TLS name; a handshake failure invalidates it.
-Pool connections reuse the control connection's decision. The cache contains
-no credentials and is populated only after successful authentication; an
-unproven peer cannot change the next connection's ALPN behavior. HTTP/1.1-only ALPN
-does change the ClientHello; caching removes repeated unusable handshakes, not
-that fingerprint tradeoff.
+By default, direct peers still see the existing full HTTPS preset's ALPN offer.
+An endpoint selecting h2 needs HTTP/1.1 fallback because this implementation does
+not implement RFC 8441. That capability is cached for ten minutes, with at most
+128 entries, keyed by origin, dial destination and TLS name; a handshake failure
+invalidates it. Pool connections reuse the control connection's authenticated
+decision. An unproven peer cannot populate the cache.
+
+`wss_http11_only = true` offers HTTP/1.1 from the first handshake and removes
+the unusable h2 probe. Chromium has an HTTP/1.1-only path for fresh WebSocket
+sockets; claiming that a browser never produces that ALPN is incorrect.
+See the [Chromium implementation](https://chromium.googlesource.com/chromium/src/+/1d8eb53fa47e49798dabd5d04460b1b8a0c163c7/net/http/http_stream_factory_job.cc).
+This option is explicit so existing deployments retain their selected behavior.
+It changes the ClientHello; neither ALPN choice proves resistance to blocking.
+Both modes have TLS-handshake tests, and authentication is always independent.
 
 These changes improve protocol consistency and authentication. They do not
 guarantee resistance to traffic analysis or blocking. Timing, volume, endpoint
@@ -96,6 +101,8 @@ connection_pool = 8
 wsmux_max_sessions = 16
 aggressive_pool = false
 so_pin_tcp = false
+# Optional fresh-WebSocket ALPN; retains a Chrome 133 preset for other fields.
+wss_http11_only = true
 ```
 
 These are keys inside the existing `[server]` and `[client]` tables, not a
@@ -120,6 +127,13 @@ existing stream to a new TCP connection; TCP head-of-line blocking within each
 physical session remains.
 
 ## Reproducible verification
+
+The transitive `klauspost/compress` dependency is pinned to 1.18.7 to include
+[GHSA-259r-337f-4rfw](https://github.com/klauspost/compress/security/advisories/GHSA-259r-337f-4rfw)'s fix.
+The advisory concerns S2 dictionary encoding; Backpack currently reaches this
+module through uTLS's zstd dependency, not a confirmed attacker-controlled S2
+encoding path. The patch removes the vulnerable dependency version without
+claiming that the advisory was exploitable through this tunnel.
 
 The `WSS Mux security and capacity` workflow runs race-checked authentication,
 framing, message-aware proxy and reconnection regressions, then the bounded

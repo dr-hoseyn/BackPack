@@ -13,4 +13,5 @@ func configureBoundedWSMux(s *config.ServerConfig, c *config.ClientConfig) {
 	s.MaxStreamBuffer, c.MaxStreamBuffer = 16<<20, 16<<20
 	s.Nodelay, c.Nodelay = true, true
 	c.AggressivePool = false
+	c.WSSHTTP11Only = true
 }

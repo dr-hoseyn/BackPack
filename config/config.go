@@ -570,6 +570,11 @@ type ClientConfig struct {
 	// WSSAllowLegacyServer permits a missing server proof only with verified TLS.
 	// Off by default; prefer upgrading the server before upgrading the client.
 	WSSAllowLegacyServer bool `toml:"wss_allow_legacy_server"`
+	// WSSHTTP11Only offers HTTP/1.1 on the first WSS handshake, matching a
+	// Chromium fresh-WebSocket path and avoiding an unusable h2 probe. Off keeps
+	// the existing full HTTPS preset with authenticated capability fallback.
+	WSSHTTP11Only bool `toml:"wss_http11_only"`
+
 	// WSMuxMaxSessions bounds physical ws/wss mux sessions, including pending
 	// dials. Zero keeps demand-driven growth. A nonzero limit must be at least
 	// connection_pool. Receive windows are lazy; size this together with expected

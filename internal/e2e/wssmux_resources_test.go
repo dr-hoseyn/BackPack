@@ -53,7 +53,7 @@ func resourceTunnel(t *testing.T) (*tunnel, int) {
 		srv.MaxReceiveBuffer, cli.MaxReceiveBuffer = 32<<20, 32<<20
 		srv.MaxStreamBuffer, cli.MaxStreamBuffer = 16<<20, 16<<20
 		cli.AggressivePool = false
-		if _, err := toml.Decode("wsmux_max_sessions = 16", cli); err != nil {
+		if _, err := toml.Decode("wsmux_max_sessions = 16\nwss_http11_only = true", cli); err != nil {
 			t.Fatal(err)
 		}
 	}

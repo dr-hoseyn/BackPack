@@ -87,20 +87,9 @@ func negotiate(t *testing.T, ln net.Listener, http11Only bool) (client, server s
 	return uconn.ConnectionState().NegotiatedProtocol, server
 }
 
-// The disguise has to be intact by default.
-//
-// Narrowing the ALPN on every dial was shipped for one release and it is not a
-// free change: every other field of the hello is Chrome's byte for byte, so a
-// hello offering only http/1.1 is a combination no browser produces and every
-// tunnel sending it shares. JA3 cannot see it — it hashes extension type ids,
-// not their contents — but JA4 encodes the ALPN directly, so the deviation is
-// stable and collectable. Reverse tunnels began dying two or three days in and
-// recovering on a fresh server, which is what address-level blocking looks like
-// from the far end.
-//
-// So the first hello offers exactly what Chrome offers. Anything else is a
-// fingerprint deviation paid by every direct connection to solve a problem only
-// CDN users have.
+// The existing default preserves the full HTTPS preset. A caller can choose
+// the HTTP/1.1-only fresh-WebSocket profile; these are distinct choices, not
+// evidence that one is universally unidentifiable.
 func TestTheFirstHelloOffersChromesOwnALPN(t *testing.T) {
 	ln := alpnEchoServer(t, []string{"h2", "http/1.1"})
 

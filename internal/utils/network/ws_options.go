@@ -24,6 +24,7 @@ type WSSClientOptions struct {
 	CAFile            string
 	ServerName        string
 	AllowLegacyServer bool
+	HTTP11Only        bool
 	once              sync.Once
 	roots             *x509.CertPool
 	err               error

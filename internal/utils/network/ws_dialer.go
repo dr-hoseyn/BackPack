@@ -226,7 +226,7 @@ func attemptDialWebSocket(ctx context.Context, out *Outbound, addr string, edgeI
 		// Cache only ALPN capability, never credentials or trust. An endpoint
 		// change/failure expires the decision; direct peers retain the full offer.
 		cacheKey := addr + "\x00" + edgeIP + "\x00" + sni
-		http11 := wssALPN.http11(cacheKey, time.Now())
+		http11 := settings.tls.HTTP11Only || wssALPN.http11(cacheKey, time.Now())
 		uconn, err := tlsAttempt(http11)
 		if err != nil {
 			wssALPN.forget(cacheKey)

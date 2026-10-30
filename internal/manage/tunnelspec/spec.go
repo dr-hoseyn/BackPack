@@ -154,6 +154,7 @@ type Spec struct {
 	WSSCAFile            string
 	WSSServerName        string
 	WSSAllowLegacyServer bool
+	WSSHTTP11Only        bool
 	WSMuxMaxSessions     int
 
 	// Proxy is the optional socks5:// or http:// URL the client reaches the
@@ -396,6 +397,9 @@ func (s Spec) Render() string {
 		}
 		if s.WSSAllowLegacyServer {
 			p("wss_allow_legacy_server = true\n")
+		}
+		if s.WSSHTTP11Only {
+			p("wss_http11_only = true\n")
 		}
 	}
 	if (s.Transport == "wsmux" || s.Transport == "wssmux") && s.WSMuxMaxSessions > 0 {

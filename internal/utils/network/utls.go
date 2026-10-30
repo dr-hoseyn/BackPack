@@ -63,44 +63,13 @@ func sniFromAddr(addr string) string {
 	return host
 }
 
-// pinClientALPNToHTTP11 removes h2 from the ClientHello's ALPN offer.
-//
-// The Chrome fingerprint offers "h2" then "http/1.1", because that is what a
-// browser sends. Against our own server that is harmless: it pins http/1.1 on
-// its side (see pinHTTP11ALPN) and so never selects h2. Against a CDN it is
-// not, because the CDN terminates the TLS and has no such instruction — it sees
-// h2 on offer, selects it, and answers the websocket upgrade with an HTTP/2
-// SETTINGS frame. What the client reports is:
-//
-//	malformed HTTP response "\x00\x00\x12\x04\x00\x00\x00\x00\x00..."
-//
-// which is that frame: three length bytes, type 0x04 (SETTINGS), and a zero
-// stream id. Behind Cloudflare the tunnel could not come up at all, while a
-// direct connection to the same server worked perfectly.
-//
-// An RFC 6455 websocket needs the HTTP/1.1 Upgrade mechanism, which HTTP/2 does
-// not have — carrying one over h2 is a different protocol (RFC 8441 extended
-// CONNECT) that gorilla does not implement. So against a peer that selects h2
-// the offer has to be narrowed to what the client can actually use.
-//
-// What this costs, and why it is not done to everybody:
-//
-// The hello it produces is a contradiction. Every other field is Chrome's, byte
-// for byte, and then the ALPN offers only http/1.1 — which Chrome never does.
-// JA3 does not see it, because JA3 hashes extension type ids and not their
-// contents; the hello is three bytes shorter and JA3 is unchanged. JA4 does see
-// it: its ALPN field goes from "h2" to "h1". So the result is a rare but
-// perfectly stable JA4 shared by every tunnel that sends it, always towards the
-// same handful of foreign addresses. That is a cheap thing to collect and a
-// cheap thing to act on, and this transport exists to be uninteresting.
-//
-// It was applied to every wss dial for one release. Reverse tunnels started
-// dying two or three days in and coming back on a fresh server, which is what
-// address-level blocking looks like from the far end. Whether that was the
-// cause is not provable from here, but paying a fingerprint deviation on every
-// direct connection to solve a problem only CDN users have is the wrong trade
-// however it turned out — so it is now the second attempt rather than the
-// first, and only a peer that actually answers with h2 gets it.
+// pinClientALPNToHTTP11 selects the protocol this implementation can carry.
+// Chromium has an HTTP/1.1-only path for fresh WebSocket sockets; a full HTTPS
+// ClientHello is not the only browser behavior. See Chromium's
+// net/http/http_stream_factory_job.cc and its WebSocket socket-pool path.
+// This changes the ALPN contents and therefore the ClientHello. Classification
+// or blocking cannot be inferred from that change alone. The caller chooses
+// it explicitly, or after an authenticated endpoint selected unsupported h2.
 func pinClientALPNToHTTP11(uconn *utls.UConn) error {
 	// The preset's extensions do not exist until the hello is built, and the
 	// ALPN list inside it is hardcoded by the fingerprint rather than read from
