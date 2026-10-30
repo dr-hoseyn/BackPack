@@ -6,8 +6,8 @@ ordinary HTTPS website. **WSS Mux** adds multiplexing and the PROXY protocol.
 Three things make it more than "WS with TLS":
 
 - **A real Chrome TLS fingerprint.** Go's default ClientHello is itself
-  identifiable; Backpack sends a current Chrome one, so the handshake blends into
-  normal browser traffic.
+  identifiable; Backpack sends a pinned Chrome 133 ClientHello and matching UA.
+  This does not guarantee resistance to traffic analysis or blocking.
 - **A session-bound credential.** The token is never sent. Each side derives
   keying material from the TLS session and the client proves it holds the token
   with an HMAC over that material — a man in the middle has a different session
@@ -39,10 +39,11 @@ after the forwarded ports.
 | **Let's Encrypt, automatic** | you have a domain pointing at this server, and you want the connection to look completely ordinary |
 | **Use existing certificate/key files** | you already have a cert on disk |
 
-A self-signed certificate **encrypts exactly as well** — the client is Backpack's
-own code and does not verify it. The reason to get a real one is how the
-connection *looks*: real HTTPS on port 443 is never self-signed, so a self-signed
-cert is a distinguishing mark. A CDN in front also requires a real one.
+A self-signed certificate encrypts the direct connection; the default client
+also requires a valid session-bound server proof. In simple-auth or explicit
+legacy mode, the client must instead verify the TLS certificate and name before
+sending HTTP. Trust a private certificate with the client's `wss_ca_file`.
+Use a valid public certificate for a public TLS-terminating proxy/CDN.
 
 Choosing self-signed asks for an optional domain or IP to embed in the cert.
 
@@ -70,7 +71,12 @@ terminates TLS in front of the tunnel. That proxy holds a different TLS session
 from the client, so the session-bound proof can never match and the tunnel is
 rejected. Simple auth sends the raw token instead, which works through such a
 proxy — and hands the token to whatever terminates the TLS. **Set the same answer
-on both ends.**
+on both ends.** The client now verifies the terminator's certificate and hostname
+before sending the token. For a private CA, configure `wss_ca_file` on the client.
+Upgrade the server first: default clients reject missing server proofs even on
+the first connection. New mux peers use real binary WebSocket frames; an older
+raw peer must also be upgraded for message-aware proxy compatibility.
+[Security, upgrade order and a bounded 600 Mbit/s profile](../docs/wssmux-security-throughput.md).
 
 ---
 

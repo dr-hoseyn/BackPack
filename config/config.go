@@ -561,6 +561,21 @@ type ClientConfig struct {
 	// it hands the token to whoever terminates the TLS; turn it on only when a
 	// trusted proxy is doing so, and set it on both ends.
 	SimpleAuth bool `toml:"simple_auth"`
+	// WSSCAFile adds trusted PEM certificates for wss/wssmux. Required for a
+	// private CA/self-signed server when simple_auth or verified legacy mode is used.
+	WSSCAFile string `toml:"wss_ca_file"`
+	// WSSServerName overrides the TLS name, SNI and HTTP Host, while remote_addr/edge_ip
+	// continue to select the dial destination. Empty uses remote_addr's hostname.
+	WSSServerName string `toml:"wss_server_name"`
+	// WSSAllowLegacyServer permits a missing server proof only with verified TLS.
+	// Off by default; prefer upgrading the server before upgrading the client.
+	WSSAllowLegacyServer bool `toml:"wss_allow_legacy_server"`
+	// WSMuxMaxSessions bounds physical ws/wss mux sessions, including pending
+	// dials. Zero keeps demand-driven growth. A nonzero limit must be at least
+	// connection_pool. Receive windows are lazy; size this together with expected
+	// active streams and mux_recievebuffer, rather than treating idle windows as RSS.
+	WSMuxMaxSessions int `toml:"wsmux_max_sessions"`
+
 	// SkipOptz stops the engine applying its own socket and sysctl tuning at
 	// start, for a machine whose tuning is managed elsewhere.
 	SkipOptz bool `toml:"skip_optz"`

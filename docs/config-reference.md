@@ -246,6 +246,10 @@ them both ends have to agree on. This says what exists.
 | `so_sndbuf` | `int` | SO_SNDBUF is the socket send buffer in bytes. 0 leaves the kernel's default. |
 | `token` | `string` | Token is the shared secret. Both ends must hold exactly the same one, and a mismatch is refused without saying so — a peer without the token learns nothing, not even that something is listening. |
 | `transport` | `TransportType` | Transport is the carrier this tunnel uses. Both ends must name the same one; see docs/transports.md for what each is for. |
+| `wsmux_max_sessions` | `int` | WSMuxMaxSessions bounds physical ws/wss mux sessions, including pending dials. Zero keeps demand-driven growth. A nonzero limit must be at least connection_pool. Receive windows are lazy; size this together with expected active streams and mux_recievebuffer, rather than treating idle windows as RSS. |
+| `wss_allow_legacy_server` | `bool` | WSSAllowLegacyServer permits a missing server proof only with verified TLS. Off by default; prefer upgrading the server before upgrading the client. |
+| `wss_ca_file` | `string` | WSSCAFile adds trusted PEM certificates for wss/wssmux. Required for a private CA/self-signed server when simple_auth or verified legacy mode is used. |
+| `wss_server_name` | `string` | WSSServerName overrides the TLS name, SNI and HTTP Host, while remote_addr/edge_ip continue to select the dial destination. Empty uses remote_addr's hostname. |
 | `xray` | `XrayClientConfig` | Xray optionally reaches the loopback reverse target through a restricted tunnel-owned XHTTP/TLS or RAW/REALITY helper. |
 | `zero_copy` | `bool` | ZeroCopy lets the kernel move the bytes of forwarded connections directly between the two sockets, without them passing through this process. It is faster and it is the least proven path here, so it is off by default and turned on per tunnel. |
 
@@ -528,4 +532,4 @@ them both ends have to agree on. This says what exists.
 
 ---
 
-*Generated from `config/` on 2026-10-27. Last verified against Backpack v1.18.0.*
+*Generated from `config/` on 2026-10-30. Last verified against Backpack v1.18.0.*

@@ -42,8 +42,10 @@ type WsMuxConfig struct {
 	MaxReceiveBuffer int
 	MaxStreamBuffer  int
 	ConnPoolSize     int
+	MaxSessions      int
 	Mode             config.TransportType
 	SimpleAuth       bool
+	WSS              *network.WSSClientOptions
 	AggressivePool   bool
 	EdgeIP           string
 	// MSS caps the largest TCP segment these connections send. Zero leaves it
@@ -103,7 +105,7 @@ func (c *WsMuxTransport) channelDialer() {
 			return
 		default:
 
-			tunnelWSConn, err := network.WebSocketDialer(c.state.Ctx(), c.config.Outbound, c.config.Endpoints.Current(), c.config.EdgeIP, "/channel", c.config.DialTimeOut, c.config.KeepAlive, true, c.config.Token, c.config.Mode, c.config.SimpleAuth, 3, 0, 0, c.config.MSS)
+			tunnelWSConn, err := network.WebSocketDialer(c.state.Ctx(), c.config.Outbound, c.config.Endpoints.Current(), c.config.EdgeIP, "/channel", c.config.DialTimeOut, c.config.KeepAlive, true, c.config.Token, c.config.Mode, c.config.SimpleAuth, 3, 0, 0, c.config.MSS, c.config.WSS)
 			if err != nil {
 				c.logger.Errorf("control channel dialer: %v", err)
 				// The current endpoint did not answer — move to the next one so a
@@ -146,7 +148,7 @@ func (c *WsMuxTransport) poolMaintainer() {
 		dial:       c.tunnelDialer,
 		spawn:      c.state.Go,
 		pending:    &c.dialingConnections,
-		maxSize:    muxPoolLimit(c.config.ConnPoolSize),
+		maxSize:    c.poolLimit(),
 		sessions:   &c.sessions,
 	}.maintain()
 }
@@ -160,7 +162,7 @@ func (c *WsMuxTransport) control() controlLoop {
 }
 
 func (c *WsMuxTransport) tunnelDialer() {
-	ready, ok := c.beginPoolDial(muxPoolLimit(c.config.ConnPoolSize))
+	ready, ok := c.beginPoolDial(c.poolLimit())
 	if !ok {
 		return
 	}
@@ -173,7 +175,7 @@ func (c *WsMuxTransport) tunnelDialer() {
 	// spreads its connections over every configured endpoint, so one
 	// congested route only slows its own share of the traffic.
 	mux := network.WSMuxOptions{Version: c.config.MuxVersion, PoolSize: c.config.ConnPoolSize}
-	tunnelWSConn, err := network.WebSocketDialer(c.state.Ctx(), c.config.Outbound, c.config.Endpoints.Next(), c.config.EdgeIP, "/tunnel", c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay, c.config.Token, c.config.Mode, c.config.SimpleAuth, 3, 2*1024*1024, 2*1024*1024, c.config.MSS, &mux)
+	tunnelWSConn, err := network.WebSocketDialer(c.state.Ctx(), c.config.Outbound, c.config.Endpoints.Next(), c.config.EdgeIP, "/tunnel", c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay, c.config.Token, c.config.Mode, c.config.SimpleAuth, 3, 2*1024*1024, 2*1024*1024, c.config.MSS, c.config.WSS, &mux)
 	if err != nil {
 		c.logger.Errorf("tunnel server dialer: %v", err)
 
@@ -197,7 +199,7 @@ func (c *WsMuxTransport) handleSession(tunnelConn *websocket.Conn, mux network.W
 	// SMUX server
 	cfg := *c.smuxConfig
 	cfg.Version = mux.NegotiatedVersion
-	session, err := smux.Server(tunnelConn.NetConn(), &cfg)
+	session, err := smux.Server(network.WSMuxStream(tunnelConn), &cfg)
 	if err != nil {
 		c.logger.Errorf("failed to create mux session: %v", err)
 		return
@@ -218,4 +220,14 @@ func (c *WsMuxTransport) backend() backendOpts {
 		mss:         0,
 		sniffer:     c.config.Sniffer,
 	}
+}
+
+// An explicit operational ceiling is independent of lazy receive windows:
+// limiting all peers by window capacity would strand large numbers of idle
+// users even when CPU and resident memory remain available.
+func (c *WsMuxTransport) poolLimit() int {
+	if c.config.MaxSessions > 0 {
+		return max(c.config.ConnPoolSize, c.config.MaxSessions)
+	}
+	return muxPoolLimit(c.config.ConnPoolSize)
 }

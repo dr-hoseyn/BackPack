@@ -2,11 +2,11 @@ package network
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
-	"math/rand"
 	"net"
 	"net/http"
-	"strconv"
 	"sync"
 	"time"
 
@@ -15,16 +15,16 @@ import (
 	utls "github.com/refraction-networking/utls"
 )
 
-func WebSocketDialer(ctx context.Context, out *Outbound, addr string, edgeIP string, path string, timeout time.Duration, keepalive time.Duration, nodelay bool, token string, mode config.TransportType, simpleAuth bool, retry int, SO_RCVBUF int, SO_SNDBUF int, mss int, mux ...*WSMuxOptions) (*websocket.Conn, error) {
+func WebSocketDialer(ctx context.Context, out *Outbound, addr string, edgeIP string, path string, timeout time.Duration, keepalive time.Duration, nodelay bool, token string, mode config.TransportType, simpleAuth bool, retry int, SO_RCVBUF int, SO_SNDBUF int, mss int, options ...WSDialOption) (*websocket.Conn, error) {
 	var tunnelWSConn *websocket.Conn
 	var err error
 
-	retries := retry           // Number of retries
+	retries := max(retry, 1)   // Always make at least one attempt
 	backoff := 1 * time.Second // Initial backoff duration
 
 	for i := 0; i < retries; i++ {
 		// Attempt to dial the WebSocket
-		tunnelWSConn, err = attemptDialWebSocket(ctx, out, addr, edgeIP, path, timeout, keepalive, nodelay, token, mode, simpleAuth, SO_RCVBUF, SO_SNDBUF, mss, mux...)
+		tunnelWSConn, err = attemptDialWebSocket(ctx, out, addr, edgeIP, path, timeout, keepalive, nodelay, token, mode, simpleAuth, SO_RCVBUF, SO_SNDBUF, mss, options...)
 		if err == nil {
 			// If successful, return the connection
 			if ctx.Err() != nil {
@@ -53,7 +53,7 @@ func WebSocketDialer(ctx context.Context, out *Outbound, addr string, edgeIP str
 	return nil, err
 }
 
-func attemptDialWebSocket(ctx context.Context, out *Outbound, addr string, edgeIP string, path string, timeout time.Duration, keepalive time.Duration, nodelay bool, token string, mode config.TransportType, simpleAuth bool, SO_RCVBUF int, SO_SNDBUF int, mss int, mux ...*WSMuxOptions) (result *websocket.Conn, resultErr error) {
+func attemptDialWebSocket(ctx context.Context, out *Outbound, addr string, edgeIP string, path string, timeout time.Duration, keepalive time.Duration, nodelay bool, token string, mode config.TransportType, simpleAuth bool, SO_RCVBUF int, SO_SNDBUF int, mss int, options ...WSDialOption) (result *websocket.Conn, resultErr error) {
 	// Socket setup, both possible TLS handshakes and HTTP Upgrade share one
 	// budget. gorilla applies a deadline to Upgrade I/O but does not interrupt
 	// that I/O when a context without a deadline is cancelled.
@@ -104,61 +104,23 @@ func attemptDialWebSocket(ctx context.Context, out *Outbound, addr string, edgeI
 			result = nil
 		}
 	}()
-	// Generate a random X-user-id
-	randomUserID := rand.Int31() // Generate a random int64 number
-
-	// List of 30 diverse User-Agent strings from various browsers and platforms
-	userAgents := []string{
-		// Chrome
-		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36",
-		"Mozilla/5.0 (Macintosh; Intel Mac OS X 11_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36",
-		"Mozilla/5.0 (Linux; Android 12; Pixel 5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Mobile Safari/537.36",
-		"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36",
-		"Mozilla/5.0 (Linux; Android 9; SM-G960F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.5359.128 Mobile Safari/537.36",
-		// Firefox
-		"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:114.0) Gecko/20100101 Firefox/114.0",
-		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:102.0) Gecko/20100101 Firefox/102.0",
-		"Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:115.0) Gecko/20100101 Firefox/115.0",
-		"Mozilla/5.0 (Linux; Android 10; Pixel 4 XL) Gecko/20100101 Firefox/96.0",
-		"Mozilla/5.0 (iPhone; CPU iPhone OS 14_6 like Mac OS X) Gecko/20100101 Firefox/90.0",
-		// Safari
-		"Mozilla/5.0 (Macintosh; Intel Mac OS X 11_4_1) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Safari/605.1.15",
-		"Mozilla/5.0 (iPhone; CPU iPhone OS 15_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.1 Mobile/15E148 Safari/604.1",
-		"Mozilla/5.0 (iPad; CPU OS 14_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1",
-		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.1.2 Safari/605.1.15",
-		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-		// Edge
-		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36 Edg/91.0.864.64",
-		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/95.0.4638.69 Safari/537.36 Edg/95.0.1020.40",
-		"Mozilla/5.0 (Linux; Android 11; SM-G998U) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.210 Mobile Safari/537.36 EdgA/46.3.4.5155",
-		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36 Edg/111.0.1661.44",
-		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36 Edg/115.0.1901.183",
-		// Opera
-		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Safari/537.36 OPR/97.0.4719.63",
-		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36 OPR/98.0.4759.15",
-		"Mozilla/5.0 (Linux; Android 10; SM-N975F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Mobile Safari/537.36 OPR/65.2.3381.61420",
-		"Mozilla/5.0 (Linux; Android 11; SM-G998U) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.5735.196 Mobile Safari/537.36 OPR/71.2.3767.68577",
-		"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36 OPR/99.0.4759.21",
-		// Older Browsers
-		"Mozilla/4.0 (compatible; MSIE 9.0; Windows NT 6.1; Trident/5.0)",
-		"Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.1; SV1)",
-		"Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.82 Safari/537.36",
-		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.88 Safari/537.36",
+	// Keep HTTP identity consistent with the pinned uTLS Chrome 133 preset.
+	// Random UA families and custom user-id headers do not emulate a browser.
+	var suffix [12]byte
+	if _, err := rand.Read(suffix[:]); err != nil {
+		return nil, err
 	}
-
-	// Pick a random User-Agent
-	randomUserAgent := userAgents[rand.Intn(len(userAgents))]
-
-	// Setup headers with X-user-id and a browser User-Agent. The Authorization
-	// header is added per mode below: over plain ws it carries the token; over
-	// wss it carries a proof bound to the TLS session, so the token itself is
-	// never sent where something terminating the TLS could read it.
 	headers := http.Header{}
-	headers.Add("X-User-Id", fmt.Sprintf("%d", randomUserID))
-	headers.Add("User-Agent", randomUserAgent)
+	headers.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36")
+	settings := wsDialSettings{tls: &WSSClientOptions{}}
+	for _, option := range options {
+		if option != nil {
+			option.applyWS(&settings)
+		}
+	}
 	var muxOptions *WSMuxOptions
-	if (mode == config.WSMUX || mode == config.WSSMUX) && path != "/channel" && len(mux) > 0 {
-		muxOptions = mux[0]
+	if (mode == config.WSMUX || mode == config.WSSMUX) && path != "/channel" {
+		muxOptions = settings.mux
 		if muxOptions != nil {
 			muxOptions.offer(headers)
 		}
@@ -188,7 +150,7 @@ func attemptDialWebSocket(ctx context.Context, out *Outbound, addr string, edgeI
 
 	// path generation
 	if path != "/channel" {
-		path = fmt.Sprintf("%s/%s", path, strconv.Itoa(int(randomUserID)))
+		path = path + "/" + hex.EncodeToString(suffix[:])
 	}
 
 	switch mode {
@@ -199,7 +161,7 @@ func attemptDialWebSocket(ctx context.Context, out *Outbound, addr string, edgeI
 		headers.Set("Authorization", fmt.Sprintf("Bearer %v", token))
 
 		dialer = websocket.Dialer{
-			EnableCompression: true,
+			EnableCompression: false,
 			// The relay hands the websocket up to 64 KiB at a time; gorilla's
 			// default 4 KiB buffers sent each of those as sixteen writes. See
 			// the server transport's wsWriteBufferSize.
@@ -224,6 +186,22 @@ func attemptDialWebSocket(ctx context.Context, out *Outbound, addr string, edgeI
 		// The SNI names the real server even when the TCP connection goes to a
 		// CDN edge, and it is what the browser fingerprint would carry.
 		sni := sniFromAddr(addr)
+		if settings.tls.ServerName != "" {
+			sni = settings.tls.ServerName
+			_, port, err := net.SplitHostPort(addr)
+			if err != nil {
+				return nil, err
+			}
+			headers.Set("Host", net.JoinHostPort(sni, port))
+		}
+		verify := simpleAuth || settings.tls.AllowLegacyServer || settings.tls.CAFile != ""
+		if verify && sni == "" {
+			sni, _, _ = net.SplitHostPort(addr)
+		}
+		roots, err := settings.tls.rootCAs()
+		if err != nil {
+			return nil, err
+		}
 
 		// The TLS handshake is done up front, before the websocket upgrade, so
 		// its keying material can be bound into the credential. gorilla is then
@@ -235,32 +213,28 @@ func attemptDialWebSocket(ctx context.Context, out *Outbound, addr string, edgeI
 				return nil, err
 			}
 			own(rawConn)
-			return uTLSClientConn(ctx, rawConn, sni, timeout, http11Only)
+			return uTLSClientConn(ctx, rawConn, sni, timeout, http11Only, &utls.Config{ServerName: sni, RootCAs: roots, InsecureSkipVerify: !verify})
 		}
 
-		// Offer exactly what Chrome offers, and only give that up if the peer
-		// takes the offer we cannot honour.
-		//
-		// Narrowing the ALPN up front fixes CDNs and breaks the disguise for
-		// everyone else: a hello that is Chrome in every field but announces
-		// only http/1.1 is a combination no browser produces, and it is the
-		// same combination on every tunnel that sends it. Our own server pins
-		// http/1.1 on its side, so a direct connection never selects h2 and
-		// never needs the narrowing — which is most connections. A CDN in front
-		// does select it, and pays for the fix with one extra dial, once, at
-		// startup. See pinClientALPNToHTTP11.
-		uconn, err := tlsAttempt(false)
+		// Cache only ALPN capability, never credentials or trust. An endpoint
+		// change/failure expires the decision; direct peers retain the full offer.
+		cacheKey := addr + "\x00" + edgeIP + "\x00" + sni
+		http11 := wssALPN.http11(cacheKey, time.Now())
+		uconn, err := tlsAttempt(http11)
 		if err != nil {
+			wssALPN.forget(cacheKey)
 			return nil, err
 		}
 		if uconn.ConnectionState().NegotiatedProtocol == "h2" {
-			// gorilla speaks RFC 6455 over HTTP/1.1 and nothing else, so this
-			// session is unusable whatever we do with it.
 			uconn.Close()
-			if uconn, err = tlsAttempt(true); err != nil {
+			uconn, err = tlsAttempt(true)
+			if err != nil {
+				wssALPN.forget(cacheKey)
 				return nil, err
 			}
+			wssALPN.remember(cacheKey, time.Now())
 		}
+
 		// With a trusted TLS-terminating proxy in front of the server (NGINX,
 		// typically), the proxy's TLS session is not the client's, so a bound
 		// proof can never match what the server computes. simpleAuth sends the
@@ -284,7 +258,7 @@ func attemptDialWebSocket(ctx context.Context, out *Outbound, addr string, edgeI
 		}
 
 		dialer = websocket.Dialer{
-			EnableCompression: true,
+			EnableCompression: false,
 			// The relay hands the websocket up to 64 KiB at a time; gorilla's
 			// default 4 KiB buffers sent each of those as sixteen writes. See
 			// the server transport's wsWriteBufferSize.
@@ -300,13 +274,16 @@ func attemptDialWebSocket(ctx context.Context, out *Outbound, addr string, edgeI
 		}
 	}
 
+	if rawMux {
+		dialer.Subprotocols = []string{WSMuxBinaryProtocol}
+	}
 	// Dial to the WebSocket server
 	tunnelWSConn, resp, err := dialer.DialContext(ctx, wsURL, headers)
 	if err != nil {
 		return nil, err
 	}
 	if ekm != nil {
-		if err := checkWSSServer(ekm, token, addr, resp.Header.Get(WSSServerProofHeader)); err != nil {
+		if err := checkWSSServer(ekm, token, addr, resp.Header.Get(WSSServerProofHeader), settings.tls.AllowLegacyServer); err != nil {
 			tunnelWSConn.Close()
 			return nil, err
 		}

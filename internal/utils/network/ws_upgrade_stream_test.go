@@ -46,7 +46,7 @@ func TestMuxUpgradePreservesDataCoalescedWithTheHTTPResponse(t *testing.T) {
 			defer srv.Close()
 			addr := strings.TrimPrefix(strings.TrimPrefix(srv.URL, "https://"), "http://")
 			conn, err := attemptDialWebSocket(context.Background(), nil, addr, "", "/tunnel", 2*time.Second,
-				time.Second, true, "upgrade-regression-token", mode, true, 0, 0, 0)
+				time.Second, true, "upgrade-regression-token", mode, true, 0, 0, 0, trustTestWSS(t, srv))
 			if err != nil {
 				t.Fatal(err)
 			}

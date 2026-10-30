@@ -54,8 +54,6 @@ func TestAWSSClientRefusesAServerThatCannotProveItself(t *testing.T) {
 	// A recycled ephemeral port is a new fixture, not a previously proven
 	// endpoint in this test's client process. Keep anti-downgrade history
 	// isolated while preserving it across all dials within this test.
-	wssAnswered.Delete(addr)
-	defer wssAnswered.Delete(addr)
 
 	dial := func() error {
 		c, err := WebSocketDialer(context.Background(), nil, addr, "", "/channel", 3*time.Second, 10*time.Second,
@@ -82,7 +80,7 @@ func TestAWSSClientRefusesAServerThatCannotProveItself(t *testing.T) {
 
 // An older server sends no answer at all; until it has been seen to answer, a
 // new client still connects to it, so the server can be upgraded first or last.
-func TestAWSSClientStillReachesAnOlderServer(t *testing.T) {
+func TestAWSSClientRejectsAnUnprovenFirstConnection(t *testing.T) {
 	up := websocket.Upgrader{}
 	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		c, err := up.Upgrade(w, r, nil)
@@ -96,14 +94,14 @@ func TestAWSSClientStillReachesAnOlderServer(t *testing.T) {
 	addr := strings.TrimPrefix(srv.URL, "https://")
 	// This scenario models a fresh client reaching a legacy endpoint. Other
 	// fixtures may previously have owned the same recycled ephemeral port.
-	wssAnswered.Delete(addr)
-	defer wssAnswered.Delete(addr)
 	c, err := WebSocketDialer(context.Background(), nil, addr, "", "/channel", 3*time.Second, 10*time.Second,
 		true, "some-token-0123456789abcdef", config.WSS, false, 1, 0, 0, 0)
-	if err != nil {
-		t.Fatalf("an older server was refused: %v", err)
+	if c != nil {
+		c.Close()
 	}
-	c.Close()
+	if !errors.Is(err, errWSSServerUnproven) {
+		t.Fatalf("unproven first connection: %v", err)
+	}
 }
 
 func TestWebSocketUpgradeStopsWithItsAttempt(t *testing.T) {
@@ -135,7 +133,7 @@ func TestWebSocketUpgradeStopsWithItsAttempt(t *testing.T) {
 				done := make(chan error, 1)
 				go func() {
 					conn, err := WebSocketDialer(ctx, nil, srv.Listener.Addr().String(), "", "/channel", timeout,
-						time.Second, true, "upgrade-cancellation", mode, true, 1, 0, 0, 0)
+						time.Second, true, "upgrade-cancellation", mode, true, 1, 0, 0, 0, trustTestWSS(t, srv))
 					if conn != nil {
 						conn.Close()
 					}
@@ -196,7 +194,7 @@ func TestSuccessfulWebSocketOutlivesItsSetupContext(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			conn, err := WebSocketDialer(ctx, nil, srv.Listener.Addr().String(), "", "/channel", 150*time.Millisecond,
-				time.Second, true, "setup-deadline-cleared", mode, true, 1, 0, 0, 0)
+				time.Second, true, "setup-deadline-cleared", mode, true, 1, 0, 0, 0, trustTestWSS(t, srv))
 			if err != nil {
 				t.Fatal(err)
 			}

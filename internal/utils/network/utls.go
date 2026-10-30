@@ -9,46 +9,17 @@ import (
 	utls "github.com/refraction-networking/utls"
 )
 
-// Wearing a browser's TLS fingerprint.
-//
-// A WSS tunnel is meant to be invisible inside ordinary HTTPS, and at the HTTP
-// layer it is — it carries a real User-Agent and a plausible path. But the TLS
-// ClientHello underneath it is Go's, and Go's ClientHello has a fingerprint all
-// its own: the exact cipher list, the curves, the order of the extensions.
-// On a filtered route that is enough to tell "a Go program dialling out" from "a
-// browser loading a page", and to block the former while leaving the latter
-// alone — regardless of how convincing the layers above look.
-//
-// So the handshake is sent with the fingerprint of a current Chrome instead.
-// Chrome's is the most common ClientHello on the wire, so wearing it is how the
-// tunnel joins the crowd rather than standing out. Nothing above TLS changes,
-// and nothing about trust changes: the certificate is still not verified (the
-// tunnel authenticates with its token, exactly as the plain WSS path did), so
-// this only alters how the handshake looks, not what it relies on.
-
-// uTLSClientConn completes a TLS handshake over raw whose ClientHello mimics a
-// current Chrome build, and returns the encrypted connection.
-//
-// It returns the concrete *utls.UConn (which is a net.Conn) rather than the
-// interface, so the caller can also export keying material from the finished
-// session to bind the tunnel credential to it — see wssbind.go.
-// http11Only narrows the ALPN offer to what a websocket can actually use. It
-// is for the second attempt against a peer that answered the first one with h2
-// — see the WSS case in ws_dialer.go — and costs a fingerprint deviation, so it
-// is never the first thing tried.
-func uTLSClientConn(ctx context.Context, raw net.Conn, serverName string, timeout time.Duration, http11Only bool) (*utls.UConn, error) {
-	// Held by reference: uTLS does not copy the config, so it can be adjusted
-	// after the handshake to re-enable the session exporter (see below).
-	cfg := &utls.Config{
-		ServerName: serverName,
-		// The tunnel trusts its token, not the certificate — matching the plain
-		// WSS path, which skipped verification too. Verifying here would also
-		// defeat the point when the server presents a self-signed certificate.
-		// The credential is instead bound to the session (wssbind.go), which is
-		// what actually keeps an impostor that terminates the TLS out.
-		InsecureSkipVerify: true,
+// The pinned Chrome ClientHello reduces a Go-specific handshake signature;
+// it does not emulate a complete browser or make traffic unidentifiable.
+// Authenticated direct connections verify the session-bound server proof;
+// bearer-token/legacy connections must verify the certificate before HTTP.
+func uTLSClientConn(ctx context.Context, raw net.Conn, serverName string, timeout time.Duration, http11Only bool, verified ...*utls.Config) (*utls.UConn, error) {
+	cfg := &utls.Config{ServerName: serverName, InsecureSkipVerify: true}
+	if len(verified) > 0 && verified[0] != nil {
+		cfg = verified[0].Clone()
 	}
-	uconn := utls.UClient(raw, cfg, utls.HelloChrome_Auto)
+
+	uconn := utls.UClient(raw, cfg, utls.HelloChrome_133)
 
 	if http11Only {
 		if err := pinClientALPNToHTTP11(uconn); err != nil {

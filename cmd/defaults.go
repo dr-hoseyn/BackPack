@@ -219,6 +219,13 @@ func warnIgnoredProxyProtocol(cfg *config.Config) {
 // exited again. The first load still treats an error as fatal; a reload logs
 // it and keeps what is running. See reload.go.
 func validateConfig(cfg *config.Config) error {
+	if cfg.Client.WSMuxMaxSessions < 0 || cfg.Client.WSMuxMaxSessions > 65536 {
+		return fmt.Errorf("wsmux_max_sessions must be between 0 and 65536")
+	}
+	if cfg.Client.WSMuxMaxSessions > 0 && cfg.Client.WSMuxMaxSessions < cfg.Client.ConnectionPool {
+		return fmt.Errorf("wsmux_max_sessions must be at least connection_pool")
+	}
+
 	for _, check := range []func(*config.Config) error{
 		checkMPTCP,
 		checkManagedPaths,

@@ -3,6 +3,7 @@ package network
 import (
 	"bufio"
 	"net"
+	"time"
 )
 
 // Mux transports use HTTP Upgrade followed by the existing raw smux wire
@@ -19,7 +20,11 @@ type muxUpgradeConn struct {
 }
 
 func muxUpgradeStream(conn net.Conn) net.Conn {
-	return &muxUpgradeConn{Conn: conn, reader: bufio.NewReader(conn)}
+	return &muxUpgradeConn{Conn: &streamDeadlineConn{Conn: conn}, reader: bufio.NewReader(conn)}
+}
+
+func (c *muxUpgradeConn) setStreamWriteDeadline(t time.Time) error {
+	return c.Conn.(*streamDeadlineConn).setStreamWriteDeadline(t)
 }
 
 func (c *muxUpgradeConn) Read(p []byte) (int, error) {
@@ -44,3 +49,6 @@ func (c *muxUpgradeConn) Read(p []byte) (int, error) {
 	}
 	return len(p), nil
 }
+
+// WSMuxUpgradeStream bounds the HTTP reader and preserves stream deadlines.
+func WSMuxUpgradeStream(conn net.Conn) net.Conn { return muxUpgradeStream(conn) }

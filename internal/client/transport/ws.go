@@ -40,6 +40,7 @@ type WsConfig struct {
 	ConnPoolSize   int
 	Mode           config.TransportType
 	SimpleAuth     bool
+	WSS            *network.WSSClientOptions
 	AggressivePool bool
 	EdgeIP         string
 	// MSS caps the largest TCP segment these connections send. Zero leaves it
@@ -91,7 +92,7 @@ func (c *WsTransport) channelDialer() {
 		case <-c.state.Ctx().Done():
 			return
 		default:
-			tunnelWSConn, err := network.WebSocketDialer(c.state.Ctx(), c.config.Outbound, c.config.Endpoints.Current(), c.config.EdgeIP, "/channel", c.config.DialTimeOut, c.config.KeepAlive, true, c.config.Token, c.config.Mode, c.config.SimpleAuth, 3, 0, 0, c.config.MSS)
+			tunnelWSConn, err := network.WebSocketDialer(c.state.Ctx(), c.config.Outbound, c.config.Endpoints.Current(), c.config.EdgeIP, "/channel", c.config.DialTimeOut, c.config.KeepAlive, true, c.config.Token, c.config.Mode, c.config.SimpleAuth, 3, 0, 0, c.config.MSS, c.config.WSS)
 			if err != nil {
 				c.logger.Errorf("control channel dialer: %v", err)
 				// The current endpoint did not answer — move to the next one so a
@@ -159,7 +160,7 @@ func (c *WsTransport) tunnelDialer() {
 	// Next() rather than Current(): with load balancing enabled the pool
 	// spreads its connections over every configured endpoint, so one
 	// congested route only slows its own share of the traffic.
-	tunnelConn, err := network.WebSocketDialer(c.state.Ctx(), c.config.Outbound, c.config.Endpoints.Next(), c.config.EdgeIP, "/tunnel", c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay, c.config.Token, c.config.Mode, c.config.SimpleAuth, 3, 1024*1024, 1024*1024, c.config.MSS)
+	tunnelConn, err := network.WebSocketDialer(c.state.Ctx(), c.config.Outbound, c.config.Endpoints.Next(), c.config.EdgeIP, "/tunnel", c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay, c.config.Token, c.config.Mode, c.config.SimpleAuth, 3, 1024*1024, 1024*1024, c.config.MSS, c.config.WSS)
 	if err != nil {
 		c.logger.Errorf("tunnel server dialer: %v", err)
 

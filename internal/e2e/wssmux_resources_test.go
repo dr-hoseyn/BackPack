@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/shirou/gopsutil/v4/process"
+	"sync/atomic"
 )
 
 // This fixture intentionally uses only public engine configuration so exactly
@@ -39,6 +40,9 @@ func resourceTunnel(t *testing.T) (*tunnel, int) {
 	srv.MaxReceiveBuffer, cli.MaxReceiveBuffer = 16<<20, 16<<20
 	srv.MaxStreamBuffer, cli.MaxStreamBuffer = 8<<20, 8<<20
 	srv.Nodelay, cli.Nodelay = true, true
+	if os.Getenv("BP_WSSMUX_BOUNDED") != "" {
+		configureBoundedWSMux(srv, cli)
+	}
 	if os.Getenv("BP_RESOURCE_NETEM") != "" {
 		// Use receiver ingress, as tc-netem requires for realistic TCP/TSQ
 		// results. MTU and offload settings make loss apply to wire-sized
@@ -166,6 +170,30 @@ func TestWSMuxResourceProfile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	var peakRSS atomic.Uint64
+	peakRSS.Store(mem.RSS)
+	stopSample, sampleDone := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(sampleDone)
+		tick := time.NewTicker(50 * time.Millisecond)
+		defer tick.Stop()
+		for {
+			select {
+			case <-stopSample:
+				return
+			case <-tick.C:
+				if m, e := self.MemoryInfo(); e == nil {
+					for old := peakRSS.Load(); m.RSS > old; old = peakRSS.Load() {
+						if peakRSS.CompareAndSwap(old, m.RSS) {
+							break
+						}
+					}
+				}
+			}
+		}
+	}()
+	stopSampling := sync.OnceFunc(func() { close(stopSample); <-sampleDone })
+	defer stopSampling()
 	started := time.Now()
 	const workers = 8
 	rounds := 16
@@ -212,6 +240,8 @@ func TestWSMuxResourceProfile(t *testing.T) {
 		t.Fatal(err)
 	}
 	stopCPU()
+	stopSampling()
+	t.Logf("RESOURCE_PEAK sampled_peak_rss_bytes=%d", peakRSS.Load())
 	probes.Wait()
 	if probeErr != nil {
 		t.Fatal(probeErr)
@@ -240,7 +270,11 @@ func TestWSMuxPoolRetiresAfterLoadWithoutDisconnectingQuietUser(t *testing.T) {
 		t.Fatal(err)
 	}
 	tun, port := resourceTunnel(t)
-	connections := resourceIdleConnections(t, tun, 256)
+	floor, idleCount := 4, 256
+	if os.Getenv("BP_WSSMUX_BOUNDED") != "" {
+		floor, idleCount = 8, 1152
+	}
+	connections := resourceIdleConnections(t, tun, idleCount)
 	for _, c := range connections[1:] {
 		c.Close()
 	}
@@ -258,15 +292,15 @@ func TestWSMuxPoolRetiresAfterLoadWithoutDisconnectingQuietUser(t *testing.T) {
 		return n - 1 // exclude the control channel
 	}
 	peak := sessions()
-	if peak <= 4 {
+	if peak <= floor {
 		t.Fatalf("fixture did not grow the pool: %d", peak)
 	}
 	deadline := time.Now().Add(120 * time.Second)
-	for sessions() > 4 && time.Now().Before(deadline) {
+	for sessions() > floor && time.Now().Before(deadline) {
 		time.Sleep(time.Second)
 	}
-	if got := sessions(); got != 4 {
-		t.Fatalf("pool retained %d sessions, want configured floor 4 (peak %d)", got, peak)
+	if got := sessions(); got != floor {
+		t.Fatalf("pool retained %d sessions, want configured floor %d (peak %d)", got, floor, peak)
 	}
 	// The remaining stream has been silent longer than the retirement period.
 	c := connections[0]
@@ -279,5 +313,5 @@ func TestWSMuxPoolRetiresAfterLoadWithoutDisconnectingQuietUser(t *testing.T) {
 	if _, err := io.ReadFull(c, got); err != nil || !bytes.Equal(got, want) {
 		t.Fatalf("quiet user: %q, %v", got, err)
 	}
-	t.Logf("RESOURCE_RETIREMENT peak_sessions=%d final_sessions=4 quiet_user=ok", peak)
+	t.Logf("RESOURCE_RETIREMENT peak_sessions=%d final_sessions=%d quiet_user=ok", peak, floor)
 }
