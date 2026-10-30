@@ -230,8 +230,10 @@ func (s *WsMuxTransport) tunnelListener(g *wsMuxGen) {
 
 	// Create an HTTP server
 	server := &http.Server{
-		Addr:              addr,
-		IdleTimeout:       -1,
+		Addr: addr,
+		// Bound idle public HTTP keepalives. Hijacked WebSocket tunnels are
+		// no longer managed by http.Server, so their lifetime is unchanged.
+		IdleTimeout:       75 * time.Second,
 		ReadHeaderTimeout: tunnelHeaderTimeout,
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			s.logger.Tracef("received http request from %s", r.RemoteAddr)

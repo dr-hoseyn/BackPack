@@ -51,6 +51,8 @@ on both sides of a trusted terminating proxy and verify its public certificate;
 do not try to repair exporter binding by suppressing an authentication failure.
 Use an actual web server/site when web responses are required; the built-in
 decoy's nginx header does not emulate nginx's entire TLS/HTTP implementation.
+Idle public HTTP keepalives are bounded at 75 seconds; upgraded WebSocket
+connections are hijacked and are not expired by this HTTP timeout.
 Static GET/HEAD, POST-to-missing and unsupported-method responses are checked
 against nginx's static-handler behavior, including consistent 405 error pages.
 
