@@ -2,6 +2,47 @@
 
 ## Unreleased
 
+## v1.18.1 — 2026-10-30
+
+- Carry WS/WSS mux and direct WebSocket traffic in authenticated, negotiated
+  RFC 6455 binary messages with client masking and control-frame handling.
+  Preserve legacy peer compatibility during rolling upgrades. Use synchronous
+  scatter/gather writes and pooled buffers without adding a batching timer.
+- Require reverse WSS/WSS mux server proof on the first connection and reject
+  public/default tokens for WSS. Verify TLS certificates and hostnames before
+  sending bearer credentials in `simple_auth` or explicit legacy-server mode.
+  Add private trust and TLS-name settings; preserve them when editing tunnels.
+- Keep the Chrome 133 ClientHello and HTTP user agent consistent. Cache only
+  authenticated HTTP/1.1 fallback decisions; offer optional HTTP/1.1-only ALPN
+  with matching ALPS settings. These changes do not guarantee undetectability.
+- Add an optional WS mux session ceiling and document a bounded 600 Mbit/s
+  starting profile, with verified payload, CPU, memory, new-user latency and
+  quiet-user retirement checks. Capacity depends on the actual host and path.
+- Retain UDP ingress identity until Noise authentication, direct handshake
+  replies through the ingress path, validate cached init announcements and
+  reject malformed FEC lengths before changing group state. Wake multipath
+  reads on deadline changes and try remaining TCP control endpoints after
+  handshake failure. Start no new generations or host tuning after cancellation.
+- Pin `klauspost/compress` to 1.18.7, which includes GHSA-259r-337f-4rfw's fix.
+  No exploitable S2 dictionary-encoding path through this tunnel is claimed.
+
+**Upgrade notes:** upgrade the server before the client. Keep the same strong
+private token on both roles. For `simple_auth` with a private/self-signed TLS
+origin, provision `wss_ca_file` on the client and use the correct TLS hostname
+(`wss_server_name` when needed). An old server without exporter proofs requires
+explicit `wss_allow_legacy_server` plus verified TLS. Upgrade both peers before
+using a WebSocket-message-aware proxy. Existing mux limits remain unchanged
+unless the new optional settings are configured.
+
+<div dir="rtl">
+
+**خلاصهٔ فارسی:** فریم‌بندی و احراز هویت WSS و چند ایراد UDP/FEC و فیل‌اوور TCP
+اصلاح شده‌اند. ابتدا سرور را ارتقا دهید و توکن خصوصی یکسان را نگه دارید. در
+`simple_auth` با گواهی خصوصی، فایل اعتماد گواهی را روی کلاینت تنظیم کنید. پروفایل
+۶۰۰ مگابیت اختیاری است؛ سرعت مسیر و شناسایی‌نشدن تضمین نمی‌شود.
+
+</div>
+
 ## v1.18.0 — 2026-10-27
 
 - Automatically enable persistent high-concurrency host tuning for the

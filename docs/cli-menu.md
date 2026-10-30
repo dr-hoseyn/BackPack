@@ -518,7 +518,7 @@ FEC؛ و zero-copy (فقط روی tcp ساده).
 
 ---
 
-*Last verified against Backpack v1.18.0*
+*Last verified against Backpack v1.18.1*
 
 
 Connection Test also provides [saved history and repeated-run comparison](connection-test-history.md)

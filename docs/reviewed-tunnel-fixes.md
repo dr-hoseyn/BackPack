@@ -37,4 +37,4 @@ Full CI separately checks compatibility, allocation budgets, throughput and TUN.
 
 </div>
 
-Last verified against Backpack v1.18.0 (2026-10-29).
+Last verified against Backpack v1.18.1 (2026-10-29).

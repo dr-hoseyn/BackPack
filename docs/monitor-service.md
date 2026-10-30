@@ -23,4 +23,4 @@ stopped and disabled before its unit is removed.
 
 </div>
 
-Last verified against Backpack v1.18.0 (2026-10-27).
+Last verified against Backpack v1.18.1 (2026-10-27).
