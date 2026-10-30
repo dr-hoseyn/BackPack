@@ -23,6 +23,11 @@ jobs:
           go test -race ./internal/utils/network ./internal/client/transport ./internal/e2e
           -run '^(TestWSS|TestWSMux|TestWebSocket|TestAWSS|TestMuxUpgrade|TestTLSTransports|TestMuxCapacityGrows)'
           -count=1 -timeout 4m
+      - name: Provision private trust in real setup-link bearer clients
+        run: >-
+          go test -race ./internal/manage
+          -run '^TestAKharejMadeFromTheSetupLinkCarriesTraffic/(wss|wssmux)/simple_auth/'
+          -count=1 -timeout 3m
       - name: Measure bounded-profile download capacity
         env:
           BP_CAPACITY_BENCHMARK: '1'

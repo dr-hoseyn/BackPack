@@ -178,6 +178,12 @@ func runLinkedPairVia(t *testing.T, bin, transport string, variant func(*TunnelS
 			t.Fatalf("the form from the link was refused: %v", err)
 		}
 	}
+	// A setup link cannot provision the far machine's trust store. These
+	// fixtures use a private certificate, so explicitly provision its trust
+	// just as an operator must before sending a bearer token over TLS.
+	if kharej.SimpleAuth && (transport == "wss" || transport == "wssmux") {
+		kharej.WSSCAFile = cert
+	}
 
 	srvFile, cliFile := filepath.Join(dir, "iran.toml"), filepath.Join(dir, "kharej.toml")
 	writeTestFile(t, srvFile, iran.Render())
