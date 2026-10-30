@@ -3,6 +3,7 @@ package e2e
 import (
 	"bytes"
 	"fmt"
+	"github.com/BurntSushi/toml"
 	"io"
 	"net"
 	"os"
@@ -41,7 +42,17 @@ func resourceTunnel(t *testing.T) (*tunnel, int) {
 	srv.MaxStreamBuffer, cli.MaxStreamBuffer = 8<<20, 8<<20
 	srv.Nodelay, cli.Nodelay = true, true
 	if os.Getenv("BP_WSSMUX_BOUNDED") != "" {
-		configureBoundedWSMux(srv, cli)
+		// This fixture is also copied verbatim to the baseline release.
+		// Decode the new optional cap rather than referring to its Go field.
+		srv.MuxVersion, cli.MuxVersion = 2, 2
+		srv.MuxCon, cli.ConnectionPool = 128, 8
+		srv.MaxFrameSize, cli.MaxFrameSize = 32768, 32768
+		srv.MaxReceiveBuffer, cli.MaxReceiveBuffer = 32<<20, 32<<20
+		srv.MaxStreamBuffer, cli.MaxStreamBuffer = 16<<20, 16<<20
+		cli.AggressivePool = false
+		if _, err := toml.Decode("wsmux_max_sessions = 16", cli); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if os.Getenv("BP_RESOURCE_NETEM") != "" {
 		// Use receiver ingress, as tc-netem requires for realistic TCP/TSQ
