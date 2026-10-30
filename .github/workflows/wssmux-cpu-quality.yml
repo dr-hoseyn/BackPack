@@ -1,0 +1,108 @@
+name: WSS Mux CPU quality experiment
+
+on:
+  pull_request:
+    paths:
+      - default.pgo
+      - '.github/workflows/wssmux-cpu-quality.yml'
+      - '.github/scripts/compare-wssmux-cpu-quality.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wssmux-cpu-quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GOMAXPROCS: '4'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Verify the quality gate rejects misleading wins
+        run: python3 .github/scripts/test_compare_wssmux_cpu_quality.py
+      - name: Build identical sources with PGO off and on
+        run: |
+          set -euo pipefail
+          go test -c -pgo=off -o "$RUNNER_TEMP/quality-baseline" ./internal/e2e
+          go test -c -pgo="$PWD/default.pgo" -o "$RUNNER_TEMP/quality-candidate" ./internal/e2e
+          go build -trimpath -o "$RUNNER_TEMP/backpack-pgo" .
+          go version -m "$RUNNER_TEMP/backpack-pgo" | tee "$RUNNER_TEMP/pgo-build.txt"
+      - name: Preserve authentication, framing, ownership and cancellation with PGO
+        run: >-
+          go test -race -pgo="$PWD/default.pgo" ./internal/utils/network ./internal/utils/handlers ./internal/client/transport ./internal/e2e
+          -run '^(TestWSS|TestWSMux|TestWebSocket|TestMuxUpgrade|TestTLSTransports|TestAdaptiveRelay|TestMuxCapacityGrows)'
+          -count=2 -timeout 5m
+      - name: Alternate six equal-load pairs at 600 Mbit with 1000 open users
+        env:
+          BP_RESOURCE_BENCHMARK: '1'
+          BP_WSSMUX_BOUNDED: '1'
+          BP_RESOURCE_IDLE_CONNECTIONS: '1000'
+          BP_RESOURCE_TARGET_MBPS: '600'
+        run: |
+          set -euo pipefail
+          ulimit -n 16384
+          for sample in 1 2 3 4 5 6; do
+            order="baseline candidate"
+            if [ $((sample % 2)) -eq 0 ]; then order="candidate baseline"; fi
+            for kind in $order; do
+              "$RUNNER_TEMP/quality-$kind" -test.run '^TestWSMuxResourceProfile$' -test.v -test.timeout 2m \
+                | tee "$RUNNER_TEMP/paced-$kind-$sample.txt"
+            done
+          done
+          python3 .github/scripts/compare-wssmux-cpu-quality.py "$RUNNER_TEMP" \
+            | tee "$RUNNER_TEMP/paced-quality.json"
+      - name: Verify download capacity without offered-load pacing
+        if: ${{ !cancelled() }}
+        env:
+          BP_CAPACITY_BENCHMARK: '1'
+          BP_WSSMUX_BOUNDED: '1'
+          BP_CAPACITY_MIN_MBPS: '600'
+        run: |
+          set -euo pipefail
+          for kind in baseline candidate; do
+            "$RUNNER_TEMP/quality-$kind" -test.run '^TestBulkProfileDownloadCapacity/wssmux$' \
+              -test.count 3 -test.v -test.timeout 2m | tee "$RUNNER_TEMP/download-$kind.txt"
+          done
+      - name: Preserve quality with delay and packet loss
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq iproute2 ethtool
+          sudo modprobe ifb
+          for mode in auto1 pinned2; do
+            auto=""
+            if [ "$mode" = auto1 ]; then auto=1; fi
+            for sample in 1 2 3; do
+              order="baseline candidate"
+              if [ $((sample % 2)) -eq 0 ]; then order="candidate baseline"; fi
+              for kind in $order; do
+                sudo env GOMAXPROCS=4 BP_RESOURCE_BENCHMARK=1 BP_RESOURCE_IDLE_CONNECTIONS=16 \
+                  BP_RESOURCE_ROUNDS=2 BP_RESOURCE_NETEM=1 BP_RESOURCE_MUX_AUTO="$auto" \
+                  BIN="$RUNNER_TEMP/quality-$kind" unshare --net -- bash -eu -c \
+                  'ip link set lo up; exec "$BIN" -test.run "^TestWSMuxResourceProfile$" -test.v -test.timeout 2m' \
+                  | tee "$RUNNER_TEMP/delayed-$mode-$kind-$sample.txt"
+              done
+            done
+            python3 .github/scripts/compare-wssmux-cpu-quality.py "$RUNNER_TEMP" "delayed-$mode" 3 \
+              | tee "$RUNNER_TEMP/delayed-$mode-quality.json"
+          done
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: wssmux-cpu-quality
+          path: |
+            ${{ runner.temp }}/paced-*.txt
+            ${{ runner.temp }}/delayed-*.txt
+            ${{ runner.temp }}/download-*.txt
+            ${{ runner.temp }}/*quality.json
+            ${{ runner.temp }}/pgo-build.txt
