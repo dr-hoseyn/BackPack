@@ -34,7 +34,7 @@ func command(ctx context.Context, name string, args []string, input io.Reader) (
 		return nil, fmt.Errorf("kernel: wg configuration failed: %w", err)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("kernel: %s failed: %w (%s)", name, err, strings.TrimSpace(string(out)))
+		return nil, fmt.Errorf("kernel: %s %s failed: %w (%s)", name, strings.Join(args, " "), err, strings.TrimSpace(string(out)))
 	}
 	return out, nil
 }
@@ -119,6 +119,13 @@ func RunManaged(ctx context.Context, input config.KernelConfig, ready func(bool)
 		return err
 	}
 	defer release()
+	// Generic-netlink families (FOU/L2TP) are not reliably autoloaded by ip.
+	// A built-in module needs no modprobe, so the actual creation command remains
+	// authoritative when modprobe is unavailable or the module is built in.
+	modules := map[string][]string{"fou-gre": {"fou"}, "gue-ipip": {"fou"}, "l2tpv3": {"l2tp_netlink", "l2tp_eth"}}
+	for _, module := range modules[c.Method] {
+		_, _ = command(ctx, "modprobe", []string{module}, nil)
+	}
 	clean, err := execute(ctx, p, command)
 	if err != nil {
 		return err
