@@ -30,6 +30,8 @@ import (
 
 // ConnTestBest is the recommendation table's content.
 type ConnTestBest struct {
+	KernelMTU       int                      `json:"kernel_mtu,omitempty"`
+	KernelEncrypted bool                     `json:"kernel_encrypted,omitempty"`
 	Recommendations []ConnTestRecommendation `json:"recommendations,omitempty"`
 	SNIDomain       string                   `json:"sni,omitempty"` // fastest steady Direct SNI candidate, independently of the overall winner
 	Host            string                   `json:"host,omitempty"`
@@ -235,6 +237,15 @@ func ctComputeBest(results []ConnTestResult, cases []*connTestCase, pmtu int, lo
 		}
 	}
 
+	if best >= 0 && results[best].Kind == "kernel" {
+		c := cases[best].kernel
+		b.KernelMTU = c.MTU
+		method, _, _ := ctKernelMethod(results[best].Transport)
+		b.KernelEncrypted = method.Encrypted || c.Reverse
+		b.Preset = ""
+		b.MSS = 0
+		return b
+	}
 	ka := RecommendKeepAlive(q)
 	b.KeepAlive, b.Heartbeat = ka.KeepAlive, ka.Heartbeat
 	if q.Usable() && q.LossPercent() > 0 {
@@ -329,6 +340,16 @@ func ConnTestBestTable(b ConnTestBest) string {
 	}
 	if b.SNIDomain != "" {
 		row("Direct SNI", b.SNIDomain, "best steady SNI candidate")
+	}
+	if strings.HasPrefix(b.Transport, "kernel ") {
+		row("Kernel MTU", strconv.Itoa(b.KernelMTU), "the tested inner interface MTU; not an automatic path-MTU claim")
+		encryption := "native unencrypted"
+		if b.KernelEncrypted {
+			encryption = "WireGuard, IPsec or authenticated reverse carrier"
+		}
+		row("Protection", encryption, "keep the selected method on both peers")
+		s.WriteString("\n" + ctRule() + "\n")
+		return s.String()
 	}
 	if b.BDPKB > 0 {
 		row("Preset", titleWord(b.Preset), fmt.Sprintf("%d KB in flight; speed × RTT", b.BDPKB))

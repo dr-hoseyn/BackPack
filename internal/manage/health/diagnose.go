@@ -714,6 +714,11 @@ func directChecks(g string, t core.Tunnel) []Check {
 		out = append(out, Check{Group: g, Name: "Config", Level: CheckOK, Detail: "standard kernel " + c.Method})
 		if ifaceExists(c.Interface) {
 			out = append(out, Check{Group: g, Name: "Interface", Level: CheckOK, Detail: c.Interface})
+			if kernelPeerReachable(c) {
+				out = append(out, Check{Group: g, Name: "Peer traffic", Level: CheckOK, Detail: "ping verified through " + c.Interface})
+			} else {
+				out = append(out, Check{Group: g, Name: "Peer traffic", Level: CheckWarn, Detail: "interface ready, peer traffic not verified", Fix: "check the remote service, underlay filtering and tunnel addresses"})
+			}
 		} else {
 			out = append(out, Check{Group: g, Name: "Interface", Level: CheckFail, Detail: "missing " + c.Interface, Fix: "check kernel module support, iproute2 and service log"})
 		}

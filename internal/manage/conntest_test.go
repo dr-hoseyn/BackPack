@@ -253,7 +253,7 @@ func TestAConnectionTestOverLoopbackPassesEveryReverseTransport(t *testing.T) {
 	defer cover.Close()
 	_, coverPort, _ := net.SplitHostPort(cover.Listener.Addr().String())
 
-	iran, link, err := StartConnTestIran(ConnTestOptions{Host: host, RealityTarget: "localhost:" + coverPort, ShadowTLSCA: coverCA})
+	iran, link, err := StartConnTestIran(ConnTestOptions{skipKernel: true, Host: host, RealityTarget: "localhost:" + coverPort, ShadowTLSCA: coverCA})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -385,7 +385,7 @@ func TestConnTestUnavailableHelpersAreSkipped(t *testing.T) {
 	s := &ConnTestIran{}
 	for _, tr := range []string{"naive", "xhttp", "reality"} {
 		c := &connTestCase{kind: "reverse", tr: tr}
-		s.startManagedCase(c, map[int]bool{}, ConnTestOptions{})
+		s.startManagedCase(c, map[int]bool{}, ConnTestOptions{skipKernel: true})
 		if !strings.Contains(c.skip, "unavailable") {
 			t.Errorf("%s did not explain the missing helper: %q", tr, c.skip)
 		}
@@ -401,7 +401,7 @@ func TestConnTestCancellationDuringStartupCleansEarlierEngines(t *testing.T) {
 	connTestBinary = func() (string, error) { return "/bin/true", nil }
 	connTestHelperBinary = func(string) (string, error) { cancel(); return "", errors.New("unavailable") }
 	defer func() { connTestBinary, connTestHelperBinary = previous, helper }()
-	s, link, err := StartConnTestIran(ConnTestOptions{Context: ctx, Host: "127.0.0.1"})
+	s, link, err := StartConnTestIran(ConnTestOptions{skipKernel: true, Context: ctx, Host: "127.0.0.1"})
 	if s != nil || link != "" || !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancelled startup returned a live test: %v %q %v", s, link, err)
 	}

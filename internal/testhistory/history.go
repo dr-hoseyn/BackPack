@@ -66,7 +66,7 @@ func validate(r Run) error {
 			return errors.New("invalid history path")
 		}
 		for _, m := range p.Rows {
-			if !slices.Contains([]string{"reverse", "direct", "spoof"}, m.Kind) || m.Transport == "" || !identity.MatchString(m.Transport) || !identity.MatchString(m.SNI) || !slices.Contains([]string{"ok", "unstable", "down", "skipped", "testing", "screened"}, m.Status) || m.Sent < 0 || m.Sent > 1000000 || m.Received < 0 || m.Received > m.Sent {
+			if !slices.Contains([]string{"reverse", "direct", "awg", "kernel", "spoof"}, m.Kind) || m.Transport == "" || !identity.MatchString(m.Transport) || !identity.MatchString(m.SNI) || !slices.Contains([]string{"ok", "unstable", "down", "skipped", "testing", "screened"}, m.Status) || m.Sent < 0 || m.Sent > 1000000 || m.Received < 0 || m.Received > m.Sent {
 				return errors.New("invalid history measurement")
 			}
 			for _, n := range []float64{m.RTTms, m.JitterMs, m.Download, m.Upload} {

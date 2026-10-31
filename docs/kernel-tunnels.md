@@ -120,10 +120,31 @@ readers, sockets, queues and forwarders before deleting owned interfaces. A
 crash can leave FOU receive ports or L2TP objects behind; inspect those specific
 objects before retrying rather than deleting unrelated host network state.
 
-An interface being configured does not prove peer reachability. Health reports
-that distinction; verify bidirectional traffic to the peer tunnel IP. The
-ordinary Connection Test continues to exercise its existing reverse/L3
-protocols; these native methods are configured separately. The kernel-tunnel
+An interface being configured does not prove peer reachability. Management
+probes the peer through the selected interface and briefly caches that result
+for the exact credential generation. A successful probe reports online; a
+missing interface reports offline, while a blocked/unavailable ping remains
+unknown and does not trigger a restart by itself. Health Check shows this
+distinction explicitly. The
+Connection Test now includes all 20 methods in native and reverse modes.
+These cases run serially after the existing carriers, using fresh temporary
+interfaces and peer routes. The worker acknowledges cleanup before the next
+case; failed cleanup stops the remaining kernel phase. Missing privileges,
+modules, tools, VICI, incompatible underlay families or occupied subnets are
+reported as skipped, rather than evidence of provider filtering.
+
+Quick observes each kernel case for four seconds, then measures verified
+four-stream download and upload. Full retains the 60-second observation.
+This short Quick sample cannot reveal a flow cut after 17 seconds: use Full
+for persistent-path validation. Total time includes each reachable method's
+setup, observation, speed and teardown; a complete suite is not a 20-second run.
+
+Successful kernel results appear in recommendations, history and **Set Up A
+Tested Tunnel**. Promotion keeps method, direction, port, subnet and tested MTU,
+rotates token/identifiers and creates ordinary managed services. Bare targets
+reach the peer tunnel IP. IPv6-only SIT/IP6IP6 produce routed interfaces;
+leave forwarded ports blank. Setup verifies peer ping traffic before success.
+Both endpoints need the updated build; an older worker skips kernel cases. The kernel-tunnel
 CI matrix starts actual engines in disposable Linux namespaces and checks
 bidirectional packets, MTU-sized payloads and teardown for each supported method.
 
@@ -138,8 +159,10 @@ ECMP اضافه شده‌اند. حالت Reverse برای روش‌های مع�
 
 ابزارها و ماژول‌های لازم باید روی لینوکس موجود باشند. IPsec به strongSwan با
 VICI نیاز دارد. وضعیت اینترفیس به‌تنهایی اتصال را ثابت نمی‌کند؛ عبور ترافیک را
-از هر دو سمت بررسی کن. این روش‌ها جدا از فهرست فعلی Connection Test ساخته
-می‌شوند. مسیر پیش‌فرض، فایروال عمومی و اتصال خودکار به bridge تغییر نمی‌کنند.
+از هر دو سمت بررسی کن. هر ۲۰ روش، مستقیم و معکوس، در Connection Test هستند؛ نتیجهٔ موفق را می‌توان
+به تونل دائمی تبدیل کرد. Quick برای هر روش کرنل ۴ ثانیه بررسی و سپس سرعت‌سنجی
+دارد؛ Full بررسی طولانی را نگه می‌دارد. تاریخچه، پیشنهاد و مدیریت سرویس هم
+پشتیبانی می‌شوند. مسیر پیش‌فرض، فایروال عمومی و اتصال خودکار به bridge تغییر نمی‌کنند.
 
 </div>
 

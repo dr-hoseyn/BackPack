@@ -21,6 +21,7 @@ import (
 	"github.com/BurntSushi/toml"
 	"github.com/backpack/backpack/config"
 	"github.com/backpack/backpack/internal/app"
+	"github.com/backpack/backpack/internal/tunnel/kernel"
 	"github.com/backpack/backpack/internal/tunnel/l3"
 )
 
@@ -169,7 +170,7 @@ func (m *ctSetupMaterial) prepare(f PeerForm) (PeerForm, error) {
 	if _, err := toml.Decode(encoded.String(), &cfg); err != nil {
 		return f, err
 	}
-	if (cfg.AWG.Enabled() && f.Kind != "awg") || (cfg.L3.Enabled() && f.Kind != "direct") ||
+	if (cfg.Kernel.Enabled() && (f.Kind != "kernel" || cfg.Kernel.Role != f.Side)) || (cfg.AWG.Enabled() && f.Kind != "awg") || (cfg.L3.Enabled() && f.Kind != "direct") ||
 		(cfg.Server.BindAddr != "" && (f.Kind != "reverse" || f.Side != "iran")) ||
 		(cfg.Client.RemoteAddr != "" && (f.Kind != "reverse" || f.Side != "kharej")) {
 		return f, fmt.Errorf("tested engine does not match the requested side")
@@ -198,7 +199,26 @@ func (m *ctSetupMaterial) prepare(f PeerForm) (PeerForm, error) {
 	if err != nil {
 		return f, err
 	}
-	if cfg.AWG.Enabled() {
+	if cfg.Kernel.Enabled() {
+		method, reverse, ok := ctKernelMethod(f.Transport)
+		if !ok || method.Name != cfg.Kernel.Method || reverse != cfg.Kernel.Reverse {
+			return f, fmt.Errorf("tested kernel method or direction does not match the selection")
+		}
+		cfg.Kernel.Token = f.Token
+		cfg.Kernel.ID = 0
+		cfg.Kernel.Interface = ""
+		cfg.Kernel.Ports = nil
+		cfg.Kernel.AcceptUDP = false
+		if f.Side == "iran" {
+			cfg.Kernel.Ports = parsePorts(f.Ports)
+			cfg.Kernel.AcceptUDP = f.AcceptUDP
+		}
+		var err error
+		cfg.Kernel, err = kernel.Resolve(cfg.Kernel)
+		if err != nil {
+			return f, err
+		}
+	} else if cfg.AWG.Enabled() {
 		cfg.AWG.Interface = "bpawg" + fmt.Sprintf("%x", sha256.Sum256([]byte(f.Name)))[:8]
 		cfg.AWG.PresharedKey = ctSetupAWGKey(f.Token)
 		cfg.AWG.Obfuscation.HeaderProtectionKey = ctSetupAWGKey("headers/" + f.Token)
@@ -307,6 +327,19 @@ func ctRemoveSetupAssets(f PeerForm) error {
 
 func ctValidatePromotedForm(f PeerForm) error {
 	c := f.SetupConfig
+	if c.Kernel.Enabled() {
+		cfg, err := kernel.Resolve(c.Kernel)
+		if err != nil {
+			return err
+		}
+		if err = ctKernelPrerequisite(cfg); err != nil {
+			return err
+		}
+		if busy := busyForwardPorts(cfg.Ports, cfg.PeerIP); len(busy) > 0 {
+			return fmt.Errorf("forwarded ports in use: %v", busy)
+		}
+		return nil
+	}
 	if c.AWG.Enabled() {
 		if _, err := awgBody(c.AWG); err != nil {
 			return err
@@ -349,6 +382,10 @@ func ctApplySetupForm(f PeerForm) (string, bool, error) {
 	}
 	if fileExists(app.ConfigPath(f.Name)) {
 		return "", false, fmt.Errorf("tunnel %s already exists", f.Name)
+	}
+	if f.SetupConfig.Kernel.Enabled() {
+		result, err := installKernel(f.Name, f.SetupConfig.Kernel)
+		return result.Service, result.Active, err
 	}
 	var body bytes.Buffer
 	if err := toml.NewEncoder(&body).Encode(f.SetupConfig); err != nil {

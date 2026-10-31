@@ -8,6 +8,7 @@ on:
       - 'internal/tunnel/kernel/**'
       - 'internal/manage/**'
       - '.github/scripts/kernel-tunnels-live.sh'
+      - '.github/scripts/kernel-conntest-live.sh'
       - '.github/workflows/kernel-tunnels.yml'
   workflow_dispatch:
 
@@ -29,7 +30,7 @@ jobs:
       - name: Validate links and Quick speed coverage
         run: |
           sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
-          go test -race ./internal/manage -run 'TestEveryShareLinkFieldHasAnID|TestKernel|TestQuickTest|TestTrafficObservationHasAWallClockLimit|TestScreenedRowsCannotBeRecommendedOrInstalled' -count=1 -timeout 4m
+          go test -race ./internal/manage -run 'TestEveryShareLinkFieldHasAnID|TestKernel|TestAdditionalDirect|TestConnectionTestCompression|TestQuickTest|TestTrafficObservationHasAWallClockLimit|TestScreenedRowsCannotBeRecommendedOrInstalled' -count=1 -timeout 4m
   kernel-live:
     strategy:
       fail-fast: false
@@ -63,4 +64,39 @@ jobs:
         with:
           name: kernel-tunnel-diagnostics-${{ matrix.mode }}-${{ matrix.group }}
           path: /tmp/backpack-kernel-live-*/**/*.log
+          if-no-files-found: ignore
+
+  connection-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [direct, reverse]
+        group: [l3, ethernet]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install disposable network tools
+        run: sudo apt-get update -qq && sudo apt-get install -y iproute2 iputils-ping wireguard-tools strongswan-charon strongswan-swanctl libcharon-extra-plugins libstrongswan-extra-plugins
+      - name: Compile the actual management and Connection Test code
+        run: go test -c -o "$RUNNER_TEMP/kernel-conntest.test" ./internal/manage
+      - name: Test every kernel method through the real coordinator and speed protocol
+        run: |
+          methods="gre ipip 6to4 6to4-gre sit ip6gre ipip6 ip6ip6 wireguard xfrm-ipsec"
+          if [[ '${{ matrix.group }}' == ethernet ]]; then
+            methods="fou-gre gue-ipip ecmp-lanes eoip gretap ip6gretap vxlan geneve l2tpv3 etherip"
+          fi
+          sudo env MODES='${{ matrix.mode }}' METHODS="$methods" bash .github/scripts/kernel-conntest-live.sh "$RUNNER_TEMP/kernel-conntest.test"
+      - name: Cancel a live kernel test and confirm both endpoints release resources
+        run: sudo env MODES='${{ matrix.mode }}' METHODS=gre CANCEL=1 bash .github/scripts/kernel-conntest-live.sh "$RUNNER_TEMP/kernel-conntest.test"
+      - name: Save coordinator and endpoint diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-conntest-${{ matrix.mode }}-${{ matrix.group }}
+          path: /tmp/backpack-kernel-ct-*/**/*.log
           if-no-files-found: ignore

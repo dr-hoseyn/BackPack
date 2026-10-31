@@ -120,6 +120,7 @@ var connTestHelperBinary = func(tool string) (string, error) {
 // ConnTestLink is everything the kharej needs to build its end of every
 // tunnel under test, and to find the Iran side's coordinator.
 type ConnTestLink struct {
+	KernelTests      bool   `json:"kt,omitempty"` // serial kernel phase, negotiated with updated workers
 	AdditionalDirect int    `json:"ad,omitempty"` // new carriers fetched in a second bounded answer
 	Mode             string `json:"mode,omitempty"`
 	AutoSetup        bool   `json:"as,omitempty"`
@@ -300,6 +301,9 @@ func ctConfigParts(l ConnTestLink) (main, additional string) {
 	l = ctCompactLink(l)
 	var base, extra []ShareLink
 	for _, c := range l.Cases {
+		if c.Kind == "kernel" {
+			continue
+		}
 		if ctAdditionalCarrier(c) {
 			extra = append(extra, c)
 		} else {
@@ -446,7 +450,8 @@ const (
 type connTestCase struct {
 	mode       string
 	kind, tr   string
-	key        string // transport, or the domain-qualified SNI candidate identity
+	kernel     config.KernelConfig // completed local native settings for promotion
+	key        string              // transport, or the domain-qualified SNI candidate identity
 	name       string
 	udp        bool   // the forwarded traffic is UDP (the udp transport)
 	entry      int    // reverse: where on this server the tunnel's users arrive
@@ -468,6 +473,7 @@ type ConnTestIran struct {
 	engines       []*ctEngine
 	root          bool
 	best          ConnTestBest
+	kernelFailure string
 	realityTarget string
 	setupCancel   context.CancelFunc
 	realityLog    string
@@ -476,6 +482,7 @@ type ConnTestIran struct {
 // ConnTestOptions are what the Iran operator answers.
 type ConnTestOptions struct {
 	Mode           string // quick: short traffic and speed samples for every healthy tunnel; full: longer samples
+	skipKernel     bool   // focused fixtures that only exercise existing carriers
 	skipAWG        bool   // focused integration fixtures; ordinary full tests include AWG
 	AutomaticSetup bool   // keep endpoint-local identities for the post-test setup agent
 	// A suite reserves ports across paths while child listeners are starting.
@@ -696,6 +703,7 @@ func StartConnTestIran(o ConnTestOptions) (*ConnTestIran, string, error) {
 		}
 	}
 
+	s.addKernelCases(o)
 	for _, c := range s.cases {
 		c.mode = mode
 		if c.skip == "" && c.kind != "spoof" {
@@ -1289,7 +1297,7 @@ func (s *ConnTestIran) Run(ctx context.Context, progress func(int, ConnTestResul
 
 	var wg sync.WaitGroup
 	for i, c := range s.cases {
-		if c.skip != "" {
+		if c.skip != "" || c.kind == "kernel" {
 			continue
 		}
 		wg.Add(1)
@@ -1331,6 +1339,14 @@ func (s *ConnTestIran) Run(ctx context.Context, progress func(int, ConnTestResul
 			}
 		}
 		reportRow(i, r)
+	}
+
+	// Native selectors and unkeyed protocols must never overlap test cases.
+	for i, c := range s.cases {
+		if c.kind != "kernel" || c.skip != "" {
+			continue
+		}
+		s.runKernelCase(ctx, c, func(r ConnTestResult) { reportRow(i, r) })
 	}
 
 	// The kharej's path-MTU measurement, which it has usually sent long before.
@@ -1659,7 +1675,7 @@ func ctDial(ctx context.Context, c *connTestCase, l3Echo int) (net.Conn, error) 
 	if c.udp {
 		network = "udp"
 	}
-	if c.kind == "direct" {
+	if c.kind == "direct" || c.kind == "kernel" {
 		addr = net.JoinHostPort(c.peerIP, strconv.Itoa(l3Echo))
 	}
 	return (&net.Dialer{Timeout: 3 * time.Second}).DialContext(ctx, network, addr)
@@ -1922,30 +1938,33 @@ func ctLastLine(path string) string {
 //	hello <token>   → ok          the kharej is in; its address is noted
 //	result <token>  → wait | done <verdict>
 type ctCoordinator struct {
-	tok                  string
-	tcp                  net.Listener
-	udp                  net.PacketConn
-	mu                   sync.Mutex
-	peer                 string
-	verdict              string
-	additional           string            // separately authenticated added direct carriers
-	config               string            // the answer to "config"; see ctConfig
-	carriers             map[string]string // public helper settings, fetched one small packet at a time
-	httpsProbes          map[string]string // bounded preflight codes; frozen when Kharej joins
-	skipped              map[string]bool   // managed cases unavailable on kharej
-	masqueSettings       string            // public certificate/target announced before the peer joins
-	masqueH2Settings     string            // separate trust/target for the TCP fallback
-	connectIPSettings    string
-	webTransportSettings string            // independent authenticated datagram trust
-	directPorts          map[string]string // direct listener ports selected on Kharej
-	setup                *ConnTestSetup
-	live                 func() []ConnTestResult
-	joined               chan struct{}
-	fetched              chan struct{}
-	joinOne              sync.Once
-	fetchOn              sync.Once
-	sockets              ctEchoes
-	slots                chan struct{}
+	kernelCommand              ctKernelCommand
+	kernelAck                  ctKernelAck
+	kernelCapable, kernelAcked bool
+	tok                        string
+	tcp                        net.Listener
+	udp                        net.PacketConn
+	mu                         sync.Mutex
+	peer                       string
+	verdict                    string
+	additional                 string            // separately authenticated added direct carriers
+	config                     string            // the answer to "config"; see ctConfig
+	carriers                   map[string]string // public helper settings, fetched one small packet at a time
+	httpsProbes                map[string]string // bounded preflight codes; frozen when Kharej joins
+	skipped                    map[string]bool   // managed cases unavailable on kharej
+	masqueSettings             string            // public certificate/target announced before the peer joins
+	masqueH2Settings           string            // separate trust/target for the TCP fallback
+	connectIPSettings          string
+	webTransportSettings       string            // independent authenticated datagram trust
+	directPorts                map[string]string // direct listener ports selected on Kharej
+	setup                      *ConnTestSetup
+	live                       func() []ConnTestResult
+	joined                     chan struct{}
+	fetched                    chan struct{}
+	joinOne                    sync.Once
+	fetchOn                    sync.Once
+	sockets                    ctEchoes
+	slots                      chan struct{}
 	// spoofArrived is the kharej's count of the Iran server's forged probes.
 	spoofArrived chan int
 	spoofOnce    sync.Once
@@ -2033,7 +2052,7 @@ func (c *ctCoordinator) serveUDP() {
 // shutdown acknowledgement would close the coordinator before the worker hears.
 func ctStopAcknowledged(line string) bool {
 	f := strings.Fields(line)
-	return len(f) >= 2 && (f[0] == "config" || f[0] == "additional" || f[0] == "hello" || f[0] == "result")
+	return len(f) >= 2 && (f[0] == "config" || f[0] == "additional" || f[0] == "hello" || f[0] == "result" || f[0] == "kernel-next")
 }
 
 // answer is the coordinator's whole protocol. An empty answer is silence: a
@@ -2054,6 +2073,9 @@ func (c *ctCoordinator) answer(line, from string) string {
 		return "stopped"
 	}
 	// A path-MTU probe: its padding is the point, and the answer is small.
+	if f[0] == "kernel-next" || f[0] == "kernel-ack" {
+		return c.kernelAnswer(f)
+	}
 	if f[0] == "pmtu" && len(f) == 4 {
 		return "pm " + f[2]
 	}
@@ -2448,6 +2470,13 @@ func runConnTestKharejLink(ctx context.Context, link ConnTestLink, out io.Writer
 		return nil, ConnTestBest{}, err
 	}
 	defer echoes.close()
+	kernelPeer := &ctKernelPeer{}
+	defer kernelPeer.close()
+	if link.KernelTests {
+		if err := kernelPeer.poll(ctx, &link, dir); err != nil {
+			return nil, ConnTestBest{}, err
+		}
+	}
 
 	var engines []*ctEngine
 	defer func() { ctStopAll(engines) }()
@@ -2460,6 +2489,8 @@ func runConnTestKharejLink(ctx context.Context, link ConnTestLink, out io.Writer
 		caseOf[name] = c.Kind + "/" + key
 		var body string
 		switch c.Kind {
+		case "kernel":
+			continue // created on demand by the serial phase
 		case "awg":
 			if !root {
 				local[c.Kind+"/"+key] = "needs root and TUN"
@@ -2599,14 +2630,19 @@ func runConnTestKharejLink(ctx context.Context, link ConnTestLink, out io.Writer
 	}
 	go ctKharejPMTU(ctx, link)
 	if link.Mode == ConnTestQuick {
-		fmt.Fprintln(out, "Quick test: 20-second traffic check, then short verified download/upload measurements for every healthy tunnel. Use Full for longer samples.")
+		fmt.Fprintln(out, "Quick test: 20s carrier traffic; 4s per serial kernel case, with verified download/upload for every healthy tunnel. Use Full for longer samples.")
 	} else {
 		fmt.Fprintln(out, "Full test: 60-second stability check, then download/upload for each healthy tunnel (about 8–12 seconds each, plus connection setup).")
 	}
 
 	// The verdict, and the rows as they fill until it comes.
 	for {
-		ctSleep(ctx, 2*time.Second)
+		if link.KernelTests {
+			if e := kernelPeer.poll(ctx, &link, dir); errors.Is(e, errConnTestStopped) {
+				return nil, ConnTestBest{}, e
+			}
+		}
+		ctSleep(ctx, 500*time.Millisecond)
 		for _, e := range engines {
 			// Kept for the verdict rather than printed: a line written here
 			// would land in the middle of the live table.

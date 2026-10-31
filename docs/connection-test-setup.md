@@ -29,7 +29,7 @@ Both servers must run a version that supports automatic setup, as root. Keep
 both test processes open until setup completes.
 
 After the verdict, choose **Set Up A Tested Tunnel** on either server. Select a
-successful Reverse, Direct, or AmneziaWG tunnel and enter the forwarded ports.
+successful Reverse, Direct, AmneziaWG or Kernel tunnel and enter the forwarded ports.
 For example, `443` exposes Iran's port 443 and reaches kharej's local port 443;
 `443=127.0.0.1:2096` reaches kharej's local port 2096 instead. Optionally enable
 UDP alongside TCP. The reverse UDP transport carries UDP on its own.
@@ -62,6 +62,28 @@ the coordinator stops answering. A process or machine crash can interrupt
 cleanup, so inspect the reported tunnel names before retrying after a crash.
 Completed services persist across reboots and no longer depend on the test
 coordinator.
+
+## Kernel methods and setup
+
+The kernel phase covers all 20 methods in native and reverse modes, one at a
+time to keep unkeyed protocols and IPsec selectors independent. Each case
+creates disposable interfaces and peer routes, observes actual echoed traffic,
+measures four-stream download/upload and waits for both endpoints' teardown.
+Missing host prerequisites, incompatible native IP families and older workers
+are skipped with a reason. A configured interface alone never passes the test.
+
+Kernel Quick uses a labeled four-second observation per case; Full uses the
+usual 60 seconds. Both measure every healthy case's speed. The shorter sample
+is screening evidence and cannot prove that a longer-lived connection survives.
+Total time includes the serial kernel phase as well as the existing carriers.
+
+Successful kernel cases support normal automatic setup, history and comparison.
+Promotion keeps the measured method, direction, tunnel port, subnet and MTU,
+rotates pair credentials/IDs, and verifies peer traffic after service creation.
+Kernel backends must listen on the peer tunnel IP or wildcard; loopback targets
+refer to that peer's loopback only in the reverse stream engines. Leave kernel
+forwarded ports blank for a routed interface (required for IPv6-only methods).
+See [kernel prerequisites and protection](kernel-tunnels.md).
 
 ## Complete protocol coverage and prerequisites
 

@@ -74,7 +74,7 @@ func ConnTestHistoryTable(runs []testhistory.Run, compare bool) string {
 			}
 			fmt.Fprintf(&b, "%s  %s  %s  %s\n", r.At.UTC().Format(time.RFC3339), r.Side, r.Preset, state)
 			if r.Mode == ConnTestQuick {
-				fmt.Fprintln(&b, "  Quick: 20-second observation; short speed samples on every healthy tunnel")
+				fmt.Fprintln(&b, "  Quick: 20s carriers / 4s per serial kernel case; verified speeds")
 			}
 			for _, p := range r.Paths {
 				fmt.Fprintf(&b, "  %s %s peer=%s  %s  %d protocols\n", p.Family, p.Host, p.Peer, p.State, len(p.Rows))

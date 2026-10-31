@@ -52,6 +52,13 @@ var ctNameWidth = func() int {
 }()
 
 func ctName(tr string) string {
+	if m, reverse, ok := ctKernelMethod(tr); ok {
+		name := strings.ToUpper(m.Name)
+		if reverse {
+			name += " Reverse"
+		}
+		return name
+	}
 	if n, ok := ctTransportNames[tr]; ok {
 		return n
 	}
@@ -183,7 +190,7 @@ func ctWriteWrapped(out io.Writer, prefix, continuation, text string) {
 func ConnTestTable(results []ConnTestResult) string {
 	var b strings.Builder
 	if len(results) > 0 && results[0].Mode == ConnTestQuick {
-		b.WriteString("QUICK TEST: 20-second observation; short speed samples for every healthy tunnel.\nSCREENED = traffic passed, speed not measured; excluded from automatic setup.\n\n")
+		b.WriteString("QUICK TEST: 20-second carrier observation; 4-second serial kernel cases, with verified speeds.\nSCREENED = traffic passed, speed not measured; excluded from automatic setup.\n\n")
 	}
 	b.WriteString(ctSummary(results) + "\n\n")
 	b.WriteString(ctHeader + "\n")
@@ -195,7 +202,7 @@ func ConnTestTable(results []ConnTestResult) string {
 	}
 	b.WriteString("\n" + ctRule() + "\n\nWorks Steadily:\n\n")
 	steady := 0
-	for _, kind := range []string{"reverse", "direct", "awg", "spoof"} {
+	for _, kind := range []string{"reverse", "direct", "awg", "kernel", "spoof"} {
 		var rows []ConnTestResult
 		for _, r := range results {
 			if r.Status == ctOK && (r.Kind == kind || kind == "reverse" && r.Kind == "") {

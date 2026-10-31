@@ -33,6 +33,10 @@ type ConnTestSetupRequest struct {
 
 // Every tested engine can promote its endpoint-local identities and trust.
 func ctSetupSupported(kind, tr string) bool {
+	if kind == "kernel" {
+		_, _, ok := ctKernelMethod(tr)
+		return ok
+	}
 	if kind == "reverse" {
 		return validTransport(tr) || managedTransport(tr)
 	}
@@ -92,6 +96,9 @@ func ctDefaultSetupOps() ctSetupOps {
 		verify: func(ctx context.Context, name string) error {
 			ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
 			defer cancel()
+			if cfg, err := LoadTunnelConfig(name); err == nil && cfg.Kernel.Enabled() {
+				return ctVerifyKernel(ctx, cfg.Kernel)
+			}
 			for ctx.Err() == nil {
 				if t, ok := Find(name); ok && TunnelHealth(t).Connected {
 					return nil
@@ -117,6 +124,8 @@ func ctRemoveSetupForm(f PeerForm) error {
 			return fmt.Errorf("AmneziaWG identity changed; refusing cleanup")
 		}
 		token = f.Token
+	} else if f.Kind == "kernel" {
+		token = cfg.Kernel.Token
 	} else if f.Kind == "direct" {
 		token = cfg.L3.Token
 	} else if f.Side == "kharej" {
@@ -215,7 +224,10 @@ func (s *ConnTestSetup) Start(r ConnTestSetupRequest) error {
 		return fmt.Errorf("a setup request ID and at most 1024 bytes of ports are required")
 	}
 	ports := parsePorts(r.Ports)
-	if len(ports) == 0 {
+	if m, _, ok := ctKernelMethod(r.Transport); r.Kind == "kernel" && ok && m.IPv6Only && len(ports) > 0 {
+		return fmt.Errorf("this kernel method creates a routed IPv6 tunnel; leave forwarded ports blank")
+	}
+	if len(ports) == 0 && r.Kind != "kernel" {
 		return fmt.Errorf("at least one forwarded port is required")
 	}
 	if err := validatePortSpecs(ports); err != nil {
@@ -347,8 +359,8 @@ func (s *ConnTestSetup) forms(r ConnTestSetupRequest) (PeerForm, PeerForm, error
 	caseID := ctSetupCaseID(l)
 	l.Name = "quick-" + randomToken(8)
 	l.Tok, l.Ports, l.AcceptUDP = randomToken(64), r.Ports, r.AcceptUDP
-	if l.Kind == "awg" {
-		iran := PeerForm{Kind: "awg", Side: "iran", Name: l.Name + "-iran", Token: l.Tok, TunnelPort: l.Port, Ports: r.Ports, AcceptUDP: r.AcceptUDP, TestCase: caseID}
+	if l.Kind == "awg" || l.Kind == "kernel" {
+		iran := PeerForm{Kind: l.Kind, Transport: l.Tr, Side: "iran", Name: l.Name + "-iran", Token: l.Tok, TunnelPort: l.Port, Ports: r.Ports, AcceptUDP: r.AcceptUDP, TestCase: caseID}
 		kharej := iran
 		kharej.Side, kharej.Name, kharej.Ports = "kharej", l.Name+"-kharej", ""
 		return iran, kharej, nil
