@@ -3,7 +3,6 @@ package manage
 import (
 	"bufio"
 	"bytes"
-	"compress/gzip"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -19,6 +18,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"github.com/klauspost/compress/gzip"
 	"io"
 	"math/big"
 	"net"
@@ -266,14 +266,16 @@ func ctConfig(l ConnTestLink) string {
 	l.ID = "" // not used by the peer's engines or authentication
 	l.Cases = append([]ShareLink(nil), l.Cases...)
 	for i := range l.Cases {
-		// Names are local artifact stems, never paired engine settings. Reuse
-		// transport words for compression while keeping names unique on old peers.
-		l.Cases[i].Name = l.Cases[i].Kind + "-" + l.Cases[i].Tr
-		if l.Cases[i].SNI != "" {
-			l.Cases[i].Name += "-" + strconv.FormatInt(int64(i), 36)
-		}
+		// Names are local artifact stems, never paired engine settings. Short,
+		// unique names also remain usable by older connection-test workers.
+		l.Cases[i].Name = "ct" + strconv.FormatInt(int64(i), 36)
 		l.Cases[i].Tok = ""
 		l.Cases[i].AWGPeer = "" // fetched as a separately authenticated bounded identity
+		// Raw ICMP carriers ignore ports; only the token scopes their socket.
+		// Do not spend packet space on random values with no wire meaning.
+		if l.Cases[i].Kind == "direct" && (l.Cases[i].Tr == "xdi" || l.Cases[i].Tr == "icmp-request" || l.Cases[i].Tr == "icmp-reply") {
+			l.Cases[i].Port = "0"
+		}
 		// Reverse forwarding listeners belong to Iran. The peer only dials
 		// the tunnel endpoint; it never consumes these random port mappings.
 		// Omitting them keeps the expanded carrier suite within one packet,
@@ -2084,6 +2086,15 @@ func (c *ctCoordinator) answer(line, from string) string {
 		if c.peer != "" && c.directPorts[tr] != port {
 			return ""
 		}
+		// DNS receives on the shared fixed port at BOTH endpoints. A port
+		// free on Kharej can still belong to Iran's resolver or another service.
+		if tr == "dns" && c.peer == "" && c.directPorts[tr] != port {
+			socket, bindErr := net.ListenPacket("udp", net.JoinHostPort("", port))
+			if bindErr != nil {
+				return "busy"
+			}
+			_ = socket.Close()
+		}
 		if c.directPorts == nil {
 			c.directPorts = make(map[string]string)
 		}
@@ -2215,14 +2226,25 @@ func ctSkippableCase(value string) bool {
 // occupied by a completely unrelated service on Kharej, especially one with
 // many UDP sockets. This check changes only the temporary test's endpoint.
 func ctKharejDirectPort(ctx context.Context, link ConnTestLink, tr string, used map[int]bool) (string, error) {
-	port := ctPickPort(used, true)
-	if port == 0 {
-		return "", errors.New("no free local listener port")
-	}
-	line := fmt.Sprintf("port %s %s:%d", link.Tok, tr, port)
-	for attempt := 0; attempt < 3 && ctx.Err() == nil; attempt++ {
-		if reply, err := ctAskContext(ctx, link.Host, link.Coord, line); err == nil && reply == "ok" {
+	port := 0
+	for attempt := 0; attempt < 10 && ctx.Err() == nil; attempt++ {
+		if port == 0 {
+			port = ctPickPort(used, true)
+			if port == 0 {
+				return "", errors.New("no free local listener port")
+			}
+		}
+		line := fmt.Sprintf("port %s %s:%d", link.Tok, tr, port)
+		reply, err := ctAskContext(ctx, link.Host, link.Coord, line)
+		if err == nil && reply == "ok" {
 			return strconv.Itoa(port), nil
+		}
+		if err == nil && reply == "busy" && tr == "dns" {
+			port = 0 // try a different port; keep the rejected one reserved locally
+			continue
+		}
+		if attempt >= 2 {
+			break
 		}
 		ctSleep(ctx, time.Second)
 	}
