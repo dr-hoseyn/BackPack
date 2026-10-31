@@ -18,7 +18,6 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"github.com/klauspost/compress/gzip"
 	"io"
 	"math/big"
 	"net"
@@ -35,6 +34,7 @@ import (
 	"github.com/backpack/backpack/config"
 	"github.com/backpack/backpack/internal/spooftest"
 	"github.com/backpack/backpack/internal/tunnel/naive"
+	"github.com/klauspost/compress/gzip"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/net/proxy"
 )
@@ -274,7 +274,7 @@ func ctConfig(l ConnTestLink) string {
 		// Raw ICMP carriers ignore ports; only the token scopes their socket.
 		// Do not spend packet space on random values with no wire meaning.
 		if l.Cases[i].Kind == "direct" && (l.Cases[i].Tr == "xdi" || l.Cases[i].Tr == "icmp-request" || l.Cases[i].Tr == "icmp-reply") {
-			l.Cases[i].Port = "0"
+			l.Cases[i].Port = "1"
 		}
 		// Reverse forwarding listeners belong to Iran. The peer only dials
 		// the tunnel endpoint; it never consumes these random port mappings.

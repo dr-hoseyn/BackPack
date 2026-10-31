@@ -42,3 +42,27 @@ func TestConnectionTestCompactionPreservesPeerSettings(t *testing.T) {
 		t.Fatalf("compaction changed peer transport settings: %+v", peer.Cases)
 	}
 }
+
+func TestConnectionTestICMPCompactionStillBuildsAValidPeer(t *testing.T) {
+	for _, carrier := range []string{"xdi", "icmp-request", "icmp-reply"} {
+		link := ConnTestLink{Host: "192.0.2.1", Cases: []ShareLink{{Kind: "direct", From: "iran", Tr: carrier, Encap: "gre", Port: "24567", LocalIP: "10.123.231.1/30", PeerIP: "10.123.231.2"}}}
+		raw, err := unGzipB64(ctConfig(link))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out ConnTestLink
+		if err = json.Unmarshal(raw, &out); err != nil {
+			t.Fatal(err)
+		}
+		c := out.Cases[0]
+		if c.Port != "1" || !validPort(c.Port) {
+			t.Fatalf("invalid ignored ICMP port: %q", c.Port)
+		}
+		c.Tok = "test-shared-secret"
+		form := MirrorForPeer(c)
+		_, err = form.ToNewDirectTunnel().spec()
+		if err != nil {
+			t.Fatalf("%s compacted peer: %v", carrier, err)
+		}
+	}
+}
