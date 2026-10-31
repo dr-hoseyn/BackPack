@@ -1,5 +1,13 @@
 # dr-hoseyn fork
 
+**v1.19.1:** all 20 kernel methods now join Connection Test in native/reverse
+modes, with verified download/upload, saved history, recommendations and paired
+setup from a successful result. Quick uses 4s observations for serial kernel
+cases, followed by speed samples; existing carrier observations remain 20s.
+Full retains longer observations. Management verifies peer traffic through the
+selected interface. Upgrade both servers. See [kernel tests](docs/kernel-tunnels.md)
+and [automatic setup](docs/connection-test-setup.md).
+
 **v1.19.0:** adds [20 standard kernel L3/L2 tunnel methods](docs/kernel-tunnels.md),
 including WireGuard, IKEv2/IPsec, UDP encapsulation and authenticated reverse
 carriers. Direct [DNS/EDNS0 and symmetric ICMP](docs/dns-icmp-carriers.md) include
@@ -22,7 +30,7 @@ behavior. See [resource behavior and verification](docs/wssmux-resources.md).
 
 **v1.15.0:** CLI-only management. The web dashboard and per-tunnel monitor pages are removed. Connection Test defaults to Quick; see the current timing above. Full remains available. Upgrading retires the legacy web service.
 
-This fork combines upstream BackPack v1.9.0 with PRs [#104](https://github.com/AminMGMT/BackPack/pull/104), [#98](https://github.com/AminMGMT/BackPack/pull/98), and [#108](https://github.com/AminMGMT/BackPack/pull/108). Fork release **v1.19.0** installs and updates from `dr-hoseyn/BackPack`. Managed Short HTTPS is available for Reverse TCP. The source also includes [advanced XHTTP settings](docs/xhttp-advanced.md) and [managed AmneziaWG setup](docs/amneziawg.md).
+This fork combines upstream BackPack v1.9.0 with PRs [#104](https://github.com/AminMGMT/BackPack/pull/104), [#98](https://github.com/AminMGMT/BackPack/pull/98), and [#108](https://github.com/AminMGMT/BackPack/pull/108). Fork release **v1.19.1** installs and updates from `dr-hoseyn/BackPack`. Managed Short HTTPS is available for Reverse TCP. The source also includes [advanced XHTTP settings](docs/xhttp-advanced.md) and [managed AmneziaWG setup](docs/amneziawg.md).
 
 
 **v1.14.2:** restores Reverse → ICMP → xDi in the CLI, includes

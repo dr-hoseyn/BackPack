@@ -169,4 +169,4 @@ VICI نیاز دارد. وضعیت اینترفیس به‌تنهایی اتصا
 ---
 [← Back to the docs index](README.md)
 
-*Last verified against Backpack v1.19.0*
+*Last verified against Backpack v1.19.1*

@@ -122,4 +122,4 @@ DNS مستقیم بین دو سرور است و به resolver یا دامنه ن
 ---
 [← Back to the docs index](README.md)
 
-*Last verified against Backpack v1.19.0*
+*Last verified against Backpack v1.19.1*

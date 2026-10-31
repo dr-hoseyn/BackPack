@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v1.19.1 — 2026-10-31
+
 - Integrate all 20 standard kernel methods into Connection Test in native and
   reverse modes. Test real peer traffic and verified four-stream download/upload;
   expose successful cases in recommendations, saved history and automatic setup.
@@ -13,6 +15,24 @@
   Retain method/direction/port/MTU when promoting, rotate pair credentials/IDs,
   verify peer traffic through the selected interface, and support routed-only
   IPv6 kernel pairs. Kernel management health can verify peer reachability.
+
+**Upgrade notes:** update both servers for kernel Connection Test coordination.
+All 20 kernel methods appear in native and reverse modes; unavailable host tools,
+modules, address families or safe subnets produce explicit skipped reasons.
+Quick uses four observation seconds per kernel case and measures every healthy
+case's download/upload; Full retains the longer observation. Existing carrier
+Quick observations remain 20 seconds. Total time includes serial kernel setup,
+sampling and cleanup. A short healthy sample does not establish long-term uptime.
+
+<div dir="rtl">
+
+**خلاصهٔ فارسی:** تونل‌های کرنل، مستقیم و معکوس، وارد Connection Test شدند؛
+سرعت، تاریخچه، پیشنهاد و ساخت تونل از نتیجهٔ موفق هم پشتیبانی می‌شوند. Quick
+برای هر روش کرنل ۴ ثانیه بررسی دارد و سپس دانلود/آپلود را می‌سنجد؛ Full بررسی
+طولانی‌تر را حفظ می‌کند. پاک‌سازی دو سمت، لغو تست، کنترل UDP، تداخل مسیر و
+تشخیص سلامت نیز هماهنگ شده‌اند. هر دو سرور را ارتقا بده.
+
+</div>
 
 ## v1.19.0 — 2026-10-31
 
