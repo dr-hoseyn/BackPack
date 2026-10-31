@@ -2,6 +2,52 @@
 
 ## Unreleased
 
+## v1.19.0 — 2026-10-31
+
+- Add 20 standard Linux kernel L3/L2 tunnel methods as an independent engine:
+  GRE/IPIP/SIT and IPv6 variants, WireGuard, IKEv2-managed XFRM/IPsec, FOU/GUE,
+  ECMP GRE lanes, EoIP/GRETAP, VXLAN, Geneve, L2TPv3 and EtherIP. Setup links
+  mirror paired settings; management uses the existing systemd lifecycle.
+  MikroTik command generation is excluded.
+- Add optional reverse encapsulation through eight authenticated Noise TCP
+  lanes with stable flow pinning, bounded queues and reusable packet buffers.
+  Reverse WireGuard keeps its native UDP initiation and encryption.
+- Add direct DNS/EDNS0, ICMP-request-only and ICMP-reply-only carriers. DNS
+  sends complete queries containing encrypted L3 datagrams, with optional
+  source-port rotation, a packet-rate cap and up to eight receive ports.
+  Preserve existing Noise session keys, replay protection and paired FEC.
+- Remove Quick's three-protocol speed shortlist. Measure verified download
+  and upload serially for every healthy stream-capable protocol. Reduce the
+  traffic observation to 20 seconds and shorten Quick's directional samples;
+  Full keeps its longer samples. Raw UDP retains its datagram echo/loss check.
+  Total runtime also includes connection discovery and speed measurements.
+- Keep expanded Connection Test settings inside single-packet responses with
+  a separate authenticated exchange for the three added carriers. Preserve
+  the supported suite on older workers. Check DNS receive ports on both ends.
+- Reject overlapping configured tunnel subnets, prevent concurrent kernel
+  imports from overwriting private configs, configure WireGuard before
+  activation, report rollback errors, validate inner IP families and reserve
+  reverse jumbo-MTU encapsulation headroom. Keep local interface readiness
+  separate from remote reachability.
+
+**Upgrade notes:** upgrade both servers before using the new carriers or kernel
+setup links. Standard kernel methods require Linux networking tools/modules;
+IPsec additionally requires strongSwan/charon with VICI. Bare native GRE/IPIP
+and L2 methods are unencrypted. Additional host routes, bridges and forwarding
+remain explicit operator configuration. DNS sends directly between peers,
+needs inbound UDP on both servers and does not traverse recursive resolvers.
+
+<div dir="rtl">
+
+**خلاصهٔ فارسی:** ۲۰ روش تونل کرنل، DNS/EDNS0 و دو حالت ICMP اضافه شدند.
+Quick محدودیت سه پروتکل ندارد و پنجرهٔ بررسی ترافیک آن ۲۰ ثانیه است؛ زمان کل
+به برقراری اتصال و سرعت‌سنجی هم بستگی دارد. تداخل subnet، نصب هم‌زمان، MTU،
+شروع WireGuard و اندازهٔ پاسخ‌های Connection Test اصلاح شدند. برای قابلیت‌های
+جدید هر دو سرور را ارتقا بده. روش‌های خام کرنل رمزنگاری ندارند؛ IPsec به
+strongSwan نیاز دارد و DNS باید روی هر دو سرور پورت دریافت باز داشته باشد.
+
+</div>
+
 ## v1.18.1 — 2026-10-30
 
 - Carry WS/WSS mux and direct WebSocket traffic in authenticated, negotiated

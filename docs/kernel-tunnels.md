@@ -3,7 +3,8 @@
 Choose **Setup Iran → Standard Kernel L3 / L2**. Select the method, literal
 underlay addresses and tunnel IP pair. Apply its `backpack://` setup link using
 **Setup Kharej → Setup Link**, or `backpack link apply '<link>'`. Use the same
-build on both machines. The existing released installer may predate these links.
+build on both machines, v1.19.0 or newer. Install the method's host prerequisites
+before applying its setup link.
 
 Each tunnel is an independent `[kernel]` configuration and an ordinary Backpack
 systemd service. Manage supports start, stop, restart, logs, setup links, edits
@@ -145,4 +146,4 @@ VICI نیاز دارد. وضعیت اینترفیس به‌تنهایی اتصا
 ---
 [← Back to the docs index](README.md)
 
-*Last verified against Backpack v1.18.1*
+*Last verified against Backpack v1.19.0*

@@ -1,6 +1,6 @@
 # Automatic setup
 
-*Last verified against Backpack v1.18.1, 2026-10-27.*
+*Last verified against Backpack v1.19.0, 2026-10-31.*
 
 <div dir="rtl">
 

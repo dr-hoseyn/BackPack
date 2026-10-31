@@ -49,4 +49,4 @@ include per-protocol jitter in the result; older peers omit it, and their jitter
 
 </div>
 
-*Last verified against Backpack v1.18.1, 2026-10-27.*
+*Last verified against Backpack v1.19.0, 2026-10-31.*

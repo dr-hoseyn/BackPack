@@ -110,7 +110,8 @@ The questions, in the order they are asked. `[Y/n]` marks the default.
 
 ### Setup Iran
 
-Iran offers **Reverse**, **Direct**, **Automatic** and **AmneziaWG**.
+Iran offers **Reverse**, **Direct**, **Automatic**, **AmneziaWG** and
+[**Standard Kernel L3 / L2**](kernel-tunnels.md).
 [Automatic](automatic-setup.md) asks for forwarded ports and prepares the
 compatible managed paths and paired link. The table below describes manual
 Reverse setup; Direct is listed after it. Kharej accepts a Setup Link before
@@ -167,9 +168,9 @@ server pastes. The Iran questions, in order:
 | Prompt | Notes |
 |---|---|
 | **Select Direct Transport Family** | **ICMP**, **TCP**, **UDP**, **HTTPS**, or **IP Spoofing** |
-| **Select … Carrier** | ICMP: **xDi**; TCP: **PCK**, **SNI Spoofing**; UDP: **UDP**, **Quic**; HTTPS: **MASQUE (HTTP/3)**; IP Spoofing: **IP Spoofing**. Both ends choose the same carrier. Back returns to the family list. |
-| **Kharej IP Or Domain** | Iran dials out, so it needs no inbound port of its own |
-| **Tunnel Port** `[9000]` | what kharej binds and Iran reaches |
+| **Select … Carrier** | ICMP: **xDi**, **ICMP Requests**, **ICMP Replies**; TCP: **PCK**, **SNI Spoofing**; UDP: **UDP**, **Quic**, **DNS (EDNS0)**; HTTPS: **MASQUE (HTTP/3)**; IP Spoofing: **IP Spoofing**. Both ends choose the same carrier. Back returns to the family list. |
+| **Kharej IP Or Domain** | Iran dials out; DNS additionally needs inbound UDP on the paired receive port |
+| **Tunnel Port** `[9000]` (DNS: `[53]`) | what kharej binds and Iran reaches; DNS receives on this port at both ends |
 | **Forwarded Ports (Blank For TUN)** | optional. Blank is a plain private network that routes what it is given. A port something here already listens on (another service's port) is refused |
 | **Tunnel Name** | names the service and the config file |
 | **Security Token** | generated here — press Enter. The setup link carries it to kharej |
@@ -518,7 +519,7 @@ FEC؛ و zero-copy (فقط روی tcp ساده).
 
 ---
 
-*Last verified against Backpack v1.18.1*
+*Last verified against Backpack v1.19.0*
 
 
 Connection Test also provides [saved history and repeated-run comparison](connection-test-history.md)

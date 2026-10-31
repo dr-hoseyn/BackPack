@@ -35,12 +35,13 @@ proposal to run several tunnels in one process is trading it away.
 
 ---
 
-## Four engines
+## Five engines
 
 `cmd/cmd.go runEngine` chooses, in this order, and the order is load-bearing:
 
 ```
-        ┌─ [awg] enabled?         ──yes──►  internal/amneziawg      independent layer 3
+        ┌─ [kernel] enabled?      ──yes──►  internal/tunnel/kernel  native L3/L2
+        ├─ [awg] enabled?         ──yes──►  internal/amneziawg      independent layer 3
 config ─┼─ [l3] table present?    ──yes──►  internal/tunnel/l3       layer 3
         ├─ [direct] table present? ─yes──►  internal/tunnel/direct   layer 4, dials out
         └─ [server]/[client]      ────────►  internal/server + internal/client
@@ -51,7 +52,15 @@ Each engine has its own configuration table and packet/session lifecycle;
 management, metrics and port forwarding are shared where applicable. A file that does not mention
 `[l3]` cannot reach the layer-3 engine; one that does never reaches the reverse
 tunnel. `L3Config.Enabled()` is one trimmed string, and it is the whole gate.
-`[awg]` explicitly rejects a mixed engine configuration.
+`[awg]` and `[kernel]` explicitly reject mixed engine configurations.
+
+### The standard kernel engine — `[kernel]`
+
+`internal/tunnel/kernel` owns standard native Linux L3/L2 interfaces, peer
+routes and transactional cleanup. It supports WireGuard and IKEv2-managed
+IPsec, and an optional authenticated reverse carrier. Native unencrypted
+methods do not gain encryption from their identifiers. Management and setup
+links use the existing per-tunnel lifecycle. See [kernel tunnels](kernel-tunnels.md).
 
 ### The reverse tunnel — `[server]` / `[client]`
 
@@ -101,7 +110,8 @@ needs no inbound port of its own. `internal/tunnel/direct`.
 
 An interface on each host carrying whole IP packets. Noise NNpsk0, explicit
 nonces, a 2048-bit replay window (RFC 4303, as WireGuard uses). Carriers include
-`udp`, `quic`, `pck`, `sni`, `xdi`, `spoof`, `masque`, `hysteria2` and `tuic`.
+`udp`, `quic`, `pck`, `sni`, `xdi`, `dns`, `icmp-request`, `icmp-reply`,
+`spoof`, `masque`, `hysteria2` and `tuic`.
 `internal/tunnel/l3` owns the Noise session; the last two carriers supervise a
 restricted sing-box helper and use native UDP, including association recovery.
 
@@ -270,4 +280,4 @@ context)، پورت‌های فوروارد (`forward.go`)، حلقهٔ کانا
 
 ---
 
-*Last verified against Backpack v1.18.1*
+*Last verified against Backpack v1.19.0*

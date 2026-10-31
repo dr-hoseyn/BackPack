@@ -1,6 +1,6 @@
 # Direct layer-3 tunnel
 
-Every other transport in Backpack forwards **ports**: a listener on the Iran
+Backpack's reverse and layer-4 direct engines forward **ports**: a listener on the Iran
 server, a backend dial on the kharej server, and a stream in between. This one
 is different. It creates a network **interface** on each host and carries whole
 IP packets between them, so the two servers get an ordinary point-to-point
@@ -12,15 +12,20 @@ from the kernel, and carried inside Backpack's own transports.
 
 ### IPv6 paths and carrier families
 
-The direct wizard groups carriers as ICMP (xDi), TCP (PCK and SNI), UDP
-(UDP and QUIC), HTTPS (MASQUE), and IP Spoofing. The panel uses the same groups
+The direct wizard groups carriers as ICMP (xDi, request-only and reply-only), TCP (PCK and SNI), UDP
+(UDP, QUIC and DNS/EDNS0), HTTPS (MASQUE), and IP Spoofing. The panel uses the same groups
 with its existing CLI-only restrictions. PCK, SNI, xDi and MASQUE support public
 IPv6 endpoints; xDi uses real ICMPv6 echo messages and narrowly scoped ip6tables
 rules. IP Spoofing remains IPv4-only. Both ends must use the updated build.
 
-## Always GRE + Noise
+[DNS and symmetric ICMP](dns-icmp-carriers.md) retain the encrypted L3 engine.
+DNS needs inbound UDP on the paired receiving port at both endpoints.
+[Standard kernel tunnels](kernel-tunnels.md) provide a separate native engine.
+Native CONNECT-IP uses its own HTTP/3 IP encapsulation.
 
-Every direct tunnel is wrapped the same way: **GRE + Noise**. There is no
+## GRE + Noise for legacy carriers
+
+The legacy direct L3 carriers are wrapped the same way: **GRE + Noise**. There is no
 choice to make and the wizard does not ask — but the name is worth eight
 characters of explanation, because "GRE" on its own means something else.
 
@@ -720,4 +725,4 @@ obfuscated به `CAP_NET_RAW` هم نیاز دارند). **هیچ‌وقت حا�
 
 ---
 
-*Last verified against Backpack v1.18.1*
+*Last verified against Backpack v1.19.0*
