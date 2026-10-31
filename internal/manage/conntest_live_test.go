@@ -117,7 +117,7 @@ func TestConnTestIranSide(t *testing.T) {
 		}
 		skipAWG = kind != "awg"
 	}
-	s, link, err := StartConnTestIran(ConnTestOptions{skipAWG: skipAWG, Host: os.Getenv("CT_HOST"), Direct: true,
+	s, link, err := StartConnTestIran(ConnTestOptions{skipKernel: true, skipAWG: skipAWG, Host: os.Getenv("CT_HOST"), Direct: true,
 		SpoofSrc: "10.10.10.10", Preset: os.Getenv("CT_PRESET")})
 	if err != nil {
 		t.Fatal(err)

@@ -38,7 +38,7 @@ func ctMenuStartup(out io.Writer, suite *ConnTestSuite) {
 	}
 	for _, s := range suite.tests {
 		if s != nil && s.link.Mode == ConnTestQuick {
-			fmt.Fprintln(out, "  Quick: 20-second observation; short speed samples on every healthy tunnel.")
+			fmt.Fprintln(out, "  Quick: 20s carrier observation; 4s per serial kernel case, then verified speed samples.")
 			break
 		}
 	}
@@ -81,8 +81,8 @@ func ctMenuStartup(out io.Writer, suite *ConnTestSuite) {
 				g.paths = append(g.paths, family)
 			}
 			name := ctName(c.tr)
-			if c.kind == "direct" {
-				name = "Direct " + name
+			if c.kind == "direct" || c.kind == "kernel" {
+				name = ctKind(c.kind) + " " + name
 			}
 			if c.kind == "spoof" {
 				name = "IP spoofing " + name

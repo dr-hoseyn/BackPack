@@ -264,7 +264,7 @@ func kernelAddressConflict(a, b config.KernelConfig) bool {
 
 // Suggestions consider configured and live addresses, including broader host
 // prefixes. Two different host IPs inside the same /30 are still a collision.
-func suggestKernelPair(ipv6 bool) (string, string) {
+func kernelUsedPrefixes() []netip.Prefix {
 	var used []netip.Prefix
 	add := func(raw string) {
 		if p, e := netip.ParsePrefix(raw); e == nil {
@@ -285,7 +285,11 @@ func suggestKernelPair(ipv6 bool) (string, string) {
 			add(a.String())
 		}
 	}
-	return nextKernelPair(ipv6, used)
+	return used
+}
+
+func suggestKernelPair(ipv6 bool) (string, string) {
+	return nextKernelPair(ipv6, kernelUsedPrefixes())
 }
 
 func nextKernelPair(ipv6 bool, used []netip.Prefix) (string, string) {

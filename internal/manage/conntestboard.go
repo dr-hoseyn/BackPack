@@ -52,6 +52,13 @@ var ctNameWidth = func() int {
 }()
 
 func ctName(tr string) string {
+	if m, reverse, ok := ctKernelMethod(tr); ok {
+		name := strings.ToUpper(m.Name)
+		if reverse {
+			name += " Reverse"
+		}
+		return name
+	}
 	if n, ok := ctTransportNames[tr]; ok {
 		return n
 	}
@@ -195,7 +202,7 @@ func ConnTestTable(results []ConnTestResult) string {
 	}
 	b.WriteString("\n" + ctRule() + "\n\nWorks Steadily:\n\n")
 	steady := 0
-	for _, kind := range []string{"reverse", "direct", "awg", "spoof"} {
+	for _, kind := range []string{"reverse", "direct", "awg", "kernel", "spoof"} {
 		var rows []ConnTestResult
 		for _, r := range results {
 			if r.Status == ctOK && (r.Kind == kind || kind == "reverse" && r.Kind == "") {

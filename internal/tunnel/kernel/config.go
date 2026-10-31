@@ -60,7 +60,7 @@ func Resolve(c config.KernelConfig) (config.KernelConfig, error) {
 	if le != nil || re != nil || local.IsUnspecified() || remote.IsUnspecified() || local.IsMulticast() || remote.IsMulticast() || local == remote || local.Zone() != "" || remote.Zone() != "" {
 		return c, fmt.Errorf("kernel: distinct literal unicast local_addr and remote_addr are required")
 	}
-	if c.Method != "wireguard" && (local.Is6() != m.IPv6 || remote.Is6() != m.IPv6) || local.Is6() != remote.Is6() {
+	if !c.Reverse && c.Method != "wireguard" && (local.Is6() != m.IPv6 || remote.Is6() != m.IPv6) || local.Is6() != remote.Is6() {
 		return c, fmt.Errorf("kernel: %s has an incompatible underlay address family", c.Method)
 	}
 	addr, ae := netip.ParsePrefix(c.LocalIP)

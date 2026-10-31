@@ -30,9 +30,13 @@ func ctAskSetup(results []ConnTestResult) (ConnTestSetupRequest, bool) {
 		return ConnTestSetupRequest{}, false
 	}
 	r := usable[pick]
-	ports := tui.Prompt("Forwarded Ports (443, or 443=127.0.0.1:2096): ")
+	prompt := "Forwarded Ports (443, or 443=127.0.0.1:2096): "
+	if r.Kind == "kernel" {
+		prompt = "Forwarded Ports (blank for a routed kernel tunnel): "
+	}
+	ports := tui.Prompt(prompt)
 	req := ConnTestSetupRequest{ID: randomToken(16), Kind: r.Kind, Transport: r.Transport, SNIDomain: r.SNIDomain, Ports: ports}
-	if r.Transport != "udp" || r.Kind != "reverse" {
+	if ports != "" && (r.Transport != "udp" || r.Kind != "reverse") {
 		req.AcceptUDP = tui.Confirm("Carry UDP As Well As TCP", false)
 	}
 	return req, true

@@ -29,6 +29,9 @@ func ConnTestMode(mode string) (string, error) {
 
 func (c *connTestCase) samples() int {
 	if c.mode == ConnTestQuick {
+		if c.kind == "kernel" {
+			return ctKernelQuickSamples
+		}
 		return connTestQuickSamples
 	}
 	return connTestSoak
@@ -46,7 +49,17 @@ func ctEchoContext(ctx context.Context, conn net.Conn, udp bool) error {
 // Estimates include the serial speed budget, not just the sampling window.
 func ConnTestRunTimeFor(mode string) time.Duration {
 	if mode == ConnTestQuick {
-		return 30*time.Second + connTestQuickSamples*time.Second + 20*time.Second + time.Duration(len(connTestReverse)-1+len(ctDirectPlans("")))*ctQuickSpeedProfile.budget()*2
+		return ctKernelTimeBudget(mode) + 30*time.Second + connTestQuickSamples*time.Second + 20*time.Second + time.Duration(len(connTestReverse)-1+len(ctDirectPlans("")))*ctQuickSpeedProfile.budget()*2
 	}
-	return connTestConnectWait + time.Duration(connTestSoak)*time.Second + 45*time.Second + ConnTestSpeedTime(len(connTestReverse)-1+len(ctDirectPlans("")))
+	return ctKernelTimeBudget(mode) + connTestConnectWait + time.Duration(connTestSoak)*time.Second + 45*time.Second + ConnTestSpeedTime(len(connTestReverse)-1+len(ctDirectPlans("")))
+}
+
+// Upper bound includes local readiness, peer setup/cleanup and both directional
+// speed budgets. Unsupported methods are skipped before these waits.
+func ctKernelTimeBudget(mode string) time.Duration {
+	samples, speed := connTestSoak, ctFullSpeedProfile
+	if mode == ConnTestQuick {
+		samples, speed = ctKernelQuickSamples, ctQuickSpeedProfile
+	}
+	return 40 * (65*time.Second + time.Duration(samples)*time.Second + 2*speed.budget())
 }

@@ -104,7 +104,7 @@ func TestUnjoinedFamiliesShareOneJoinDeadlineAndKeepHonestErrors(t *testing.T) {
 	connTestReverse = nil
 	connTestJoinWait = 30 * time.Millisecond
 	defer func() { connTestReverse, connTestJoinWait = previous, wait }()
-	suite, _, err := StartConnTestSuite(ConnTestOptions{}, []string{"127.0.0.1", "::1"})
+	suite, _, err := StartConnTestSuite(ConnTestOptions{skipKernel: true, }, []string{"127.0.0.1", "::1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +133,7 @@ func TestAnUnreachablePathDoesNotHoldTheOtherFamilyForTheJoinTimeout(t *testing.
 		t.Run([]string{"IPv4 unavailable", "IPv6 unavailable"}[failed], func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
 			defer cancel()
-			suite, raw, err := StartConnTestSuite(ConnTestOptions{Context: ctx}, []string{"127.0.0.1", "::1"})
+			suite, raw, err := StartConnTestSuite(ConnTestOptions{skipKernel: true, Context: ctx}, []string{"127.0.0.1", "::1"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -166,7 +166,7 @@ func TestIPv6RawCarriersOnlySkipIPSpoofing(t *testing.T) {
 	previous := connTestReverse
 	connTestReverse = []string{"pck"}
 	defer func() { connTestReverse = previous }()
-	s, _, err := StartConnTestIran(ConnTestOptions{Host: "::1", Direct: true, SpoofSrc: ConnTestSpoofSource})
+	s, _, err := StartConnTestIran(ConnTestOptions{skipKernel: true, Host: "::1", Direct: true, SpoofSrc: ConnTestSpoofSource})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,7 +203,7 @@ func TestBothFamiliesCarryRealTrafficThroughOneLinkInSequence(t *testing.T) {
 	defer func() { connTestReverse, connTestSoak, connTestBinary = previous, soak, binary }()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
-	suite, raw, err := StartConnTestSuite(ConnTestOptions{Context: ctx}, []string{"127.0.0.1", "::1"})
+	suite, raw, err := StartConnTestSuite(ConnTestOptions{skipKernel: true, Context: ctx}, []string{"127.0.0.1", "::1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -257,7 +257,7 @@ func TestStoppingASuiteTellsBothPeersAndCleansEveryPath(t *testing.T) {
 	previous := connTestReverse
 	connTestReverse = nil
 	defer func() { connTestReverse = previous }()
-	suite, raw, err := StartConnTestSuite(ConnTestOptions{}, []string{"127.0.0.1", "::1"})
+	suite, raw, err := StartConnTestSuite(ConnTestOptions{skipKernel: true, }, []string{"127.0.0.1", "::1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -339,7 +339,7 @@ func TestStoppingBetweenPathsNeverStartsTheRemainingFamily(t *testing.T) {
 	defer func() { connTestReverse = previous }()
 	iranCtx, cancelIran := context.WithCancel(context.Background())
 	defer cancelIran()
-	suite, raw, err := StartConnTestSuite(ConnTestOptions{Context: iranCtx}, []string{"127.0.0.1", "::1"})
+	suite, raw, err := StartConnTestSuite(ConnTestOptions{skipKernel: true, Context: iranCtx}, []string{"127.0.0.1", "::1"})
 	if err != nil {
 		t.Fatal(err)
 	}
