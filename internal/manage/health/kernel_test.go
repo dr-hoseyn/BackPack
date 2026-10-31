@@ -18,7 +18,12 @@ func TestKernelHealthCacheIsSpecificToPeerAndCredentialGeneration(t *testing.T) 
 	}
 	changed := c
 	changed.Token = "credential-b"
-	if changed.Interface+"/"+changed.LocalIP+"/"+changed.PeerIP+"/"+changed.Token == key {
-		t.Fatal("credential generations collide")
+	if kernelPeerReachable(changed) {
+		t.Fatal("a rekeyed generation reused the old peer's successful observation")
+	}
+	changed = c
+	changed.PeerIP = "10.77.1.3"
+	if kernelPeerReachable(changed) {
+		t.Fatal("a different peer reused the old reachability observation")
 	}
 }

@@ -120,8 +120,12 @@ readers, sockets, queues and forwarders before deleting owned interfaces. A
 crash can leave FOU receive ports or L2TP objects behind; inspect those specific
 objects before retrying rather than deleting unrelated host network state.
 
-An interface being configured does not prove peer reachability. Health reports
-that distinction; verify bidirectional traffic to the peer tunnel IP. The
+An interface being configured does not prove peer reachability. Management
+probes the peer through the selected interface and briefly caches that result
+for the exact credential generation. A successful probe reports online; a
+missing interface reports offline, while a blocked/unavailable ping remains
+unknown and does not trigger a restart by itself. Health Check shows this
+distinction explicitly. The
 Connection Test now includes all 20 methods in native and reverse modes.
 These cases run serially after the existing carriers, using fresh temporary
 interfaces and peer routes. The worker acknowledges cleanup before the next

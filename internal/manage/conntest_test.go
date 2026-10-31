@@ -79,7 +79,7 @@ func TestTheTestSettingsFitOnePacketAndCarryNoToken(t *testing.T) {
 	previousHelper := connTestHelperBinary
 	connTestHelperBinary = func(string) (string, error) { return "/bin/true", nil }
 	defer func() { connTestHelperBinary = previousHelper }()
-	s, link, err := StartConnTestIran(ConnTestOptions{skipKernel: true, Host: "127.0.0.1", Direct: true, SpoofSrc: ConnTestSpoofSource, RealityTarget: "example.com:443"})
+	s, link, err := StartConnTestIran(ConnTestOptions{Host: "127.0.0.1", Direct: true, SpoofSrc: ConnTestSpoofSource, RealityTarget: "example.com:443"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -385,7 +385,7 @@ func TestConnTestUnavailableHelpersAreSkipped(t *testing.T) {
 	s := &ConnTestIran{}
 	for _, tr := range []string{"naive", "xhttp", "reality"} {
 		c := &connTestCase{kind: "reverse", tr: tr}
-		s.startManagedCase(c, map[int]bool{}, ConnTestOptions{skipKernel: true, })
+		s.startManagedCase(c, map[int]bool{}, ConnTestOptions{skipKernel: true})
 		if !strings.Contains(c.skip, "unavailable") {
 			t.Errorf("%s did not explain the missing helper: %q", tr, c.skip)
 		}

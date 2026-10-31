@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Integrate all 20 standard kernel methods into Connection Test in native and
+  reverse modes. Test real peer traffic and verified four-stream download/upload;
+  expose successful cases in recommendations, saved history and automatic setup.
+  Run kernel cases serially with acknowledged teardown, explicit skipped
+  prerequisites, generation-safe control, subnet/helper-route conflict checks
+  and cleanup after a lost coordinator lease.
+- Use four-second kernel observations in Quick and full observations in Full.
+  Show the tested native MTU/protection instead of unrelated reverse FEC/timers.
+  Retain method/direction/port/MTU when promoting, rotate pair credentials/IDs,
+  verify peer traffic through the selected interface, and support routed-only
+  IPv6 kernel pairs. Kernel management health can verify peer reachability.
+
 ## v1.19.0 — 2026-10-31
 
 - Add 20 standard Linux kernel L3/L2 tunnel methods as an independent engine:

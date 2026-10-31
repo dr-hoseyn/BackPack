@@ -237,3 +237,35 @@ func TestKernelConnectionTestLiveEndpoint(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestKernelSettingsFitOnePacketWithoutCredentialsForEveryMethod(t *testing.T) {
+	for _, method := range kernel.Methods() {
+		for _, rev := range []bool{false, true} {
+			tr := method.Name
+			if rev {
+				tr += "-reverse"
+			}
+			c := config.KernelConfig{Method: method.Name, Role: "kharej", LocalAddr: "2001:db8:1234:5678:abcd:ef01:2345:6789", RemoteAddr: "2001:db8:1234:5678:abcd:ef01:2345:6790", LocalIP: "fd77:77:1234::2/64", PeerIP: "fd77:77:1234::1", Interface: "bpka1234567", Reverse: rev, MTU: 1280, ID: 123456, Port: 24443, Lanes: 8}
+			command := ctKernelCommand{Generation: 1000, Transport: tr, Name: "ct-12345678-k-" + tr, Config: &c}
+			raw, err := json.Marshal(command)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len("kernel "+gzipB64(raw)) > 1200 {
+				t.Fatalf("%s settings exceed a packet", tr)
+			}
+			if c.Token != "" {
+				t.Fatal("test config carries credentials")
+			}
+		}
+	}
+}
+
+func TestKernelCleanupFailurePreventsAnyLaterCaseFromStarting(t *testing.T) {
+	s := &ConnTestIran{kernelFailure: "peer teardown was not acknowledged"}
+	c := &connTestCase{kind: "kernel", tr: "gre", mode: ConnTestQuick}
+	r := s.runKernelCase(context.Background(), c, func(ConnTestResult) {})
+	if r.Status != ctSkipped || !strings.Contains(r.Detail, "previous kernel cleanup failed") {
+		t.Fatal("continued despite uncertain network ownership")
+	}
+}

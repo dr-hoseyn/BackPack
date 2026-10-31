@@ -143,10 +143,20 @@ func ctKernelPrerequisite(c config.KernelConfig) error {
 		}
 		_ = conn.Close()
 	}
-	// Refuse existing addresses/routes; test configs may not share a live subnet.
-	for _, p := range kernelUsedPrefixes() {
-		if kernelAddressConflict(c, config.KernelConfig{LocalIP: p.String()}) {
-			return errors.New("test subnet overlaps an existing tunnel or interface")
+	// Include private reverse/SIT underlay addresses, not only the user-facing
+	// tunnel subnet: a helper route may otherwise overlap an existing network.
+	plan, err := kernel.Build(c)
+	if err != nil {
+		return err
+	}
+	for _, step := range plan.Steps {
+		if len(step.Args) < 3 || step.Args[0] != "address" || step.Args[1] != "add" {
+			continue
+		}
+		for _, prefix := range kernelUsedPrefixes() {
+			if kernelAddressConflict(config.KernelConfig{LocalIP: step.Args[2]}, config.KernelConfig{LocalIP: prefix.String()}) {
+				return errors.New("test subnet or helper route overlaps an existing tunnel or interface")
+			}
 		}
 	}
 	if c.Method == "xfrm-ipsec" && !c.Reverse {
