@@ -104,7 +104,7 @@ func TestUnjoinedFamiliesShareOneJoinDeadlineAndKeepHonestErrors(t *testing.T) {
 	connTestReverse = nil
 	connTestJoinWait = 30 * time.Millisecond
 	defer func() { connTestReverse, connTestJoinWait = previous, wait }()
-	suite, _, err := StartConnTestSuite(ConnTestOptions{skipKernel: true, }, []string{"127.0.0.1", "::1"})
+	suite, _, err := StartConnTestSuite(ConnTestOptions{skipKernel: true}, []string{"127.0.0.1", "::1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -257,7 +257,7 @@ func TestStoppingASuiteTellsBothPeersAndCleansEveryPath(t *testing.T) {
 	previous := connTestReverse
 	connTestReverse = nil
 	defer func() { connTestReverse = previous }()
-	suite, raw, err := StartConnTestSuite(ConnTestOptions{skipKernel: true, }, []string{"127.0.0.1", "::1"})
+	suite, raw, err := StartConnTestSuite(ConnTestOptions{skipKernel: true}, []string{"127.0.0.1", "::1"})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -50,7 +50,13 @@ for mode in ${MODES:-direct reverse}; do
         failed=0
         for process in "${pids[@]}"; do wait "$process" || failed=1; done
         pids=()
-        if [[ "$failed" == 1 || ! -f "$path/passed" ]]; then cat "$path"/*.log; exit 1; fi
+        if [[ "$failed" == 1 || ! -f "$path/passed" ]]; then
+            cat "$path"/*.log
+            detail=$(grep -hE 'real kernel Connection Test failed:|cancellation did not cleanly|\.go:[0-9]+:' "$path"/*.log | tail -n 1 || true)
+            detail=${detail//'%'/'%25'}
+            echo "::error title=Kernel Connection Test::$method $mode: $detail"
+            exit 1
+        fi
         for namespace in "$first" "$second"; do
             ip -n "$namespace" -j link show | python3 -c 'import json,sys; assert not any(x.get("ifalias","").startswith("backpack-kernel:") for x in json.load(sys.stdin)), "kernel test leaked an interface"'
         done
