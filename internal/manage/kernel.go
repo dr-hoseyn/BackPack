@@ -259,7 +259,7 @@ func kernelAddressConflict(a, b config.KernelConfig) bool {
 	}
 	ap, _ := netip.ParseAddr(a.PeerIP)
 	bp, _ := netip.ParseAddr(b.PeerIP)
-	return first.Overlaps(second) || ap == bp || first.Contains(bp) || second.Contains(ap)
+	return first.Overlaps(second) || (ap.IsValid() && bp.IsValid() && ap == bp) || first.Contains(bp) || second.Contains(ap)
 }
 
 // Suggestions consider configured and live addresses, including broader host

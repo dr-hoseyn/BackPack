@@ -311,3 +311,15 @@ func TestKernelSubnetsDoNotOverrideReservedHostOrCorporateRoutes(t *testing.T) {
 		t.Fatal("unrelated underlay route prevented testing")
 	}
 }
+
+func TestKernelPrefixOnlyChecksDoNotTreatMissingPeersAsEqual(t *testing.T) {
+	a := config.KernelConfig{LocalIP: "10.77.0.1/30"}
+	b := config.KernelConfig{LocalIP: "192.0.2.0/24"}
+	if kernelAddressConflict(a, b) {
+		t.Fatal("two absent peer addresses falsely collide")
+	}
+	b.LocalIP = "10.77.0.0/24"
+	if !kernelAddressConflict(a, b) {
+		t.Fatal("real prefix overlap was missed")
+	}
+}
