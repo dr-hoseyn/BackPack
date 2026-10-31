@@ -62,7 +62,11 @@ for mode in ${MODES:-direct reverse}; do
         [[ "$mode" == reverse ]] && rev=true
         inner4=true
         [[ "$method" == sit || "$method" == ip6ip6 ]] && inner4=false
-        for side in 1 2; do
+        sides="1 2"
+        # Exercise the initiating reverse WG peer starting before its listener.
+        # Its first handshake can be lost and is retried by the kernel timer.
+        [[ "$method" == wireguard && "$mode" == reverse ]] && sides="2 1"
+        for side in $sides; do
             peer=$((3-side))
             role=iran
             [[ "$side" == 2 ]] && role=kharej
@@ -103,10 +107,14 @@ EOF
                 ip netns exec "$namespace" "$binary" -c "$path/$side.toml" > "$path/$side.log" 2>&1 &
             fi
             pids+=("$!")
+            if [[ "$method" == wireguard && "$mode" == reverse && "$side" == 2 ]]; then sleep .5; fi
         done
         target="10.77.7.2"; [[ "$inner4" == false ]] && target="fd77:7::2"
         passed=false
-        for attempt in $(seq 1 25); do
+        # Immediate "endpoint unknown" failures return much faster than -W 1.
+        # Allow the native WG handshake retry timer to fire after a lost start.
+        startup_deadline=$((SECONDS + 30))
+        while (( SECONDS < startup_deadline )); do
             if ip netns exec "$first" ping -n -c 1 -W 1 "$target" > "$path/ping.log" 2>&1; then passed=true; break; fi
             sleep .2
         done
