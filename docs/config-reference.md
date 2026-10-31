@@ -19,7 +19,7 @@ them both ends have to agree on. This says what exists.
 | `awg` | `AWGConfig` | AWG is the exclusive independent AmneziaWG engine, managed like other tunnels. |
 | `client` | `ClientConfig` | Client is the reverse tunnel's kharej end: it dials the server and delivers each connection to the service behind it. |
 | `direct` | `DirectConfig` | Direct is a direct layer-4 tunnel — the same forwarded ports, dialled the other way round. Present only in a configuration that asks for one, on the same terms as L3 above. See config/direct.go. |
-| `kernel` | `KernelConfig` | _(undocumented — add a comment above the field in `config/config.go`)_ |
+| `kernel` | `KernelConfig` | Kernel selects a standard Linux L3/L2 tunnel, exclusive with other engines. |
 | `l3` | `L3Config` | L3 is a direct layer-3 tunnel, and is present only in a configuration that asks for one. It shares nothing with Server and Client: a file without an [l3] table leaves this zero, L3.Enabled() reads false, and the reverse tunnel runs exactly as it always has. See config/l3.go. |
 | `server` | `ServerConfig` | Server is the reverse tunnel's Iran end: it listens for the client and exposes the forwarded ports. Present only in a configuration that asks for one; the three engines are mutually exclusive. |
 
