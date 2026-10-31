@@ -304,3 +304,28 @@ func TestCreationReportsRollbackFailuresAlongsideOriginalError(t *testing.T) {
 		t.Fatalf("hid a creation or teardown error: %v", err)
 	}
 }
+
+func TestKernelRejectsUnsupportedInnerIPFamiliesAndPreservesJumboHeadroom(t *testing.T) {
+	for _, method := range []string{"ipip", "gue-ipip", "ipip6", "6to4"} {
+		c := example(method)
+		c.LocalIP, c.PeerIP = "fd77::1/64", "fd77::2"
+		if _, err := Build(c); err == nil {
+			t.Fatalf("%s accepted an IPv6 payload it cannot transmit", method)
+		}
+	}
+	c := example("gre")
+	c.Reverse, c.MTU = true, 9000
+	p, err := Build(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, step := range p.Steps {
+		if strings.Join(step.Args, " ") == "link set dev "+p.Config.Interface+"r mtu 9256 up" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("reverse underlay cannot carry the configured jumbo MTU plus headers")
+	}
+}

@@ -22,6 +22,10 @@ their current wire format and lifecycle.
 | Parallel kernel routes | `ecmp-lanes` | 2–8 keyed GRE interfaces; default four |
 | Ethernet, L2 | `eoip`, `gretap`, `ip6gretap`, `vxlan`, `geneve`, `l2tpv3`, `etherip` | Relevant kernel modules; EoIP/EtherIP additionally use a TAP device and raw socket |
 
+`ipip`, `gue-ipip`, `ipip6` and `6to4` carry IPv4 payloads only;
+`sit` and `ip6ip6` carry IPv6 payloads only. Configuration rejects incompatible
+inner address families before touching network state.
+
 All methods need Linux, `iproute2`, and root/CAP_NET_ADMIN. Raw bridges also
 need CAP_NET_RAW and `/dev/net/tun`; reverse carriers need `/dev/net/tun`.
 Kernel support varies by host. Unsupported modules produce a startup error,

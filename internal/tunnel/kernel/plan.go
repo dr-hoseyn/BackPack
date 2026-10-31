@@ -63,7 +63,7 @@ func Build(input config.KernelConfig) (Plan, error) {
 		p.Interfaces = append(p.Interfaces, name)
 		p.step([]string{"tuntap", "add", "dev", name, "mode", "tun"}, []string{"link", "del", name})
 		p.step([]string{"link", "set", "dev", name, "alias", owner(c)}, nil)
-		p.address(name, local, 9000)
+		p.address(name, local, max(9000, c.MTU+256))
 	}
 	base := []string{"local", p.Local, "remote", p.Remote}
 	kind := c.Method

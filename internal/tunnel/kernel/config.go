@@ -70,7 +70,8 @@ func Resolve(c config.KernelConfig) (config.KernelConfig, error) {
 	}
 	c.LocalAddr, c.RemoteAddr = local.String(), remote.String()
 	c.LocalIP, c.PeerIP = addr.String(), peer.String()
-	if m.IPv6Only && !peer.Is6() || c.Method == "ipip6" && !peer.Is4() {
+	ipv4Only := c.Method == "ipip" || c.Method == "gue-ipip" || c.Method == "ipip6" || c.Method == "6to4"
+	if m.IPv6Only && !peer.Is6() || ipv4Only && !peer.Is4() {
 		return c, fmt.Errorf("kernel: %s cannot carry this inner IP family", c.Method)
 	}
 	if len(c.Ports) > 0 && (c.Role != "iran" || m.IPv6Only) {
