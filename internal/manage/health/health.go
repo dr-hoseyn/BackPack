@@ -2,6 +2,7 @@ package health
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/backpack/backpack/internal/app"
