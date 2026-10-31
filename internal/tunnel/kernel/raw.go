@@ -10,7 +10,7 @@ import (
 	"github.com/backpack/backpack/config"
 )
 
-func rawBridge(ctx context.Context, c config.KernelConfig, local, remote string) error {
+func rawBridge(ctx context.Context, c config.KernelConfig, local, remote string, ready func()) error {
 	proto, header := "ip4:47", 8
 	if c.Method == "etherip" {
 		proto, header = "ip4:97", 2
@@ -25,6 +25,9 @@ func rawBridge(ctx context.Context, c config.KernelConfig, local, remote string)
 		return err
 	}
 	defer dev.Close()
+	if ready != nil {
+		ready()
+	}
 	stop := context.AfterFunc(ctx, func() { _ = socket.Close(); _ = dev.Close() })
 	defer stop()
 	var wg sync.WaitGroup

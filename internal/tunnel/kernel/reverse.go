@@ -33,16 +33,20 @@ type reverseLane struct {
 
 func (l *reverseLane) close() { l.once.Do(func() { close(l.done); _ = l.conn.Close() }) }
 
-func reverse(ctx context.Context, c config.KernelConfig) error {
+func reverse(ctx context.Context, c config.KernelConfig, ready func()) error {
 	dev, err := openDevice(c.Interface+"r", false)
 	if err != nil {
 		return err
 	}
 	defer dev.Close()
-	return runReverse(ctx, c, dev)
+	return runReverseReady(ctx, c, dev, ready)
 }
 
 func runReverse(parent context.Context, c config.KernelConfig, dev packetDevice) error {
+	return runReverseReady(parent, c, dev, nil)
+}
+
+func runReverseReady(parent context.Context, c config.KernelConfig, dev packetDevice, ready func()) error {
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 	p := &reversePool{ctx: ctx, device: dev, identity: sha256.Sum256([]byte(fmt.Sprintf("backpack-kernel-reverse-v1|%s|%d|%d|%s", c.Method, c.ID, c.MTU, c.Token)))}
@@ -149,6 +153,9 @@ func runReverse(parent context.Context, c config.KernelConfig, dev packetDevice)
 				}
 			}(i)
 		}
+	}
+	if ready != nil {
+		ready()
 	}
 	select {
 	case <-parent.Done():

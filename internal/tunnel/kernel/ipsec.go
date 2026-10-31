@@ -3,6 +3,7 @@ package kernel
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -115,7 +116,8 @@ func viciRequest(ctx context.Context, cmd string, msg viciMessage) error {
 
 func ipsec(ctx context.Context, c config.KernelConfig, local, remote string) (func(), error) {
 	name := "backpack-" + c.Interface
-	identity := "backpack-" + id(c.ID)
+	identityHash := sha256.Sum256([]byte("backpack-kernel-ipsec-v1|" + c.Token))
+	identity := fmt.Sprintf("backpack-%x", identityHash[:8])
 	ours, theirs := identity+"-"+c.Role, identity+"-iran"
 	if c.Role == "iran" {
 		theirs = identity + "-kharej"

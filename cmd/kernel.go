@@ -7,6 +7,7 @@ import (
 
 	"github.com/backpack/backpack/config"
 	"github.com/backpack/backpack/internal/tunnel/kernel"
+	"github.com/backpack/backpack/internal/tunnel/naive"
 )
 
 func runKernelTunnel(cfg *config.Config, ctx context.Context, path string) {
@@ -37,7 +38,7 @@ func runKernelTunnel(cfg *config.Config, ctx context.Context, path string) {
 				}
 			}
 		}()
-		err = kernel.Run(generation, c)
+		err = kernel.RunManaged(generation, c, func(ready bool) { naive.ReportReadiness(ctx, ready) })
 		finish()
 		<-sampled
 		if ctx.Err() != nil {

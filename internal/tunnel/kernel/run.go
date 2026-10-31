@@ -99,7 +99,15 @@ func wireguardConfig(c config.KernelConfig) string {
 // Run owns one native tunnel generation. Its lock outlives teardown. A new
 // process can recover tagged interfaces after a crash, but cannot delete a
 // running generation or an operator's interface that happens to share a name.
-func Run(ctx context.Context, input config.KernelConfig) (err error) {
+func Run(ctx context.Context, input config.KernelConfig) error { return RunManaged(ctx, input, nil) }
+
+// RunManaged reports local data-plane readiness for guarded configuration edits.
+// Readiness does not claim that the remote endpoint is reachable.
+func RunManaged(ctx context.Context, input config.KernelConfig, ready func(bool)) (err error) {
+	if ready != nil {
+		ready(false)
+		defer ready(false)
+	}
 	p, err := Build(input)
 	if err != nil {
 		return err
@@ -124,15 +132,20 @@ func Run(ctx context.Context, input config.KernelConfig) (err error) {
 	defer cancel()
 	var workers sync.WaitGroup
 	failures := make(chan error, 3)
+	started := make(chan struct{}, 2)
+	pending := 0
+	signalReady := func() { started <- struct{}{} }
 	start := func(f func() error) { workers.Add(1); go func() { defer workers.Done(); failures <- f() }() }
 	// End and join every device reader, socket and forwarder before deleting
 	// interfaces or allowing the configuration reload to start its replacement.
 	defer func() { cancel(); workers.Wait() }()
 	if c.Reverse && c.Method != "wireguard" {
-		start(func() error { return reverse(runCtx, c) })
+		pending++
+		start(func() error { return reverse(runCtx, c, signalReady) })
 	}
 	if c.Method == "eoip" || c.Method == "etherip" {
-		start(func() error { return rawBridge(runCtx, c, p.Local, p.Remote) })
+		pending++
+		start(func() error { return rawBridge(runCtx, c, p.Local, p.Remote, signalReady) })
 	}
 	if c.Method == "xfrm-ipsec" {
 		stop, e := ipsec(runCtx, c, p.Local, p.Remote)
@@ -149,12 +162,24 @@ func Run(ctx context.Context, input config.KernelConfig) (err error) {
 			return e
 		}
 	}
+	for i := 0; i < pending; i++ {
+		select {
+		case <-started:
+		case e := <-failures:
+			return e
+		case <-ctx.Done():
+			return nil
+		}
+	}
 	forwarder, err := Forwarder(c)
 	if err != nil {
 		return err
 	}
 	if forwarder != nil {
 		start(func() error { return forwarder.Run(runCtx) })
+	}
+	if ready != nil {
+		ready(true)
 	}
 	select {
 	case <-ctx.Done():

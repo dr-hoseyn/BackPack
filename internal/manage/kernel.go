@@ -44,7 +44,7 @@ func kernelLink(name string, c config.KernelConfig) (string, error) {
 
 func kernelFromLink(l ShareLink) (config.KernelConfig, error) {
 	var c config.KernelConfig
-	if l.Kind != "kernel" || len(l.KernelPeer) > 16<<10 {
+	if l.Kind != "kernel" || (l.From != "iran" && l.From != "kharej") || len(l.KernelPeer) > 16<<10 {
 		return c, fmt.Errorf("invalid kernel setup link")
 	}
 	d := json.NewDecoder(strings.NewReader(l.KernelPeer))
@@ -239,11 +239,5 @@ func editKernel(t Tunnel) {
 		tui.PressEnter()
 		return
 	}
-	if tui.Confirm("Save And Restart This Kernel Tunnel", true) {
-		err = app.WriteFileAtomic(app.ConfigPath(t.Name), []byte(body), app.TunnelConfigMode)
-		if err == nil {
-			err = RestartService(t.Service)
-		}
-		report(err, "Updated")
-	}
+	applyEdit(t, body)
 }

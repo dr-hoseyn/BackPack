@@ -77,8 +77,8 @@ func Resolve(c config.KernelConfig) (config.KernelConfig, error) {
 	if c.MaxConnections < 0 || c.BandwidthMbps < 0 {
 		return c, fmt.Errorf("kernel: forwarding limits cannot be negative")
 	}
-	if len(c.Token) < 24 {
-		return c, fmt.Errorf("kernel: token must contain at least 24 characters (use a random secret)")
+	if len(c.Token) < 24 || len(c.Token) > 4096 {
+		return c, fmt.Errorf("kernel: token must contain 24..4096 characters (use a random secret)")
 	}
 	seed := sha256.Sum256([]byte("backpack-kernel-v1|" + c.Token + "|" + c.Method))
 	automaticID := c.ID == 0

@@ -101,7 +101,7 @@ func (e *engineControl) setGeneration(stop func(), cfg *config.Config) {
 	e.restart = stop
 	e.role, e.transport = role, transport
 	e.helperReady = nil
-	if cfg.Server.Managed() || cfg.Client.Managed() || config.SingDatagram(cfg.L3.Carrier) {
+	if cfg.Kernel.Enabled() || cfg.Server.Managed() || cfg.Client.Managed() || config.SingDatagram(cfg.L3.Carrier) {
 		ready := false
 		e.helperReady = &ready
 	}
