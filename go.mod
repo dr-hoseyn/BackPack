@@ -8,6 +8,7 @@ require (
 	github.com/cilium/ebpf v0.22.0
 	github.com/flynn/noise v1.1.0
 	github.com/gorilla/websocket v1.5.3
+	github.com/klauspost/compress v1.18.7
 	github.com/klauspost/reedsolomon v1.14.2
 	github.com/quic-go/connect-ip-go v0.6.0
 	github.com/quic-go/masque-go v0.6.0
@@ -31,7 +32,6 @@ require (
 	github.com/dunglas/httpsfv v1.1.1 // indirect
 	github.com/ebitengine/purego v0.11.1 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
-	github.com/klauspost/compress v1.18.7 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect

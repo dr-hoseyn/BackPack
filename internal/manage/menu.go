@@ -83,6 +83,10 @@ func manageOne(t Tunnel) {
 		})
 		switch idx {
 		case 0:
+			if strings.HasPrefix(t.Transport, "kernel/") {
+				editKernel(t)
+				break
+			}
 			if t.Transport == "awg" {
 				editAWG(t)
 				break

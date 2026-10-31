@@ -368,6 +368,7 @@ func l3SpecOf(t Tunnel, l config.L3Config) l3Spec {
 	return l3Spec{
 		Name: t.Name, Side: side,
 		Carrier: orDefault(l.Carrier, "udp"),
+		DNS:     l.DNSConfig,
 		Masque:  l.MasqueConfig,
 		Sing:    l.SingL3Config,
 		Encap:   "gre", GREKey: l.GREKey,

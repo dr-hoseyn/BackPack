@@ -38,7 +38,7 @@ func ctMenuStartup(out io.Writer, suite *ConnTestSuite) {
 	}
 	for _, s := range suite.tests {
 		if s != nil && s.link.Mode == ConnTestQuick {
-			fmt.Fprintln(out, "  Quick: 30-second observation; speed on up to three finalists.")
+			fmt.Fprintln(out, "  Quick: 20-second observation; short speed samples on every healthy tunnel.")
 			break
 		}
 	}

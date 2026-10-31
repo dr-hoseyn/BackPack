@@ -100,6 +100,29 @@ func NewXdiPacketConn(listening bool, token, addr string) (net.PacketConn, net.A
 	return conn, peer, nil
 }
 
+// NewSymmetricICMPPacketConn sends the same echo type in both directions.
+// It retains xDi's demultiplexing and is used by explicit L3 carrier names.
+func NewSymmetricICMPPacketConn(listening bool, token, addr string, request bool) (net.PacketConn, net.Addr, error) {
+	var peer *net.IPAddr
+	var err error
+	v6 := endpointIPv6(addr)
+	if !listening {
+		peer, err = hostToIPAddr(addr)
+		if err != nil {
+			return nil, nil, err
+		}
+		v6 = peer.IP.To4() == nil
+	}
+	conn, err := newICMPSymmetricConn(token, listening, request, v6)
+	if err != nil {
+		return nil, nil, err
+	}
+	if listening {
+		return conn, nil, nil
+	}
+	return conn, peer, nil
+}
+
 func endpointIPv6(addr string) bool {
 	host, _, err := net.SplitHostPort(addr)
 	if err != nil {

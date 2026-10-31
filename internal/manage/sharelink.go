@@ -185,6 +185,9 @@ type ShareLink struct {
 	PathLinks          []string `json:"mpl,omitempty"`
 	PathProfile        string   `json:"mpp,omitempty"`
 	AWGPeer            string   `json:"awgp,omitempty"`
+	KernelPeer         string   `json:"krp,omitempty"`
+	DNSRotate          int      `json:"dnr,omitempty"`
+	DNSRate            int      `json:"dnq,omitempty"`
 }
 
 // Encode renders a link as the string an operator copies.
@@ -300,7 +303,7 @@ func checkShareLink(out ShareLink) error {
 		return fmt.Errorf("the setup link is missing the token or the transport — it was not made by this version")
 	}
 	switch out.Kind {
-	case "reverse", "direct", "awg":
+	case "reverse", "direct", "awg", "kernel":
 	default:
 		return fmt.Errorf("the setup link does not say what kind of tunnel it is")
 	}
@@ -324,9 +327,10 @@ func (l ShareLink) PeerSide() string {
 // the same reason the mirroring does: two copies of it would eventually
 // disagree, and the disagreement would be invisible until a tunnel went quiet.
 type PeerForm struct {
-	Kind string `json:"kind"` // "reverse" or "direct"
-	Side string `json:"side"` // the side this form is for
-	Name string `json:"name,omitempty"`
+	DNS  config.DNSConfig `json:"dns,omitempty"`
+	Kind string           `json:"kind"` // "reverse" or "direct"
+	Side string           `json:"side"` // the side this form is for
+	Name string           `json:"name,omitempty"`
 
 	Transport  string              `json:"transport,omitempty"` // reverse
 	Carrier    string              `json:"carrier,omitempty"`   // direct
@@ -414,6 +418,7 @@ func MirrorForPeer(l ShareLink) PeerForm {
 		Preset:     l.Preset,
 		MSS:        l.MSS,
 		MTU:        l.MTU,
+		DNS:        config.DNSConfig{DNSRotate: l.DNSRotate, DNSRate: l.DNSRate},
 		Paths:      l.Paths,
 		FEC:        l.FECData > 0 && l.FECParity > 0,
 		FECData:    l.FECData,
@@ -632,6 +637,9 @@ func shareLinkOf(name, host string, cfg config.Config) (string, error) {
 	}
 	l := ShareLink{Name: name, Host: strings.TrimSpace(host)}
 
+	if cfg.Kernel.Enabled() {
+		return kernelLink(name, cfg.Kernel)
+	}
 	if cfg.AWG.Enabled() {
 		return awgLink(name, strings.TrimSpace(host), cfg.AWG)
 	}
@@ -645,6 +653,7 @@ func shareLinkOf(name, host string, cfg config.Config) (string, error) {
 		l.Tok = cfg.L3.Token
 		l.Tr = orDefault(cfg.L3.Carrier, "udp")
 		l.SNI = cfg.L3.SNIDomain
+		l.DNSRotate, l.DNSRate = cfg.L3.DNSRotate, cfg.L3.DNSRate
 		if config.SingDatagram(l.Tr) {
 			l.SingTarget, l.SingServerName = cfg.L3.SingL3Config.TargetAddr(), cfg.L3.SingL3Config.ServerName
 		}

@@ -127,7 +127,7 @@ func StartConnTestSuite(o ConnTestOptions, hosts []string) (*ConnTestSuite, stri
 		} else {
 			s.tests[i] = test
 			test.link.Until = until
-			test.coord.setConfig(ctConfig(test.link))
+			test.coord.setTestConfig(test.link)
 			routes[i] = connTestAddr{Host: test.link.Host, Coord: test.link.Coord, Tok: test.link.Tok}
 			available++
 		}

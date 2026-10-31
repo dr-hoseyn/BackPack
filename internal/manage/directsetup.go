@@ -136,7 +136,11 @@ func setupL3(side directSide) {
 			tui.PressEnter()
 			return
 		}
-		port := tui.PromptDefault("Tunnel Port", "9000")
+		defaultPort := "9000"
+		if carrier == "dns" {
+			defaultPort = "53"
+		}
+		port := tui.PromptDefault("Tunnel Port", defaultPort)
 		if !validPort(port) {
 			tui.Error("Invalid port.")
 			tui.PressEnter()
@@ -158,7 +162,11 @@ func setupL3(side directSide) {
 			}
 		}
 	} else {
-		port := tui.PromptDefault("Tunnel Port", "9000")
+		defaultPort := "9000"
+		if carrier == "dns" {
+			defaultPort = "53"
+		}
+		port := tui.PromptDefault("Tunnel Port", defaultPort)
 		if !validPort(port) {
 			tui.Error("Invalid port.")
 			tui.PressEnter()
@@ -269,6 +277,14 @@ func pendingShareLinkFrom(cfg l3Spec, host string, extras linkExtras) string {
 // askL3CarrierExtras asks the questions only some carriers have. It reports
 // false when the setup cannot go on.
 func askL3CarrierExtras(cfg *l3Spec, side directSide) bool {
+	if cfg.Carrier == "dns" {
+		tui.Info("DNS queries go directly to the peer's listening ports. No recursive resolver or domain is required. Both servers must accept the chosen ports.")
+		cfg.DNS.DNSBind = tui.PromptDefault("Local DNS Receive IP (Empty = Automatic)", cfg.DNS.DNSBind)
+		cfg.DNS.DNSRotate = tui.PromptInt("Rotate Sending Source Port Every N Packets (0 = Off)", cfg.DNS.DNSRotate)
+		cfg.DNS.DNSRate = tui.PromptInt("Maximum Outgoing DNS Packets Per Second (0 = Unlimited)", cfg.DNS.DNSRate)
+		return true
+	}
+
 	if config.SingDatagram(cfg.Carrier) {
 		cfg.Sing.Binary = tui.PromptDefault("Sing-Box Binary", defaultString(cfg.Sing.Binary, managedHelperPath("sing-box")))
 		cfg.Sing.Target = tui.PromptDefault("Private UDP Target (Same On Both Ends)", cfg.Sing.TargetAddr())
@@ -862,7 +878,7 @@ func askL3FECPair(cfg *l3Spec) {
 // than a number behind Fine Tune: both ends must use the same count, and the
 // extra ports have to be open on the machine that listens.
 func askL3Paths(cfg *l3Spec, carrier string, side directSide) {
-	if carrier != "udp" {
+	if carrier != "udp" && carrier != "dns" {
 		return
 	}
 	there := "kharej"

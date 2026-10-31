@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -87,6 +88,7 @@ func TestTheTestSettingsFitOnePacketAndCarryNoToken(t *testing.T) {
 	if !strings.HasPrefix(reply, "config ") {
 		t.Fatalf("config: %q", reply)
 	}
+	t.Logf("full suite settings: %d bytes", len(reply))
 	if len(reply) > 1200 {
 		t.Errorf("the settings are %d bytes; they have to fit one packet", len(reply))
 	}
@@ -105,8 +107,15 @@ func TestTheTestSettingsFitOnePacketAndCarryNoToken(t *testing.T) {
 				c.Ports = fmt.Sprintf("127.0.0.1:%d=127.0.0.1:%d", 20000+(3571*(i+1)+1877*variant)%12000, candidate.TCP)
 			}
 		}
-		if size := len("config " + ctConfig(candidate)); size > 1200 {
-			t.Fatalf("settings port variant %d needs %d bytes", variant, size)
+		for _, mode := range []string{ConnTestQuick, ConnTestFull} {
+			candidate.Mode = mode
+			main, additional := ctConfigParts(candidate)
+			if size := len("config " + main); size > 1200 {
+				t.Fatalf("%s settings port variant %d needs %d bytes", mode, variant, size)
+			}
+			if size := len("additional " + additional); size > 1200 {
+				t.Fatalf("additional settings variant %d needs %d bytes", variant, size)
+			}
 		}
 	}
 	for _, c := range s.link.Cases {
@@ -770,5 +779,33 @@ func TestRealityCoverSelectionAuthenticatesWithThePinnedHelper(t *testing.T) {
 	case <-done:
 	case <-time.After(time.Second):
 		t.Fatal("cancelled helper probe retained its cover connection")
+	}
+}
+
+func TestDNSConnectionTestRequiresAReceivePortFreeOnBothServers(t *testing.T) {
+	busy, err := net.ListenPacket("udp", ":0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer busy.Close()
+	port := strconv.Itoa(busy.LocalAddr().(*net.UDPAddr).Port)
+	coordinator := &ctCoordinator{tok: "secret"}
+	if got := coordinator.answer("port secret dns:"+port, "127.0.0.1"); got != "busy" {
+		t.Fatalf("accepted an occupied Iran DNS receive port: %q", got)
+	}
+	free := ctPickPort(map[int]bool{}, true)
+	if free == 0 {
+		t.Fatal("no free test port")
+	}
+	line := "port secret dns:" + strconv.Itoa(free)
+	if got := coordinator.answer(line, "127.0.0.1"); got != "ok" {
+		t.Fatalf("free shared port: %q", got)
+	}
+	coordinator.peer = "127.0.0.1"
+	if got := coordinator.answer(line, "127.0.0.1"); got != "ok" {
+		t.Fatalf("idempotent replay: %q", got)
+	}
+	if got := coordinator.answer("port secret dns:"+port, "127.0.0.1"); got != "" {
+		t.Fatalf("moved an active endpoint: %q", got)
 	}
 }

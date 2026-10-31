@@ -19,6 +19,7 @@ them both ends have to agree on. This says what exists.
 | `awg` | `AWGConfig` | AWG is the exclusive independent AmneziaWG engine, managed like other tunnels. |
 | `client` | `ClientConfig` | Client is the reverse tunnel's kharej end: it dials the server and delivers each connection to the service behind it. |
 | `direct` | `DirectConfig` | Direct is a direct layer-4 tunnel — the same forwarded ports, dialled the other way round. Present only in a configuration that asks for one, on the same terms as L3 above. See config/direct.go. |
+| `kernel` | `KernelConfig` | Kernel selects a standard Linux L3/L2 tunnel, exclusive with other engines. |
 | `l3` | `L3Config` | L3 is a direct layer-3 tunnel, and is present only in a configuration that asks for one. It shares nothing with Server and Client: a file without an [l3] table leaves this zero, L3.Enabled() reads false, and the reverse tunnel runs exactly as it always has. See config/l3.go. |
 | `server` | `ServerConfig` | Server is the reverse tunnel's Iran end: it listens for the client and exposes the forwarded ports. Present only in a configuration that asks for one; the three engines are mutually exclusive. |
 
@@ -283,6 +284,28 @@ them both ends have to agree on. This says what exists.
 | `token` | `string` | Token is the shared secret. It never travels on the wire: each end proves it holds the token with an HMAC over two fresh nonces. |
 | `transport` | `string` | Transport is "tcp" (plain, for a payload that is already TLS), "stealth" (the Noise record layer, with no handshake or fingerprint for inspection to match), or "ws"/"wss" (an HTTP upgrade in front of the stream, which is what a CDN will proxy). Empty means "tcp". |
 
+## [kernel]
+
+| Key | Type | Description |
+|---|---|---|
+| `accept_udp` | `bool` | AcceptUDP enables UDP alongside TCP on forwarded ports. |
+| `bandwidth_mbps` | `int` | BandwidthMbps caps forwarded traffic in Mbit/s; zero is unlimited. |
+| `id` | `uint32` | ID is the paired GRE key, VNI or pseudowire ID; zero derives one from Token. |
+| `interface` | `string` | Interface exclusively names this tunnel; empty derives a name from its secret. |
+| `lanes` | `int` | Lanes selects 1..8 parallel GRE interfaces; ECMP defaults to four. |
+| `local_addr` | `string` | LocalAddr is this endpoint's literal underlay IP address. |
+| `local_ip` | `string` | LocalIP is this endpoint's tunnel address, including its prefix length. |
+| `max_connections` | `int` | MaxConnections caps simultaneous forwarded connections; zero is unlimited. |
+| `method` | `string` | Method selects one of the standard kernel L3 or L2 tunnel methods. |
+| `mtu` | `int` | MTU is the inner interface MTU; zero takes 1380. |
+| `peer_ip` | `string` | PeerIP is the peer's tunnel address without a prefix. |
+| `port` | `int` | Port is the method's UDP port, or the reverse TCP carrier port; zero takes the method default. |
+| `ports` | `[]string` | Ports contains the Iran-side forwarded port mappings; bare targets reach PeerIP. |
+| `remote_addr` | `string` | RemoteAddr is the peer's literal underlay IP address. |
+| `reverse` | `bool` | Reverse makes Kharej initiate eight encrypted TCP lanes, or native UDP for WireGuard. |
+| `role` | `string` | Role is iran or kharej and is independent of connection direction. |
+| `token` | `string` | Token is a random shared secret of at least 24 characters. Bare tunnels remain unencrypted. |
+
 ## [l3]
 
 | Key | Type | Description |
@@ -322,6 +345,14 @@ them both ends have to agree on. This says what exists.
 | `sing_key` | `string` | KeyFile is the corresponding private key; never exported in a setup link. |
 | `sing_server_name` | `string` | ServerName is the certificate identity verified by the dialling side. |
 | `sing_target` | `string` | Target is the listener's fixed numeric loopback UDP target, paired on both ends. |
+
+## [l3] — DNS carrier
+
+| Key | Type | Description |
+|---|---|---|
+| `dns_bind` | `string` | DNSBind is the local literal IP to receive DNS packets on; empty takes the listener address, or a wildcard address when dialing. Ports come from addr and paths. It is local and is never copied into a setup link. |
+| `dns_rate` | `int` | DNSRate caps outgoing DNS packets per second, including FEC and handshakes. Zero disables the cap. It is independent of bandwidth_mbps. |
+| `dns_rotate` | `int` | DNSRotate creates a fresh sending socket every N packets. Zero keeps one ephemeral source port. Each endpoint may tune its sending side. |
 
 ## [l3] — the MASQUE carrier
 
@@ -533,4 +564,4 @@ them both ends have to agree on. This says what exists.
 
 ---
 
-*Generated from `config/` on 2026-10-30. Last verified against Backpack v1.18.1.*
+*Generated from `config/` on 2026-10-31. Last verified against Backpack v1.18.1.*

@@ -21,6 +21,7 @@ import (
 
 	"github.com/backpack/backpack/config"
 	"github.com/backpack/backpack/internal/app"
+	"github.com/backpack/backpack/internal/tunnel/kernel"
 	"github.com/backpack/backpack/internal/utils/network"
 )
 
@@ -705,6 +706,19 @@ func directChecks(g string, t core.Tunnel) []Check {
 			Detail: "unreadable: " + err.Error(), Fix: "restore from a backup"})
 	}
 
+	if cfg.Kernel.Enabled() {
+		c, err := kernel.Resolve(cfg.Kernel)
+		if err != nil {
+			return append(out, Check{Group: g, Name: "Config", Level: CheckFail, Detail: err.Error()})
+		}
+		out = append(out, Check{Group: g, Name: "Config", Level: CheckOK, Detail: "standard kernel " + c.Method})
+		if ifaceExists(c.Interface) {
+			out = append(out, Check{Group: g, Name: "Interface", Level: CheckOK, Detail: c.Interface})
+		} else {
+			out = append(out, Check{Group: g, Name: "Interface", Level: CheckFail, Detail: "missing " + c.Interface, Fix: "check kernel module support, iproute2 and service log"})
+		}
+		return out
+	}
 	if cfg.AWG.Enabled() {
 		out = append(out, Check{Group: g, Name: "Config", Level: CheckOK, Detail: "independent AmneziaWG engine; only the peer host route is installed"})
 		if ifaceExists(cfg.AWG.Interface) {

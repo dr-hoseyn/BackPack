@@ -65,10 +65,7 @@ func (c *icmpConn) ReadBatch(bufs [][]byte, sizes []int, froms []net.Addr) (int,
 		c.batch.rmsg = make([]ipv4.Message, n)
 	}
 	msgs := c.batch.rmsg[:n]
-	wantType, wantDir := icmpEchoRequest, inboundDir(c.server)
-	if !c.server {
-		wantType = icmpEchoReply
-	}
+	wantType, wantDir := c.echoType(c.server), inboundDir(c.server)
 
 	for {
 		for i := range msgs {
@@ -125,10 +122,7 @@ func (c *icmpConn) WriteBatch(bufs [][]byte, to net.Addr) (int, error) {
 	if n == 0 {
 		return 0, nil
 	}
-	typ := icmpEchoRequest
-	if c.server {
-		typ = icmpEchoReply
-	}
+	typ := c.echoType(!c.server)
 	id := uint16(c.echoIDFor(to))
 
 	c.batch.wmu.Lock()

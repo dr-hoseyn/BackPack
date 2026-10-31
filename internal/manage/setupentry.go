@@ -19,6 +19,8 @@ func SetupIran() {
 		SetupServer()
 	case directionDirect:
 		setupDirectFor(sideIran)
+	case directionKernel:
+		setupKernel(sideIran)
 	case directionAWG:
 		setupAWG(sideIran)
 	case directionAutomatic:
@@ -48,6 +50,8 @@ func SetupKharej() {
 		setupClientManual()
 	case directionDirect:
 		setupDirectFor(sideKharej)
+	case directionKernel:
+		setupKernel(sideKharej)
 	case directionAWG:
 		setupAWG(sideKharej)
 	case directionAutomatic:
@@ -63,6 +67,7 @@ const (
 	directionDirect
 	directionAWG
 	directionAutomatic
+	directionKernel
 )
 
 // askDirection is the one question that decides which engine builds the
@@ -85,6 +90,7 @@ func askDirection(machine string) tunnelDirection {
 		},
 		{Title: "Automatic", Desc: "enter forwarded ports — verified paths, pairing and failover are automatic"},
 		{Title: "AmneziaWG", Desc: "independent native IP tunnel — UDP, Linux and TUN required"},
+		{Title: "Standard Kernel L3 / L2", Desc: "GRE, WireGuard, IPsec, VXLAN and Ethernet tunnels; optional reverse TCP carrier"},
 	}) {
 	case 0:
 		return directionReverse
@@ -94,6 +100,8 @@ func askDirection(machine string) tunnelDirection {
 		return directionAutomatic
 	case 3:
 		return directionAWG
+	case 4:
+		return directionKernel
 	}
 	return directionCancelled
 }

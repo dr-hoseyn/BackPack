@@ -2,12 +2,14 @@ package health
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/backpack/backpack/internal/app"
 	"github.com/backpack/backpack/internal/manage/core"
 	"github.com/backpack/backpack/internal/manage/tunnelspec"
 	"github.com/backpack/backpack/internal/metrics"
+	"github.com/backpack/backpack/internal/tunnel/kernel"
 )
 
 // Health describes how a single tunnel is doing right now.
@@ -85,6 +87,19 @@ func tunnelHealthWith(t core.Tunnel, pairs [][2]string) Health {
 	case !h.Active:
 		h.State, h.Detail = "stopped", "service is not running"
 	default:
+		if strings.HasPrefix(t.Transport, "kernel/") {
+			h.State, h.Detail = "unknown", "kernel interface configured; verify traffic to the peer tunnel address"
+			cfg, err := core.LoadTunnelConfig(t.Name)
+			var device string
+			if err == nil {
+				resolved, resolveErr := kernel.Resolve(cfg.Kernel)
+				err, device = resolveErr, resolved.Interface
+			}
+			if err != nil || !ifaceExists(device) {
+				h.State, h.Detail = "offline", "kernel interface is missing; inspect the service log"
+			}
+			return h
+		}
 		h.Connected = tunnelHealthy(t, pairs)
 		// tunnelHealthy answers the watchdog's question — "is this worth
 		// restarting?" — and for a datagram server it deliberately says yes

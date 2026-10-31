@@ -17,12 +17,14 @@ Reference pages: what each part of Backpack **is**, and every setting it has.
 - [Server layout (file locations)](server-layout.md)
 
 ### Tunnel direction
+- [Standard kernel L3/L2 tunnels](kernel-tunnels.md) — GRE, WireGuard, IPsec, Ethernet and ECMP, with optional reverse TCP
 - [Direct tunnel — stream transports](direct-tunnel.md) — the `[direct]` engine, no longer offered by the wizard; the same forwarded ports, with Iran dialling
   out instead of waiting to be dialled
 - [Direct tunnel](l3-direct-tunnel.md) — **what the wizard builds**: a private network between the two
   servers, carrying whole IP packets (GRE/IPIP over a TUN device)
 
 ### Transports
+- [DNS and symmetric ICMP carriers](dns-icmp-carriers.md) — complete DNS queries, source-port rotation and request/reply-only ICMP
 - [Managed Hysteria2, AnyTLS, ShadowTLS and TUIC](managed-protocols.md) - reverse carriers and native UDP L3
 - [Transports — every one explained](transports.md)
 - [MASQUE over HTTP/3](masque.md) — this fork's authenticated CONNECT-UDP carrier for L3 tunnels

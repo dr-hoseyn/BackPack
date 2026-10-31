@@ -303,7 +303,7 @@ func portHeld(addr string) bool {
 
 // udpCarriers are the carriers that bind a UDP socket of their own on the
 // listening side, so two tunnels with overlapping ports cannot both run.
-var udpCarriers = map[string]bool{"udp": true, "quic": true, "masque": true, "hysteria2": true, "tuic": true}
+var udpCarriers = map[string]bool{"dns": true, "udp": true, "quic": true, "masque": true, "hysteria2": true, "tuic": true}
 
 // l3PortRange is the UDP ports a listening tunnel binds: its port, and the
 // ones after it when the udp carrier is spread over several sockets.

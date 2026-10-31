@@ -2,9 +2,11 @@ package core
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -17,12 +19,13 @@ import (
 
 // Tunnel is a discovered tunnel derived from a config file on disk.
 type Tunnel struct {
-	Name      string
-	Role      string // "server" or "client"
-	Transport string
-	Addr      string   // bind_addr (server) or remote_addr (client)
-	Ports     []string // server only
-	Service   string
+	Name          string
+	Role          string // "server" or "client"
+	Transport     string
+	Addr          string   // bind_addr (server) or remote_addr (client)
+	Ports         []string // server only
+	Service       string
+	ReservedPorts []int // Additional fixed receive ports, including DNS multipath.
 }
 
 // List scans the config directory and returns all tunnels, sorted by name.
@@ -38,6 +41,17 @@ func List() []Tunnel {
 		t := Tunnel{Name: name, Service: app.ServiceName(name)}
 
 		switch {
+		case cfg.Kernel.Enabled():
+			t.Role = "server"
+			if cfg.Kernel.Role == "kharej" {
+				t.Role = "client"
+			}
+			t.Transport = "kernel/" + cfg.Kernel.Method
+			t.Addr = cfg.Kernel.RemoteAddr
+			if cfg.Kernel.Port > 0 {
+				t.ReservedPorts = []int{cfg.Kernel.Port}
+			}
+			t.Ports = cfg.Kernel.Ports
 		case cfg.AWG.Enabled():
 			t.Role, t.Transport, t.Addr, t.Ports = "server", "awg", fmt.Sprintf("0.0.0.0:%d", cfg.AWG.ListenPort), cfg.AWG.Ports
 			if cfg.AWG.Endpoint != "" {
@@ -68,6 +82,15 @@ func List() []Tunnel {
 			t.Transport = "l3/" + OrDefault(cfg.L3.Carrier, "udp")
 			t.Addr = cfg.L3.Addr
 			t.Ports = cfg.L3.Ports
+			if cfg.L3.Carrier == "dns" {
+				_, raw, e := net.SplitHostPort(cfg.L3.Addr)
+				port, _ := strconv.Atoi(raw)
+				if e == nil && port > 0 {
+					for i := 0; i < max(1, min(8, cfg.L3.Paths)); i++ {
+						t.ReservedPorts = append(t.ReservedPorts, port+i)
+					}
+				}
+			}
 		default:
 			continue
 		}

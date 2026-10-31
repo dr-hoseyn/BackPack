@@ -94,6 +94,27 @@ func setupFromLink() {
 		return
 	}
 
+	if link.Kind == "kernel" {
+		c, err := kernelFromLink(link)
+		if err != nil {
+			tui.Error(err.Error())
+			tui.PressEnter()
+			return
+		}
+		name := tui.PromptDefault("Tunnel Name", peerName(link))
+		tui.Info("Kernel " + c.Method + " · " + c.LocalIP + " / " + c.PeerIP)
+		if tui.Confirm("Create This Tunnel", true) {
+			if result, e := installKernel(name, c); e != nil {
+				tui.Error(e.Error())
+			} else if !result.Active {
+				tui.Warn("Created, but local startup is not ready. Inspect the tunnel log.")
+			} else {
+				tui.Success("Local kernel configuration is ready. Verify traffic to the peer tunnel address.")
+			}
+		}
+		tui.PressEnter()
+		return
+	}
 	if link.Kind == "awg" {
 		c, err := awgFromLink(link)
 		if err != nil {

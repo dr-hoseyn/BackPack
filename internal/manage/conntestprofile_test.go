@@ -12,36 +12,9 @@ import (
 	"time"
 )
 
-func TestQuickTestShortlistsOnlyCompleteTrafficEvidence(t *testing.T) {
-	rows := []ConnTestResult{
-		{Transport: "slow", Status: ctTesting, Phase: "speed-queued", Total: 30, Tried: 30, OK: 30, RTTms: 80},
-		{Transport: "jittery", Status: ctTesting, Phase: "speed-queued", Total: 30, Tried: 30, OK: 30, RTTms: 5, JitterMs: 50},
-		{Transport: "fast", Status: ctTesting, Phase: "speed-queued", Total: 30, Tried: 30, OK: 30, RTTms: 20},
-		{Transport: "tie-first", Status: ctTesting, Phase: "speed-queued", Total: 30, Tried: 30, OK: 30, RTTms: 30},
-		{Transport: "tie-last", Status: ctTesting, Phase: "speed-queued", Total: 30, Tried: 30, OK: 30, RTTms: 30},
-		{Transport: "lossy", Status: ctUnstable, Total: 30, Tried: 30, OK: 29},
-		{Transport: "cancelled", Status: ctUnstable, Total: 30, Tried: 1, OK: 1},
-		{Transport: "udp", Status: ctOK, Total: 30, Tried: 30, OK: 30},
-	}
-	ctShortlist(rows, 3, func(i int, r ConnTestResult) { rows[i] = r })
-	for _, i := range []int{0, 1} {
-		if rows[i].Status != ctScreened || rows[i].Phase != "" || !strings.Contains(rows[i].Detail, "speed not measured") {
-			t.Fatalf("non-finalist lost its evidence or claims speed: %+v", rows[i])
-		}
-	}
-	for _, i := range []int{2, 3, 4} {
-		if rows[i].Phase != "speed-queued" {
-			t.Fatalf("finalist was removed: %+v", rows[i])
-		}
-	}
-	if rows[5].Status != ctUnstable || rows[6].Status != ctUnstable || rows[7].Status != ctOK {
-		t.Fatal("screening changed a failed or UDP result")
-	}
-}
-
 func TestQuickTestProfilesStayPerRunAndTravelWithTheLink(t *testing.T) {
 	quick, full := &connTestCase{mode: ConnTestQuick}, &connTestCase{}
-	if quick.initialResult().Total != 30 || full.initialResult().Total != connTestSoak {
+	if quick.initialResult().Total != connTestQuickSamples || full.initialResult().Total != connTestSoak {
 		t.Fatal("profiles share mutable sample counts")
 	}
 	if connectWaitFor(quick) != 20*time.Second || connectWaitFor(full) != connTestConnectWait {
@@ -174,9 +147,9 @@ func TestScreenedRowsCannotBeRecommendedOrInstalled(t *testing.T) {
 	}
 }
 
-func TestQuickTestRunsThreeSerialVerifiedSpeedFinalists(t *testing.T) {
+func TestQuickTestMeasuresEveryHealthyProtocolSerially(t *testing.T) {
 	if testing.Short() {
-		t.Skip("observes the real 30-second quick window and transfers real speed payloads")
+		t.Skip("observes the real quick observation window and transfers real speed payloads")
 	}
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -218,7 +191,7 @@ func TestQuickTestRunsThreeSerialVerifiedSpeedFinalists(t *testing.T) {
 	}
 	ok, screened := 0, 0
 	for _, r := range rows {
-		if r.Total != 30 || r.OK != 30 || r.Tried != 30 || r.Mode != ConnTestQuick {
+		if r.Total != connTestQuickSamples || r.OK != connTestQuickSamples || r.Tried != connTestQuickSamples || r.Mode != ConnTestQuick {
 			t.Fatalf("incomplete quick evidence: %+v", r)
 		}
 		switch r.Status {
@@ -233,7 +206,7 @@ func TestQuickTestRunsThreeSerialVerifiedSpeedFinalists(t *testing.T) {
 			t.Fatalf("unexpected verdict: %+v", r)
 		}
 	}
-	if ok != 3 || screened != 2 || speeds != 3 {
+	if ok != len(s.cases) || screened != 0 || speeds != len(s.cases) {
 		t.Fatalf("speed phase: %d passed / %d screened / %d measurements", ok, screened, speeds)
 	}
 }

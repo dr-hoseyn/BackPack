@@ -146,6 +146,7 @@ func (s DirectSpec) Render() string {
 
 // L3Spec is everything the wizard collected for an [l3] tunnel.
 type L3Spec struct {
+	DNS     config.DNSConfig
 	Name    string
 	Side    DirectSide
 	Carrier string
@@ -211,6 +212,11 @@ func (s L3Spec) Render() string {
 	writeKV(&b, "addr", quote(s.Addr))
 	writeKV(&b, "token", quote(s.Token))
 	writeKV(&b, "carrier", quote(s.Carrier))
+	if s.Carrier == "dns" {
+		writeKV(&b, "dns_bind", quote(s.DNS.DNSBind))
+		writeKV(&b, "dns_rotate", fmt.Sprint(s.DNS.DNSRotate))
+		writeKV(&b, "dns_rate", fmt.Sprint(s.DNS.DNSRate))
+	}
 
 	if config.SingDatagram(s.Carrier) {
 		writeKV(&b, "sing_target", quote(s.Sing.TargetAddr()))

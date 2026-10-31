@@ -17,6 +17,10 @@ var errXdiNotLinux = errors.New("the xdi transport is only available on Linux")
 func newICMPServerConn(token string, v6 ...bool) (net.PacketConn, error) { return nil, errXdiNotLinux }
 func newICMPClientConn(token string, v6 ...bool) (net.PacketConn, error) { return nil, errXdiNotLinux }
 
+func newICMPSymmetricConn(string, bool, bool, bool) (net.PacketConn, error) {
+	return nil, errXdiNotLinux
+}
+
 // icmpMTUOverhead mirrors the Linux value so the MTU arithmetic in kcp.go is
 // identical on every platform, even though the socket is never opened here.
 const icmpMTUOverhead = 8 + xdiHeaderLen

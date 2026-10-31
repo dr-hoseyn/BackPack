@@ -53,9 +53,12 @@ type icmpSocket interface {
 // host coexist because each reads only packets carrying its own tunnel's
 // session tag, and, on the client, its own echo identifier.
 type icmpConn struct {
-	pc     icmpSocket
-	proto  int  // ProtocolICMP, for parsing
-	server bool // server sends replies and reads requests; client the reverse
+	// 0 keeps xDi's request/reply split; 1 sends/receives only requests,
+	// and 2 sends/receives only replies. Set before exposing the socket.
+	symmetricEcho uint8
+	pc            icmpSocket
+	proto         int  // ProtocolICMP, for parsing
+	server        bool // server sends replies and reads requests; client the reverse
 	// id is the echo identifier this carrier answers to. On the client it names
 	// this one session and is drawn per socket; on the server it is unused,
 	// because one socket serves every session and each packet carries the
@@ -348,6 +351,9 @@ func toIPAddr(addr net.Addr) (*net.IPAddr, error) {
 }
 
 func (c *icmpConn) echoType(request bool) uint8 {
+	if c.symmetricEcho != 0 {
+		request = c.symmetricEcho == 1
+	}
 	if c.proto == 58 {
 		if request {
 			return uint8(ipv6.ICMPTypeEchoRequest)

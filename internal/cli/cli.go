@@ -648,6 +648,10 @@ func linkReport(done manage.LinkApplied) Result {
 		say("  %s The service %s did not start — see: journalctl -u %s -n 30\n%s", paint("31;1", "✗"), done.Service, done.Service, rule)
 		return Result{Out: b.String(), Code: CodeUnhealthy}
 	}
+	if done.Kind == "kernel" {
+		say("  %s Local kernel configuration is ready. Verify traffic to the peer tunnel address.\n%s", ok, rule)
+		return Result{Out: b.String()}
+	}
 	if done.Kind == "direct" {
 		say("  %s Running. It connects as soon as the Iran server dials in.\n%s", ok, rule)
 		return Result{Out: b.String()}

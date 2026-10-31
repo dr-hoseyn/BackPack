@@ -35,6 +35,8 @@ import "strings"
 // whichever host can accept an inbound connection listens, and the other
 // dials.
 type L3Config struct {
+	// DNSConfig applies only to carrier = "dns". Empty settings preserve existing carriers.
+	DNSConfig
 	// Mode is "dial" or "listen". Empty means there is no layer-3 tunnel in
 	// this configuration, which is how every pre-existing config reads.
 	Mode string `toml:"mode"`
@@ -59,6 +61,8 @@ type L3Config struct {
 	// A reliable carrier is not an option here — see the l3 package doc for
 	// why stacking retransmission is actively harmful rather than merely
 	// wasteful.
+	// Additional explicit carriers are "dns", "icmp-request" and "icmp-reply";
+	// see docs/dns-icmp-carriers.md for their receive-port requirements.
 	Carrier string `toml:"carrier"`
 
 	// MASQUE uses verified TLS and an authenticated, loopback-only UDP target.

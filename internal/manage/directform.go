@@ -31,6 +31,7 @@ import (
 
 // NewDirectTunnel is a filled direct-tunnel form.
 type NewDirectTunnel struct {
+	DNS config.DNSConfig `json:"dns,omitempty"`
 	// Side is "iran" or "kharej". Iran dials out and exposes the ports; kharej
 	// waits and holds the real service.
 	Side string `json:"side"`
@@ -128,10 +129,13 @@ func DirectCarriers() []map[string]string {
 	return []map[string]string{
 		{"value": "xdi", "family": "icmp", "label": "xDi", "needsRoot": "1",
 			"desc": "inside ping (ICMP), for a path that filters UDP and TCP but lets ping through"},
+		{"value": "icmp-request", "family": "icmp", "label": "ICMP Requests", "needsRoot": "1", "desc": "encrypted IP packets in echo requests in both directions; preserves ordinary ping replies"},
+		{"value": "icmp-reply", "family": "icmp", "label": "ICMP Replies", "needsRoot": "1", "desc": "encrypted IP packets in unsolicited echo replies in both directions"},
 		{"value": "pck", "family": "tcp", "label": "PCK", "needsRoot": "1",
 			"desc": "looks like an ordinary TCP flow, but with no socket the firewall can touch"},
 		{"value": "udp", "family": "udp", "label": "UDP", "needsRoot": "",
 			"desc": "plain and simple — use it where the path does not interfere"},
+		{"value": "dns", "family": "udp", "label": "DNS (EDNS0)", "needsRoot": "", "desc": "encrypted IP packets in complete peer-to-peer DNS queries; optional source-port rotation and packet-rate cap"},
 		{"value": "quic", "family": "udp", "label": "Quic", "needsRoot": "",
 			"desc": "a real QUIC session on UDP — indistinguishable from HTTP/3, and needs no root"},
 		{"value": "masque", "family": "https", "label": ctName("masque"), "needsRoot": "",
@@ -462,6 +466,7 @@ func (n NewDirectTunnel) spec() (l3Spec, error) {
 
 	spec := l3Spec{
 		Name: name, Side: side, Carrier: carrier,
+		DNS: n.DNS,
 		// Legacy carriers use GRE inside Noise; native CONNECT-IP ignores it.
 		Encap: "gre", GREKey: n.GREKey,
 		SNIDomain: strings.ToLower(strings.TrimSpace(n.SNIDomain)),
@@ -562,23 +567,24 @@ func SuggestDirectPort() string {
 // all three have to match the other end, so changing one here alone would only
 // break the tunnel.
 type DirectSettings struct {
-	Name      string `json:"name"`
-	Layer     int    `json:"layer"`
-	Sessions  int    `json:"sessions"`
-	MSS       int    `json:"mss"`
-	Side      string `json:"side"`
-	Carrier   string `json:"carrier"`
-	Encap     string `json:"encap"`
-	Addr      string `json:"addr"`
-	Token     string `json:"token"`
-	Iface     string `json:"iface"`
-	LocalIP   string `json:"localIp"`
-	PeerIP    string `json:"peerIp"`
-	MTU       int    `json:"mtu"`
-	AutoMTU   bool   `json:"autoMtu"`
-	Preset    string `json:"preset"`
-	Ports     string `json:"ports"`
-	AcceptUDP bool   `json:"acceptUdp"`
+	DNS       config.DNSConfig `json:"dns,omitempty"`
+	Name      string           `json:"name"`
+	Layer     int              `json:"layer"`
+	Sessions  int              `json:"sessions"`
+	MSS       int              `json:"mss"`
+	Side      string           `json:"side"`
+	Carrier   string           `json:"carrier"`
+	Encap     string           `json:"encap"`
+	Addr      string           `json:"addr"`
+	Token     string           `json:"token"`
+	Iface     string           `json:"iface"`
+	LocalIP   string           `json:"localIp"`
+	PeerIP    string           `json:"peerIp"`
+	MTU       int              `json:"mtu"`
+	AutoMTU   bool             `json:"autoMtu"`
+	Preset    string           `json:"preset"`
+	Ports     string           `json:"ports"`
+	AcceptUDP bool             `json:"acceptUdp"`
 
 	MaxConnections int `json:"maxConnections"`
 	BandwidthMbps  int `json:"bandwidthMbps"`
@@ -669,6 +675,7 @@ func directSettingsFrom(name string, l config.L3Config) DirectSettings {
 		Layer:   3,
 		Side:    l3Role(l.Mode),
 		Carrier: orDefault(l.Carrier, "udp"),
+		DNS:     l.DNSConfig,
 		Encap:   l3EncapLabel(l),
 		Addr:    l.Addr,
 		Token:   l.Token,
@@ -885,7 +892,7 @@ func applyDirectEdit(l config.L3Config, e DirectEdit) (config.L3Config, error) {
 	// refuses it elsewhere, so the edit is refused here rather than written and
 	// then rejected at the next start.
 	if e.Paths != nil {
-		if *e.Paths > 1 && !strings.EqualFold(strings.TrimSpace(orDefault(l.Carrier, "udp")), "udp") {
+		if *e.Paths > 1 && !strings.EqualFold(strings.TrimSpace(orDefault(l.Carrier, "udp")), "udp") && !strings.EqualFold(strings.TrimSpace(l.Carrier), "dns") {
 			return l, fmt.Errorf("spreading over sockets is for the udp carrier; %s varies its source per packet already",
 				orDefault(l.Carrier, "udp"))
 		}
@@ -925,6 +932,7 @@ func directSpecFrom(name string, l config.L3Config) l3Spec {
 		Name:      name,
 		Side:      side,
 		Carrier:   orDefault(l.Carrier, "udp"),
+		DNS:       l.DNSConfig,
 		Encap:     orDefault(l.Encap, "gre"),
 		SNIDomain: l.SNIDomain,
 		Masque:    l.MasqueConfig,

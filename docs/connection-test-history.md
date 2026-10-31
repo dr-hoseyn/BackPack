@@ -22,8 +22,9 @@ Comparison separates Quick/Full depth, the local role, preset, Iran IP, Kharej I
 IP family, reverse/direct/spoof direction, protocol and SNI candidate. Cancelled
 runs and paths without a completed measurement are shown in history but excluded
 from comparison. Skipped, still-running and screened (speed not measured) rows are also excluded.
-Quick runs are labelled as 30-second observations; older saved runs are treated
-as Full when grouping comparisons.
+New Quick runs observe traffic for 20 seconds and measure every healthy stream
+protocol. Historical rows retain their actual sample counts. Links without a
+depth are treated as Full when grouping comparisons.
 
 Loss is calculated from the total attempted and received echoes, not an average
 of percentages. RTT and per-run jitter are weighted by received echoes. Download
