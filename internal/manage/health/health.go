@@ -85,6 +85,14 @@ func tunnelHealthWith(t core.Tunnel, pairs [][2]string) Health {
 	case !h.Active:
 		h.State, h.Detail = "stopped", "service is not running"
 	default:
+		if strings.HasPrefix(t.Transport, "kernel/") {
+			h.State, h.Detail = "unknown", "kernel interface configured; verify traffic to the peer tunnel address"
+			cfg, err := core.LoadTunnelConfig(t.Name)
+			if err != nil || !ifaceExists(cfg.Kernel.Interface) {
+				h.State, h.Detail = "offline", "kernel interface is missing; inspect the service log"
+			}
+			return h
+		}
 		h.Connected = tunnelHealthy(t, pairs)
 		// tunnelHealthy answers the watchdog's question — "is this worth
 		// restarting?" — and for a datagram server it deliberately says yes

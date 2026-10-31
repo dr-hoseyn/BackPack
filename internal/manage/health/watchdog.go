@@ -220,6 +220,10 @@ func engineSaysConnected(name string) (connected, known bool) {
 // up. It prefers what the engine says; `pairs` ([local, peer] address pairs from
 // the socket table) is the fallback for the engines that have not said.
 func tunnelHealthy(t core.Tunnel, pairs [][2]string) bool {
+	if strings.HasPrefix(t.Transport, "kernel/") {
+		return true
+	} // The engine retries setup; raw kernel tunnels have no control-channel peer.
+
 	// The direct kinds are judged on their own terms: their roles are
 	// geographic, and a layer-3 tunnel has no TCP socket to observe at all.
 	// See directHealthy for why the reverse phrasing below cannot answer for

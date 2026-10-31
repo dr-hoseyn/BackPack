@@ -1,22 +1,28 @@
 # Automatic setup after Connection Test
 
-In the terminal, **Quick** is the default test depth. It observes
-each tunnel for 30 seconds, with connection discovery bounded to 20 seconds
-(30 seconds for direct tunnels). It then measures download and upload on up to
-three lossless candidates, ordered by RTT plus twice jitter, with connection
-time breaking ties. This shortlist finds promising candidates; it does not
-compare the speed of every protocol. Each selected IP path runs separately.
+In the terminal, **Quick** is the default test depth. It observes each tunnel
+for 20 seconds, with connection discovery bounded to 20 seconds (30 seconds for
+direct tunnels). It then measures verified download and upload on **every**
+healthy stream-capable protocol. There is no three-protocol shortlist.
 
-**Full** observes traffic for 60 seconds and measures every healthy tunnel.
-Both depths enforce the observation deadline even when replies stop arriving.
-Speed tests remain sequential so they do not compete for bandwidth. Connection
-setup and optional spoofing/MTU checks add time to the observation window.
+Quick uses four streams, 250 ms of warmup and 1–2 seconds of measured traffic
+per direction. Dialing and the verified protocol handshake retain their full
+bounds. Short samples can vary; the result reports that variation rather than
+claiming long-term stability. Raw UDP retains its datagram reachability/loss
+check and does not claim stream throughput.
 
-Quick results are labelled as a short observation. **SCREENED** means the
-traffic check passed but speed was not measured; these rows retain their
-measurements and are excluded from recommendations and automatic setup. Run
-Full to measure every healthy candidate. Quick and Full remain separate in
-history comparisons. Older links and Go callers without a depth retain Full; the terminal explicitly defaults to Quick.
+**Full** observes traffic for 60 seconds and uses the existing longer speed
+samples on every healthy stream-capable protocol. Both depths enforce the
+observation deadline even when replies stop arriving. Speed tests and selected
+IP paths run sequentially so they do not compete for bandwidth. Total time
+therefore depends on the number of reachable protocols, their handshake times,
+and optional spoofing/MTU checks; the 20-second window is not a total runtime.
+
+New Quick runs no longer produce SCREENED rows. Saved rows from older Quick
+runs can still say SCREENED: they retain their traffic evidence but remain
+excluded from recommendations and automatic setup. Quick and Full remain
+separate in history comparisons. Older links and Go callers without a depth
+retain Full; the terminal explicitly defaults to Quick.
 
 Run Connection Test on Iran and join it on kharej using the test link as usual.
 Both servers must run a version that supports automatic setup, as root. Keep

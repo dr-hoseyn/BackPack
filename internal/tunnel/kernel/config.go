@@ -74,6 +74,9 @@ func Resolve(c config.KernelConfig) (config.KernelConfig, error) {
 	if len(c.Ports) > 0 && (c.Role != "iran" || m.IPv6Only) {
 		return c, fmt.Errorf("kernel: forwarded ports require an Iran endpoint that carries IPv4")
 	}
+	if c.MaxConnections < 0 || c.BandwidthMbps < 0 {
+		return c, fmt.Errorf("kernel: forwarding limits cannot be negative")
+	}
 	if len(c.Token) < 24 {
 		return c, fmt.Errorf("kernel: token must contain at least 24 characters (use a random secret)")
 	}
@@ -81,7 +84,6 @@ func Resolve(c config.KernelConfig) (config.KernelConfig, error) {
 	automaticID := c.ID == 0
 	if c.ID == 0 {
 		c.ID = binary.BigEndian.Uint32(seed[:4]) & 0xffffff
-		automaticID := c.ID == 0
 		if c.ID == 0 {
 			c.ID = 1
 		}
