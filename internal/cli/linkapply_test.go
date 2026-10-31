@@ -47,6 +47,23 @@ func TestLinkApplyTakesTheLinkAndSaysWhetherItConnected(t *testing.T) {
 	}
 }
 
+func TestKernelLinkReportsLocalReadinessWithoutInventingAControlPeer(t *testing.T) {
+	prior := awaitLink
+	t.Cleanup(func() { awaitLink = prior })
+	awaitLink = func(string, time.Duration) (bool, string) {
+		t.Fatal("native kernel tunnels have no reverse control channel to await")
+		return false, ""
+	}
+	r := linkReport(manage.LinkApplied{Name: "native", Kind: "kernel", Transport: "gre", Active: true})
+	if r.Code != CodeOK || !strings.Contains(r.Out, "Verify traffic to the peer") || strings.Contains(r.Out, "Connected") {
+		t.Fatalf("native setup misreported peer connectivity: %+v", r)
+	}
+	r = linkReport(manage.LinkApplied{Name: "native", Kind: "kernel", Transport: "gre", Active: false})
+	if r.Code != CodeUnhealthy {
+		t.Fatal("failed local startup was reported as ready")
+	}
+}
+
 func TestLinkApplyRefusesWhatItCannotDo(t *testing.T) {
 	prevApply, prevRoot := applyLink, isRoot
 	t.Cleanup(func() { applyLink, isRoot = prevApply, prevRoot })

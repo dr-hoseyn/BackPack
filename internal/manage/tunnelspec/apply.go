@@ -114,6 +114,10 @@ func PreviewBody(name, body string) (EditPreview, error) {
 // Type=simple becomes active before the engine starts its helper. Managed
 // carriers also need an affirmative readiness response from the new process;
 // neither peer connectivity nor an older engine's missing field can replace it.
+// WaitStartup waits for the same local readiness used by guarded edits.
+// Native kernel readiness proves local configuration, not peer reachability.
+func WaitStartup(name string, body []byte) bool { return waitTunnelActive(name, body) }
+
 func waitTunnelActive(name string, body []byte) bool {
 	var cfg config.Config
 	if _, err := toml.Decode(string(body), &cfg); err != nil {

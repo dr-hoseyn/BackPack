@@ -8,11 +8,11 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/BurntSushi/toml"
 	"github.com/backpack/backpack/config"
 	"github.com/backpack/backpack/internal/app"
+	"github.com/backpack/backpack/internal/manage/tunnelspec"
 	"github.com/backpack/backpack/internal/tui"
 	"github.com/backpack/backpack/internal/tunnel/kernel"
 )
@@ -113,7 +113,7 @@ func installKernel(name string, input config.KernelConfig) (LinkApplied, error) 
 	if err = StartService(app.ServiceName(name)); err != nil {
 		return LinkApplied{}, err
 	}
-	return LinkApplied{Name: name, Kind: "kernel", Transport: c.Method, Dials: c.RemoteAddr, Service: app.ServiceName(name), Active: WaitServiceActive(app.ServiceName(name), 10*time.Second)}, nil
+	return LinkApplied{Name: name, Kind: "kernel", Transport: c.Method, Dials: c.RemoteAddr, Service: app.ServiceName(name), Active: tunnelspec.WaitStartup(name, []byte(body))}, nil
 }
 
 func applyKernelLink(l ShareLink, o LinkApplyOptions) (LinkApplied, error) {
@@ -145,10 +145,15 @@ func setupKernel(side directSide) {
 		}
 		name := tui.PromptDefault("Tunnel Name", peerName(l))
 		if tui.Confirm("Create This Kernel Tunnel", true) {
-			if _, err = installKernel(name, c); err != nil {
+			if result, e := installKernel(name, c); e != nil {
+				err = e
 				tui.Error(err.Error())
 			} else {
-				tui.Success("Created. Verify traffic to the peer tunnel address.")
+				if result.Active {
+					tui.Success("Created. Verify traffic to the peer tunnel address.")
+				} else {
+					tui.Warn("Created, but local startup is not ready. Inspect the tunnel log.")
+				}
 			}
 		}
 		return
@@ -205,10 +210,15 @@ func setupKernel(side directSide) {
 		tui.Info("Requires a running strongSwan charon daemon with VICI. IKEv2 negotiates fresh AES-GCM keys.")
 	}
 	if tui.Confirm("Create This Kernel Tunnel", true) {
-		if _, err = installKernel(name, resolved); err != nil {
+		if result, e := installKernel(name, resolved); e != nil {
+			err = e
 			tui.Error(err.Error())
 		} else {
-			tui.Success("Created. Apply the setup link on Kharej, then verify traffic.")
+			if result.Active {
+				tui.Success("Created. Apply the setup link on Kharej, then verify traffic.")
+			} else {
+				tui.Warn("Created, but local startup is not ready. Inspect the tunnel log.")
+			}
 		}
 	}
 }

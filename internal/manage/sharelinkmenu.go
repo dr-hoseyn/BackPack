@@ -104,8 +104,12 @@ func setupFromLink() {
 		name := tui.PromptDefault("Tunnel Name", peerName(link))
 		tui.Info("Kernel " + c.Method + " · " + c.LocalIP + " / " + c.PeerIP)
 		if tui.Confirm("Create This Tunnel", true) {
-			if _, err = installKernel(name, c); err != nil {
-				tui.Error(err.Error())
+			if result, e := installKernel(name, c); e != nil {
+				tui.Error(e.Error())
+			} else if !result.Active {
+				tui.Warn("Created, but local startup is not ready. Inspect the tunnel log.")
+			} else {
+				tui.Success("Local kernel configuration is ready. Verify traffic to the peer tunnel address.")
 			}
 		}
 		tui.PressEnter()

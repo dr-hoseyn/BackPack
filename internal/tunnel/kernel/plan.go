@@ -96,7 +96,7 @@ func Build(input config.KernelConfig) (Plan, error) {
 			kind = "gre"
 		}
 		if c.Method == "fou-gre" && !c.Reverse {
-			p.step([]string{"fou", "add", "port", number(c.Port), "ipproto", "47"}, []string{"fou", "del", "port", number(c.Port)})
+			p.step([]string{"fou", "add", "port", number(c.Port), "ipproto", "47", "local", p.Local}, []string{"fou", "del", "port", number(c.Port), "local", p.Local})
 		}
 		for lane := 0; lane < c.Lanes; lane++ {
 			name := dev
@@ -109,7 +109,7 @@ func Build(input config.KernelConfig) (Plan, error) {
 				port := c.Port
 				if c.Reverse {
 					port = 5555
-					p.step([]string{"fou", "add", "port", number(port), "ipproto", "47", "local", p.Local, "peer", p.Remote}, []string{"fou", "del", "port", number(port), "local", p.Local, "peer", p.Remote})
+					p.step([]string{"fou", "add", "port", number(port), "ipproto", "47", "local", p.Local}, []string{"fou", "del", "port", number(port), "local", p.Local})
 				}
 				args = append(args, "encap", "fou", "encap-sport", "auto", "encap-dport", number(port))
 			}
@@ -133,7 +133,7 @@ func Build(input config.KernelConfig) (Plan, error) {
 			if c.Reverse {
 				port = 5556
 			}
-			p.step([]string{"fou", "add", "port", number(port), "gue", "local", p.Local, "peer", p.Remote}, []string{"fou", "del", "port", number(port), "local", p.Local, "peer", p.Remote})
+			p.step([]string{"fou", "add", "port", number(port), "gue", "local", p.Local}, []string{"fou", "del", "port", number(port), "local", p.Local})
 			args = append(args, "encap", "gue", "encap-sport", "auto", "encap-dport", number(port))
 		}
 		p.link(dev, args...)

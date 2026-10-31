@@ -31,6 +31,11 @@ jobs:
           sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
           go test -race ./internal/manage -run 'TestEveryShareLinkFieldHasAnID|TestKernel|TestQuickTest|TestTrafficObservationHasAWallClockLimit|TestScreenedRowsCannotBeRecommendedOrInstalled' -count=1 -timeout 4m
   kernel-live:
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [direct, reverse]
+        group: [l3, ethernet]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -46,11 +51,16 @@ jobs:
       - name: Build the actual engine
         run: go build -o "$RUNNER_TEMP/backpack-kernel" .
       - name: Exchange real packets in isolated network namespaces
-        run: sudo bash .github/scripts/kernel-tunnels-live.sh "$RUNNER_TEMP/backpack-kernel"
+        run: |
+          methods="gre ipip 6to4 6to4-gre sit ip6gre ipip6 ip6ip6 wireguard xfrm-ipsec"
+          if [[ '${{ matrix.group }}' == ethernet ]]; then
+            methods="fou-gre gue-ipip ecmp-lanes eoip gretap ip6gretap vxlan geneve l2tpv3 etherip"
+          fi
+          sudo env MODES='${{ matrix.mode }}' METHODS="$methods" bash .github/scripts/kernel-tunnels-live.sh "$RUNNER_TEMP/backpack-kernel"
       - name: Save isolated tunnel diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: kernel-tunnel-diagnostics
+          name: kernel-tunnel-diagnostics-${{ matrix.mode }}-${{ matrix.group }}
           path: /tmp/backpack-kernel-live-*/**/*.log
           if-no-files-found: ignore
