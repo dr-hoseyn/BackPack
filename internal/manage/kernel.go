@@ -4,7 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
+	"net/netip"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -12,6 +15,7 @@ import (
 	"github.com/BurntSushi/toml"
 	"github.com/backpack/backpack/config"
 	"github.com/backpack/backpack/internal/app"
+	"github.com/backpack/backpack/internal/manage/host"
 	"github.com/backpack/backpack/internal/manage/tunnelspec"
 	"github.com/backpack/backpack/internal/tui"
 	"github.com/backpack/backpack/internal/tunnel/kernel"
@@ -81,17 +85,26 @@ func installKernel(name string, input config.KernelConfig) (LinkApplied, error) 
 	}
 	for _, t := range List() {
 		v, e := LoadTunnelConfig(t.Name)
-		if e != nil || !v.Kernel.Enabled() {
+		if e != nil {
+			continue
+		}
+		if v.L3.Enabled() && (orDefault(v.L3.Iface, "bp0") == c.Interface || kernelAddressConflict(c, config.KernelConfig{LocalIP: v.L3.LocalIP, PeerIP: hostOnly(v.L3.PeerIP)})) {
+			return LinkApplied{}, fmt.Errorf("kernel interface or subnet conflicts with L3 tunnel %q", t.Name)
+		}
+		if v.AWG.Enabled() && (v.AWG.Interface == c.Interface || kernelAddressConflict(c, config.KernelConfig{LocalIP: v.AWG.Address, PeerIP: hostOnly(v.AWG.PeerAddress)})) {
+			return LinkApplied{}, fmt.Errorf("kernel interface or subnet conflicts with AmneziaWG tunnel %q", t.Name)
+		}
+		if !v.Kernel.Enabled() {
 			continue
 		}
 		other, e := kernel.Resolve(v.Kernel)
 		if e != nil {
 			continue
 		}
-		if other.Interface == c.Interface || other.LocalIP == c.LocalIP {
+		if other.Interface == c.Interface || kernelAddressConflict(c, other) {
 			return LinkApplied{}, fmt.Errorf("kernel interface or local address already belongs to tunnel %q", t.Name)
 		}
-		if other.Port > 0 && c.Port == other.Port && other.LocalAddr == c.LocalAddr && other.Reverse == c.Reverse {
+		if other.Port > 0 && c.Port == other.Port && kernelPortNetwork(other) == kernelPortNetwork(c) && (other.LocalAddr == c.LocalAddr || c.Method == "wireguard" || other.Method == "wireguard") {
 			return LinkApplied{}, fmt.Errorf("kernel port already belongs to tunnel %q", t.Name)
 		}
 		if c.LocalAddr == other.LocalAddr && c.RemoteAddr == other.RemoteAddr && (c.Method == "xfrm-ipsec" || other.Method == "xfrm-ipsec") {
@@ -101,7 +114,7 @@ func installKernel(name string, input config.KernelConfig) (LinkApplied, error) 
 	if err = os.MkdirAll(app.ConfigDir, 0755); err != nil {
 		return LinkApplied{}, err
 	}
-	if err = app.WriteFileAtomic(app.ConfigPath(name), []byte(body), app.TunnelConfigMode); err != nil {
+	if err = writeNewKernelConfig(app.ConfigPath(name), []byte(body)); err != nil {
 		return LinkApplied{}, err
 	}
 	if err = writeUnit(name); err != nil {
@@ -173,10 +186,15 @@ func setupKernel(side directSide) {
 	}
 	name := uniqueName(tui.PromptDefault("Tunnel Name", "kernel-"+methods[selected].Name))
 	c := config.KernelConfig{Method: methods[selected].Name, Role: "iran", Token: randomToken(48)}
-	c.LocalAddr = strings.Trim(tui.PromptDefault("Iran Literal Underlay IP", PublicIPv4()), "[]")
+	public := PublicIPv4()
+	if methods[selected].IPv6 {
+		public = host.PublicIPv6()
+	}
+	c.LocalAddr = strings.Trim(tui.PromptDefault("Iran Literal Underlay IP", public), "[]")
 	c.RemoteAddr = strings.Trim(tui.Prompt("Kharej Literal Underlay IP: "), "[]")
-	c.LocalIP = tui.PromptDefault("Iran Tunnel Address With Prefix", "10.77.1.1/30")
-	c.PeerIP = tui.PromptDefault("Kharej Tunnel Address", "10.77.1.2")
+	localDefault, peerDefault := suggestKernelPair(methods[selected].IPv6Only)
+	c.LocalIP = tui.PromptDefault("Iran Tunnel Address With Prefix", localDefault)
+	c.PeerIP = tui.PromptDefault("Kharej Tunnel Address", peerDefault)
 	c.Reverse = tui.Confirm("Kharej Initiates The Connection (Reverse)", false)
 	if c.Reverse {
 		tui.Info("Kernel methods use eight Noise-authenticated TCP lanes. WireGuard keeps its native UDP handshake.")
@@ -221,6 +239,99 @@ func setupKernel(side directSide) {
 			}
 		}
 	}
+}
+
+func kernelPortNetwork(c config.KernelConfig) string {
+	if c.Port == 0 {
+		return ""
+	}
+	if c.Reverse && c.Method != "wireguard" {
+		return "tcp"
+	}
+	return "udp"
+}
+
+func kernelAddressConflict(a, b config.KernelConfig) bool {
+	first, ae := netip.ParsePrefix(a.LocalIP)
+	second, be := netip.ParsePrefix(b.LocalIP)
+	if ae != nil || be != nil {
+		return false
+	}
+	ap, _ := netip.ParseAddr(a.PeerIP)
+	bp, _ := netip.ParseAddr(b.PeerIP)
+	return first.Overlaps(second) || ap == bp || first.Contains(bp) || second.Contains(ap)
+}
+
+// Suggestions consider configured and live addresses, including broader host
+// prefixes. Two different host IPs inside the same /30 are still a collision.
+func suggestKernelPair(ipv6 bool) (string, string) {
+	var used []netip.Prefix
+	add := func(raw string) {
+		if p, e := netip.ParsePrefix(raw); e == nil {
+			used = append(used, p)
+		}
+	}
+	for _, t := range List() {
+		if c, e := LoadTunnelConfig(t.Name); e == nil {
+			add(c.Kernel.LocalIP)
+			add(c.L3.LocalIP)
+			add(c.AWG.Address)
+		}
+	}
+	interfaces, _ := net.Interfaces()
+	for _, iface := range interfaces {
+		addresses, _ := iface.Addrs()
+		for _, a := range addresses {
+			add(a.String())
+		}
+	}
+	return nextKernelPair(ipv6, used)
+}
+
+func nextKernelPair(ipv6 bool, used []netip.Prefix) (string, string) {
+	for i := 0; i < 16384; i++ {
+		local, peer := fmt.Sprintf("10.77.%d.%d/30", i/64, (i%64)*4+1), fmt.Sprintf("10.77.%d.%d", i/64, (i%64)*4+2)
+		if ipv6 {
+			local, peer = fmt.Sprintf("fd77:77:%x::1/64", i), fmt.Sprintf("fd77:77:%x::2", i)
+		}
+		p, _ := netip.ParsePrefix(local)
+		busy := false
+		for _, other := range used {
+			if p.Overlaps(other) {
+				busy = true
+				break
+			}
+		}
+		if !busy {
+			return local, peer
+		}
+	}
+	return "", ""
+}
+
+// Link a fully written private temporary file into place without replacement.
+// Concurrent link imports cannot overwrite each other's configuration between
+// the existence check and service creation.
+func writeNewKernelConfig(path string, body []byte) error {
+	f, err := os.CreateTemp(filepath.Dir(path), ".kernel-new-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(f.Name())
+	defer f.Close()
+	if err = f.Chmod(app.TunnelConfigMode); err != nil {
+		return err
+	}
+	if _, err = f.Write(body); err != nil {
+		return err
+	}
+	if err = f.Sync(); err != nil {
+		return err
+	}
+	if err = f.Close(); err != nil {
+		return err
+	}
+	return os.Link(f.Name(), path)
 }
 
 func editKernel(t Tunnel) {

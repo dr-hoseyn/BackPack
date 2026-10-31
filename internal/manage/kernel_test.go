@@ -1,13 +1,78 @@
 package manage
 
 import (
+	"errors"
+	"net/netip"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/backpack/backpack/config"
 	"github.com/backpack/backpack/internal/tunnel/kernel"
 )
+
+func TestKernelSubnetSuggestionsAvoidBroaderAndExistingPrefixes(t *testing.T) {
+	used := []netip.Prefix{netip.MustParsePrefix("10.77.0.0/24"), netip.MustParsePrefix("fd77:77::/48")}
+	local, peer := nextKernelPair(false, used)
+	if local != "10.77.1.1/30" || peer != "10.77.1.2" {
+		t.Fatalf("suggested an occupied subnet: %s / %s", local, peer)
+	}
+	local, peer = nextKernelPair(true, used)
+	if local != "fd77:77:1::1/64" || peer != "fd77:77:1::2" {
+		t.Fatalf("IPv6-only methods got invalid defaults: %s / %s", local, peer)
+	}
+	a := config.KernelConfig{LocalIP: "10.77.1.1/30", PeerIP: "10.77.1.2"}
+	b := config.KernelConfig{LocalIP: "10.77.1.2/30", PeerIP: "10.77.1.1"}
+	if !kernelAddressConflict(a, b) {
+		t.Fatal("different host strings hid the same /30")
+	}
+	if kernelPortNetwork(config.KernelConfig{Method: "wireguard", Port: 53, Reverse: true}) != "udp" {
+		t.Fatal("reverse WireGuard was mistaken for a TCP carrier")
+	}
+}
+
+func TestKernelInstallationCannotReplaceAnExistingOrConcurrentConfig(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "one.toml")
+	var wg sync.WaitGroup
+	results := make(chan error, 2)
+	for _, body := range []string{"first private config", "second private config"} {
+		wg.Add(1)
+		go func(body string) { defer wg.Done(); results <- writeNewKernelConfig(path, []byte(body)) }(body)
+	}
+	wg.Wait()
+	close(results)
+	created, refused := 0, 0
+	for err := range results {
+		if err == nil {
+			created++
+		} else if errors.Is(err, os.ErrExist) {
+			refused++
+		} else {
+			t.Fatal(err)
+		}
+	}
+	if created != 1 || refused != 1 {
+		t.Fatalf("concurrent imports: %d created, %d refused", created, refused)
+	}
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = writeNewKernelConfig(path, []byte("replacement")); !errors.Is(err, os.ErrExist) {
+		t.Fatal("existing config was replaced")
+	}
+	after, _ := os.ReadFile(path)
+	if string(after) != string(before) {
+		t.Fatal("refused import changed the current config")
+	}
+	files, _ := os.ReadDir(filepath.Dir(path))
+	if len(files) != 1 {
+		t.Fatal("temporary private configs survived installation")
+	}
+}
 
 func TestKernelSetupLinksMirrorEveryPairedSetting(t *testing.T) {
 	for _, method := range kernel.Methods() {

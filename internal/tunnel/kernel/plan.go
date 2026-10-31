@@ -162,7 +162,7 @@ func Build(input config.KernelConfig) (Plan, error) {
 		p.step([]string{"link", "set", "dev", dev, "alias", owner(c)}, nil)
 	}
 	if c.Lanes <= 1 {
-		if c.Method == "xfrm-ipsec" {
+		if c.Method == "xfrm-ipsec" || c.Method == "wireguard" {
 			p.step([]string{"address", "add", c.LocalIP, "dev", dev}, nil)
 			p.step([]string{"link", "set", "dev", dev, "mtu", number(c.MTU)}, nil)
 		} else {
@@ -174,7 +174,7 @@ func Build(input config.KernelConfig) (Plan, error) {
 			bits = 128
 		}
 		target := netip.PrefixFrom(peer, bits).String()
-		if c.Method != "xfrm-ipsec" {
+		if c.Method != "xfrm-ipsec" && c.Method != "wireguard" {
 			p.step([]string{"route", "add", target, "dev", dev, "proto", "static"}, []string{"route", "del", target, "dev", dev, "proto", "static"})
 		}
 	} else {

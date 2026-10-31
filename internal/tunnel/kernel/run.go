@@ -135,6 +135,21 @@ func RunManaged(ctx context.Context, input config.KernelConfig, ready func(bool)
 		if _, err = command(ctx, "wg", []string{"syncconf", c.Interface, "/dev/stdin"}, strings.NewReader(wireguardConfig(c))); err != nil {
 			return err
 		}
+		// Install the peer before opening the interface: wg_open sends the
+		// initial persistent keepalive, including on the initiating reverse end.
+		if _, err = command(ctx, "ip", []string{"link", "set", "dev", c.Interface, "up"}, nil); err != nil {
+			return err
+		}
+		peer, _ := netip.ParseAddr(c.PeerIP)
+		target := netip.PrefixFrom(peer, peer.BitLen()).String()
+		if _, err = command(ctx, "ip", []string{"route", "add", target, "dev", c.Interface, "proto", "static"}, nil); err != nil {
+			return err
+		}
+		defer func() {
+			clean, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			_, _ = command(clean, "ip", []string{"route", "del", target, "dev", c.Interface, "proto", "static"}, nil)
+		}()
 	}
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()

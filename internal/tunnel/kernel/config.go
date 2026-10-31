@@ -68,6 +68,8 @@ func Resolve(c config.KernelConfig) (config.KernelConfig, error) {
 	if ae != nil || pe != nil || addr.Addr().IsUnspecified() || peer.IsUnspecified() || addr.Addr().IsMulticast() || peer.IsMulticast() || addr.Addr() == peer || addr.Addr().Is6() != peer.Is6() {
 		return c, fmt.Errorf("kernel: local_ip needs a prefix and peer_ip must be a distinct address of the same family")
 	}
+	c.LocalAddr, c.RemoteAddr = local.String(), remote.String()
+	c.LocalIP, c.PeerIP = addr.String(), peer.String()
 	if m.IPv6Only && !peer.Is6() || c.Method == "ipip6" && !peer.Is4() {
 		return c, fmt.Errorf("kernel: %s cannot carry this inner IP family", c.Method)
 	}

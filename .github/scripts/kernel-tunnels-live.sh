@@ -112,6 +112,11 @@ EOF
         done
         if [[ "$passed" == false ]]; then
             cat "$path"/*.log
+            for namespace in "$first" "$second"; do
+                ip -n "$namespace" address show
+                ip -n "$namespace" route show table all
+                ip netns exec "$namespace" wg show || true
+            done
             echo "FAILED: $method $mode" >&2
             exit 1
         fi

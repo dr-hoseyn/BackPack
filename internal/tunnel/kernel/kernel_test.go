@@ -266,3 +266,19 @@ func TestReverseCarrierTransfersAuthenticatedPacketsAndJoinsOnCancellation(t *te
 		}
 	}
 }
+
+func TestWireGuardWaitsForPeerConfigurationBeforeInterfaceUp(t *testing.T) {
+	for _, reverse := range []bool{false, true} {
+		c := example("wireguard")
+		c.Reverse = reverse
+		p, err := Build(c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, step := range p.Steps {
+			if strings.Join(step.Args, " ") == "link set dev "+p.Config.Interface+" up" || step.Args[0] == "route" {
+				t.Fatal("WireGuard was activated before syncconf could install its peer")
+			}
+		}
+	}
+}
