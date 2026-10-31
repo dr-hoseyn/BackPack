@@ -11,6 +11,8 @@ Choose **Setup Iran → Direct → UDP → DNS (EDNS0)**, or **ICMP → ICMP Req
 ICMP Replies**, then apply the setup link on Kharej. Both endpoints need the
 matching build. All three carriers are included in actual Connection Test
 traffic checks and Quick/Full download/upload measurements when healthy.
+Connection Test fetches their paired settings in a separate authenticated
+answer, keeping each settings response inside its single-packet budget.
 
 ## DNS
 

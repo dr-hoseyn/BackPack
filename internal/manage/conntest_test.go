@@ -107,8 +107,15 @@ func TestTheTestSettingsFitOnePacketAndCarryNoToken(t *testing.T) {
 				c.Ports = fmt.Sprintf("127.0.0.1:%d=127.0.0.1:%d", 20000+(3571*(i+1)+1877*variant)%12000, candidate.TCP)
 			}
 		}
-		if size := len("config " + ctConfig(candidate)); size > 1200 {
-			t.Fatalf("settings port variant %d needs %d bytes", variant, size)
+		for _, mode := range []string{ConnTestQuick, ConnTestFull} {
+			candidate.Mode = mode
+			main, additional := ctConfigParts(candidate)
+			if size := len("config " + main); size > 1200 {
+				t.Fatalf("%s settings port variant %d needs %d bytes", mode, variant, size)
+			}
+			if size := len("additional " + additional); size > 1200 {
+				t.Fatalf("additional settings variant %d needs %d bytes", variant, size)
+			}
 		}
 	}
 	for _, c := range s.link.Cases {

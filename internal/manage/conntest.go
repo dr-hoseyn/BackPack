@@ -120,18 +120,19 @@ var connTestHelperBinary = func(tool string) (string, error) {
 // ConnTestLink is everything the kharej needs to build its end of every
 // tunnel under test, and to find the Iran side's coordinator.
 type ConnTestLink struct {
-	Mode      string `json:"mode,omitempty"`
-	AutoSetup bool   `json:"as,omitempty"`
-	V         int    `json:"v"`
-	Kind      string `json:"k"` // always connTestKind
-	ID        string `json:"id"`
-	Host      string `json:"h"`  // the Iran server's address
-	Coord     int    `json:"c"`  // the coordinator's port, TCP and UDP
-	Tok       string `json:"t"`  // the coordinator's secret
-	TCP       int    `json:"te"` // kharej: the TCP echo reverse tunnels forward to
-	UDP       int    `json:"ue"` // kharej: the UDP echo the udp transport forwards to
-	L3        int    `json:"le"` // kharej: the TCP echo on each direct tunnel's address
-	Until     int64  `json:"u"`  // unix seconds: the kharej stops by then whatever happens
+	AdditionalDirect int    `json:"ad,omitempty"` // new carriers fetched in a second bounded answer
+	Mode             string `json:"mode,omitempty"`
+	AutoSetup        bool   `json:"as,omitempty"`
+	V                int    `json:"v"`
+	Kind             string `json:"k"` // always connTestKind
+	ID               string `json:"id"`
+	Host             string `json:"h"`  // the Iran server's address
+	Coord            int    `json:"c"`  // the coordinator's port, TCP and UDP
+	Tok              string `json:"t"`  // the coordinator's secret
+	TCP              int    `json:"te"` // kharej: the TCP echo reverse tunnels forward to
+	UDP              int    `json:"ue"` // kharej: the UDP echo the udp transport forwards to
+	L3               int    `json:"le"` // kharej: the TCP echo on each direct tunnel's address
+	Until            int64  `json:"u"`  // unix seconds: the kharej stops by then whatever happens
 	// Preset is the performance preset every tunnel under test was built
 	// with, for the kharej's report; each case carries it too.
 	Preset string `json:"pr,omitempty"`
@@ -254,9 +255,8 @@ func ctCaseToken(secret, kind, tr string) string {
 	return hex.EncodeToString(m.Sum(nil))[:32]
 }
 
-// ctConfig is the coordinator's answer to "config": the whole test, less the
-// tokens the kharej derives for itself.
-func ctConfig(l ConnTestLink) string {
+// ctCompactLink removes local-only metadata and credentials derived by the peer.
+func ctCompactLink(l ConnTestLink) ConnTestLink {
 	l.V, l.Kind = 1, connTestKind
 	// The copied link already supplies the authenticated coordinator endpoint.
 	// fetchConnTestLink restores these fields before using any case. Repeating
@@ -287,9 +287,36 @@ func ctConfig(l ConnTestLink) string {
 			l.Cases[i].Host = ""
 		}
 	}
-	raw, _ := json.Marshal(l)
-	return gzipB64(raw)
+	return l
 }
+
+func ctAdditionalCarrier(c ShareLink) bool {
+	return c.Kind == "direct" && (c.Tr == "dns" || c.Tr == "icmp-request" || c.Tr == "icmp-reply")
+}
+
+// New carriers travel separately, like managed helper credentials. Older workers
+// keep their complete supported suite; updated workers fetch the added cases.
+func ctConfigParts(l ConnTestLink) (main, additional string) {
+	l = ctCompactLink(l)
+	var base, extra []ShareLink
+	for _, c := range l.Cases {
+		if ctAdditionalCarrier(c) {
+			extra = append(extra, c)
+		} else {
+			base = append(base, c)
+		}
+	}
+	l.Cases, l.AdditionalDirect = base, len(extra)
+	raw, _ := json.Marshal(l)
+	main = gzipB64(raw)
+	if len(extra) > 0 {
+		raw, _ = json.Marshal(extra)
+		additional = gzipB64(raw)
+	}
+	return
+}
+
+func ctConfig(l ConnTestLink) string { main, _ := ctConfigParts(l); return main }
 
 // fetchConnTestLink asks the Iran side's coordinator for the test a copied
 // link names, and fills in each tunnel's token.
@@ -302,8 +329,38 @@ func fetchConnTestLink(ctx context.Context, a connTestAddr) (ConnTestLink, error
 		}
 		if err == nil && strings.HasPrefix(reply, "config ") {
 			raw, err := unGzipB64(strings.TrimPrefix(reply, "config "))
+			out = ConnTestLink{}
 			if err != nil || json.Unmarshal(raw, &out) != nil || out.Kind != connTestKind {
 				return out, fmt.Errorf("the test settings from the Iran server arrived damaged — try again")
+			}
+			if out.AdditionalDirect != 0 {
+				if out.AdditionalDirect < 0 || out.AdditionalDirect > 3 {
+					return out, errors.New("invalid additional test settings count")
+				}
+				reply, askErr := ctAskContext(ctx, a.Host, a.Coord, "additional "+a.Tok)
+				if askErr == nil && reply == "stopped" {
+					return out, errConnTestStopped
+				}
+				if askErr != nil || !strings.HasPrefix(reply, "additional ") {
+					if ctx.Err() != nil {
+						return out, ctCoordinatorFailure(a.Host, a.Coord)
+					}
+					ctSleep(ctx, time.Second)
+					continue
+				}
+				raw, decodeErr := unGzipB64(strings.TrimPrefix(reply, "additional "))
+				var extra []ShareLink
+				if decodeErr != nil || json.Unmarshal(raw, &extra) != nil || len(extra) != out.AdditionalDirect {
+					return out, errors.New("additional test settings arrived damaged")
+				}
+				seen := make(map[string]bool)
+				for _, c := range extra {
+					if !ctAdditionalCarrier(c) || seen[c.Tr] {
+						return out, errors.New("invalid additional test carrier")
+					}
+					seen[c.Tr] = true
+				}
+				out.Cases = append(out.Cases, extra...)
 			}
 			out.Host, out.Coord, out.Tok = a.Host, a.Coord, a.Tok
 			for i := range out.Cases {
@@ -649,7 +706,7 @@ func StartConnTestIran(o ConnTestOptions) (*ConnTestIran, string, error) {
 	if err := ctx.Err(); err != nil {
 		return fail(err)
 	}
-	s.coord.setConfig(ctConfig(s.link))
+	s.coord.setTestConfig(s.link)
 	return s, s.link.Short(), nil
 }
 
@@ -1871,6 +1928,7 @@ type ctCoordinator struct {
 	mu                   sync.Mutex
 	peer                 string
 	verdict              string
+	additional           string            // separately authenticated added direct carriers
 	config               string            // the answer to "config"; see ctConfig
 	carriers             map[string]string // public helper settings, fetched one small packet at a time
 	httpsProbes          map[string]string // bounded preflight codes; frozen when Kharej joins
@@ -1975,7 +2033,7 @@ func (c *ctCoordinator) serveUDP() {
 // shutdown acknowledgement would close the coordinator before the worker hears.
 func ctStopAcknowledged(line string) bool {
 	f := strings.Fields(line)
-	return len(f) >= 2 && (f[0] == "config" || f[0] == "hello" || f[0] == "result")
+	return len(f) >= 2 && (f[0] == "config" || f[0] == "additional" || f[0] == "hello" || f[0] == "result")
 }
 
 // answer is the coordinator's whole protocol. An empty answer is silence: a
@@ -2140,6 +2198,14 @@ func (c *ctCoordinator) answer(line, from string) string {
 		return ""
 	}
 	switch f[0] {
+	case "additional":
+		c.mu.Lock()
+		extra := c.additional
+		c.mu.Unlock()
+		if extra == "" {
+			return ""
+		}
+		return "additional " + extra
 	case "config":
 		c.mu.Lock()
 		cfg := c.config
@@ -2249,6 +2315,13 @@ func ctKharejDirectPort(ctx context.Context, link ConnTestLink, tr string, used 
 		ctSleep(ctx, time.Second)
 	}
 	return "", errors.New("could not announce the free Kharej listener port to Iran")
+}
+
+func (c *ctCoordinator) setTestConfig(l ConnTestLink) {
+	main, extra := ctConfigParts(l)
+	c.mu.Lock()
+	c.config, c.additional = main, extra
+	c.mu.Unlock()
 }
 
 // setConfig sets what the kharej is told the test is.
