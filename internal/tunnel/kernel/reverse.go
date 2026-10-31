@@ -24,14 +24,39 @@ type reversePool struct {
 	device   packetDevice
 	identity [32]byte
 }
-type reverseLane struct {
-	conn  net.Conn
-	queue chan []byte
-	done  chan struct{}
-	once  sync.Once
+type reversePacket struct {
+	data [16384]byte
+	n    int
 }
 
-func (l *reverseLane) close() { l.once.Do(func() { close(l.done); _ = l.conn.Close() }) }
+var reversePackets = sync.Pool{New: func() any { return new(reversePacket) }}
+
+type reverseLane struct {
+	conn    net.Conn
+	queue   chan *reversePacket
+	done    chan struct{}
+	once    sync.Once
+	queueMu sync.Mutex
+}
+
+func (l *reverseLane) close() {
+	l.once.Do(func() { l.queueMu.Lock(); close(l.done); l.queueMu.Unlock(); _ = l.conn.Close() })
+}
+func (l *reverseLane) enqueue(packet *reversePacket) bool {
+	l.queueMu.Lock()
+	defer l.queueMu.Unlock()
+	select {
+	case <-l.done:
+		return false
+	default:
+	}
+	select {
+	case l.queue <- packet:
+		return true
+	default:
+		return false
+	}
+}
 
 func reverse(ctx context.Context, c config.KernelConfig, ready func()) error {
 	dev, err := openDevice(c.Interface+"r", false)
@@ -92,10 +117,10 @@ func runReverseReady(parent context.Context, c config.KernelConfig, dev packetDe
 			p.mu.RLock()
 			lane := p.lanes[laneIndex]
 			if lane != nil {
-				select {
-				case lane.queue <- append([]byte(nil), buf[:n]...):
-				case <-lane.done:
-				default:
+				packet := reversePackets.Get().(*reversePacket)
+				packet.n = copy(packet.data[:], buf[:n])
+				if !lane.enqueue(packet) {
+					reversePackets.Put(packet)
 				}
 			}
 			p.mu.RUnlock()
@@ -207,7 +232,7 @@ func (p *reversePool) connection(raw net.Conn, token string, index int) {
 		}
 	}
 	_ = conn.SetDeadline(time.Time{})
-	lane := &reverseLane{conn: conn, queue: make(chan []byte, 128), done: make(chan struct{})}
+	lane := &reverseLane{conn: conn, queue: make(chan *reversePacket, 128), done: make(chan struct{})}
 	p.mu.Lock()
 	prior := p.lanes[index]
 	p.lanes[index] = lane
@@ -229,8 +254,20 @@ func (p *reversePool) connection(raw net.Conn, token string, index int) {
 		defer lane.close()
 		tick := time.NewTicker(5 * time.Second)
 		defer tick.Stop()
+		frame := make([]byte, 16386)
+		defer func() {
+			lane.close()
+			for {
+				select {
+				case packet := <-lane.queue:
+					reversePackets.Put(packet)
+				default:
+					return
+				}
+			}
+		}()
 		for {
-			var packet []byte
+			var packet *reversePacket
 			select {
 			case <-p.ctx.Done():
 				return
@@ -240,15 +277,15 @@ func (p *reversePool) connection(raw net.Conn, token string, index int) {
 			case <-tick.C:
 			}
 			_ = conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-			var header [2]byte
-			binary.BigEndian.PutUint16(header[:], uint16(len(packet)))
-			if _, e := conn.Write(header[:]); e != nil {
-				return
+			n := 0
+			if packet != nil {
+				n = packet.n
+				copy(frame[2:], packet.data[:n])
+				reversePackets.Put(packet)
 			}
-			if len(packet) > 0 {
-				if _, e := conn.Write(packet); e != nil {
-					return
-				}
+			binary.BigEndian.PutUint16(frame[:2], uint16(n))
+			if _, e := conn.Write(frame[:n+2]); e != nil {
+				return
 			}
 		}
 	}()
