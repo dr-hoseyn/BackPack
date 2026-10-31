@@ -176,7 +176,7 @@ func KnownCarrier(name string) bool { return knownCarrier(name) }
 // refused before anything is created rather than after.
 func knownCarrier(name string) bool {
 	switch name {
-	case CarrierUDP, CarrierPck, CarrierXdi, CarrierSpoof, CarrierQuic, CarrierSNI, CarrierMasque, CarrierMasqueH2, CarrierConnectIP, CarrierWebTransport, "hysteria2", "tuic":
+	case "icmp-request", "icmp-reply", CarrierDNS, CarrierUDP, CarrierPck, CarrierXdi, CarrierSpoof, CarrierQuic, CarrierSNI, CarrierMasque, CarrierMasqueH2, CarrierConnectIP, CarrierWebTransport, "hysteria2", "tuic":
 		return true
 	}
 	return false
@@ -214,11 +214,13 @@ func openCarrierContext(ctx context.Context, cfg Config) (DatagramCarrier, net.A
 // wrap it.
 func openBareCarrier(ctx context.Context, cfg Config) (DatagramCarrier, net.Addr, error) {
 	switch strings.ToLower(strings.TrimSpace(cfg.Carrier)) {
+	case CarrierDNS:
+		return openDNS(ctx, cfg)
 	case "", CarrierUDP:
 		return openUDPPathsContext(ctx, cfg)
 	case CarrierPck:
 		return openPck(cfg)
-	case CarrierXdi:
+	case CarrierXdi, "icmp-request", "icmp-reply":
 		return openXdi(cfg)
 	case CarrierSpoof:
 		return openSpoof(cfg)

@@ -1,0 +1,61 @@
+name: DNS and symmetric ICMP carriers
+
+on:
+  pull_request:
+    paths:
+      - 'config/**'
+      - 'internal/manage/**'
+      - 'internal/tunnel/l3/**'
+      - 'internal/utils/network/icmp*'
+      - 'internal/utils/network/l3conn.go'
+      - '.github/scripts/golden-carriers-live.sh'
+      - '.github/workflows/golden-carriers.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Verify complete DNS frames, rotation, deadlines and ICMP direction
+        run: |
+          go test -race ./internal/tunnel/l3 -run 'TestDNS|TestTruncatedOrMalformedDNS' -count=1 -timeout 2m
+          go test -race ./internal/utils/network -run 'TestSymmetricICMP|TestICMP|TestXdi' -count=1 -timeout 2m
+      - name: Verify paired DNS configuration and Connection Test coverage
+        run: |
+          sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
+          go test -race ./internal/manage -run 'TestGolden|TestDNS|TestEveryShareLinkFieldHasAnID|TestTheTestSettingsFitOnePacketAndCarryNoToken' -count=1 -timeout 2m
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        family: [ipv4, ipv6]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install isolated network tools
+        run: sudo apt-get update -qq && sudo apt-get install -y iproute2 iputils-ping iptables
+      - name: Build actual engine
+        run: go build -o "$RUNNER_TEMP/backpack-golden" .
+      - name: Transfer real authenticated traffic through DNS and both ICMP shapes
+        run: sudo env FAMILY='${{ matrix.family }}' bash .github/scripts/golden-carriers-live.sh "$RUNNER_TEMP/backpack-golden"
+      - name: Save tunnel diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: golden-carrier-diagnostics-${{ matrix.family }}
+          path: /tmp/backpack-golden-live-*/**/*.log
+          if-no-files-found: ignore

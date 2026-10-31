@@ -1,5 +1,8 @@
 # Transports
 
+Direct L3 also offers [DNS and symmetric ICMP carriers](dns-icmp-carriers.md).
+They retain Noise authentication and replay protection.
+
 This fork also offers managed **Hysteria2, AnyTLS, ShadowTLS v3 + SS2022 and
 TUIC v5**, plus native Hysteria2/TUIC datagram carriers for L3. See
 [managed protocols](managed-protocols.md) for paired setup and test scope.

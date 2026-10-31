@@ -122,15 +122,21 @@ func (c *pckCarrier) ReadBatch(bufs [][]byte, sizes []int, froms []net.Addr) (in
 
 // openXdi builds the ICMP-echo carrier.
 func openXdi(cfg Config) (DatagramCarrier, net.Addr, error) {
-	conn, peer, err := network.NewXdiPacketConn(
-		cfg.Mode == ModeListen, cfg.Token, cfg.Addr)
+	var conn net.PacketConn
+	var peer net.Addr
+	var err error
+	if cfg.Carrier == "icmp-request" || cfg.Carrier == "icmp-reply" {
+		conn, peer, err = network.NewSymmetricICMPPacketConn(cfg.Mode == ModeListen, cfg.Token, cfg.Addr, cfg.Carrier == "icmp-request")
+	} else {
+		conn, peer, err = network.NewXdiPacketConn(cfg.Mode == ModeListen, cfg.Token, cfg.Addr)
+	}
 	if err != nil {
 		return nil, nil, err
 	}
 	base := &obfuscatedCarrier{
 		PacketConn: conn,
 		overhead:   network.XdiOverhead(),
-		name:       "xdi",
+		name:       cfg.Carrier,
 	}
 	if h, ok := conn.(interface{ IPHeaderLen() int }); ok {
 		base.overhead += h.IPHeaderLen() - 20

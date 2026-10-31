@@ -74,7 +74,7 @@ const connTestKind = "test"
 // ConnTestOptions.SpoofSrc); pck, on either side, needs root on both servers.
 var (
 	connTestReverse = []string{"tcp", "tcpmux", "stealth", "pck", "ws", "wss", "wsmux", "wssmux", "kcp", "xdi", "quic", "udp", "naive", "short-https", "xhttp", "reality", "hysteria2", "anytls", "shadowtls", "tuic", "xhttp-reality", "trusttunnel", "webtransport", "tailcat"}
-	connTestDirect  = []string{"udp", "quic", "pck", "xdi", "sni", "masque", "masque-h2", "hysteria2", "tuic", "webtransport", "connect-ip", "spoof"}
+	connTestDirect  = []string{"dns", "icmp-request", "icmp-reply", "udp", "quic", "pck", "xdi", "sni", "masque", "masque-h2", "hysteria2", "tuic", "webtransport", "connect-ip", "spoof"}
 )
 
 // connTestNeedsRoot is a reverse transport that builds its own packets.
@@ -2174,7 +2174,7 @@ func (c *ctCoordinator) directPort(tr, fallback string) string {
 }
 
 func ctPortCarrier(tr string) bool {
-	return tr == "udp" || tr == "quic" || tr == "pck" || tr == "sni" || tr == "masque" || tr == "masque-h2" || tr == "webtransport" || tr == "connect-ip" || config.SingDatagram(tr) || ctSNIVariantKey(tr)
+	return tr == "dns" || tr == "udp" || tr == "quic" || tr == "pck" || tr == "sni" || tr == "masque" || tr == "masque-h2" || tr == "webtransport" || tr == "connect-ip" || config.SingDatagram(tr) || ctSNIVariantKey(tr)
 }
 
 func ctSkippableCase(value string) bool {

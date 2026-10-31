@@ -28,6 +28,7 @@ func ReservedPorts() []int {
 	var out []int
 	for _, t := range listTunnels() {
 		out = append(out, ReservedPortsFor(t.Addr, t.Ports)...)
+		out = append(out, t.ReservedPorts...)
 	}
 	return out
 }

@@ -158,6 +158,8 @@ func sectionOf(name string) string {
 		return "[l3] native sing-box datagrams"
 	case "MasqueConfig":
 		return "[l3] — the MASQUE carrier"
+	case "DNSConfig":
+		return "[l3] — DNS carrier"
 	case "KernelConfig":
 		return "[kernel]"
 	case "AWGConfig":

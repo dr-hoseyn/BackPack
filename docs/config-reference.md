@@ -346,6 +346,14 @@ them both ends have to agree on. This says what exists.
 | `sing_server_name` | `string` | ServerName is the certificate identity verified by the dialling side. |
 | `sing_target` | `string` | Target is the listener's fixed numeric loopback UDP target, paired on both ends. |
 
+## [l3] — DNS carrier
+
+| Key | Type | Description |
+|---|---|---|
+| `dns_bind` | `string` | DNSBind is the local literal IP to receive DNS packets on; empty takes the listener address, or a wildcard address when dialing. Ports come from addr and paths. It is local and is never copied into a setup link. |
+| `dns_rate` | `int` | DNSRate caps outgoing DNS packets per second, including FEC and handshakes. Zero disables the cap. It is independent of bandwidth_mbps. |
+| `dns_rotate` | `int` | DNSRotate creates a fresh sending socket every N packets. Zero keeps one ephemeral source port. Each endpoint may tune its sending side. |
+
 ## [l3] — the MASQUE carrier
 
 | Key | Type | Description |

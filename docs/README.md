@@ -24,6 +24,7 @@ Reference pages: what each part of Backpack **is**, and every setting it has.
   servers, carrying whole IP packets (GRE/IPIP over a TUN device)
 
 ### Transports
+- [DNS and symmetric ICMP carriers](dns-icmp-carriers.md) — complete DNS queries, source-port rotation and request/reply-only ICMP
 - [Managed Hysteria2, AnyTLS, ShadowTLS and TUIC](managed-protocols.md) - reverse carriers and native UDP L3
 - [Transports — every one explained](transports.md)
 - [MASQUE over HTTP/3](masque.md) — this fork's authenticated CONNECT-UDP carrier for L3 tunnels

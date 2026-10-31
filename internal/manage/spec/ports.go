@@ -115,7 +115,7 @@ func ValidateConfigFile(path string) []string {
 
 	kinds := 0
 	for _, on := range []bool{cfg.Server.BindAddr != "", cfg.Client.RemoteAddr != "",
-		cfg.L3.Enabled(), cfg.Direct.Enabled()} {
+		cfg.L3.Enabled(), cfg.Direct.Enabled(), cfg.Kernel.Enabled(), cfg.AWG.Enabled()} {
 		if on {
 			kinds++
 		}
@@ -123,11 +123,10 @@ func ValidateConfigFile(path string) []string {
 	switch {
 	case kinds == 0:
 		add("this file describes no tunnel: it has no [server] bind_addr, no [client] " +
-			"remote_addr, no [l3] mode and no [direct] mode")
+			"remote_addr, no [l3]/[direct] mode, no [kernel] method and no [awg] interface")
 	case kinds > 1:
 		add("this file describes %d tunnels at once. One config is one tunnel — the "+
-			"engine picks [l3], then [direct], then [server]/[client], and the others "+
-			"are silently ignored", kinds)
+			"engine requires exactly one engine table", kinds)
 	}
 
 	if cfg.Server.BindAddr != "" {
@@ -166,6 +165,11 @@ func ValidateConfigFile(path string) []string {
 		}
 		if err := ValidatePortSpecs(cfg.L3.Ports); err != nil {
 			add("[l3] ports: %v", err)
+		}
+	}
+	if cfg.Kernel.Enabled() {
+		if err := ValidatePortSpecs(cfg.Kernel.Ports); err != nil {
+			add("[kernel] ports: %v", err)
 		}
 	}
 	return problems

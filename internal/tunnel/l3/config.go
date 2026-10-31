@@ -68,6 +68,7 @@ type Config struct {
 
 	// Carrier names the datagram carrier beneath the tunnel.
 	Carrier string
+	DNS     config.DNSConfig
 	Masque  config.MasqueConfig
 	Sing    config.SingL3Config
 
@@ -210,6 +211,9 @@ func (c *Config) Validate() error {
 	if c.Carrier == "" {
 		c.Carrier = CarrierUDP
 	}
+	if err := validateDNS(*c); err != nil {
+		return err
+	}
 	if !knownCarrier(c.Carrier) {
 		return fmt.Errorf("l3: carrier %q is not available (have %q, %q, %q, %q, %q, %q, %q)",
 			c.Carrier, CarrierUDP, CarrierPck, CarrierXdi, CarrierSpoof, CarrierQuic, CarrierSNI, CarrierMasque)
@@ -244,7 +248,7 @@ func (c *Config) Validate() error {
 	// their source per packet already, so it would add machinery without
 	// adding the effect; refusing here beats a setting that is written, read,
 	// and quietly does nothing.
-	if c.Multipath.Enabled() && c.Carrier != CarrierUDP {
+	if c.Multipath.Enabled() && c.Carrier != CarrierUDP && c.Carrier != CarrierDNS {
 		return fmt.Errorf("l3: paths is for the udp carrier; %q already varies its source per "+
 			"packet, so spreading it over sockets adds nothing", c.Carrier)
 	}
@@ -375,6 +379,7 @@ func ConfigFromTable(table config.L3Config) (Config, error) {
 		Addr:           table.Addr,
 		Token:          table.Token,
 		Carrier:        table.Carrier,
+		DNS:            table.DNSConfig,
 		Masque:         table.MasqueConfig,
 		Sing:           table.SingL3Config,
 		Encap:          table.Encap,

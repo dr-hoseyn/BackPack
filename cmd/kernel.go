@@ -33,8 +33,8 @@ func runKernelTunnel(cfg *config.Config, ctx context.Context, path string) {
 					return
 				case <-tick.C:
 					a, b := kernel.Counters(c.Interface)
-					in.Store(baseIn + a)
-					out.Store(baseOut + b)
+					in.Store(max(in.Load(), baseIn+a))
+					out.Store(max(out.Load(), baseOut+b))
 				}
 			}
 		}()
