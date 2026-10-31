@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/netip"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -161,6 +162,16 @@ func RunManaged(ctx context.Context, input config.KernelConfig, ready func(bool)
 		if _, e = command(runCtx, "ip", []string{"link", "set", "dev", c.Interface, "up"}, nil); e != nil {
 			return e
 		}
+		peer, _ := netip.ParseAddr(c.PeerIP)
+		target := netip.PrefixFrom(peer, peer.BitLen()).String()
+		if _, e = command(runCtx, "ip", []string{"route", "add", target, "dev", c.Interface, "proto", "static"}, nil); e != nil {
+			return e
+		}
+		defer func() {
+			clean, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			_, _ = command(clean, "ip", []string{"route", "del", target, "dev", c.Interface, "proto", "static"}, nil)
+		}()
 	}
 	for i := 0; i < pending; i++ {
 		select {

@@ -19,6 +19,7 @@ cleanup() {
     if [[ -n "$echo_pid" ]]; then kill -TERM "$echo_pid" 2>/dev/null || true; wait "$echo_pid" 2>/dev/null || true; fi
     ip netns del "$first" 2>/dev/null || true
     ip netns del "$second" 2>/dev/null || true
+    if [[ -n "${SUDO_UID:-}" ]]; then chown -R "$SUDO_UID:${SUDO_GID:-$SUDO_UID}" "$work"; fi
 }
 trap cleanup EXIT
 ip netns add "$first"

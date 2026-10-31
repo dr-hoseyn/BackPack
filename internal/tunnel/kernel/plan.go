@@ -174,7 +174,9 @@ func Build(input config.KernelConfig) (Plan, error) {
 			bits = 128
 		}
 		target := netip.PrefixFrom(peer, bits).String()
-		p.step([]string{"route", "add", target, "dev", dev, "proto", "static"}, []string{"route", "del", target, "dev", dev, "proto", "static"})
+		if c.Method != "xfrm-ipsec" {
+			p.step([]string{"route", "add", target, "dev", dev, "proto", "static"}, []string{"route", "del", target, "dev", dev, "proto", "static"})
+		}
 	} else {
 		peer, _ := netip.ParseAddr(c.PeerIP)
 		bits := 32
