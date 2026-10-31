@@ -32,7 +32,7 @@ for mode in ${MODES:-direct reverse}; do
         reverse=0; [[ "$mode" == reverse ]] && reverse=1
         for pair in "$first iran" "$second kharej"; do
             read -r namespace role <<< "$pair"
-            ip netns exec "$namespace" env BP_KERNEL_CT_METHOD="$method" BP_KERNEL_CT_REVERSE="$reverse" BP_KERNEL_CT_DIR="$path" BP_KERNEL_CT_ROLE="$role" unshare --mount --propagation private bash -c '
+            ip netns exec "$namespace" env BP_KERNEL_CT_METHOD="$method" BP_KERNEL_CT_REVERSE="$reverse" BP_KERNEL_CT_DIR="$path" BP_KERNEL_CT_ROLE="$role" BP_KERNEL_CT_CANCEL="${CANCEL:-0}" unshare --mount --propagation private bash -c '
                 mount -t tmpfs tmpfs /run
                 charon=""
                 if [[ "$BP_KERNEL_CT_METHOD" == xfrm-ipsec ]]; then

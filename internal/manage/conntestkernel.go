@@ -149,11 +149,12 @@ func ctKernelPrerequisite(c config.KernelConfig) error {
 	if err != nil {
 		return err
 	}
+	used := kernelUsedPrefixes()
 	for _, step := range plan.Steps {
 		if len(step.Args) < 3 || step.Args[0] != "address" || step.Args[1] != "add" {
 			continue
 		}
-		for _, prefix := range kernelUsedPrefixes() {
+		for _, prefix := range used {
 			if kernelAddressConflict(config.KernelConfig{LocalIP: step.Args[2]}, config.KernelConfig{LocalIP: prefix.String()}) {
 				return errors.New("test subnet or helper route overlaps an existing tunnel or interface")
 			}

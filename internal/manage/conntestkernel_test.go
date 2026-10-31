@@ -222,10 +222,20 @@ func TestKernelConnectionTestLiveEndpoint(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
 	}
-	r := s.runKernelCase(ctx, c, func(r ConnTestResult) {
+	caseCtx, stopCase := context.WithCancel(ctx)
+	defer stopCase()
+	cancelled := os.Getenv("BP_KERNEL_CT_CANCEL") == "1"
+	r := s.runKernelCase(caseCtx, c, func(r ConnTestResult) {
 		t.Logf("%s: %s %d/%d %.1f/%.1f %s", tr, r.Status, r.OK, r.Tried, r.Mbps, r.UploadMbps, r.Detail)
+		if cancelled && r.OK > 0 {
+			stopCase()
+		}
 	})
-	if r.Status != ctOK || r.Mbps <= 0 || r.UploadMbps <= 0 || r.OK != 4 {
+	if cancelled {
+		if r.Status == ctOK || r.OK == 0 || s.kernelFailure != "" {
+			t.Fatalf("cancellation did not cleanly stop a real data path: %+v / %s", r, s.kernelFailure)
+		}
+	} else if r.Status != ctOK || r.Mbps <= 0 || r.UploadMbps <= 0 || r.OK != 4 {
 		t.Fatalf("real kernel Connection Test failed: %+v", r)
 	}
 	if _, err := os.Stat(filepath.Join(dir, c.name+".toml")); err != nil {
