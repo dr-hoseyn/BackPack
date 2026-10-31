@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/netip"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -150,6 +151,11 @@ func ctKernelPrerequisite(c config.KernelConfig) error {
 		return err
 	}
 	used := kernelUsedPrefixes()
+	routePrefixes, err := ctKernelRoutePrefixes(plan)
+	if err != nil {
+		return err
+	}
+	used = append(used, routePrefixes...)
 	for _, step := range plan.Steps {
 		if len(step.Args) < 3 || step.Args[0] != "address" || step.Args[1] != "add" {
 			continue
@@ -185,6 +191,48 @@ func ctKernelPrerequisite(c config.KernelConfig) error {
 		}
 	}
 	return nil
+}
+
+// Static routes can reserve a network even when no interface owns an address
+// inside it. Ignore only default routes; a helper subnet must not override a
+// corporate/VPN route, blackhole route or another peer's explicit host route.
+func ctKernelRoutePrefixes(plan kernel.Plan) ([]netip.Prefix, error) {
+	families := map[bool]bool{}
+	for _, step := range plan.Steps {
+		if len(step.Args) < 3 || step.Args[0] != "address" || step.Args[1] != "add" {
+			continue
+		}
+		if p, err := netip.ParsePrefix(step.Args[2]); err == nil {
+			families[p.Addr().Is6()] = true
+		}
+	}
+	var out []netip.Prefix
+	for v6 := range families {
+		family := "-4"
+		if v6 {
+			family = "-6"
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		raw, err := exec.CommandContext(ctx, "ip", "-j", family, "route", "show", "table", "all").Output()
+		cancel()
+		if err != nil {
+			return nil, errors.New("cannot inspect routes before a temporary kernel test")
+		}
+		var routes []struct {
+			Destination string `json:"dst"`
+		}
+		if json.Unmarshal(raw, &routes) != nil {
+			return nil, errors.New("cannot parse existing kernel routes")
+		}
+		for _, r := range routes {
+			if p, err := netip.ParsePrefix(r.Destination); err == nil && p.Bits() > 0 {
+				out = append(out, p)
+			} else if a, err := netip.ParseAddr(r.Destination); err == nil {
+				out = append(out, netip.PrefixFrom(a, a.BitLen()))
+			}
+		}
+	}
+	return out, nil
 }
 
 // Kernel settings/acks fit a datagram. Prefer UDP so a blocked coordinator TCP

@@ -299,3 +299,15 @@ func TestKernelControlWorksWhenCoordinatorTCPIsClosed(t *testing.T) {
 		t.Fatal("kernel worker cannot acknowledge cancellation")
 	}
 }
+
+func TestKernelSubnetsDoNotOverrideReservedHostOrCorporateRoutes(t *testing.T) {
+	test := config.KernelConfig{LocalIP: "172.20.1.1/30", PeerIP: "172.20.1.2"}
+	for _, reserved := range []string{"172.16.0.0/12", "172.20.1.2/32", "172.20.1.0/30"} {
+		if !kernelAddressConflict(test, config.KernelConfig{LocalIP: reserved}) {
+			t.Fatalf("test would override reserved route %s", reserved)
+		}
+	}
+	if kernelAddressConflict(test, config.KernelConfig{LocalIP: "192.0.2.0/24"}) {
+		t.Fatal("unrelated underlay route prevented testing")
+	}
+}
