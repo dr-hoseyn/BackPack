@@ -90,13 +90,13 @@ func tunnelHealthWith(t core.Tunnel, pairs [][2]string) Health {
 		if strings.HasPrefix(t.Transport, "kernel/") {
 			h.State, h.Detail = "unknown", "kernel interface configured; verify traffic to the peer tunnel address"
 			cfg, err := core.LoadTunnelConfig(t.Name)
-			var device string
 			if err == nil {
-				resolved, resolveErr := kernel.Resolve(cfg.Kernel)
-				err, device = resolveErr, resolved.Interface
+				cfg.Kernel, err = kernel.Resolve(cfg.Kernel)
 			}
-			if err != nil || !ifaceExists(device) {
+			if err != nil || !ifaceExists(cfg.Kernel.Interface) {
 				h.State, h.Detail = "offline", "kernel interface is missing; inspect the service log"
+			} else if kernelPeerReachable(cfg.Kernel) {
+				h.State, h.Detail, h.Connected = "online", "peer traffic verified through the kernel interface", true
 			}
 			return h
 		}

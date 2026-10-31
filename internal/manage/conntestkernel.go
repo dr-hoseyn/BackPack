@@ -251,10 +251,18 @@ type ctKernelPeer struct {
 
 func (p *ctKernelPeer) close() error { err := p.runtime.stop(); p.runtime = nil; return err }
 func (p *ctKernelPeer) poll(ctx context.Context, link *ConnTestLink, dir string) error {
-	reply, err := ctAskContext(ctx, link.Host, link.Coord, "kernel-next "+link.Tok)
+	pollCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	reply, err := ctAskContext(pollCtx, link.Host, link.Coord, "kernel-next "+link.Tok)
+	cancel()
 	if err != nil {
+		if p.runtime != nil && !p.lastContact.IsZero() && time.Since(p.lastContact) > 10*time.Second {
+			cleanupErr := p.close()
+			p.ack.Error = "kernel control lease expired"
+			return errors.Join(err, cleanupErr)
+		}
 		return err
 	}
+	p.lastContact = time.Now()
 	if reply == "stopped" {
 		return errConnTestStopped
 	}
@@ -435,7 +443,7 @@ func (s *ConnTestIran) runKernelCase(ctx context.Context, c *connTestCase, repor
 func ctVerifyKernel(ctx context.Context, c config.KernelConfig) error {
 	for ctx.Err() == nil {
 		probe, cancel := context.WithTimeout(ctx, 2*time.Second)
-		err := exec.CommandContext(probe, "ping", "-n", "-c", "1", "-W", "1", c.PeerIP).Run()
+		err := exec.CommandContext(probe, "ping", "-n", "-c", "1", "-W", "1", "-I", c.Interface, c.PeerIP).Run()
 		cancel()
 		if err == nil {
 			return nil

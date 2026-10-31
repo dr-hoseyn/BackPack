@@ -40,6 +40,10 @@ include per-protocol jitter in the result; older peers omit it, and their jitter
 
 <div dir="rtl">
 
+Kernel measurements retain the method and native/reverse direction as separate
+identities. Quick uses four observation echoes per kernel case; Full keeps its
+longer observation. Only completed healthy measurements contribute to comparison.
+
 ## خلاصهٔ فارسی
 
 نتایج تست ترمینال و پنل خودکار ذخیره می‌شوند و از گزینهٔ History یا دستورهای بالا قابل

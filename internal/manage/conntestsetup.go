@@ -224,6 +224,9 @@ func (s *ConnTestSetup) Start(r ConnTestSetupRequest) error {
 		return fmt.Errorf("a setup request ID and at most 1024 bytes of ports are required")
 	}
 	ports := parsePorts(r.Ports)
+	if m, _, ok := ctKernelMethod(r.Transport); r.Kind == "kernel" && ok && m.IPv6Only && len(ports) > 0 {
+		return fmt.Errorf("this kernel method creates a routed IPv6 tunnel; leave forwarded ports blank")
+	}
 	if len(ports) == 0 && r.Kind != "kernel" {
 		return fmt.Errorf("at least one forwarded port is required")
 	}
