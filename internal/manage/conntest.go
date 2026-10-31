@@ -413,7 +413,7 @@ type ConnTestIran struct {
 
 // ConnTestOptions are what the Iran operator answers.
 type ConnTestOptions struct {
-	Mode           string // quick: short traffic screen and three speed finalists; full: all speeds
+	Mode           string // quick: short traffic and speed samples for every healthy tunnel; full: longer samples
 	skipAWG        bool   // focused integration fixtures; ordinary full tests include AWG
 	AutomaticSetup bool   // keep endpoint-local identities for the post-test setup agent
 	// A suite reserves ports across paths while child listeners are starting.
@@ -1244,9 +1244,6 @@ func (s *ConnTestIran) Run(ctx context.Context, progress func(int, ConnTestResul
 		}(i, c)
 	}
 	wg.Wait()
-	if s.link.Mode == ConnTestQuick {
-		ctShortlist(results, connTestQuickFinalists, reportRow)
-	}
 	// Stability probes finish before any bandwidth test starts. Heavy traffic
 	// must not change another tunnel's loss/RTT or share its speed measurement.
 	for i, c := range s.cases {
@@ -1261,7 +1258,7 @@ func (s *ConnTestIran) Run(ctx context.Context, progress func(int, ConnTestResul
 		}
 		r.Phase, r.Detail = "speed", "measuring download and upload"
 		reportRow(i, r)
-		speed, err := ctSpeed(ctx, func(dialCtx context.Context) (net.Conn, error) { return ctDial(dialCtx, c, s.link.L3) })
+		speed, err := ctSpeedForMode(ctx, func(dialCtx context.Context) (net.Conn, error) { return ctDial(dialCtx, c, s.link.L3) }, s.link.Mode)
 		r.Phase, r.Detail = "", ""
 		if err != nil {
 			r.Status, r.Detail = ctUnstable, "speed test failed ("+ctShortErr(err)+")"
@@ -2504,7 +2501,7 @@ func runConnTestKharejLink(ctx context.Context, link ConnTestLink, out io.Writer
 	}
 	go ctKharejPMTU(ctx, link)
 	if link.Mode == ConnTestQuick {
-		fmt.Fprintln(out, "Quick test: 30-second traffic check, then download/upload for up to three finalists. This is a short observation; use Full to compare every healthy tunnel.")
+		fmt.Fprintln(out, "Quick test: 20-second traffic check, then short verified download/upload measurements for every healthy tunnel. Use Full for longer samples.")
 	} else {
 		fmt.Fprintln(out, "Full test: 60-second stability check, then download/upload for each healthy tunnel (about 8–12 seconds each, plus connection setup).")
 	}

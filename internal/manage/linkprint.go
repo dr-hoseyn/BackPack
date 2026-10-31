@@ -19,7 +19,7 @@ import (
 // the tunnel in link there. It is run as root on the kharej; install.sh hands
 // what follows it to the installed binary (see the end of install.sh).
 func InstallCommand(link string) string {
-	if l, err := DecodeShareLink(link); err == nil && l.Kind == "awg" {
+	if l, err := DecodeShareLink(link); err == nil && (l.Kind == "awg" || l.Kind == "kernel") {
 		return ""
 	}
 	if l, err := DecodeShareLink(link); err == nil && l.Kind == "direct" && (l.Tr == "masque" || l.Tr == "masque-h2" || l.Tr == "connect-ip" || l.Tr == "webtransport") {
@@ -37,10 +37,10 @@ func InstallCommand(link string) string {
 // printLinkBlock prints the two ways to build the kharej from link. menuPath
 // is where the Setup Link answer is in the kharej's menu, for the first.
 func printLinkBlock(link, menuPath string) {
-	if l, err := DecodeShareLink(link); err == nil && (l.Kind == "awg" || (l.Kind == "direct" && (l.Tr == "hysteria2" || l.Tr == "tuic"))) {
+	if l, err := DecodeShareLink(link); err == nil && ((l.Kind == "awg" || l.Kind == "kernel") || (l.Kind == "direct" && (l.Tr == "hysteria2" || l.Tr == "tuic"))) {
 		tui.Info("Install matching builds on both machines, then use the terminal Setup Link flow.")
 		fmt.Println(link)
-		if l.Kind == "awg" {
+		if l.Kind == "awg" || l.Kind == "kernel" {
 			fmt.Println("sudo backpack link apply '" + link + "'")
 		} else {
 			tui.Info("Kharej also needs its local --sing-cert and --sing-key paths.")

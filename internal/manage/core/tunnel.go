@@ -38,6 +38,14 @@ func List() []Tunnel {
 		t := Tunnel{Name: name, Service: app.ServiceName(name)}
 
 		switch {
+		case cfg.Kernel.Enabled():
+			t.Role = "server"
+			if cfg.Kernel.Role == "kharej" {
+				t.Role = "client"
+			}
+			t.Transport = "kernel/" + cfg.Kernel.Method
+			t.Addr = cfg.Kernel.RemoteAddr
+			t.Ports = cfg.Kernel.Ports
 		case cfg.AWG.Enabled():
 			t.Role, t.Transport, t.Addr, t.Ports = "server", "awg", fmt.Sprintf("0.0.0.0:%d", cfg.AWG.ListenPort), cfg.AWG.Ports
 			if cfg.AWG.Endpoint != "" {

@@ -659,6 +659,7 @@ type ClientConfig struct {
 
 // Config represents the complete configuration, including both server and client settings.
 type Config struct {
+	Kernel KernelConfig `toml:"kernel"`
 	// AWG is the exclusive independent AmneziaWG engine, managed like other tunnels.
 	AWG AWGConfig `toml:"awg"`
 	// Server is the reverse tunnel's Iran end: it listens for the client and

@@ -48,7 +48,7 @@ func connTestIranMenu() {
 		return
 	}
 	modePick := tui.ChooseOpt("Test depth", []tui.Option{
-		{Title: "Quick", Desc: "30-second check; speed on the best three candidates"},
+		{Title: "Quick", Desc: "20-second check; short speed samples on every healthy tunnel"},
 		{Title: "Full", Desc: "60-second check; speed on every healthy tunnel"},
 	})
 	if modePick < 0 {

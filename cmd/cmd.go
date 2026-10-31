@@ -208,6 +208,10 @@ func runEngine(cfg *config.Config, ctx context.Context, configPath string, apply
 	// that the reverse path is reached by exactly the configurations that
 	// always reached it: an [l3] table is the only way past this branch, and
 	// no configuration written before it existed has one.
+	if cfg.Kernel.Enabled() {
+		runKernelTunnel(cfg, ctx, configPath)
+		return
+	}
 	if cfg.AWG.Enabled() {
 		runAWGTunnel(cfg, ctx, configPath)
 		return

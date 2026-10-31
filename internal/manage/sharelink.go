@@ -185,6 +185,7 @@ type ShareLink struct {
 	PathLinks          []string `json:"mpl,omitempty"`
 	PathProfile        string   `json:"mpp,omitempty"`
 	AWGPeer            string   `json:"awgp,omitempty"`
+	KernelPeer         string   `json:"krp,omitempty"`
 }
 
 // Encode renders a link as the string an operator copies.
@@ -300,7 +301,7 @@ func checkShareLink(out ShareLink) error {
 		return fmt.Errorf("the setup link is missing the token or the transport — it was not made by this version")
 	}
 	switch out.Kind {
-	case "reverse", "direct", "awg":
+	case "reverse", "direct", "awg", "kernel":
 	default:
 		return fmt.Errorf("the setup link does not say what kind of tunnel it is")
 	}
@@ -632,6 +633,9 @@ func shareLinkOf(name, host string, cfg config.Config) (string, error) {
 	}
 	l := ShareLink{Name: name, Host: strings.TrimSpace(host)}
 
+	if cfg.Kernel.Enabled() {
+		return kernelLink(name, cfg.Kernel)
+	}
 	if cfg.AWG.Enabled() {
 		return awgLink(name, strings.TrimSpace(host), cfg.AWG)
 	}

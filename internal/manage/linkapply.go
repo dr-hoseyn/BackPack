@@ -102,6 +102,9 @@ func ApplySetupLink(raw string, o LinkApplyOptions) (LinkApplied, error) {
 	if err != nil {
 		return LinkApplied{}, err
 	}
+	if link.Kind == "kernel" {
+		return applyKernelLink(link, o)
+	}
 	if link.Kind == "awg" {
 		return applyAWGLink(link, o)
 	}

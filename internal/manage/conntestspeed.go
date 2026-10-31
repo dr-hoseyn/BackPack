@@ -46,15 +46,39 @@ type ctSpeedResult struct {
 
 // ctSpeed measures one tunnel at a time. Streams share the same sampling
 // window; warmup bytes, socket buffers and echo traffic are never counted.
+// Quick keeps the same four verified streams and independent directional
+// measurements. Only warmup and observation windows are shorter; dialing and
+// payload verification keep their full bounds for high-latency protocols.
+type ctSpeedProfile struct{ warmup, minimum, maximum, interval time.Duration }
+
+func (p ctSpeedProfile) budget() time.Duration {
+	return ctSpeedDialWait + ctSpeedHandshakeWait + p.warmup + p.maximum + ctSpeedIOGrace
+}
+
+var ctFullSpeedProfile = ctSpeedProfile{ctSpeedWarmup, ctSpeedMinimum, ctSpeedMaximum, ctSpeedInterval}
+var ctQuickSpeedProfile = ctSpeedProfile{250 * time.Millisecond, time.Second, 2 * time.Second, 250 * time.Millisecond}
+
 func ctSpeed(ctx context.Context, dial func(context.Context) (net.Conn, error)) (ctSpeedResult, error) {
+	return ctSpeedWithProfile(ctx, dial, ctFullSpeedProfile)
+}
+
+func ctSpeedForMode(ctx context.Context, dial func(context.Context) (net.Conn, error), mode string) (ctSpeedResult, error) {
+	profile := ctFullSpeedProfile
+	if mode == ConnTestQuick {
+		profile = ctQuickSpeedProfile
+	}
+	return ctSpeedWithProfile(ctx, dial, profile)
+}
+
+func ctSpeedWithProfile(ctx context.Context, dial func(context.Context) (net.Conn, error), profile ctSpeedProfile) (ctSpeedResult, error) {
 	var r ctSpeedResult
-	ctx, cancel := context.WithTimeout(ctx, ctSpeedBudget)
+	ctx, cancel := context.WithTimeout(ctx, 2*profile.budget())
 	defer cancel()
-	download, downStable, err := ctSpeedDirection(ctx, dial, 'D')
+	download, downStable, err := ctSpeedDirectionWithProfile(ctx, dial, 'D', profile)
 	if err != nil {
 		return r, fmt.Errorf("download: %w", err)
 	}
-	upload, upStable, err := ctSpeedDirection(ctx, dial, 'U')
+	upload, upStable, err := ctSpeedDirectionWithProfile(ctx, dial, 'U', profile)
 	if err != nil {
 		return r, fmt.Errorf("upload: %w", err)
 	}
@@ -63,7 +87,11 @@ func ctSpeed(ctx context.Context, dial func(context.Context) (net.Conn, error)) 
 }
 
 func ctSpeedDirection(parent context.Context, dial func(context.Context) (net.Conn, error), direction byte) (float64, bool, error) {
-	ctx, cancel := context.WithTimeout(parent, ctSpeedDirectionBudget)
+	return ctSpeedDirectionWithProfile(parent, dial, direction, ctFullSpeedProfile)
+}
+
+func ctSpeedDirectionWithProfile(parent context.Context, dial func(context.Context) (net.Conn, error), direction byte, profile ctSpeedProfile) (float64, bool, error) {
+	ctx, cancel := context.WithTimeout(parent, profile.budget())
 	var wg sync.WaitGroup
 	defer func() { cancel(); wg.Wait() }()
 	var received atomic.Uint64
@@ -105,7 +133,7 @@ func ctSpeedDirection(parent context.Context, dial func(context.Context) (net.Co
 			case <-ctx.Done():
 				return
 			}
-			_ = c.SetDeadline(time.Now().Add(ctSpeedWarmup + ctSpeedMaximum + ctSpeedIOGrace))
+			_ = c.SetDeadline(time.Now().Add(profile.warmup + profile.maximum + ctSpeedIOGrace))
 			if _, err = c.Write([]byte{1}); err != nil {
 				failures <- err
 				return
@@ -151,7 +179,7 @@ func ctSpeedDirection(parent context.Context, dial func(context.Context) (net.Co
 		}
 	}
 	close(start)
-	warmup := time.NewTimer(ctSpeedWarmup)
+	warmup := time.NewTimer(profile.warmup)
 	defer warmup.Stop()
 	select {
 	case <-warmup.C:
@@ -167,7 +195,7 @@ func ctSpeedDirection(parent context.Context, dial func(context.Context) (net.Co
 		streamBaseline[i] = streams[i].Load()
 	}
 	last := baseline
-	tick := time.NewTicker(ctSpeedInterval)
+	tick := time.NewTicker(profile.interval)
 	defer tick.Stop()
 	var samples []float64
 	for {
@@ -191,7 +219,7 @@ func ctSpeedDirection(parent context.Context, dial func(context.Context) (net.Co
 			// Aggregate goodput can converge while one flow is recovering
 			// from loss. Give every stream the existing maximum window before
 			// rejecting it for carrying no verified bytes.
-			if elapsed >= ctSpeedMinimum && stable && allStreamsAdvanced || elapsed >= ctSpeedMaximum {
+			if elapsed >= profile.minimum && stable && allStreamsAdvanced || elapsed >= profile.maximum {
 				select {
 				case err := <-failures:
 					return 0, false, err

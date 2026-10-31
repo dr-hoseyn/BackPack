@@ -122,6 +122,9 @@ func (e *engineControl) helperContext(ctx context.Context) context.Context {
 // engineIdentity names the role and transport a configuration runs, in the
 // words the metrics file uses for the same tunnel.
 func engineIdentity(cfg *config.Config) (role, transport string) {
+	if cfg.Kernel.Enabled() {
+		return cfg.Kernel.Role, "kernel-" + cfg.Kernel.Method
+	}
 	if cfg.AWG.Enabled() {
 		if cfg.AWG.Endpoint == "" {
 			return "server", "awg"

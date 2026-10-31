@@ -94,6 +94,23 @@ func setupFromLink() {
 		return
 	}
 
+	if link.Kind == "kernel" {
+		c, err := kernelFromLink(link)
+		if err != nil {
+			tui.Error(err.Error())
+			tui.PressEnter()
+			return
+		}
+		name := tui.PromptDefault("Tunnel Name", peerName(link))
+		tui.Info("Kernel " + c.Method + " · " + c.LocalIP + " / " + c.PeerIP)
+		if tui.Confirm("Create This Tunnel", true) {
+			if _, err = installKernel(name, c); err != nil {
+				tui.Error(err.Error())
+			}
+		}
+		tui.PressEnter()
+		return
+	}
 	if link.Kind == "awg" {
 		c, err := awgFromLink(link)
 		if err != nil {
