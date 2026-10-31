@@ -69,7 +69,7 @@ func execute(ctx context.Context, p Plan, run Command) (cleanup func() error, er
 	}
 	for _, step := range p.Steps {
 		if _, err = run(ctx, "ip", step.Args, nil); err != nil {
-			_ = cleanup()
+			err = errors.Join(err, cleanup())
 			return cleanup, err
 		}
 		if len(step.Undo) > 0 {

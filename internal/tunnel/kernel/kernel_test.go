@@ -282,3 +282,25 @@ func TestWireGuardWaitsForPeerConfigurationBeforeInterfaceUp(t *testing.T) {
 		}
 	}
 }
+
+func TestCreationReportsRollbackFailuresAlongsideOriginalError(t *testing.T) {
+	p, err := Build(example("gre"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = execute(context.Background(), p, func(_ context.Context, _ string, args []string, _ io.Reader) ([]byte, error) {
+		if args[0] == "-j" {
+			return nil, errors.New("absent")
+		}
+		if args[0] == "address" {
+			return nil, errors.New("creation failure")
+		}
+		if len(args) >= 2 && args[0] == "link" && args[1] == "del" {
+			return nil, errors.New("rollback failure")
+		}
+		return nil, nil
+	})
+	if err == nil || !strings.Contains(err.Error(), "creation failure") || !strings.Contains(err.Error(), "rollback failure") {
+		t.Fatalf("hid a creation or teardown error: %v", err)
+	}
+}

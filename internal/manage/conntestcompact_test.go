@@ -1,7 +1,11 @@
 package manage
 
 import (
+	"bytes"
+	stdgzip "compress/gzip"
+	"encoding/base64"
 	"encoding/json"
+	"io"
 	"reflect"
 	"strconv"
 	"testing"
@@ -64,5 +68,29 @@ func TestConnectionTestICMPCompactionStillBuildsAValidPeer(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s compacted peer: %v", carrier, err)
 		}
+	}
+}
+
+func TestConnectionTestCompressionRemainsReadableByOlderPeers(t *testing.T) {
+	wire := ctConfig(ConnTestLink{Mode: "quick", Cases: []ShareLink{{Kind: "direct", From: "iran", Tr: "dns", Port: "53"}}})
+	compressed, err := base64.RawURLEncoding.DecodeString(wire)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := stdgzip.NewReader(bytes.NewReader(compressed))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	raw, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded ConnTestLink
+	if err = json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Mode != "quick" || len(decoded.Cases) != 1 || decoded.Cases[0].Tr != "dns" {
+		t.Fatal("standard gzip reader lost the peer settings")
 	}
 }
