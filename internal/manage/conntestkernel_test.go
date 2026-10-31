@@ -279,3 +279,23 @@ func TestKernelCleanupFailurePreventsAnyLaterCaseFromStarting(t *testing.T) {
 		t.Fatal("continued despite uncertain network ownership")
 	}
 }
+
+func TestKernelControlWorksWhenCoordinatorTCPIsClosed(t *testing.T) {
+	port := ctPickPort(map[int]bool{}, true)
+	coord, err := startCTCoordinator(port, "kernel-control-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer coord.close()
+	_ = coord.tcp.Close()
+	link := ConnTestLink{Host: "127.0.0.1", Coord: port, Tok: coord.tok}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	reply, err := ctKernelAsk(ctx, link, "kernel-next "+link.Tok)
+	if err != nil || !strings.HasPrefix(reply, "kernel ") {
+		t.Fatalf("UDP coordinator fallback: %q %v", reply, err)
+	}
+	if !ctStopAcknowledged("kernel-next " + link.Tok) {
+		t.Fatal("kernel worker cannot acknowledge cancellation")
+	}
+}

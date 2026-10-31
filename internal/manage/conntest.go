@@ -2052,7 +2052,7 @@ func (c *ctCoordinator) serveUDP() {
 // shutdown acknowledgement would close the coordinator before the worker hears.
 func ctStopAcknowledged(line string) bool {
 	f := strings.Fields(line)
-	return len(f) >= 2 && (f[0] == "config" || f[0] == "additional" || f[0] == "hello" || f[0] == "result")
+	return len(f) >= 2 && (f[0] == "config" || f[0] == "additional" || f[0] == "hello" || f[0] == "result" || f[0] == "kernel-next")
 }
 
 // answer is the coordinator's whole protocol. An empty answer is silence: a

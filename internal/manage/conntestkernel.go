@@ -187,6 +187,32 @@ func ctKernelPrerequisite(c config.KernelConfig) error {
 	return nil
 }
 
+// Kernel settings/acks fit a datagram. Prefer UDP so a blocked coordinator TCP
+// port does not spend its dial timeout on every serial phase transition. Retain
+// the standard TCP/UDP fallback for routes that block the datagram exchange.
+func ctKernelAsk(ctx context.Context, link ConnTestLink, line string) (string, error) {
+	probe, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	conn, err := (&net.Dialer{}).DialContext(probe, "udp", net.JoinHostPort(link.Host, strconv.Itoa(link.Coord)))
+	if err == nil {
+		stop := context.AfterFunc(probe, func() { _ = conn.Close() })
+		_ = conn.SetDeadline(time.Now().Add(time.Second))
+		_, err = conn.Write([]byte(line + "\n"))
+		if err == nil {
+			var packet [1201]byte
+			n, readErr := conn.Read(packet[:])
+			if readErr == nil && n > 0 && n < len(packet) {
+				stop()
+				_ = conn.Close()
+				return strings.TrimSpace(string(packet[:n])), nil
+			}
+		}
+		stop()
+		_ = conn.Close()
+	}
+	return ctAskContext(ctx, link.Host, link.Coord, line)
+}
+
 type ctKernelRuntime struct {
 	cancel context.CancelFunc
 	done   chan error
@@ -262,11 +288,11 @@ type ctKernelPeer struct {
 
 func (p *ctKernelPeer) close() error { err := p.runtime.stop(); p.runtime = nil; return err }
 func (p *ctKernelPeer) poll(ctx context.Context, link *ConnTestLink, dir string) error {
-	pollCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-	reply, err := ctAskContext(pollCtx, link.Host, link.Coord, "kernel-next "+link.Tok)
+	pollCtx, cancel := context.WithTimeout(ctx, 12*time.Second)
+	reply, err := ctKernelAsk(pollCtx, *link, "kernel-next "+link.Tok)
 	cancel()
 	if err != nil {
-		if p.runtime != nil && !p.lastContact.IsZero() && time.Since(p.lastContact) > 10*time.Second {
+		if p.runtime != nil && !p.lastContact.IsZero() && time.Since(p.lastContact) > 25*time.Second {
 			cleanupErr := p.close()
 			p.ack.Error = "kernel control lease expired"
 			return errors.Join(err, cleanupErr)
@@ -335,7 +361,7 @@ func (p *ctKernelPeer) poll(ctx context.Context, link *ConnTestLink, dir string)
 			}
 		}
 	}
-	ack, err := ctAskContext(ctx, link.Host, link.Coord, "kernel-ack "+link.Tok+" "+ctSetupEncode(p.ack))
+	ack, err := ctKernelAsk(ctx, *link, "kernel-ack "+link.Tok+" "+ctSetupEncode(p.ack))
 	if err == nil && ack != "ok" {
 		return errors.New("kernel acknowledgement was refused")
 	}

@@ -38,11 +38,11 @@ network traffic automatically.
 Existing stored configurations and coordinator links are unchanged. New peers
 include per-protocol jitter in the result; older peers omit it, and their jitter is shown as unmeasured. Use `backpack test history` and `backpack test compare` to inspect saved measurements.
 
-<div dir="rtl">
-
 Kernel measurements retain the method and native/reverse direction as separate
 identities. Quick uses four observation echoes per kernel case; Full keeps its
 longer observation. Only completed healthy measurements contribute to comparison.
+
+<div dir="rtl">
 
 ## خلاصهٔ فارسی
 
