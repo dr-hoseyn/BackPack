@@ -1714,9 +1714,6 @@ func ctProbe(ctx context.Context, c *connTestCase, l3Echo int, report func(ConnT
 	switch {
 	case ctx.Err() != nil:
 		r.Status, r.Detail = ctUnstable, "stopped before the test completed"
-		if r.OK == 0 {
-			r.Status = ctDown
-		}
 	case r.OK == r.Total && r.Tried == r.Total && r.FreshOK == 3:
 		if c.udp {
 			r.Status = ctOK
