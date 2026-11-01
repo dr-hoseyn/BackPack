@@ -1,5 +1,12 @@
 # dr-hoseyn fork
 
+**v1.20.0:** adds built-in TLS, streaming gRPC, pinned-host SSH and DNS-shaped KCP.
+Connection Test encrypts its coordinator, races TCP/UDP queries and reports
+independent connection checks and p95. The current kernel suite and verified
+upload/download profiles remain available. **Upgrade both servers and create
+a new test link.** [Carrier setup](docs/additional-carriers.md) ·
+[Coordinator upgrade](docs/connection-test-coordinator.md).
+
 **v1.19.2:** faster kernel Quick tests, with 2s observations, short verified
 speed samples and 3/5/8s discovery limits for native/reverse/crypto methods.
 Every healthy protocol still measures download/upload; Full keeps its sustained
@@ -36,7 +43,7 @@ behavior. See [resource behavior and verification](docs/wssmux-resources.md).
 
 **v1.15.0:** CLI-only management. The web dashboard and per-tunnel monitor pages are removed. Connection Test defaults to Quick; see the current timing above. Full remains available. Upgrading retires the legacy web service.
 
-This fork combines upstream BackPack v1.9.0 with PRs [#104](https://github.com/AminMGMT/BackPack/pull/104), [#98](https://github.com/AminMGMT/BackPack/pull/98), and [#108](https://github.com/AminMGMT/BackPack/pull/108). Fork release **v1.19.2** installs and updates from `dr-hoseyn/BackPack`. Managed Short HTTPS is available for Reverse TCP. The source also includes [advanced XHTTP settings](docs/xhttp-advanced.md) and [managed AmneziaWG setup](docs/amneziawg.md).
+This fork combines upstream BackPack v1.9.0 with PRs [#104](https://github.com/AminMGMT/BackPack/pull/104), [#98](https://github.com/AminMGMT/BackPack/pull/98), and [#108](https://github.com/AminMGMT/BackPack/pull/108). Fork release **v1.20.0** installs and updates from `dr-hoseyn/BackPack`. Managed Short HTTPS is available for Reverse TCP. The source also includes [advanced XHTTP settings](docs/xhttp-advanced.md) and [managed AmneziaWG setup](docs/amneziawg.md).
 
 
 **v1.14.2:** restores Reverse → ICMP → xDi in the CLI, includes
