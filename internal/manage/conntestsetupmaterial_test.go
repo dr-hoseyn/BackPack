@@ -19,6 +19,12 @@ import (
 
 func TestConnTestSetupSupportsEveryOfferedTestEngine(t *testing.T) {
 	for _, tr := range connTestReverse {
+		if tr == "ssh" {
+			if ctSetupSupported("reverse", tr) {
+				t.Fatal("temporary SSH endpoint must not become a production sshd login")
+			}
+			continue
+		}
 		if !ctSetupSupported("reverse", tr) {
 			t.Errorf("reverse %s missing", tr)
 		}
