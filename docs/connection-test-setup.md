@@ -72,7 +72,10 @@ measures four-stream download/upload and waits for both endpoints' teardown.
 Missing host prerequisites, incompatible native IP families and older workers
 are skipped with a reason. A configured interface alone never passes the test.
 
-Kernel Quick uses a labeled four-second observation per case; Full uses the
+Kernel Quick uses a labeled two-second observation, 100 ms speed warmup and
+500–750 ms of verified traffic per direction. Discovery is bounded to 3 seconds
+for native methods, 5 for reverse, and 8 for WireGuard/IPsec. Every healthy case
+still measures all four streams in both directions. Full uses the
 usual 60 seconds. Both measure every healthy case's speed. The shorter sample
 is screening evidence and cannot prove that a longer-lived connection survives.
 Total time includes the serial kernel phase as well as the existing carriers.

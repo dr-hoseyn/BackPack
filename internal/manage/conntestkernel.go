@@ -18,7 +18,35 @@ import (
 	"github.com/backpack/backpack/internal/tunnel/kernel"
 )
 
-const ctKernelQuickSamples = 4
+const ctKernelQuickSamples = 2
+
+// Native interfaces have already reported local readiness at both ends before
+// data probing starts. Quick can reject a silent path without spending the
+// reverse stream engine's 20-second discovery allowance on every kernel case.
+func ctKernelConnectWait(c *connTestCase) time.Duration {
+	if c.mode != ConnTestQuick {
+		return connTestConnectWait
+	}
+	method, reverse, _ := ctKernelMethod(c.tr)
+	if method.Name == "wireguard" || method.Name == "xfrm-ipsec" {
+		return 8 * time.Second
+	}
+	if reverse {
+		return 5 * time.Second
+	}
+	return 3 * time.Second
+}
+
+// Keep directional verification and all four streams. The shorter sample is a
+// quick estimate; Full is the unchanged sustained/convergence measurement.
+var ctKernelQuickSpeedProfile = ctSpeedProfile{100 * time.Millisecond, 500 * time.Millisecond, 750 * time.Millisecond, 125 * time.Millisecond}
+
+func ctKernelSpeedProfile(mode string) ctSpeedProfile {
+	if mode == ConnTestQuick {
+		return ctKernelQuickSpeedProfile
+	}
+	return ctFullSpeedProfile
+}
 
 func ctKernelMethod(tr string) (kernel.Method, bool, bool) {
 	reverse := strings.HasSuffix(tr, "-reverse")
@@ -74,8 +102,11 @@ func (c *ctCoordinator) kernelAnswer(fields []string) string {
 			return ""
 		}
 		c.kernelCapable = true
-		raw, _ := json.Marshal(c.kernelCommand)
-		return "kernel " + gzipB64(raw)
+		if c.kernelWire == "" {
+			raw, _ := json.Marshal(c.kernelCommand)
+			c.kernelWire = "kernel " + gzipB64(raw)
+		}
+		return c.kernelWire
 	case "kernel-ack":
 		if len(fields) != 3 {
 			return ""
@@ -97,6 +128,7 @@ func (c *ctCoordinator) kernelSet(tr, name string, cfg *config.KernelConfig) int
 	c.kernelCommand.Generation++
 	c.kernelCommand.Transport, c.kernelCommand.Name, c.kernelCommand.Config = tr, name, cfg
 	c.kernelAcked = false
+	c.kernelWire = ""
 	return c.kernelCommand.Generation
 }
 func (c *ctCoordinator) kernelWait(ctx context.Context, generation int) error {
@@ -331,6 +363,7 @@ type ctKernelPeer struct {
 
 	generation int
 	ack        ctKernelAck
+	ackSent    bool
 	runtime    *ctKernelRuntime
 }
 
@@ -343,6 +376,7 @@ func (p *ctKernelPeer) poll(ctx context.Context, link *ConnTestLink, dir string)
 		if p.runtime != nil && !p.lastContact.IsZero() && time.Since(p.lastContact) > 25*time.Second {
 			cleanupErr := p.close()
 			p.ack.Error = "kernel control lease expired"
+			p.ackSent = false
 			return errors.Join(err, cleanupErr)
 		}
 		return err
@@ -371,6 +405,7 @@ func (p *ctKernelPeer) poll(ctx context.Context, link *ConnTestLink, dir string)
 	if command.Generation > p.generation {
 		p.generation = command.Generation
 		p.ack = ctKernelAck{Generation: p.generation}
+		p.ackSent = false
 		err = p.close()
 		if err == nil && command.Config != nil {
 			c := *command.Config
@@ -409,10 +444,14 @@ func (p *ctKernelPeer) poll(ctx context.Context, link *ConnTestLink, dir string)
 			}
 		}
 	}
+	if p.ackSent {
+		return nil
+	}
 	ack, err := ctKernelAsk(ctx, *link, "kernel-ack "+link.Tok+" "+ctSetupEncode(p.ack))
 	if err == nil && ack != "ok" {
 		return errors.New("kernel acknowledgement was refused")
 	}
+	p.ackSent = err == nil
 	return err
 }
 
@@ -512,7 +551,7 @@ func (s *ConnTestIran) runKernelCase(ctx context.Context, c *connTestCase, repor
 	if r.Phase == "speed-queued" {
 		r.Phase, r.Detail = "speed", "measuring kernel download and upload"
 		report(r)
-		speed, e := ctSpeedForMode(ctx, func(dialCtx context.Context) (net.Conn, error) { return ctDial(dialCtx, c, s.link.L3) }, s.link.Mode)
+		speed, e := ctSpeedWithProfile(ctx, func(dialCtx context.Context) (net.Conn, error) { return ctDial(dialCtx, c, s.link.L3) }, ctKernelSpeedProfile(s.link.Mode))
 		r.Phase, r.Detail = "", ""
 		if e != nil {
 			r.Status, r.Detail = ctUnstable, "speed test failed ("+ctShortErr(e)+")"

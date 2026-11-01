@@ -1585,7 +1585,11 @@ func ctProbe(ctx context.Context, c *connTestCase, l3Echo int, report func(ConnT
 			}
 			cn.Close()
 		}
-		ctSleep(connectCtx, time.Second)
+		retry := time.Second
+		if c.kind == "kernel" && c.mode == ConnTestQuick {
+			retry = 100 * time.Millisecond
+		}
+		ctSleep(connectCtx, retry)
 	}
 	r.Connect = time.Since(start).Seconds()
 	say(fmt.Sprintf("up after %.0fs", r.Connect))
@@ -1684,6 +1688,9 @@ func ctDial(ctx context.Context, c *connTestCase, l3Echo int) (net.Conn, error) 
 // connectWaitFor is how long a tunnel is given to come up. The direct ones
 // wait for the kharej to have built its interface as well.
 func connectWaitFor(c *connTestCase) time.Duration {
+	if c.kind == "kernel" {
+		return ctKernelConnectWait(c)
+	}
 	if c.mode == ConnTestQuick {
 		if c.kind == "direct" {
 			return 30 * time.Second
@@ -1938,6 +1945,7 @@ func ctLastLine(path string) string {
 //	hello <token>   → ok          the kharej is in; its address is noted
 //	result <token>  → wait | done <verdict>
 type ctCoordinator struct {
+	kernelWire                 string // cached for one immutable kernel generation
 	kernelCommand              ctKernelCommand
 	kernelAck                  ctKernelAck
 	kernelCapable, kernelAcked bool
@@ -2630,19 +2638,31 @@ func runConnTestKharejLink(ctx context.Context, link ConnTestLink, out io.Writer
 	}
 	go ctKharejPMTU(ctx, link)
 	if link.Mode == ConnTestQuick {
-		fmt.Fprintln(out, "Quick test: 20s carrier traffic; 4s per serial kernel case, with verified download/upload for every healthy tunnel. Use Full for longer samples.")
+		fmt.Fprintln(out, "Quick test: 20s carrier traffic; 2s per serial kernel case, with verified download/upload for every healthy tunnel. Use Full for longer samples.")
 	} else {
 		fmt.Fprintln(out, "Full test: 60-second stability check, then download/upload for each healthy tunnel (about 8–12 seconds each, plus connection setup).")
 	}
 
 	// The verdict, and the rows as they fill until it comes.
+	var lastResultPoll time.Time
 	for {
 		if link.KernelTests {
 			if e := kernelPeer.poll(ctx, &link, dir); errors.Is(e, errConnTestStopped) {
 				return nil, ConnTestBest{}, e
 			}
 		}
-		ctSleep(ctx, 500*time.Millisecond)
+		activeKernel := link.KernelTests && kernelPeer.generation > 0
+		delay := 500 * time.Millisecond
+		if activeKernel {
+			delay = 100 * time.Millisecond
+		}
+		ctSleep(ctx, delay)
+		// Advance setup/teardown quickly without repeatedly compressing the
+		// full result table or adding control work to the speed measurement.
+		if activeKernel && time.Since(lastResultPoll) < 500*time.Millisecond {
+			continue
+		}
+		lastResultPoll = time.Now()
 		for _, e := range engines {
 			// Kept for the verdict rather than printed: a line written here
 			// would land in the middle of the live table.

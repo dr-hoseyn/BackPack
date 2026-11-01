@@ -100,3 +100,35 @@ jobs:
           name: kernel-conntest-${{ matrix.mode }}-${{ matrix.group }}
           path: /tmp/backpack-kernel-ct-*/**/*.log
           if-no-files-found: ignore
+
+  quick-latency:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install isolated kernel test tools
+        run: sudo apt-get update -qq && sudo apt-get install -y iproute2 iputils-ping
+      - name: Build current and previous released Connection Test
+        run: |
+          go test -c -o "$RUNNER_TEMP/kernel-fast.test" ./internal/manage
+          git fetch --depth 1 origin refs/tags/v1.19.1:refs/tags/v1.19.1
+          git worktree add --detach "$RUNNER_TEMP/kernel-before" v1.19.1
+          (cd "$RUNNER_TEMP/kernel-before" && go test -c -o "$RUNNER_TEMP/kernel-before.test" ./internal/manage)
+      - name: Compare real native and reverse Quick latency against v1.19.1
+        run: |
+          started=$(date +%s%N)
+          sudo env MODES='direct reverse' METHODS=gre bash .github/scripts/kernel-conntest-live.sh "$RUNNER_TEMP/kernel-before.test"
+          before=$(( $(date +%s%N) - started ))
+          started=$(date +%s%N)
+          sudo env MODES='direct reverse' METHODS=gre bash .github/scripts/kernel-conntest-live.sh "$RUNNER_TEMP/kernel-fast.test"
+          after=$(( $(date +%s%N) - started ))
+          python3 - "$before" "$after" <<'PY'
+          import sys
+          before, after = (int(x) / 1e9 for x in sys.argv[1:])
+          print(f"Real GRE direct+reverse: v1.19.1={before:.2f}s, updated={after:.2f}s, reduction={(1-after/before)*100:.1f}%")
+          assert after < before * 0.8, "Quick did not materially reduce real setup/probe/speed/cleanup latency"
+          PY

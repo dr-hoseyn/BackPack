@@ -133,8 +133,13 @@ case; failed cleanup stops the remaining kernel phase. Missing privileges,
 modules, tools, VICI, incompatible underlay families or occupied subnets are
 reported as skipped, rather than evidence of provider filtering.
 
-Quick observes each kernel case for four seconds, then measures verified
-four-stream download and upload. Full retains the 60-second observation.
+Quick observes each kernel case for two seconds, then measures verified
+four-stream download and upload with 100 ms warmup and 500–750 ms sampling
+per direction. Silent native paths get 3 seconds, reverse carriers 5 seconds,
+and WireGuard/IPsec 8 seconds for their handshake/retry. Full retains its
+60-second observation, discovery allowance and sustained speed profile.
+Control generations are checked every 100 ms; the result table remains limited
+to twice per second. All 40 method/direction candidates remain in the suite.
 This short Quick sample cannot reveal a flow cut after 17 seconds: use Full
 for persistent-path validation. Total time includes each reachable method's
 setup, observation, speed and teardown; a complete suite is not a 20-second run.
@@ -160,7 +165,7 @@ ECMP اضافه شده‌اند. حالت Reverse برای روش‌های مع�
 ابزارها و ماژول‌های لازم باید روی لینوکس موجود باشند. IPsec به strongSwan با
 VICI نیاز دارد. وضعیت اینترفیس به‌تنهایی اتصال را ثابت نمی‌کند؛ عبور ترافیک را
 از هر دو سمت بررسی کن. هر ۲۰ روش، مستقیم و معکوس، در Connection Test هستند؛ نتیجهٔ موفق را می‌توان
-به تونل دائمی تبدیل کرد. Quick برای هر روش کرنل ۴ ثانیه بررسی و سپس سرعت‌سنجی
+به تونل دائمی تبدیل کرد. Quick برای هر روش کرنل ۲ ثانیه بررسی و سپس سرعت‌سنجی
 دارد؛ Full بررسی طولانی را نگه می‌دارد. تاریخچه، پیشنهاد و مدیریت سرویس هم
 پشتیبانی می‌شوند. مسیر پیش‌فرض، فایروال عمومی و اتصال خودکار به bridge تغییر نمی‌کنند.
 

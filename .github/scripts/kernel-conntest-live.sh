@@ -60,6 +60,6 @@ for mode in ${MODES:-direct reverse}; do
         for namespace in "$first" "$second"; do
             ip -n "$namespace" -j link show | python3 -c 'import json,sys; assert not any(x.get("ifalias","").startswith("backpack-kernel:") for x in json.load(sys.stdin)), "kernel test leaked an interface"'
         done
-        echo "PASS: actual Connection Test $method $mode (4 echoes, verified four-stream download/upload, peer config retained, cleanup)"
+        echo "PASS: actual Connection Test $method $mode (verified echoes, verified four-stream download/upload, peer config retained, cleanup)"
     done
 done
