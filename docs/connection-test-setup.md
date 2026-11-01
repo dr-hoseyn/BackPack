@@ -138,4 +138,4 @@ test coordinator so that the peer uses the same rendezvous selection.
 
 </div>
 
-*Last verified against Backpack v1.19.1*
+*Last verified against Backpack v1.19.2*

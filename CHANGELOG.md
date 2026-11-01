@@ -2,12 +2,33 @@
 
 ## Unreleased
 
+## v1.19.2 — 2026-11-01
+
 - Shorten kernel Quick tests: two observation echoes, 100 ms warmup and
   500–750 ms verified directional speed samples. Bound silent native paths
   to 3 seconds, reverse carriers to 5, and WireGuard/IPsec to 8. Keep all
   healthy protocols, four streams, payload verification, acknowledged cleanup
   and the existing Full profile. Poll kernel transitions every 100 ms, cache
   generation messages and avoid redundant acknowledgement/result work.
+
+- Verify all 40 kernel method/direction cases and live cancellation. A serial
+  native+reverse GRE fixture on the same CI runner fell from 18.19s in v1.19.1
+  to 11.30s (37.9% less wall time), including setup, traffic, speed and cleanup.
+  This isolated measurement does not guarantee the same reduction on a WAN.
+
+**Upgrade notes:** update both endpoints for faster phase coordination. Every
+healthy protocol still receives download and upload measurements. Short Quick
+samples are estimates; use Full for slow-starting paths and sustained validation.
+
+<div dir="rtl">
+
+**خلاصهٔ فارسی:** تست Quick کرنل کوتاه‌تر شد: بررسی ترافیک ۲ ثانیه، انتظار مسیر
+بی‌پاسخ ۳ ثانیه برای روش بومی، ۵ ثانیه برای معکوس و ۸ ثانیه برای WireGuard/IPsec.
+سرعت همهٔ روش‌های سالم همچنان در هر دو جهت سنجیده می‌شود؛ Full بررسی طولانی را
+نگه می‌دارد. تست واقعی GRE مستقیم و معکوس حدود ۳۸ درصد کوتاه‌تر شد؛ این عدد
+تضمین زمان برای همهٔ مسیرها نیست. هر دو سرور را ارتقا بده.
+
+</div>
 
 ## v1.19.1 — 2026-10-31
 
