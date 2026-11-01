@@ -66,12 +66,12 @@ func ctWritePacket(w io.Writer, b []byte) error {
 	if len(b) > 256<<10 {
 		return fmt.Errorf("test packet is too large")
 	}
-	var header [4]byte
-	binary.BigEndian.PutUint32(header[:], uint32(len(b)))
-	if _, err := io.Copy(w, bytes.NewReader(header[:])); err != nil {
-		return err
-	}
-	_, err := io.Copy(w, bytes.NewReader(b))
+	// One write avoids a tiny header packet delaying the body behind Nagle and
+	// delayed ACKs on every short-lived coordinator connection.
+	packet := make([]byte, 4+len(b))
+	binary.BigEndian.PutUint32(packet[:4], uint32(len(b)))
+	copy(packet[4:], b)
+	_, err := io.Copy(w, bytes.NewReader(packet))
 	return err
 }
 func (c *ctCoordinator) wireAnswer(packet []byte, from string) []byte {
