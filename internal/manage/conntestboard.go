@@ -190,7 +190,7 @@ func ctWriteWrapped(out io.Writer, prefix, continuation, text string) {
 func ConnTestTable(results []ConnTestResult) string {
 	var b strings.Builder
 	if len(results) > 0 && results[0].Mode == ConnTestQuick {
-		b.WriteString("QUICK TEST: 20-second carrier observation; 4-second serial kernel cases, with verified speeds.\nSCREENED = traffic passed, speed not measured; excluded from automatic setup.\n\n")
+		b.WriteString("QUICK TEST: 20-second carrier observation; 2-second serial kernel cases, with verified speeds.\nSCREENED = traffic passed, speed not measured; excluded from automatic setup.\n\n")
 	}
 	b.WriteString(ctSummary(results) + "\n\n")
 	b.WriteString(ctHeader + "\n")

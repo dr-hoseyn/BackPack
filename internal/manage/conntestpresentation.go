@@ -38,7 +38,7 @@ func ctMenuStartup(out io.Writer, suite *ConnTestSuite) {
 	}
 	for _, s := range suite.tests {
 		if s != nil && s.link.Mode == ConnTestQuick {
-			fmt.Fprintln(out, "  Quick: 20s carrier observation; 4s per serial kernel case, then verified speed samples.")
+			fmt.Fprintln(out, "  Quick: 20s carrier observation; 2s per serial kernel case, then verified speed samples.")
 			break
 		}
 	}

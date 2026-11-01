@@ -59,7 +59,11 @@ func ConnTestRunTimeFor(mode string) time.Duration {
 func ctKernelTimeBudget(mode string) time.Duration {
 	samples, speed := connTestSoak, ctFullSpeedProfile
 	if mode == ConnTestQuick {
-		samples, speed = ctKernelQuickSamples, ctQuickSpeedProfile
+		samples, speed = ctKernelQuickSamples, ctKernelQuickSpeedProfile
 	}
-	return 40 * (65*time.Second + time.Duration(samples)*time.Second + 2*speed.budget())
+	budget := 65 * time.Second
+	if mode == ConnTestQuick {
+		budget = 53 * time.Second
+	} // slowest native crypto discovery: 8s, previously 20s
+	return 40 * (budget + time.Duration(samples)*time.Second + 2*speed.budget())
 }

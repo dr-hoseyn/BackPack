@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Shorten kernel Quick tests: two observation echoes, 100 ms warmup and
+  500–750 ms verified directional speed samples. Bound silent native paths
+  to 3 seconds, reverse carriers to 5, and WireGuard/IPsec to 8. Keep all
+  healthy protocols, four streams, payload verification, acknowledged cleanup
+  and the existing Full profile. Poll kernel transitions every 100 ms, cache
+  generation messages and avoid redundant acknowledgement/result work.
+
 ## v1.19.1 — 2026-10-31
 
 - Integrate all 20 standard kernel methods into Connection Test in native and

@@ -37,7 +37,7 @@ func TestKernelConnectionTestOffersEveryMethodAndDirection(t *testing.T) {
 			t.Fatalf("reverse method omitted: %s", c.tr)
 		}
 		c.mode = ConnTestQuick
-		if c.samples() != 4 {
+		if c.samples() != ctKernelQuickSamples {
 			t.Fatal("kernel Quick observation is not bounded")
 		}
 		c.mode = ConnTestFull
@@ -225,17 +225,19 @@ func TestKernelConnectionTestLiveEndpoint(t *testing.T) {
 	caseCtx, stopCase := context.WithCancel(ctx)
 	defer stopCase()
 	cancelled := os.Getenv("BP_KERNEL_CT_CANCEL") == "1"
+	started := time.Now()
 	r := s.runKernelCase(caseCtx, c, func(r ConnTestResult) {
 		t.Logf("%s: %s %d/%d %.1f/%.1f %s", tr, r.Status, r.OK, r.Tried, r.Mbps, r.UploadMbps, r.Detail)
 		if cancelled && r.OK > 0 {
 			stopCase()
 		}
 	})
+	t.Logf("kernel case elapsed: %s", time.Since(started))
 	if cancelled {
 		if r.Status == ctOK || r.OK == 0 || s.kernelFailure != "" {
 			t.Fatalf("cancellation did not cleanly stop a real data path: %+v / %s", r, s.kernelFailure)
 		}
-	} else if r.Status != ctOK || r.Mbps <= 0 || r.UploadMbps <= 0 || r.OK != 4 {
+	} else if r.Status != ctOK || r.Mbps <= 0 || r.UploadMbps <= 0 || r.OK != ctKernelQuickSamples {
 		t.Fatalf("real kernel Connection Test failed: %+v", r)
 	}
 	if _, err := os.Stat(filepath.Join(dir, c.name+".toml")); err != nil {
@@ -321,5 +323,94 @@ func TestKernelPrefixOnlyChecksDoNotTreatMissingPeersAsEqual(t *testing.T) {
 	b.LocalIP = "10.77.0.0/24"
 	if !kernelAddressConflict(a, b) {
 		t.Fatal("real prefix overlap was missed")
+	}
+}
+
+func TestKernelQuickBoundsSilentPathsWithoutShorteningFull(t *testing.T) {
+	for tr, want := range map[string]time.Duration{"gre": 3 * time.Second, "gre-reverse": 5 * time.Second, "wireguard": 8 * time.Second, "wireguard-reverse": 8 * time.Second, "xfrm-ipsec": 8 * time.Second} {
+		c := &connTestCase{kind: "kernel", tr: tr, mode: ConnTestQuick}
+		if got := connectWaitFor(c); got != want {
+			t.Fatalf("%s discovery: %s", tr, got)
+		}
+		c.mode = ConnTestFull
+		if got := connectWaitFor(c); got != connTestConnectWait {
+			t.Fatalf("Full %s discovery changed: %s", tr, got)
+		}
+	}
+	if ctKernelSpeedProfile(ConnTestFull) != ctFullSpeedProfile {
+		t.Fatal("kernel Full speed samples changed")
+	}
+}
+
+func TestKernelGenerationCacheCannotReplayOldSettings(t *testing.T) {
+	c := &ctCoordinator{tok: "secret"}
+	first := c.kernelSet("gre", "ct-one", &config.KernelConfig{Method: "gre"})
+	before := c.answer("kernel-next secret", "")
+	if before != c.answer("kernel-next secret", "") {
+		t.Fatal("same generation changed")
+	}
+	second := c.kernelSet("wireguard", "ct-two", &config.KernelConfig{Method: "wireguard"})
+	after := c.answer("kernel-next secret", "")
+	if first == second || before == after {
+		t.Fatal("new generation reused stale settings")
+	}
+	raw, err := unGzipB64(strings.TrimPrefix(after, "kernel "))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var command ctKernelCommand
+	if json.Unmarshal(raw, &command) != nil || command.Generation != second || command.Config.Method != "wireguard" {
+		t.Fatal("wrong generation reached the peer")
+	}
+}
+
+func TestKernelQuickSpeedStillVerifiesBothDirectionsAndEveryStream(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner := &ctEchoes{}
+	owner.add(listener)
+	defer owner.close()
+	go ctServeTCPEcho(listener, owner)
+	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+	defer cancel()
+	speed, err := ctSpeedWithProfile(ctx, func(ctx context.Context) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, "tcp", listener.Addr().String())
+	}, ctKernelSpeedProfile(ConnTestQuick))
+	if err != nil || speed.download <= 0 || speed.upload <= 0 {
+		t.Fatalf("short verified kernel speed: %+v %v", speed, err)
+	}
+	// The existing implementation rejects a stalled/empty stream in either
+	// direction. This exercises that same payload-verified path with short timing.
+}
+
+func TestKernelSilentPathHonorsShortQuickDiscoveryDeadline(t *testing.T) {
+	// An ordinary localhost listener deliberately never returns an echo. The
+	// socket's legacy 4s I/O timeout must not extend the kernel's 3s Quick bound.
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner := &ctEchoes{}
+	owner.add(listener)
+	defer owner.close()
+	go func() {
+		for {
+			conn, e := listener.Accept()
+			if e != nil {
+				return
+			}
+			owner.add(conn)
+		}
+	}()
+	address := listener.Addr().(*net.TCPAddr)
+	c := &connTestCase{kind: "kernel", tr: "gre", mode: ConnTestQuick, peerIP: "127.0.0.1"}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	started := time.Now()
+	r := ctProbe(ctx, c, address.Port, nil)
+	if r.Status != ctDown || r.OK != 0 || time.Since(started) > 4*time.Second {
+		t.Fatalf("silent kernel test exceeded its Quick bound: %+v / %s", r, time.Since(started))
 	}
 }
