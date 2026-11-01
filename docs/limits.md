@@ -31,4 +31,4 @@ share one link and you want to stop any one of them from taking it all.
 
 ---
 
-*Last verified against Backpack v1.19.2*
+*Last verified against Backpack v1.20.0*

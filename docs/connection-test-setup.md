@@ -1,5 +1,10 @@
 # Automatic setup after Connection Test
 
+In v1.20.0, update both peers and start a fresh test. The coordinator now uses
+[authenticated encryption](connection-test-coordinator.md); older plaintext
+control links are rejected. Temporary SSH test endpoints require manual
+production sshd setup and are excluded from automatic promotion.
+
 In the terminal, **Quick** is the default test depth. It observes each tunnel
 for 20 seconds, with connection discovery bounded to 20 seconds (30 seconds for
 direct tunnels). It then measures verified download and upload on **every**
@@ -138,4 +143,4 @@ test coordinator so that the peer uses the same rendezvous selection.
 
 </div>
 
-*Last verified against Backpack v1.19.2*
+*Last verified against Backpack v1.20.0*

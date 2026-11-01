@@ -65,7 +65,7 @@ links use the existing per-tunnel lifecycle. See [kernel tunnels](kernel-tunnels
 ### The reverse tunnel — `[server]` / `[client]`
 
 The Iran side listens and exposes ports; the kharej side dials out. A control
-channel plus a pool of data connections. Ten transports: `tcp`, `tcpmux`,
+channel plus a pool of data connections. Built-in transports (plus TLS, gRPC, SSH and DNS-shaped KCP): `tcp`, `tcpmux`,
 `stealth`, `ws`, `wss`, `wsmux`, `wssmux`, `kcp`, `quic`, `udp`, plus `xdi` and
 `pck` which ride the KCP stack over raw and packet sockets.
 
@@ -280,4 +280,4 @@ context)، پورت‌های فوروارد (`forward.go`)، حلقهٔ کانا
 
 ---
 
-*Last verified against Backpack v1.19.2*
+*Last verified against Backpack v1.20.0*

@@ -204,6 +204,8 @@ func (l ShareLink) Encode() (string, error) {
 		o.SSHKeyFile = ""
 		if o != (config.CarrierOptions{}) {
 			l.Carrier = &o
+		} else {
+			l.Carrier = nil
 		}
 	}
 	l.V = 1
@@ -697,6 +699,8 @@ func shareLinkOf(name, host string, cfg config.Config) (string, error) {
 		o := cfg.Server.CarrierOptions
 		if o != (config.CarrierOptions{}) {
 			l.Carrier = &o
+		} else {
+			l.Carrier = nil
 		}
 		l.Port = addrPort(cfg.Server.BindAddr)
 		l.Preset = cfg.Server.Preset
@@ -720,6 +724,8 @@ func shareLinkOf(name, host string, cfg config.Config) (string, error) {
 		o := cfg.Client.CarrierOptions
 		if o != (config.CarrierOptions{}) {
 			l.Carrier = &o
+		} else {
+			l.Carrier = nil
 		}
 		l.Port = addrPort(cfg.Client.RemoteAddr)
 		l.Preset = cfg.Client.Preset

@@ -175,7 +175,7 @@ throughput is not an optimization. For delay/loss tests, use the existing
 `BP_RESOURCE_NETEM` fixture only in a disposable network namespace: it changes
 the namespace's loopback MTU, offloads and qdiscs.
 
-Last verified against Backpack v1.19.2.
+Last verified against Backpack v1.20.0.
 
 <div dir="rtl">
 

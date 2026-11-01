@@ -25,3 +25,13 @@ traffic checks. Missed sampling slots count as failed probes rather than a burst
 of catch-up traffic. Probe failures are application-level evidence, not a raw
 packet-loss measurement. SSH's temporary forwarding-only endpoint is cleaned up
 with the test and cannot be promoted as a production sshd login.
+
+<div dir="rtl">
+
+## خلاصهٔ فارسی
+
+هماهنگ‌کنندهٔ Connection Test رمزنگاری و احراز اصالت می‌شود؛ پاسخ TCP کامل و محدود خوانده می‌شود و پس از ۱۵۰ میلی‌ثانیه مسیر UDP هم آزمایش می‌شود. هر دو سرور را ارتقا بده و لینک جدید بساز. لینک تکی نسخهٔ ۳ و لینک دو مسیر نسخهٔ ۴ است. سنجش سرعت دوطرفه و تست‌های کرنلی موجود حفظ شده‌اند.
+
+</div>
+
+*Last verified against Backpack v1.20.0, 2026-11-01.*

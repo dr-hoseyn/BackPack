@@ -86,3 +86,13 @@ Connection Test exercises SSH with a temporary forwarding-only SSH endpoint.
 It cannot execute commands or forward to arbitrary destinations. Production
 SSH setup still needs the operator's real sshd login and host key, so the
 temporary SSH test endpoint is not offered for automatic permanent deployment.
+
+<div dir="rtl">
+
+## خلاصهٔ فارسی
+
+TLS و gRPC با اثرانگشت مرورگر، SSH با کلید میزبان پین‌شده و KCP با ظاهر DNS به تانل معکوس اضافه شدند. DNS به UDP مستقیم نیاز دارد و از resolver عمومی عبور نمی‌کند. رمز و مسیر کلید خصوصی SSH داخل لینک تنظیمات ارسال نمی‌شوند؛ آن‌ها را روی کلاینت وارد کن. برای همهٔ این حالت‌ها هر دو سرور را ارتقا بده.
+
+</div>
+
+*Last verified against Backpack v1.20.0, 2026-11-01.*

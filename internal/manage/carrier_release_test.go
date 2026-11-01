@@ -115,3 +115,19 @@ func TestNewCarrierOptionsSurviveLinkAndRenderingWithoutSSHSecrets(t *testing.T)
 		t.Fatal("SSH login crossed a setup link")
 	}
 }
+
+func TestNewCarrierLinksOmitOnlyLocalSSHCredentials(t *testing.T) {
+	for _, opts := range []config.CarrierOptions{{SSHPassword: "private-password", SSHKeyFile: "private-path"}, {}} {
+		raw, err := (ShareLink{Kind: "reverse", From: "iran", Tr: "tcp", Port: "443", Tok: "tunnel-token", Carrier: &opts}).Encode()
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := DecodeShareLink(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Carrier != nil {
+			t.Fatalf("local-only or empty carrier settings escaped: %+v", got.Carrier)
+		}
+	}
+}
