@@ -339,7 +339,7 @@ func fetchConnTestLink(ctx context.Context, a connTestAddr) (ConnTestLink, error
 				return out, fmt.Errorf("the test settings from the Iran server arrived damaged — try again")
 			}
 			if out.AdditionalDirect != 0 {
-				if out.AdditionalDirect < 0 || out.AdditionalDirect > 3 {
+				if out.AdditionalDirect < 0 || out.AdditionalDirect > 7 {
 					return out, errors.New("invalid additional test settings count")
 				}
 				reply, askErr := ctAskContext(ctx, a.Host, a.Coord, "additional "+a.Tok)

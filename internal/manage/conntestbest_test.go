@@ -99,7 +99,15 @@ func TestConnTestPMTUCancellationStopsAnUnansweredProbe(t *testing.T) {
 						return
 					}
 					if acceptMinimum && n+28 == ctPMTUMin {
-						_, _ = socket.WriteToUDP([]byte(fmt.Sprintf("pm %d", ctPMTUMin)), peer)
+						_, nonce, e := ctOpen("tok", "request", nil, buf[:n])
+						if e != nil {
+							return
+						}
+						wire, _, e := ctSeal("tok", "reply", nonce, []byte(fmt.Sprintf("pm %d", ctPMTUMin)))
+						if e != nil {
+							return
+						}
+						_, _ = socket.WriteToUDP(wire, peer)
 						continue
 					}
 					close(unanswered)
