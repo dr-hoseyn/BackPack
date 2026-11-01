@@ -1620,16 +1620,18 @@ func ctProbe(ctx context.Context, c *connTestCase, l3Echo int, report func(ConnT
 	say(fmt.Sprintf("up after %.0fs", r.Connect))
 
 	r.FreshOK, r.FreshTried = 1, 1
+	freshCtx, stopFresh := context.WithTimeout(ctx, min(4*time.Second, time.Duration(r.Total)*time.Second))
+	defer stopFresh()
 	fresh := make(chan bool, 2)
 	for i := 0; i < 2; i++ {
 		go func() {
-			cn, err := ctDial(ctx, c, l3Echo)
+			cn, err := ctDial(freshCtx, c, l3Echo)
 			if err != nil {
 				fresh <- false
 				return
 			}
 			defer cn.Close()
-			fresh <- ctEchoContext(ctx, cn, c.udp) == nil
+			fresh <- ctEchoContext(freshCtx, cn, c.udp) == nil
 		}()
 	}
 	for i := 0; i < 2; i++ {
@@ -1639,6 +1641,7 @@ func ctProbe(ctx context.Context, c *connTestCase, l3Echo int, report func(ConnT
 		}
 	}
 
+	stopFresh()
 	// Staying up: an echo a second over the same connection, and a new one
 	// only when that one is lost — which is exactly what a user's connection
 	// would see.

@@ -192,6 +192,9 @@ func updateReverseFromLink(link ShareLink, o LinkApplyOptions, existing string) 
 	// Only the peer-owned wire settings come from the link. Local routing,
 	// retry timing, monitoring and capacity tuning belong to this machine.
 	s.Transport, s.RemoteAddr, s.Token = paired.Transport, paired.RemoteAddr, paired.Token
+	password, key := s.CarrierOptions.SSHPassword, s.CarrierOptions.SSHKeyFile
+	s.CarrierOptions = paired.CarrierOptions
+	s.CarrierOptions.SSHPassword, s.CarrierOptions.SSHKeyFile = password, key
 	s.FallbackAddrs, s.FallbackTransports, s.FallbackDwell = paired.FallbackAddrs, paired.FallbackTransports, paired.FallbackDwell
 	s.MSS, s.SimpleAuth = paired.MSS, paired.SimpleAuth
 	s.MuxVersion = paired.MuxVersion
