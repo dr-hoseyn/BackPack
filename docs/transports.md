@@ -1,5 +1,9 @@
 # Transports
 
+Built-in TLS, streaming gRPC, SSH and DNS-shaped KCP are also available; see
+[additional carriers](additional-carriers.md). Existing native kernel methods
+remain available through [kernel tunnels](kernel-tunnels.md).
+
 Direct L3 also offers [DNS and symmetric ICMP carriers](dns-icmp-carriers.md).
 They retain Noise authentication and replay protection.
 

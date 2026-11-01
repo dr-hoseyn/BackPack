@@ -40,6 +40,8 @@ type transportGroup struct {
 var transportGroups = []transportGroup{
 	{"TCP", "reliable and simple — the safe default", []transportEntry{
 		{"TCP", "plain & fast — start here if unsure", "tcp"},
+		{"TCP + TLS", "browser TLS carrier with inner Noise authentication", "tls"},
+		{"TCP over SSH", "existing sshd; loopback relay and pinned SSH host key", "ssh"},
 		{"TCP Mux", "many streams over few connections — multiplexed", "tcpmux"},
 		{"TCP + Stealth", "encrypted with no fingerprint — hardest to detect, for heavy filtering", "stealth"},
 		{"TCP + PCK", "builds its own TCP packets, below the kernel — for a path where a normal TCP flow is reset or throttled; Linux, needs root", "pck"},
@@ -47,9 +49,11 @@ var transportGroups = []transportGroup{
 	{"UDP", "lower latency, better on lossy or throttled links", []transportEntry{
 		{"UDP", "raw datagrams — for UDP-based services", "udp"},
 		{"UDP + KCP + FEC", "low-latency gaming tunnel — reliable UDP with always-on error correction", "kcp"},
+		{"DNS-shaped KCP", "direct UDP with DNS TXT framing; not a recursive DNS tunnel", "dns"},
 		{"UDP + QUIC", "encrypted TLS 1.3 streams over UDP — self-tuning, great under loss", "quic"},
 	}},
 	{"WebSocket", "looks like normal web traffic — CDN friendly", []transportEntry{
+		{"gRPC", "HTTP/2 + TLS streaming; gRPC-capable CDN", "grpc"},
 		{"WS", "WebSocket — HTTP camouflage, CDN friendly", "ws"},
 		{"WS Mux", "WebSocket — multiplexed", "wsmux"},
 		{"WSS", "secure WebSocket — TLS encrypted", "wss"},
@@ -1141,7 +1145,7 @@ func routableInterfaces() []string {
 // binding to turn off. Off by default, because without such a proxy it hands
 // the token to whoever terminates the TLS.
 func askSimpleAuth(s *TunnelSpec, transport string) {
-	if !needsTLS(transport) {
+	if transport != "wss" && transport != "wssmux" {
 		return
 	}
 	// Behind a reverse proxy that terminates TLS (NGINX and the like) the

@@ -196,6 +196,8 @@ func sectionOf(name string) string {
 		return "[server.xray]"
 	case "SpoofConfig":
 		return "[l3] — the spoof carrier"
+	case "CarrierOptions":
+		return "[server] / [client] (carrier)"
 	case "KCPConfig":
 		return "KCP tuning"
 	}

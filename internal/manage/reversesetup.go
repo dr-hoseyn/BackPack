@@ -159,6 +159,12 @@ func SetupServer() {
 		if needsTLS(transport) && !setupServerTLS(&s) {
 			return
 		}
+		if !askCarrier(&s) {
+			return
+		}
+		if s.Role == "server" && s.Transport == "ssh" {
+			s.BindAddr = net.JoinHostPort("127.0.0.1", addrPort(s.BindAddr))
+		}
 		askSimpleAuth(&s, transport)
 		askPck(&s)
 		askProxyProtocol(&s)
@@ -264,6 +270,12 @@ func setupClientManual() {
 			// A CDN edge (e.g. Cloudflare) to connect to instead of resolving the
 			// server address directly.
 			s.EdgeIP = strings.TrimSpace(tui.PromptDefault("Edge IP (Optional, For A CDN)", ""))
+		}
+		if !askCarrier(&s) {
+			return
+		}
+		if s.Role == "server" && s.Transport == "ssh" {
+			s.BindAddr = net.JoinHostPort("127.0.0.1", addrPort(s.BindAddr))
 		}
 		askSimpleAuth(&s, transport)
 		askPck(&s)
@@ -381,6 +393,9 @@ func setupClientFromLink(chosen string) {
 	}
 
 	s := reverseClientFromLink(link, host)
+	if !askCarrier(&s) {
+		return
+	}
 	s.Name = uniqueName(tui.PromptDefault("Tunnel Name", s.Name))
 
 	// What the link cannot carry, because it is this side's own answer: a CDN
@@ -461,6 +476,9 @@ func reverseClientFromLink(link ShareLink, host string) TunnelSpec {
 	s.FallbackDwell = link.Dwell
 	if managedTransport(link.Tr) {
 		managedClientFromLink(&s, link, host)
+	}
+	if link.Carrier != nil {
+		s.CarrierOptions = *link.Carrier
 	}
 	return s
 }

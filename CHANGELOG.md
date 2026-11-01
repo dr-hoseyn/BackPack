@@ -2,6 +2,41 @@
 
 ## Unreleased
 
+## v1.20.0 — 2026-11-01
+
+- Add built-in TLS, bidirectional streaming gRPC over HTTP/2, pinned-host SSH
+  forwarding and DNS-shaped KCP to reverse tunnels, fallback chains, paired
+  setup links and the terminal setup wizard. TLS/gRPC/SSH retain inner Noise
+  authentication before the tunnel credential is sent. TLS/gRPC support browser
+  profiles, configurable SNI/service name and optional ClientHello splitting.
+- Include the four new carriers in Connection Test using a temporary SSH
+  endpoint restricted to its loopback relay. Keep the v1.19.2 kernel matrix,
+  short kernel Quick timing, and separate verified upload/download measurements.
+- Encrypt and authenticate coordinator requests/replies with ChaCha20-Poly1305,
+  fresh nonces and response binding. Add bounded TCP framing, complete fragmented
+  replies and a TCP/UDP race after a 150 ms head start. Preserve verdict delivery
+  and cancellation acknowledgements across single-path and dual-stack suites.
+- Add three independent payload connections, fixed observation-slot accounting,
+  p95 and observed-duration evidence. Reject writes after gRPC close so a late
+  control farewell cannot panic after the HTTP/2 handler has returned.
+
+**Upgrade notes:** update **both endpoints** and create a new Connection Test
+link. Single-path links now use format 3 and two-path links format 4; old
+plaintext coordinators are not accepted. Existing tunnel wire formats and native
+kernel services are preserved. DNS-shaped KCP needs direct UDP connectivity;
+it does not route through recursive DNS resolvers. Production SSH requires a
+real sshd login and pinned host key, supplied manually rather than promoted from
+its temporary test endpoint. Read [the carrier guide](docs/additional-carriers.md).
+
+<div dir="rtl">
+
+TLS، gRPC، SSH و DNS روی UDP مستقیم به تانل معکوس و Connection Test اضافه شدند.
+هماهنگ‌کنندهٔ تست رمزنگاری شد؛ پاسخ ناقص، انتظار طولانی TCP و نوشتن پس از بستن
+اتصال gRPC اصلاح شدند. تست مستقل اتصال و p95 به گزارش اضافه شد. قابلیت‌ها و
+تست‌های کرنلی نسخهٔ قبلی حفظ شده‌اند. هر دو سرور را ارتقا بده و لینک تست تازه بساز.
+
+</div>
+
 ## v1.19.2 — 2026-11-01
 
 - Shorten kernel Quick tests: two observation echoes, 100 ms warmup and

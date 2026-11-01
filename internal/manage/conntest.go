@@ -1,7 +1,6 @@
 package manage
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"crypto/ecdsa"
@@ -25,6 +24,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -32,6 +32,7 @@ import (
 	"time"
 
 	"github.com/backpack/backpack/config"
+	"github.com/backpack/backpack/internal/carrier"
 	"github.com/backpack/backpack/internal/spooftest"
 	"github.com/backpack/backpack/internal/tunnel/naive"
 	"github.com/klauspost/compress/gzip"
@@ -73,7 +74,7 @@ const connTestKind = "test"
 // the direct ones when the operator names a source to forge (see
 // ConnTestOptions.SpoofSrc); pck, on either side, needs root on both servers.
 var (
-	connTestReverse = []string{"tcp", "tcpmux", "stealth", "pck", "ws", "wss", "wsmux", "wssmux", "kcp", "xdi", "quic", "udp", "naive", "short-https", "xhttp", "reality", "hysteria2", "anytls", "shadowtls", "tuic", "xhttp-reality", "trusttunnel", "webtransport", "tailcat"}
+	connTestReverse = []string{"tls", "grpc", "dns", "ssh", "tcp", "tcpmux", "stealth", "pck", "ws", "wss", "wsmux", "wssmux", "kcp", "xdi", "quic", "udp", "naive", "short-https", "xhttp", "reality", "hysteria2", "anytls", "shadowtls", "tuic", "xhttp-reality", "trusttunnel", "webtransport", "tailcat"}
 	connTestDirect  = []string{"dns", "icmp-request", "icmp-reply", "udp", "quic", "pck", "xdi", "sni", "masque", "masque-h2", "hysteria2", "tuic", "webtransport", "connect-ip", "spoof"}
 )
 
@@ -166,7 +167,7 @@ type ConnTestLink struct {
 const (
 	connTestScheme   = shareScheme + "t."
 	connTestSecret   = 12
-	connTestLinkVer  = 1
+	connTestLinkVer  = 3
 	connTestFixedLen = 1 + 2 + connTestSecret
 )
 
@@ -206,10 +207,10 @@ func parseConnTestLink(s string) (connTestAddr, error) {
 		return connTestAddr{}, fmt.Errorf("that is not a Backpack connection-test link — it begins with %s", connTestScheme)
 	}
 	b, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(s, connTestScheme))
-	if err != nil || len(b) <= connTestFixedLen || (b[0] != connTestLinkVer && b[0] != 2) {
-		return connTestAddr{}, fmt.Errorf("the test link is damaged or cut short — copy all of it again")
+	if err != nil || len(b) <= connTestFixedLen || (b[0] != connTestLinkVer && b[0] != 4) {
+		return connTestAddr{}, fmt.Errorf("the test link is damaged or uses an older coordinator; update both peers and create a new test")
 	}
-	if b[0] == 2 {
+	if b[0] == 4 {
 		return ctParseSuiteLink(b[1:])
 	}
 	a := connTestAddr{
@@ -226,7 +227,7 @@ func parseConnTestLink(s string) (connTestAddr, error) {
 		}
 	}
 	if a.Coord == 0 || a.Host == "" {
-		return connTestAddr{}, fmt.Errorf("the test link is damaged or cut short — copy all of it again")
+		return connTestAddr{}, fmt.Errorf("the test link is damaged or uses an older coordinator; update both peers and create a new test")
 	}
 	return a, nil
 }
@@ -292,7 +293,7 @@ func ctCompactLink(l ConnTestLink) ConnTestLink {
 }
 
 func ctAdditionalCarrier(c ShareLink) bool {
-	return c.Kind == "direct" && (c.Tr == "dns" || c.Tr == "icmp-request" || c.Tr == "icmp-reply")
+	return c.Kind == "reverse" && (c.Tr == "tls" || c.Tr == "grpc" || c.Tr == "dns" || c.Tr == "ssh") || c.Kind == "direct" && (c.Tr == "dns" || c.Tr == "icmp-request" || c.Tr == "icmp-reply")
 }
 
 // New carriers travel separately, like managed helper credentials. Older workers
@@ -414,6 +415,10 @@ func unGzipB64(s string) ([]byte, error) {
 
 // ConnTestResult is one tunnel's verdict.
 type ConnTestResult struct {
+	FreshOK        int     `json:"fresh_ok,omitempty"`
+	FreshTried     int     `json:"fresh_tried,omitempty"`
+	P95ms          float64 `json:"p95_ms,omitempty"`
+	Observed       float64 `json:"observed,omitempty"`
 	Mode           string  `json:"mode,omitempty"`
 	CaseID         string  `json:"case,omitempty"`
 	SNIDomain      string  `json:"sni,omitempty"`
@@ -465,6 +470,7 @@ type connTestCase struct {
 
 // ConnTestIran is a test the Iran side is running.
 type ConnTestIran struct {
+	helpersCancel context.CancelFunc
 	dir           string
 	link          ConnTestLink
 	cases         []*connTestCase
@@ -542,7 +548,8 @@ func StartConnTestIran(o ConnTestOptions) (*ConnTestIran, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-	s := &ConnTestIran{dir: dir, root: os.Geteuid() == 0}
+	helperCtx, helperCancel := context.WithCancel(ctx)
+	s := &ConnTestIran{dir: dir, root: os.Geteuid() == 0, helpersCancel: helperCancel}
 	fail := func(err error) (*ConnTestIran, string, error) {
 		s.Close()
 		return nil, "", err
@@ -613,6 +620,21 @@ func StartConnTestIran(o ConnTestOptions) (*ConnTestIran, string, error) {
 			Ports:    []string{fmt.Sprintf("127.0.0.1:%d=127.0.0.1:%d", c.entry, target)},
 			Token:    ctCaseToken(s.link.Tok, "reverse", tr),
 		}
+
+		if tr == "ssh" {
+			spec.BindAddr = net.JoinHostPort("127.0.0.1", strconv.Itoa(port))
+			relay, relayErr := net.Listen("tcp", net.JoinHostPort(ctBindHost(host), "0"))
+			if relayErr != nil {
+				return fail(relayErr)
+			}
+			pin, relayErr := carrier.StartTestSSH(helperCtx, relay, spec.BindAddr, spec.Token)
+			if relayErr != nil {
+				relay.Close()
+				return fail(relayErr)
+			}
+			spec.CarrierOptions = config.CarrierOptions{SSHUser: "backpack-test", SSHPort: relay.Addr().(*net.TCPAddr).Port, SSHHostKey: pin}
+		}
+
 		ApplyPreset(&spec, preset)
 		raw := pendingReverseLink(spec, host, linkExtras{})
 		if c.link, err = DecodeShareLink(raw); err != nil {
@@ -1525,6 +1547,9 @@ func (s *ConnTestIran) Close() {
 	if s == nil {
 		return
 	}
+	if s.helpersCancel != nil {
+		s.helpersCancel()
+	}
 	s.mu.Lock()
 	engines := s.engines
 	s.engines = nil
@@ -1594,6 +1619,26 @@ func ctProbe(ctx context.Context, c *connTestCase, l3Echo int, report func(ConnT
 	r.Connect = time.Since(start).Seconds()
 	say(fmt.Sprintf("up after %.0fs", r.Connect))
 
+	r.FreshOK, r.FreshTried = 1, 1
+	fresh := make(chan bool, 2)
+	for i := 0; i < 2; i++ {
+		go func() {
+			cn, err := ctDial(ctx, c, l3Echo)
+			if err != nil {
+				fresh <- false
+				return
+			}
+			defer cn.Close()
+			fresh <- ctEchoContext(ctx, cn, c.udp) == nil
+		}()
+	}
+	for i := 0; i < 2; i++ {
+		r.FreshTried++
+		if <-fresh {
+			r.FreshOK++
+		}
+	}
+
 	// Staying up: an echo a second over the same connection, and a new one
 	// only when that one is lost — which is exactly what a user's connection
 	// would see.
@@ -1603,12 +1648,20 @@ func ctProbe(ctx context.Context, c *connTestCase, l3Echo int, report func(ConnT
 	soakEnd := soakStart.Add(time.Duration(r.Total) * time.Second)
 	soakCtx, cancelSoak := context.WithDeadline(ctx, soakEnd)
 	defer cancelSoak()
-	for i := 0; i < r.Total && soakCtx.Err() == nil; i++ {
-		ctSleep(soakCtx, time.Until(soakStart.Add(time.Duration(i)*time.Second)))
-		if soakCtx.Err() != nil {
+	for i := 0; i < r.Total && ctx.Err() == nil; i++ {
+		due := soakStart.Add(time.Duration(i) * time.Second)
+		ctSleep(soakCtx, time.Until(due))
+		if ctx.Err() != nil {
 			break
 		}
 		r.Tried++
+		if soakCtx.Err() != nil || time.Now().After(due.Add(time.Second)) {
+			if firstLoss == 0 {
+				firstLoss = time.Since(soakStart)
+			}
+			say("")
+			continue
+		}
 		if conn == nil {
 			cn, err := ctDial(soakCtx, c, l3Echo)
 			if err != nil {
@@ -1643,6 +1696,12 @@ func ctProbe(ctx context.Context, c *connTestCase, l3Echo int, report func(ConnT
 	if conn != nil {
 		conn.Close()
 	}
+	r.Observed = time.Since(soakStart).Seconds()
+	if len(c.rtts) > 0 {
+		sorted := append([]time.Duration(nil), c.rtts...)
+		sort.Slice(sorted, func(i, j int) bool { return sorted[i] < sorted[j] })
+		r.P95ms = float64(sorted[(len(sorted)*95-1)/100]) / float64(time.Millisecond)
+	}
 	if r.OK > 0 {
 		r.RTTms = int((rtt / time.Duration(r.OK)).Milliseconds())
 		r.JitterMs = float64(ctQuality(r, c.rtts).Jitter) / float64(time.Millisecond)
@@ -1655,12 +1714,14 @@ func ctProbe(ctx context.Context, c *connTestCase, l3Echo int, report func(ConnT
 		if r.OK == 0 {
 			r.Status = ctDown
 		}
-	case r.OK == r.Total && r.Tried == r.Total:
+	case r.OK == r.Total && r.Tried == r.Total && r.FreshOK == 3:
 		if c.udp {
 			r.Status = ctOK
 		} else {
 			r.Phase, r.Detail = "speed-queued", "stability passed; waiting for speed test"
 		}
+	case r.FreshOK != 3:
+		r.Status, r.Detail = ctUnstable, fmt.Sprintf("%d/%d independent payload connections passed", r.FreshOK, r.FreshTried)
 	case r.OK == 0:
 		r.Status = ctDown
 		r.Detail = fmt.Sprintf("came up, then carried nothing (lost after %.0fs)", firstLoss.Seconds())
@@ -2018,14 +2079,23 @@ func (c *ctCoordinator) serveTCP() {
 			defer func() { <-c.slots; c.sockets.remove(conn) }()
 			defer conn.Close()
 			_ = conn.SetDeadline(time.Now().Add(10 * time.Second))
-			line, err := bufio.NewReader(io.LimitReader(conn, 8192)).ReadString('\n')
+			packet, err := ctReadPacketLimit(conn, 8192)
 			if err != nil {
 				return
 			}
+			plain, nonce, err := ctOpen(c.tok, "request", nil, packet)
+			if err != nil {
+				return
+			}
+			line := string(plain)
 			host, _, _ := net.SplitHostPort(conn.RemoteAddr().String())
 			if reply := c.answer(line, host); reply != "" {
-				n, err := conn.Write([]byte(reply + "\n"))
-				if err == nil && n == len(reply)+1 && (strings.HasPrefix(reply, "done ") || reply == "stopped" && ctStopAcknowledged(line)) {
+				wire, _, err := ctSeal(c.tok, "reply", nonce, []byte(reply))
+				if err != nil {
+					return
+				}
+				err = ctWritePacket(conn, wire)
+				if err == nil && (strings.HasPrefix(reply, "done ") || reply == "stopped" && ctStopAcknowledged(line)) {
 					// The peer reads to EOF. Publish Fetched only after its
 					// full verdict has left this socket; a suite immediately
 					// tears down this path before starting the next one.
@@ -2045,10 +2115,18 @@ func (c *ctCoordinator) serveUDP() {
 			return
 		}
 		host, _, _ := net.SplitHostPort(from.String())
-		line := string(buf[:n])
+		plain, nonce, err := ctOpen(c.tok, "request", nil, buf[:n])
+		if err != nil {
+			continue
+		}
+		line := string(plain)
 		if reply := c.answer(line, host); reply != "" {
-			n, err := c.udp.WriteTo([]byte(reply+"\n"), from)
-			if err == nil && n == len(reply)+1 && (strings.HasPrefix(reply, "done ") || reply == "stopped" && ctStopAcknowledged(line)) {
+			wire, _, err := ctSeal(c.tok, "reply", nonce, []byte(reply))
+			if err != nil {
+				continue
+			}
+			n, err := c.udp.WriteTo(wire, from)
+			if err == nil && n == len(wire) && (strings.HasPrefix(reply, "done ") || reply == "stopped" && ctStopAcknowledged(line)) {
 				c.fetchOn.Do(func() { close(c.fetched) })
 			}
 		}
@@ -2388,47 +2466,6 @@ func (c *ctCoordinator) close() {
 	c.sockets.close()
 }
 
-// ctAskContext puts one question to the coordinator over TCP and then UDP,
-// stopping the dial and any pending reply when the test is cancelled.
-func ctAskContext(ctx context.Context, host string, port int, line string) (string, error) {
-	addr := net.JoinHostPort(host, strconv.Itoa(port))
-	var last error
-	for _, network := range []string{"tcp", "udp"} {
-		conn, err := (&net.Dialer{Timeout: 5 * time.Second}).DialContext(ctx, network, addr)
-		if err != nil {
-			last = err
-			continue
-		}
-		_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
-		stopClose := context.AfterFunc(ctx, func() { conn.Close() })
-		_, err = conn.Write([]byte(line + "\n"))
-		if err == nil {
-			buf := make([]byte, 8192)
-			var n int
-			if network == "udp" {
-				n, err = conn.Read(buf)
-			} else {
-				n, err = io.ReadFull(conn, buf)
-				if errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, io.EOF) {
-					err = nil
-				}
-			}
-			if err == nil && n > 0 {
-				stopClose()
-				conn.Close()
-				return strings.TrimSpace(string(buf[:n])), nil
-			}
-		}
-		stopClose()
-		conn.Close()
-		last = err
-	}
-	if last == nil {
-		last = errors.New("no answer")
-	}
-	return "", last
-}
-
 // RunConnTestKharej is the kharej's side of a test: it builds its end of
 // every tunnel in the link, checks in with the Iran side, waits for the
 // verdict and prints it to out. live, when set, is handed the Iran side's rows
@@ -2526,6 +2563,9 @@ func runConnTestKharejLink(ctx context.Context, link ConnTestLink, out io.Writer
 				spec, err = ctManagedClient(ctx, link, c, dir)
 			} else {
 				spec, err = kharejFromLink(c, LinkApplyOptions{Host: link.Host})
+				if c.Tr == "ssh" {
+					spec.CarrierOptions.SSHPassword = ctCaseToken(link.Tok, "reverse", "ssh")
+				}
 			}
 			if err != nil {
 				local[c.Kind+"/"+key] = err.Error()

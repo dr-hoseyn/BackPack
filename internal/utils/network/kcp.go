@@ -74,6 +74,7 @@ type KCPSettings struct {
 	// thing this changes is which kind of socket the datagrams ride in. See
 	// icmpconn_linux.go.
 	UseICMP bool
+	UseDNS  bool
 	// Pck, when set, carries the KCP session inside TCP segments this process
 	// builds and reads through a packet socket — the "TCP + PCK" transport.
 	// Again only the packet layer differs. Unlike Spoof it forges no address:
@@ -184,6 +185,9 @@ func (s KCPSettings) logSettings(role string) {
 // whose framing eats into the packet: ICMP echo, or the pck header. Left as
 // configured for plain UDP.
 func (s KCPSettings) effectiveMTU() int {
+	if s.UseDNS {
+		return min(s.MTU, dnsCarrierMTU)
+	}
 	if s.UseICMP {
 		return s.MTU - icmpMTUOverhead
 	}
@@ -276,6 +280,18 @@ func KCPListen(bindAddr, token string, s KCPSettings) (*kcp.Listener, io.Closer,
 		return nil, nil, err
 	}
 	s.logSettings("server")
+	if s.UseDNS {
+		conn, err := newDNSPacketConn(bindAddr, token, true)
+		if err != nil {
+			return nil, nil, err
+		}
+		listener, err := kcp.ServeConn(block, s.DataShards, s.ParityShards, conn)
+		if err != nil {
+			conn.Close()
+			return nil, nil, err
+		}
+		return listener, conn, nil
+	}
 
 	// Over ICMP the socket is a raw ICMP one shared by every tunnel on the
 	// host, not a UDP socket bound to bindAddr — the bind address's port is
@@ -377,7 +393,21 @@ func KCPDialContext(ctx context.Context, remoteAddr, token string, s KCPSettings
 	s.logSettings("client")
 
 	var session *kcp.UDPSession
-	if s.UseICMP {
+	if s.UseDNS {
+		addr, e := net.ResolveUDPAddr("udp", remoteAddr)
+		if e != nil {
+			return nil, e
+		}
+		conn, e := newDNSPacketConn(":0", token, false)
+		if e != nil {
+			return nil, e
+		}
+		session, e = ownedKCPSession(addr, block, s.DataShards, s.ParityShards, conn)
+		if e != nil {
+			conn.Close()
+			return nil, e
+		}
+	} else if s.UseICMP {
 		conn, err := newICMPClientConn(token, ipAddr.IP.To4() == nil)
 		if err != nil {
 			return nil, err

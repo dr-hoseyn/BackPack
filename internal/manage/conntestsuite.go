@@ -64,7 +64,7 @@ func (s *ConnTestSuite) Close() {
 // format changes. Both ends need this version to read a two-path envelope.
 func ctSuiteLink(routes []connTestAddr) string {
 	raw, _ := json.Marshal(routes)
-	return connTestScheme + base64.RawURLEncoding.EncodeToString(append([]byte{2}, raw...))
+	return connTestScheme + base64.RawURLEncoding.EncodeToString(append([]byte{4}, raw...))
 }
 
 func ctParseSuiteLink(raw []byte) (connTestAddr, error) {

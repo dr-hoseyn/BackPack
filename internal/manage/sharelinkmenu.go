@@ -134,6 +134,9 @@ func setupFromLink() {
 		return
 	}
 	form := MirrorForPeer(link)
+	if form.Kind == "reverse" && !askCarrierForm(&form) {
+		return
+	}
 
 	if config.SingDatagram(form.Carrier) {
 		side := sideIran

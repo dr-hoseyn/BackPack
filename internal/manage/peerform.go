@@ -23,13 +23,14 @@ func (f PeerForm) ToNewTunnel() NewTunnel {
 		role = "server"
 	}
 	n := NewTunnel{
-		Role:       role,
-		Transport:  f.Transport,
-		Name:       f.Name,
-		TunnelPort: f.TunnelPort,
-		Token:      f.Token,
-		Ports:      f.Ports,
-		Preset:     f.Preset,
+		Role:           role,
+		Transport:      f.Transport,
+		CarrierOptions: f.CarrierOptions,
+		Name:           f.Name,
+		TunnelPort:     f.TunnelPort,
+		Token:          f.Token,
+		Ports:          f.Ports,
+		Preset:         f.Preset,
 	}
 	if role == "client" {
 		n.ServerAddr = f.ServerAddr

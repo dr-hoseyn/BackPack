@@ -33,6 +33,9 @@ type ConnTestSetupRequest struct {
 
 // Every tested engine can promote its endpoint-local identities and trust.
 func ctSetupSupported(kind, tr string) bool {
+	if kind == "reverse" && tr == "ssh" {
+		return false
+	}
 	if kind == "kernel" {
 		_, _, ok := ctKernelMethod(tr)
 		return ok
@@ -347,6 +350,10 @@ func (s *ConnTestSetup) waitAck(ctx context.Context, stage string) error {
 // permanent tunnel. The direct pair keeps its tested private subnet.
 func (s *ConnTestSetup) forms(r ConnTestSetupRequest) (PeerForm, PeerForm, error) {
 	var l ShareLink
+	if r.Transport == "ssh" {
+		return PeerForm{}, PeerForm{}, fmt.Errorf("SSH needs a production sshd login and pinned host key; use manual setup")
+	}
+
 	for _, c := range s.link.Cases {
 		if c.Kind == r.Kind && c.Tr == r.Transport && c.SNI == r.SNIDomain {
 			l = c

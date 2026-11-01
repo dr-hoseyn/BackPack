@@ -126,19 +126,21 @@ func ctPMTUProbe(ctx context.Context, addr, tok string, size int) bool {
 	if ctDontFragment(c) != nil {
 		return false
 	}
-	head := fmt.Sprintf("pmtu %s %d ", tok, size)
-	payload := size - overhead // chosen IP family and UDP headers
-	if payload < len(head) {
+	msg, nonce, err := ctPMTUPacket(tok, size, overhead)
+	if err != nil {
 		return false
 	}
-	msg := []byte(head + strings.Repeat("x", payload-len(head)))
 	_ = c.SetDeadline(time.Now().Add(1500 * time.Millisecond))
 	if _, err := c.Write(msg); err != nil {
 		return false // EMSGSIZE: bigger than this machine's own interface
 	}
-	buf := make([]byte, 64)
+	buf := make([]byte, 256)
 	n, err := c.Read(buf)
-	return err == nil && ctx.Err() == nil && strings.TrimSpace(string(buf[:n])) == fmt.Sprintf("pm %d", size)
+	if err != nil || ctx.Err() != nil {
+		return false
+	}
+	plain, _, err := ctOpen(tok, "reply", nonce, buf[:n])
+	return err == nil && string(plain) == fmt.Sprintf("pm %d", size)
 }
 
 // ctKharejPMTU measures the path MTU and hands it to the Iran side.
@@ -382,4 +384,13 @@ func ConnTestBestTable(b ConnTestBest) string {
 	}
 	s.WriteString("\n" + ctRule() + "\n")
 	return s.String()
+}
+
+func ctPMTUPacket(tok string, size, overhead int) ([]byte, []byte, error) {
+	head := fmt.Sprintf("pmtu %s %d ", tok, size)
+	payload := size - overhead
+	if payload < len(head)+ctWireOverhead+1 || size > ctPMTUMax {
+		return nil, nil, fmt.Errorf("invalid path MTU probe size")
+	}
+	return ctSeal(tok, "request", nil, []byte(head+strings.Repeat("x", payload-len(head)-ctWireOverhead)))
 }

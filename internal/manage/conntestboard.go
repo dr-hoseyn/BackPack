@@ -29,6 +29,7 @@ const ctBarSegments = 8
 // ctTransportNames are the compact names the tables and menus use. Keep
 // versions, security layers and optional obfuscation in menu descriptions.
 var ctTransportNames = map[string]string{
+	"tls": "TLS", "grpc": "gRPC", "ssh": "SSH", "dns": "DNS",
 	"xhttp-reality": "XHTTP REALITY", "trusttunnel": "TrustTunnel", "webtransport": "WebTransport", "tailcat": "Tailcat",
 	"awg": "AmneziaWG",
 	"tcp": "TCP", "tcpmux": "TCP MUX", "stealth": "Stealth", "pck": "PCK",
@@ -241,6 +242,11 @@ func ConnTestTable(results []ConnTestResult) string {
 	if steady == 0 {
 		b.WriteString("Nothing carried traffic steadily between these two servers. See the\n" +
 			"statuses and notes for setup errors, interruption or path failures.\n")
+	}
+	for _, r := range results {
+		if r.FreshTried > 0 {
+			fmt.Fprintf(&b, "  %s %s: fresh %d/%d · p95 %.1fms · observed %.1fs\n", ctKind(r.Kind), ctResultName(r), r.FreshOK, r.FreshTried, r.P95ms, r.Observed)
+		}
 	}
 	// Why, where the table alone cannot say: a spoofing check that failed, and
 	// anything that was not run.

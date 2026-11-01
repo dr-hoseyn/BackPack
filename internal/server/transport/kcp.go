@@ -95,6 +95,7 @@ type KcpConfig struct {
 	// UseICMP carries the session inside ICMP echo (the xdi transport) rather
 	// than UDP. Only the packet layer differs; everything here is unchanged.
 	UseICMP bool
+	UseDNS  bool
 	// UsePck carries the session inside TCP segments built and read through a
 	// packet socket (the pck transport). Only the packet layer differs; nothing
 	// is forged. See settings().
@@ -108,6 +109,9 @@ type KcpConfig struct {
 // rides in ICMP echo, SPOOF when it rides in forged raw IP, KCP when it rides in
 // UDP. They are the same protocol above the packet layer.
 func (s *KcpTransport) transportLabel() string {
+	if s.config.UseDNS {
+		return "DNS"
+	}
 	if s.config.UseICMP {
 		return "XDI"
 	}
@@ -132,6 +136,7 @@ func (c *KcpConfig) settings() network.KCPSettings {
 		SO_RCVBUF:    c.SO_RCVBUF,
 		SO_SNDBUF:    c.SO_SNDBUF,
 		UseICMP:      c.UseICMP,
+		UseDNS:       c.UseDNS,
 	}
 	if c.UsePck {
 		// The flag cycle is validated at load time (checkPck); an unparseable

@@ -3,6 +3,7 @@ package manage
 import (
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"hash/crc32"
@@ -52,7 +53,7 @@ var shareFieldIDs = []string{
 	"hmode",
 	"htkey", "htdisco", "htpsk", "hderp", "hdr",
 	"hih",
-	"krp", "dnr", "dnq",
+	"krp", "dnr", "dnq", "co",
 }
 
 // shareWords are the values a link repeats, each written as its index. Never
@@ -104,7 +105,15 @@ func encodeShareLinkV2(l ShareLink) (string, error) {
 			b = binary.AppendUvarint(b, f.Uint())
 		case reflect.Bool:
 			// Present means true.
-		case reflect.Pointer: // *bool
+		case reflect.Pointer:
+			if f.Type().Elem().Kind() != reflect.Bool {
+				raw, err := json.Marshal(f.Interface())
+				if err != nil {
+					return "", err
+				}
+				b = appendShareString(b, string(raw))
+				continue
+			}
 			if f.Elem().Bool() {
 				b = append(b, 1)
 			} else {
@@ -175,6 +184,19 @@ func decodeShareLinkV2(payload string) (ShareLink, error) {
 		case reflect.Bool:
 			f.SetBool(true)
 		case reflect.Pointer:
+			if f.Type().Elem().Kind() != reflect.Bool {
+				var value string
+				value, b, err = readShareString(b)
+				if err != nil {
+					return out, err
+				}
+				ptr := reflect.New(f.Type().Elem())
+				if err = json.Unmarshal([]byte(value), ptr.Interface()); err != nil {
+					return out, err
+				}
+				f.Set(ptr)
+				continue
+			}
 			if len(b) < 1 {
 				return out, errShareDamaged
 			}

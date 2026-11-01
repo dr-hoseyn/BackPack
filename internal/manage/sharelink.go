@@ -66,13 +66,14 @@ const (
 // ends disagreed about it? An interface name, a socket buffer or a tunnel's own
 // name would not, so they are not here and the receiving side keeps its own.
 type ShareLink struct {
-	V     int    `json:"v"`           // format version
-	Kind  string `json:"k"`           // "reverse" or "direct"
-	From  string `json:"f"`           // "iran" or "kharej" — the side that made it
-	Name  string `json:"n,omitempty"` // a suggestion, not a requirement
-	Tok   string `json:"t"`           // the shared secret
-	Tr    string `json:"tr"`          // reverse: transport. direct: carrier
-	Encap string `json:"e,omitempty"` // direct only
+	Carrier *config.CarrierOptions `json:"co,omitempty"`
+	V       int                    `json:"v"`           // format version
+	Kind    string                 `json:"k"`           // "reverse" or "direct"
+	From    string                 `json:"f"`           // "iran" or "kharej" — the side that made it
+	Name    string                 `json:"n,omitempty"` // a suggestion, not a requirement
+	Tok     string                 `json:"t"`           // the shared secret
+	Tr      string                 `json:"tr"`          // reverse: transport. direct: carrier
+	Encap   string                 `json:"e,omitempty"` // direct only
 	// SNI is the domain the sni carrier announces. Both ends should announce
 	// the same one — each is only telling the box in front of it what to
 	// think, but two different names on one tunnel is a thing to remember for
@@ -197,6 +198,14 @@ type ShareLink struct {
 // CRC, so half a link is a decode error rather than a tunnel built from half the
 // settings.
 func (l ShareLink) Encode() (string, error) {
+	if l.Carrier != nil {
+		o := *l.Carrier
+		o.SSHPassword = ""
+		o.SSHKeyFile = ""
+		if o != (config.CarrierOptions{}) {
+			l.Carrier = &o
+		}
+	}
 	l.V = 1
 	// Refuse rather than corrupt.
 	//
@@ -327,10 +336,11 @@ func (l ShareLink) PeerSide() string {
 // the same reason the mirroring does: two copies of it would eventually
 // disagree, and the disagreement would be invisible until a tunnel went quiet.
 type PeerForm struct {
-	DNS  config.DNSConfig `json:"dns,omitempty"`
-	Kind string           `json:"kind"` // "reverse" or "direct"
-	Side string           `json:"side"` // the side this form is for
-	Name string           `json:"name,omitempty"`
+	CarrierOptions config.CarrierOptions `json:"carrierOptions,omitempty"`
+	DNS            config.DNSConfig      `json:"dns,omitempty"`
+	Kind           string                `json:"kind"` // "reverse" or "direct"
+	Side           string                `json:"side"` // the side this form is for
+	Name           string                `json:"name,omitempty"`
 
 	Transport  string              `json:"transport,omitempty"` // reverse
 	Carrier    string              `json:"carrier,omitempty"`   // direct
@@ -551,6 +561,9 @@ func MirrorForPeer(l ShareLink) PeerForm {
 	}
 
 	f.Paired = paired
+	if l.Carrier != nil {
+		f.CarrierOptions = *l.Carrier
+	}
 	return f
 }
 
@@ -681,6 +694,10 @@ func shareLinkOf(name, host string, cfg config.Config) (string, error) {
 		l.Kind, l.From = "reverse", "iran" // the reverse server is the Iran side
 		l.Tok = cfg.Server.Token
 		l.Tr = string(cfg.Server.Transport)
+		o := cfg.Server.CarrierOptions
+		if o != (config.CarrierOptions{}) {
+			l.Carrier = &o
+		}
 		l.Port = addrPort(cfg.Server.BindAddr)
 		l.Preset = cfg.Server.Preset
 		l.Ports = strings.Join(cfg.Server.Ports, ", ")
@@ -700,6 +717,10 @@ func shareLinkOf(name, host string, cfg config.Config) (string, error) {
 		l.Kind, l.From = "reverse", "kharej"
 		l.Tok = cfg.Client.Token
 		l.Tr = string(cfg.Client.Transport)
+		o := cfg.Client.CarrierOptions
+		if o != (config.CarrierOptions{}) {
+			l.Carrier = &o
+		}
 		l.Port = addrPort(cfg.Client.RemoteAddr)
 		l.Preset = cfg.Client.Preset
 		l.MSS = cfg.Client.MSS
@@ -944,6 +965,15 @@ func nonEmpty(in []string) []string {
 // instead; anything not in it falls back to the Go field name, which is at
 // least something they can find.
 func firstUncarryableField(l ShareLink) (string, bool) {
+	if l.Carrier != nil {
+		v := reflect.ValueOf(*l.Carrier)
+		for i := 0; i < v.NumField(); i++ {
+			f := v.Field(i)
+			if f.Kind() == reflect.String && !utf8.ValidString(f.String()) {
+				return "carrier settings", false
+			}
+		}
+	}
 	spoken := map[string]string{
 		"Tok": "token", "Tr": "transport", "Host": "address", "Name": "name",
 		"Port": "port", "Encap": "encapsulation", "SNI": "SNI", "Kind": "tunnel kind",

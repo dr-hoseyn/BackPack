@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"github.com/backpack/backpack/internal/carrier"
 	"net"
 	"time"
 
@@ -188,7 +189,7 @@ type runner interface {
 // the same ports.
 func (s *Server) startTransport(ctx context.Context, tr config.TransportType) runner {
 	switch tr {
-	case config.TCP, config.STEALTH:
+	case config.TCP, config.STEALTH, config.TLS, config.GRPC, config.SSH:
 		tcpConfig := &transport.TcpConfig{
 			PathProbe:       len(s.config.Paths) != 0,
 			DiagnosticProbe: s.config.Managed(),
@@ -215,11 +216,22 @@ func (s *Server) startTransport(ctx context.Context, tr config.TransportType) ru
 			ManagedHelper: s.config.Managed(),
 		}
 
+		if tr == config.TLS || tr == config.GRPC || tr == config.SSH {
+			tcpConfig.Carrier = &carrier.Config{Mode: tr, Options: s.config.CarrierOptions}
+		}
+		if tr == config.TLS || tr == config.GRPC {
+			tc, err := network.ServerTLSConfig(network.TLSSettings{CertFile: s.config.TLSCertFile, KeyFile: s.config.TLSKeyFile, ACMEDomain: s.config.ACMEDomain, ACMEEmail: s.config.ACMEEmail, ACMECacheDir: acmeCacheDir}, s.logger.Warnf)
+			if err != nil {
+				s.logger.Errorf("TLS configuration: %v", err)
+				return nil
+			}
+			tcpConfig.Carrier.TLS = tc
+		}
 		tcpServer := transport.NewTCPServer(ctx, tcpConfig, s.logger)
 		go tcpServer.Start()
 		return tcpServer
 
-	case config.KCP, config.XDI, config.PCK:
+	case config.KCP, config.XDI, config.PCK, config.DNS:
 		kcp := s.config.KCPConfig.WithDefaults()
 		useICMP := tr == config.XDI
 		kcpConfig := &transport.KcpConfig{
@@ -252,6 +264,7 @@ func (s *Server) startTransport(ctx context.Context, tr config.TransportType) ru
 			DataShards:       kcp.DataShards,
 			ParityShards:     kcp.ParityShards,
 			UseICMP:          useICMP,
+			UseDNS:           tr == config.DNS,
 			UsePck:           tr == config.PCK,
 			PckInterface:     s.config.PckInterface,
 			PckGatewayMAC:    s.config.PckGatewayMAC,

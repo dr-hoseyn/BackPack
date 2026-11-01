@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"github.com/backpack/backpack/internal/carrier"
 	"time"
 
 	"github.com/backpack/backpack/internal/utils"
@@ -237,7 +238,7 @@ func (c *Client) startTransport(ctx context.Context, tr config.TransportType, en
 		return r
 	}
 	switch tr {
-	case config.TCP, config.STEALTH:
+	case config.TCP, config.STEALTH, config.TLS, config.GRPC, config.SSH:
 		fixedPool := c.config.Short.Enabled()
 		for _, path := range c.config.Paths {
 			fixedPool = fixedPool || path.Short.Enabled()
@@ -263,6 +264,9 @@ func (c *Client) startTransport(ctx context.Context, tr config.TransportType, en
 			// tunnel connection; everything else about it is identical.
 			Stealth:       tr == config.STEALTH,
 			ManagedHelper: c.config.Managed(),
+		}
+		if tr == config.TLS || tr == config.GRPC || tr == config.SSH {
+			tcpConfig.Carrier = &carrier.Config{Mode: tr, Options: c.config.CarrierOptions}
 		}
 		tcpClient := transport.NewTCPClient(ctx, tcpConfig, c.logger)
 		return start(tcpClient)
@@ -292,7 +296,7 @@ func (c *Client) startTransport(ctx context.Context, tr config.TransportType, en
 		tcpMuxClient := transport.NewMuxClient(ctx, tcpMuxConfig, c.logger)
 		return start(tcpMuxClient)
 
-	case config.KCP, config.XDI, config.PCK:
+	case config.KCP, config.XDI, config.PCK, config.DNS:
 		kcp := c.config.KCPConfig.WithDefaults()
 		useICMP := tr == config.XDI
 		kcpConfig := &transport.KcpConfig{
@@ -323,6 +327,7 @@ func (c *Client) startTransport(ctx context.Context, tr config.TransportType, en
 			DataShards:       kcp.DataShards,
 			ParityShards:     kcp.ParityShards,
 			UseICMP:          useICMP,
+			UseDNS:           tr == config.DNS,
 			UsePck:           tr == config.PCK,
 			PckInterface:     c.config.PckInterface,
 			PckGatewayMAC:    c.config.PckGatewayMAC,

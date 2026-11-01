@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/backpack/backpack/config"
 	"github.com/backpack/backpack/internal/app"
 	"github.com/backpack/backpack/internal/optimize"
 )
@@ -350,14 +351,15 @@ func PresetTune(preset, role, transport string) FineTune {
 // collects it. It is the form's shape, not the config's: Ports and IPv6 are
 // server-only, ServerAddr is client-only, and the rest is common.
 type NewTunnel struct {
-	Role       string `json:"role"` // "server" (Iran) or "client" (kharej)
-	Transport  string `json:"transport"`
-	Name       string `json:"name"`
-	TunnelPort string `json:"tunnelPort"` // server: bind port — client: the server's port
-	ServerAddr string `json:"serverAddr"` // client only: IP or domain of the server
-	Token      string `json:"token"`
-	Ports      string `json:"ports"` // server only: comma-separated forwarded ports
-	Preset     string `json:"preset"`
+	CarrierOptions config.CarrierOptions `json:"carrierOptions"`
+	Role           string                `json:"role"` // "server" (Iran) or "client" (kharej)
+	Transport      string                `json:"transport"`
+	Name           string                `json:"name"`
+	TunnelPort     string                `json:"tunnelPort"` // server: bind port — client: the server's port
+	ServerAddr     string                `json:"serverAddr"` // client only: IP or domain of the server
+	Token          string                `json:"token"`
+	Ports          string                `json:"ports"` // server only: comma-separated forwarded ports
+	Preset         string                `json:"preset"`
 
 	IPv6          bool `json:"ipv6"`          // server only: bind :: instead of 0.0.0.0
 	ProxyProtocol bool `json:"proxyProtocol"` // server only
@@ -449,7 +451,7 @@ func specFromNew(n NewTunnel) (TunnelSpec, error) {
 	// Forwarded ports carry TCP only unless the Fine Tune drawer turns UDP on,
 	// which is what the CLI wizard defaults to too. See ForwardsUDP for why the
 	// default is off.
-	s := TunnelSpec{AcceptUDP: false}
+	s := TunnelSpec{AcceptUDP: false, CarrierOptions: n.CarrierOptions}
 
 	switch n.Role {
 	case "server", "client":
@@ -561,6 +563,9 @@ func specFromNew(n NewTunnel) (TunnelSpec, error) {
 		return s, err
 	}
 	optimize.ApplyQuiet(ReservedPorts())
+	if s.Transport == "ssh" && s.Role == "server" {
+		s.BindAddr = net.JoinHostPort("127.0.0.1", addrPort(s.BindAddr))
+	}
 	return s, nil
 }
 
@@ -641,6 +646,9 @@ func tunnelEditSpec(name string, e TunnelEdit) (TunnelSpec, error) {
 	}
 	if !changed {
 		return TunnelSpec{}, fmt.Errorf("nothing to change")
+	}
+	if s.Transport == "ssh" && s.Role == "server" {
+		s.BindAddr = net.JoinHostPort("127.0.0.1", addrPort(s.BindAddr))
 	}
 	return s, nil
 }

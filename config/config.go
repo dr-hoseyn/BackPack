@@ -4,6 +4,10 @@ package config
 type TransportType string
 
 const (
+	TLS    TransportType = "tls"
+	GRPC   TransportType = "grpc"
+	SSH    TransportType = "ssh"
+	DNS    TransportType = "dns"
 	TCP    TransportType = "tcp"
 	TCPMUX TransportType = "tcpmux"
 	WS     TransportType = "ws"
@@ -275,6 +279,7 @@ type PckConfig struct {
 
 // ServerConfig represents the configuration for the server.
 type ServerConfig struct {
+	CarrierOptions
 	// PathProfile selects economy or full for the peer's initial managed probe policy.
 	PathProfile string `toml:"path_profile,omitempty"`
 	// Paths keeps 2..8 independent managed public carriers alive for one Reverse engine.
@@ -463,6 +468,7 @@ func (s ServerConfig) ForwardsUDP() bool {
 
 // ClientConfig represents the configuration for the client.
 type ClientConfig struct {
+	CarrierOptions
 	// Paths keeps paired managed carriers warm and selects verified healthy paths.
 	Paths []ManagedClientPath `toml:"paths"`
 	// PathPolicy tunes verified probing, hysteresis and failover for Paths only.

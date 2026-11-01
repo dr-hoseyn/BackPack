@@ -6,6 +6,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/backpack/backpack/internal/carrier"
 	"github.com/backpack/backpack/internal/controlwire"
 	"github.com/backpack/backpack/internal/metrics"
 	"github.com/backpack/backpack/internal/tunnel/naive"
@@ -61,6 +62,7 @@ type TcpConfig struct {
 	Stealth bool
 	// ManagedHelper carries directional EOF as records through an outer proxy.
 	ManagedHelper bool
+	Carrier       *carrier.Config
 }
 
 // wrapStealth upgrades a freshly dialled tunnel connection to the Noise record
@@ -136,8 +138,7 @@ func (c *TcpTransport) channelDialer() {
 			rawConn, won, err := network.Race(c.state.Ctx(),
 				controlCandidates(c.config.Endpoints, &failedHandshakes), network.RaceStagger,
 				func(ctx context.Context, addr string) (net.Conn, error) {
-					return network.TcpDialerVia(ctx, c.config.Outbound, addr,
-						c.config.DialTimeOut, c.config.KeepAlive, true, 3, 0, 0, 0)
+					return c.dialCarrier(ctx, addr, true)
 				})
 			if err != nil {
 				c.logger.Errorf("channel dialer: %v", err)
@@ -295,7 +296,7 @@ func (c *TcpTransport) tunnelDialer() {
 	// Next() rather than Current(): with load balancing enabled the pool
 	// spreads its connections over every configured endpoint, so one
 	// congested route only slows its own share of the traffic.
-	rawConn, err := network.TcpDialerVia(c.state.Ctx(), c.config.Outbound, c.config.Endpoints.Next(), c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay, 3, c.config.SO_RCVBUF, c.config.SO_SNDBUF, c.config.MSS)
+	rawConn, err := c.dialCarrier(c.state.Ctx(), c.config.Endpoints.Next(), false)
 	if err != nil {
 		c.logger.Error("tunnel server dialer: ", err)
 
@@ -389,4 +390,37 @@ func (c *TcpTransport) backend() backendOpts {
 		mss:         c.config.MSS,
 		sniffer:     c.config.Sniffer,
 	}
+}
+
+func (c *TcpTransport) dialCarrier(ctx context.Context, addr string, control bool) (net.Conn, error) {
+	target := addr
+	if c.config.Carrier != nil {
+		target = c.config.Carrier.DialAddress(addr)
+	}
+	nodelay, rcv, snd, mss := c.config.Nodelay, c.config.SO_RCVBUF, c.config.SO_SNDBUF, c.config.MSS
+	if control {
+		nodelay, rcv, snd, mss = true, 0, 0, 0
+	}
+	retries := 3
+	if c.config.Carrier != nil {
+		retries = 1
+	}
+	raw, err := network.TcpDialerVia(ctx, c.config.Outbound, target, c.config.DialTimeOut, c.config.KeepAlive, nodelay, retries, rcv, snd, mss)
+	if err != nil {
+		return nil, err
+	}
+	if c.config.Carrier == nil {
+		return raw, nil
+	}
+	stop := context.AfterFunc(ctx, func() { raw.Close() })
+	defer stop()
+	wrapped, err := c.config.Carrier.Client(ctx, raw, addr, c.config.DialTimeOut)
+	if err == nil {
+		wrapped, err = network.NoiseClientConn(wrapped, c.config.Token, c.config.DialTimeOut)
+	}
+	if err != nil {
+		raw.Close()
+		return nil, err
+	}
+	return wrapped, nil
 }

@@ -10,7 +10,7 @@ import (
 
 // tcpTransports are the transports that forward TCP connections. The raw UDP
 // transport forwards datagrams instead and is covered separately.
-var tcpTransports = []string{"tcp", "tcpmux", "kcp", "ws", "wsmux", "stealth", "quic"}
+var tcpTransports = []string{"tls", "grpc", "dns", "tcp", "tcpmux", "kcp", "ws", "wsmux", "stealth", "quic"}
 
 // TestTransportCarriesData is the baseline every transport must pass: a payload
 // large enough to span many packets goes through and comes back unchanged.

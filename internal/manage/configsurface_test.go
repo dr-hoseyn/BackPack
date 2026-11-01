@@ -33,7 +33,7 @@ import (
 // management layer is deliberately excluded: writing a key to a file and
 // reading it back into a form is exactly the appearance of working that this
 // test exists to see through.
-var engineDirs = []string{
+var engineDirs = []string{"../carrier",
 	"../../cmd",
 	"../server",
 	"../client",

@@ -6,6 +6,7 @@ import (
 	"net"
 	"time"
 
+	"github.com/backpack/backpack/internal/carrier"
 	"github.com/backpack/backpack/internal/controlwire"
 	"github.com/backpack/backpack/internal/metrics"
 	"github.com/backpack/backpack/internal/pathprobe"
@@ -81,6 +82,7 @@ type TcpConfig struct {
 	Stealth bool
 	// ManagedHelper requires explicit directional-EOF framing from the peer.
 	ManagedHelper bool
+	Carrier       *carrier.Config
 }
 
 func NewTCPServer(parentCtx context.Context, config *TcpConfig, logger *logrus.Logger) *TcpTransport {
@@ -255,6 +257,21 @@ func (s *TcpTransport) admitTunnelConn(g *tcpGen, raw net.Conn) {
 	conn := raw
 	if s.config.ManagedHelper {
 		conn = naive.WrapDuplex(conn)
+	}
+	if s.config.Carrier != nil {
+		stop := context.AfterFunc(g.ctx, func() { raw.Close() })
+		wrapped, err := s.config.Carrier.Server(g.ctx, raw)
+		if err == nil {
+			wrapped, err = network.NoiseServerConn(wrapped, s.config.Token, 15*time.Second)
+		}
+		stop()
+		if err != nil {
+			s.logger.Debugf("carrier handshake failed: %v", err)
+			raw.Close()
+			return
+		}
+		conn = wrapped
+		s.preauth.Prove(raw.RemoteAddr())
 	}
 
 	// In stealth mode the Noise handshake is completed first, so everything

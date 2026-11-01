@@ -1,5 +1,8 @@
 # Backpack docs
 
+- [Built-in TLS, gRPC, SSH and DNS-shaped KCP](additional-carriers.md)
+- [Encrypted Connection Test coordinator](connection-test-coordinator.md)
+
 - [Network efficiency and modern carriers](modern-networking.md)
 
 Reference pages: what each part of Backpack **is**, and every setting it has.

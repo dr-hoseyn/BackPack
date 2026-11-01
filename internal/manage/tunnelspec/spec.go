@@ -15,14 +15,15 @@ import (
 
 // Spec is the full description of a tunnel used to render a TOML config.
 type Spec struct {
-	PathProfile string
-	ServerPaths []config.ManagedServerPath `json:"-"`
-	ClientPaths []config.ManagedClientPath `json:"-"`
-	PathPolicy  config.PathPolicy
-	MPTCP       bool
-	Name        string
-	Role        string // "server" (Iran/edge that exposes ports) or "client" (kharej/origin)
-	Transport   string // tcp, tcpmux, udp, kcp, ws, wss, wsmux, wssmux
+	CarrierOptions config.CarrierOptions `json:"-"`
+	PathProfile    string
+	ServerPaths    []config.ManagedServerPath `json:"-"`
+	ClientPaths    []config.ManagedClientPath `json:"-"`
+	PathPolicy     config.PathPolicy
+	MPTCP          bool
+	Name           string
+	Role           string // "server" (Iran/edge that exposes ports) or "client" (kharej/origin)
+	Transport      string // tcp, tcpmux, udp, kcp, ws, wss, wsmux, wssmux
 
 	// Preserve experimental helper settings across ordinary tunnel edits.
 	// They include credentials and must not enter generic JSON responses.
@@ -278,6 +279,7 @@ func (s Spec) Render() string {
 		if s.Preset != "" {
 			p("preset = %q\n", s.Preset)
 		}
+		s.writeCarrier(p)
 		p("token = %q\n", s.Token)
 		p("channel_size = %d\n", s.ChannelSize)
 		p("keepalive_period = %d\n", s.KeepAlive)
@@ -358,6 +360,7 @@ func (s Spec) Render() string {
 	if s.Preset != "" {
 		p("preset = %q\n", s.Preset)
 	}
+	s.writeCarrier(p)
 	p("token = %q\n", s.Token)
 	p("connection_pool = %d\n", s.ConnectionPool)
 	p("aggressive_pool = %t\n", s.AggressivePool)
@@ -525,6 +528,9 @@ func (s Spec) validateNaive() error {
 }
 
 func (s Spec) validateHelpers() error {
+	if err := s.CarrierOptions.Validate(config.TransportType(s.Transport), s.Role == "client"); err != nil {
+		return err
+	}
 	if s.ConnectServer.Enabled() || s.ConnectClient.Enabled() {
 		var cfg config.Config
 		if _, err := toml.Decode(s.Render(), &cfg); err != nil {
@@ -616,5 +622,20 @@ func (s Spec) writeFallbackChain(p func(string, ...any), b *strings.Builder) {
 	b.WriteString("]\n")
 	if s.FallbackDwell > 0 {
 		p("fallback_dwell = %d\n", s.FallbackDwell)
+	}
+}
+
+func (s Spec) writeCarrier(p func(string, ...any)) {
+	o := s.CarrierOptions
+	for _, v := range []struct{ k, v string }{{"server_name", o.ServerName}, {"fingerprint", o.Fingerprint}, {"grpc_service", o.GRPCService}, {"ssh_user", o.SSHUser}, {"ssh_password", o.SSHPassword}, {"ssh_key", o.SSHKeyFile}, {"ssh_host_key", o.SSHHostKey}, {"ssh_remote", o.SSHRemote}} {
+		if v.v != "" {
+			p("%s = %q\n", v.k, v.v)
+		}
+	}
+	if o.TLSFragment {
+		p("tls_fragment = true\n")
+	}
+	if o.SSHPort > 0 {
+		p("ssh_port = %d\n", o.SSHPort)
 	}
 }

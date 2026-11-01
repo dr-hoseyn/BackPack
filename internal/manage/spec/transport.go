@@ -14,13 +14,13 @@ import "strings"
 // IsMux reports whether a transport multiplexes several streams over one
 // connection.
 func IsMux(t string) bool {
-	return t == "tcpmux" || t == "wsmux" || t == "wssmux" || t == "kcp" || t == "xdi" || t == "pck"
+	return t == "tcpmux" || t == "wsmux" || t == "wssmux" || t == "dns" || t == "kcp" || t == "xdi" || t == "pck"
 }
 
 // IsKCP reports whether a transport is carried by KCP, and so takes the KCP
 // tuning — the window sizes, the interval, the FEC shards.
 func IsKCP(t string) bool {
-	return t == "kcp" || t == "xdi" || t == "pck"
+	return t == "dns" || t == "kcp" || t == "xdi" || t == "pck"
 }
 
 // IsDatagram reports whether a transport is carried in UDP datagrams. Such a
@@ -37,7 +37,7 @@ func IsDatagram(t string) bool {
 	if t == "awg" {
 		return true
 	}
-	if strings.HasPrefix(t, "l3/") {
+	if strings.HasPrefix(t, "l3/") || strings.HasPrefix(t, "kernel/") {
 		// Every layer-3 carrier is a datagram one, and no reliable carrier can
 		// ever be added — see the l3 package doc.
 		return true
@@ -47,14 +47,14 @@ func IsDatagram(t string) bool {
 		// probe is exactly the right thing for them.
 		return false
 	}
-	return t == "udp" || t == "kcp" || t == "xdi" || t == "quic" || t == "pck" || t == "hysteria2" || t == "tuic"
+	return t == "dns" || t == "udp" || t == "kcp" || t == "xdi" || t == "quic" || t == "pck" || t == "hysteria2" || t == "tuic"
 }
 
 // SupportsProxyProtocol reports whether a transport can carry the PROXY
 // protocol header that tells the service behind the tunnel the real client IP.
 func SupportsProxyProtocol(t string) bool {
 	switch t {
-	case "tcp", "tcpmux", "kcp", "wsmux", "wssmux", "stealth", "quic", "pck":
+	case "tls", "grpc", "ssh", "dns", "tcp", "tcpmux", "kcp", "wsmux", "wssmux", "stealth", "quic", "pck":
 		return true
 	}
 	return false
@@ -68,14 +68,14 @@ func IsWS(t string) bool {
 // NeedsTLS reports whether a transport terminates TLS and so needs a
 // certificate.
 func NeedsTLS(t string) bool {
-	return t == "wss" || t == "wssmux"
+	return t == "tls" || t == "grpc" || t == "wss" || t == "wssmux"
 }
 
 // ValidTransport reports whether a name is one of the reverse tunnel's
 // carriers.
 func ValidTransport(t string) bool {
 	switch t {
-	case "tcp", "tcpmux", "udp", "kcp", "ws", "wss", "wsmux", "wssmux", "stealth", "xdi", "quic", "pck":
+	case "tls", "grpc", "ssh", "dns", "tcp", "tcpmux", "udp", "kcp", "ws", "wss", "wsmux", "wssmux", "stealth", "xdi", "quic", "pck":
 		return true
 	}
 	return false

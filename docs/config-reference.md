@@ -541,6 +541,21 @@ them both ends have to agree on. This says what exists.
 | `xray` | `XrayServerConfig` | Xray optionally wraps the loopback reverse TCP listener in XHTTP/TLS or RAW/REALITY using a tunnel-owned official helper. |
 | `zero_copy` | `bool` | ZeroCopy lets the kernel move the bytes of forwarded connections directly between the two sockets, without them passing through this process. It is faster and it is the least proven path here, so it is off by default and turned on per tunnel. |
 
+## [server] / [client] (carrier)
+
+| Key | Type | Description |
+|---|---|---|
+| `fingerprint` | `string` | TLS/gRPC browser profile: chrome, firefox, safari, edge, or random (choose a browser per connection). |
+| `grpc_service` | `string` | gRPC service name, identical on both peers; empty uses Backpack. |
+| `server_name` | `string` | SNI sent by TLS and gRPC clients; empty uses the endpoint hostname. |
+| `ssh_host_key` | `string` | Required SHA256 host-key fingerprint of the remote sshd. |
+| `ssh_key` | `string` | Path to an unencrypted SSH private key on the client; not copied to another server. |
+| `ssh_password` | `string` | Optional SSH password on the client; omitted from setup links and generic JSON responses. |
+| `ssh_port` | `int` | The remote sshd port used by an SSH client; zero uses 22. |
+| `ssh_remote` | `string` | Loopback forwarding destination on the remote server; empty uses 127.0.0.1 and the tunnel port. |
+| `ssh_user` | `string` | The account on the remote sshd used for TCP forwarding. |
+| `tls_fragment` | `bool` | Best-effort splitting of the first TLS/gRPC ClientHello write; does not guarantee packet boundaries. |
+
 ---
 
 <div dir="rtl">
@@ -564,4 +579,4 @@ them both ends have to agree on. This says what exists.
 
 ---
 
-*Generated from `config/` on 2026-11-01. Last verified against Backpack v1.19.2.*
+*Generated from `config/` on 2026-11-01. Last verified against Backpack v1.20.0.*

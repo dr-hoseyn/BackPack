@@ -66,7 +66,7 @@ func applyDefaults(cfg *config.Config) {
 		{cfg.Client.Transport, &cfg.Client.SO_RCVBUF, &cfg.Client.SO_SNDBUF},
 	} {
 		switch side.tr {
-		case config.KCP, config.XDI, config.PCK, config.QUIC, config.UDP:
+		case config.DNS, config.KCP, config.XDI, config.PCK, config.QUIC, config.UDP:
 			if *side.rcv <= 0 {
 				*side.rcv = defaultDatagramSockBuf
 			}
@@ -230,6 +230,7 @@ func validateConfig(cfg *config.Config) error {
 	}
 
 	for _, check := range []func(*config.Config) error{
+		checkCarriers,
 		checkMPTCP,
 		checkManagedPaths,
 		naive.ValidateShort,
@@ -644,7 +645,7 @@ func checkOutbound(cfg *config.Config) error {
 // and the only defect this has ever had was a transport missing from the list.
 func transportIgnoresOutbound(t config.TransportType) bool {
 	switch t {
-	case config.UDP, config.KCP, config.XDI, config.PCK, config.QUIC, config.SPOOF:
+	case config.DNS, config.UDP, config.KCP, config.XDI, config.PCK, config.QUIC, config.SPOOF:
 		return true
 	}
 	return false
@@ -682,4 +683,30 @@ func checkSing(cfg *config.Config) error {
 		return fmt.Errorf("managed sing-box carriers require Linux")
 	}
 	return naive.ValidateSing(cfg)
+}
+
+func checkCarriers(cfg *config.Config) error {
+	if err := cfg.Server.CarrierOptions.Validate(cfg.Server.Transport, false); err != nil {
+		return err
+	}
+	if err := cfg.Client.CarrierOptions.Validate(cfg.Client.Transport, true); err != nil {
+		return err
+	}
+	for _, tr := range cfg.Client.FallbackTransports {
+		if err := cfg.Client.CarrierOptions.Validate(tr, true); err != nil {
+			return err
+		}
+	}
+	serverSSH := cfg.Server.Transport == config.SSH
+	for _, tr := range cfg.Server.FallbackTransports {
+		serverSSH = serverSSH || tr == config.SSH
+	}
+	if serverSSH {
+		host, _, err := net.SplitHostPort(cfg.Server.BindAddr)
+		ip := net.ParseIP(host)
+		if err != nil || ip == nil || !ip.IsLoopback() {
+			return fmt.Errorf("SSH tunnel relay must bind to a loopback address")
+		}
+	}
+	return nil
 }
