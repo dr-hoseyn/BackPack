@@ -146,3 +146,59 @@ func (w *finishedHandlerWriter) Write(p []byte) (int, error) {
 		return len(p), nil
 	}
 }
+
+func TestGRPCIPv6LiteralCarriesBinaryTraffic(t *testing.T) {
+	ln, err := net.Listen("tcp6", "[::1]:0")
+	if err != nil {
+		t.Skip("IPv6 loopback unavailable:", err)
+	}
+	defer ln.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	server := &Config{Mode: config.GRPC, TLS: testTLS(t)}
+	done := make(chan error, 1)
+	go func() {
+		raw, e := ln.Accept()
+		if e != nil {
+			done <- e
+			return
+		}
+		defer raw.Close()
+		c, e := server.Server(ctx, raw)
+		if e != nil {
+			done <- e
+			return
+		}
+		defer c.Close()
+		_, e = io.Copy(c, c)
+		done <- e
+	}()
+	raw, err := (&net.Dialer{}).DialContext(ctx, "tcp6", ln.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer raw.Close()
+	c, err := (&Config{Mode: config.GRPC}).Client(ctx, raw, ln.Addr().String(), time.Second*3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	c.SetDeadline(time.Now().Add(time.Second * 3))
+	payload := []byte{0, 1, 127, 128, 255}
+	if _, err = c.Write(payload); err != nil {
+		t.Fatal(err)
+	}
+	got := make([]byte, len(payload))
+	if _, err = io.ReadFull(c, got); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, payload) {
+		t.Fatal("IPv6 gRPC payload changed")
+	}
+	c.Close()
+	select {
+	case <-done:
+	case <-ctx.Done():
+		t.Fatal("IPv6 gRPC handler was not released")
+	}
+}

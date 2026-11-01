@@ -123,6 +123,9 @@ func grpcClient(ctx context.Context, raw net.Conn, host, service string) (net.Co
 	pr, pw := io.Pipe()
 	// Lifetime belongs to the carrier, rather than the timeout used only to
 	// establish it. Closing raw or the pipes cancels an outstanding call.
+	if ip := net.ParseIP(host); ip != nil && strings.Contains(host, ":") {
+		host = "[" + host + "]"
+	}
 	req, err := http.NewRequest("POST", "https://"+host+servicePath(service), pr)
 	if err != nil {
 		pr.Close()
