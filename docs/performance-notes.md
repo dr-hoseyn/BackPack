@@ -527,8 +527,8 @@ replace or weaken any existing required check.
 
 The explicit-baseline Linux run completed successfully:
 [WSSMux verification and comparison](https://github.com/dr-hoseyn/BackPack/actions/runs/41621205212).
-It compared `b97a566c` against production changes at `b5595a93` (later changes
-only extend tests and separate coverage timing). Medians of three alternating
+It compared `b97a566c` against production changes at `b5595a93`. The additional
+receive-frame optimization below was measured separately against `b2a6ebf6`. Medians of three alternating
 samples, with the same 1000 idle users and 600 Mbit/s offered workload:
 
 | Metric | Baseline | Candidate |
@@ -550,6 +550,59 @@ The SOCKS packet adapter used by native Hysteria2/TUIC also reads value source
 addresses. Its real-loopback receive benchmark changed from one allocation to
 zero per packet. Source validation, SOCKS fragmentation rejection and
 empty/large datagrams are covered independently of optional helper binaries.
+
+## Reusing mux receive frames for TCP forwarding (2026-11-03)
+
+A plain smux-to-TCP relay now uses smux's `WriterTo` to consume each owned
+receive frame directly. It no longer checks out a second relay buffer or copies
+each frame through it. The optimization unwraps only the known accounting
+wrapper; pacing/unknown wrappers and destinations other than real TCP sockets
+keep the existing buffered path. TCP consumes the borrowed slice synchronously,
+so smux can recycle it after Write returns. Failed or short writes end the
+stream instead of allowing a frame tail to be discarded. Tunnel byte counts,
+per-port usage, EOF and cancellation are covered for smux versions 1 and 2.
+
+The change was first measured outside the PR branch. The
+[bounded-profile comparison](https://github.com/dr-hoseyn/BackPack/actions/runs/41632246215)
+used three alternating processes per revision, 1000 idle users and 600 Mbit/s
+offered load; the
+[resource and lossy-path comparison](https://github.com/dr-hoseyn/BackPack/actions/runs/41632932057)
+used five alternating loopback samples and three per lossy-path protocol mode.
+Both use the same public-configuration fixture against baseline `b2a6ebf6`.
+
+| Workload / metric | Baseline | Receive-frame reuse |
+|---|---:|---:|
+| Bounded: 1000-user idle heap delta | 107512088 B | 74989400 B |
+| Bounded: application goodput | 599.5 Mbit/s | 599.5 Mbit/s |
+| Bounded: CPU seconds/GiB | 11.10 | 10.96 |
+| Default resource profile: idle heap delta | 115222776 B | 82789992 B |
+| Default resource profile: goodput | 6380.7 Mbit/s | 6421.8 Mbit/s |
+| Lossy path, auto version 1: goodput | 77.7 Mbit/s | 82.2 Mbit/s |
+| Lossy path, explicit version 2: goodput | 84.5 Mbit/s | 78.5 Mbit/s |
+| Lossy path, auto version 1: fresh-user p99 | 1294.138 ms | 1071.344 ms |
+| Lossy path, explicit version 2: fresh-user p99 | 1489.661 ms | 1302.468 ms |
+
+The repeatable result is 28–30% lower idle heap, about 32 KiB less retained
+relay storage per forwarded connection across both endpoints. These are combined
+client/server heap figures, not a promise about process RSS on every server.
+CPU changes were small. The explicit-version-2 lossy sample was about 7% slower,
+while auto version 1 was faster; all existing CPU, goodput and fresh-user latency
+regression gates passed. This evidence supports a memory improvement within
+those performance tolerances, not a general increase in Internet throughput.
+Existing stream windows, mux versions, session limits and bandwidth caps are
+unchanged. The quiet-user retirement and authenticated capacity checks passed.
+
+Reproduce focused tests and the socket benchmark on Linux:
+
+```sh
+go test -race ./internal/utils/handlers -run '^TestMuxReceive' -count=3 -timeout 2m
+go test ./internal/utils/handlers -run '^$' -bench '^BenchmarkMuxToTCPRelay$' -benchmem
+```
+
+The resource workflow's optional `baseline_ref` input now permits the same
+CPU/goodput/latency/heap gates against an explicit revision; PR runs retain
+`v1.16.0` as their baseline and keep every previous threshold. Artifacts record
+both baseline and candidate commit hashes.
 
 ## What is measured on every build
 

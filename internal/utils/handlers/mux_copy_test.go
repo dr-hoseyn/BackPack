@@ -147,6 +147,45 @@ func TestMuxReceiveFastCopyDoesNotUnwrapPacingOrUnknownWriters(t *testing.T) {
 	}
 }
 
+func TestMuxReceiveRelayCancellationJoinsBothDirections(t *testing.T) {
+	for _, version := range []int{1, 2} {
+		t.Run(fmt.Sprint(version), func(t *testing.T) {
+			send, receive := muxRelaySource(t, version)
+			destination, _ := muxTCPDestination(t) // Peer deliberately never drains.
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				TCPConnectionHandler(ctx, false, metrics.CountedConn(receive), destination, quietLogger(), nil, 0, false)
+			}()
+			writing := make(chan struct{})
+			go func() {
+				defer close(writing)
+				body := make([]byte, 64<<10)
+				for {
+					if _, err := send.Write(body); err != nil {
+						return
+					}
+				}
+			}()
+			time.Sleep(20 * time.Millisecond)
+			cancel()
+			select {
+			case <-done:
+			case <-time.After(time.Second):
+				t.Fatal("cancelled mux receive relay retained a copy direction")
+			}
+			send.Close()
+			select {
+			case <-writing:
+			case <-time.After(time.Second):
+				t.Fatal("mux sender remained blocked after cancellation")
+			}
+		})
+	}
+}
+
 func BenchmarkMuxToTCPRelay(b *testing.B) {
 	for _, version := range []int{1, 2} {
 		b.Run(fmt.Sprint(version), func(b *testing.B) {
