@@ -141,71 +141,80 @@ func TestWSMuxStreamDeadlineInterruptsBlockedFrame(t *testing.T) {
 		if secure {
 			name, mode, newServer = "WSSMux", config.WSSMUX, httptest.NewTLSServer
 		}
-		t.Run(name, func(t *testing.T) {
-			release := make(chan struct{})
-			up := websocket.Upgrader{Subprotocols: []string{WSMuxBinaryProtocol}}
-			srv := newServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				response := make(http.Header)
-				if r.TLS != nil {
-					proof, err := WSSServerAnswer(r.TLS, "token")
-					if err != nil {
-						t.Error(err)
+		for _, writerSide := range []string{"client", "server"} {
+			t.Run(name+"/"+writerSide, func(t *testing.T) {
+				release := make(chan struct{})
+				upgraded := make(chan *websocket.Conn, 1)
+				up := websocket.Upgrader{Subprotocols: []string{WSMuxBinaryProtocol}}
+				srv := newServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					response := make(http.Header)
+					if r.TLS != nil {
+						proof, err := WSSServerAnswer(r.TLS, "token")
+						if err != nil {
+							t.Error(err)
+							return
+						}
+						response.Set(WSSServerProofHeader, proof)
+					}
+					c, e := up.Upgrade(WSMuxResponse(w), r, response)
+					if e != nil {
 						return
 					}
-					response.Set(WSSServerProofHeader, proof)
-				}
-				c, e := up.Upgrade(WSMuxResponse(w), r, response)
+					defer c.Close()
+					upgraded <- c
+					<-release
+				}))
+				defer srv.Close()
+				defer close(release)
+				c, e := WebSocketDialer(context.Background(), nil, srv.Listener.Addr().String(), "", "/tunnel", time.Second, time.Second, true, "token", mode, false, 1, 0, 0, 0)
 				if e != nil {
-					return
+					t.Fatal(e)
 				}
 				defer c.Close()
-				<-release
-			}))
-			defer srv.Close()
-			defer close(release)
-			c, e := WebSocketDialer(context.Background(), nil, srv.Listener.Addr().String(), "", "/tunnel", time.Second, time.Second, true, "token", mode, false, 1, 0, 0, 0)
-			if e != nil {
-				t.Fatal(e)
-			}
-			defer c.Close()
-			stream := WSMuxStream(c)
-			readDone := make(chan error, 1)
-			go func() {
-				_, err := stream.Read(make([]byte, 8))
-				readDone <- err
-			}()
-			done := make(chan error, 1)
-			go func() {
-				buf := make([]byte, 64<<10)
-				for {
-					if _, e := stream.Write(buf); e != nil {
-						done <- e
-						return
+				writer := c
+				server := <-upgraded
+				if writerSide == "server" {
+					writer = server
+				}
+				stream := WSMuxStream(writer)
+				readDone := make(chan error, 1)
+				go func() {
+					_, err := stream.Read(make([]byte, 8))
+					readDone <- err
+				}()
+				done := make(chan error, 1)
+				go func() {
+					buf := make([]byte, 64<<10)
+					for {
+						if _, e := stream.Write(buf); e != nil {
+							done <- e
+							return
+						}
 					}
+				}()
+				time.Sleep(20 * time.Millisecond)
+				if e = stream.SetWriteDeadline(time.Now().Add(50 * time.Millisecond)); e != nil {
+					t.Fatal(e)
 				}
-			}()
-			time.Sleep(20 * time.Millisecond)
-			if e = stream.SetWriteDeadline(time.Now().Add(50 * time.Millisecond)); e != nil {
-				t.Fatal(e)
-			}
-			select {
-			case e := <-done:
-				var ne net.Error
-				if !errors.As(e, &ne) || !ne.Timeout() {
-					t.Fatalf("blocked frame: %v", e)
+				select {
+				case e := <-done:
+					var ne net.Error
+					if !errors.As(e, &ne) || !ne.Timeout() {
+						t.Fatalf("blocked frame: %v", e)
+					}
+				case <-time.After(time.Second):
+					t.Fatal("framing reset the stream's write deadline")
 				}
-			case <-time.After(time.Second):
-				t.Fatal("framing reset the stream's write deadline")
-			}
-			select {
-			case err := <-readDone:
-				if err == nil {
-					t.Fatal("failed framed writer left an idle reader apparently healthy")
+				select {
+				case err := <-readDone:
+					if err == nil {
+						t.Fatal("failed framed writer left an idle reader apparently healthy")
+					}
+				case <-time.After(time.Second):
+					t.Fatal("failed framed writer stranded the reader until keepalive expiry")
 				}
-			case <-time.After(time.Second):
-				t.Fatal("failed framed writer stranded the reader until keepalive expiry")
-			}
-		})
+			})
+		}
 	}
 }
 
