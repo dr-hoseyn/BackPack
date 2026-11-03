@@ -378,9 +378,18 @@ bandwidth limits or peer compatibility.
   packet allocated source-address storage and formatted both endpoints into a
   string. Replies and expiry use the same value address. Two forwarded ports
   reached by the same sender still have independent flows and backend choices.
+- Native UDP decrypts fragments in the receive scratch. Reassembly consumes
+  them before the next read; unfragmented queued messages retain independent
+  storage, including empty datagrams. Client peer checks compare UDP endpoint
+  fields instead of allocating formatted strings for every fragment.
+- Raw reverse UDP server listeners use value address reads and materialize
+  `UDPAddr` only for new associations. Mapped IPv4 sources are canonicalized to
+  the existing string-key form so dual-stack reads and flow retirement agree.
 - Raw reverse UDP uses `Read` on its connected tunnel/backend sockets, avoiding
   an unused source address on every datagram. Empty datagrams and packet
-  boundaries retain their existing behavior.
+  boundaries retain their existing behavior. Read deadlines and server idle
+  timers are refreshed on expiry rather than on every packet. Shared monotonic
+  activity still gives either direction a full 60-second idle budget.
 - WS/WSS forwarding starts its TCP read direction with the adaptive 16 KiB
   buffer and grows to 64 KiB after a full read. The receive direction borrows a
   bulk copy buffer only while copying a WebSocket message. A quiet connection
@@ -397,20 +406,27 @@ bandwidth limits or peer compatibility.
 Allocation measurements below use Go 1.26.10, Windows/amd64, an Intel
 Core i7-11370H, three 300 ms runs per case. Each before/after pair runs the same
 new benchmark against the baseline/current production source. Native UDP uses
-real forwarded socket reads and encryption, with a synchronous encrypted sink;
-raw UDP and WebSocket benchmarks use real loopback sockets.
+real forwarded socket reads and encryption, with a synchronous encrypted sink.
+The authenticated-receive benchmark supplies valid cipher frames synchronously
+and includes the source cipher's nonce costs; it excludes sockets and helper
+processes. Raw UDP and WebSocket benchmarks use real loopback sockets.
 
 | Path | Before: objects/op | After: objects/op |
 |---|---:|---:|
 | Native UDP entry, 64 B, IPv4/IPv6 | 10 | 1 |
 | Native UDP entry, 1200 B, IPv4/IPv6 | 11 | 2 |
+| Native UDP authenticated client receive, 64 B | 9 | 3 |
+| Native UDP authenticated client receive, 1200 B | 20 | 6 |
+| Native UDP authenticated client receive, 60000 B | 542 | 122 |
+| Native UDP authenticated server receive, 60000 B | 182 | 122 |
 | Raw connected UDP copy, 1200 B | 1 | 0 |
 | WebSocket send, 1024 B / 64 KiB | 2 | 1 |
 
 Native UDP allocated bytes fell from 160 to 16 B/op for 64-byte IPv4
 payloads, and from 176 to 32 B/op for 1200-byte IPv4 payloads. IPv6 fell
-from 144 to 16 and from 160 to 32 B/op respectively. The remaining native
-allocations are the cipher's per-fragment nonce. Timing varied between runs;
+from 144 to 16 and from 160 to 32 B/op respectively. The remaining entry
+allocations are the cipher's per-fragment nonce. Authenticated client receive
+of a 60000-byte datagram fell from about 132825 to 67540 B/op. Timing varied between runs;
 these measurements establish lower allocation pressure, not a WAN throughput
 increase.
 
@@ -420,9 +436,11 @@ Reproduce on Linux:
 go test ./internal/nativeudp -count=1 -timeout 2m
 go test -race ./internal/nativeudp ./internal/utils/handlers -count=1 -timeout 3m
 go test -race ./internal/client/transport -run '^(TestRawUDP|TestUDPBackend)' -count=1 -timeout 2m
-go test ./internal/nativeudp -run '^$' -bench '^BenchmarkNativeUDPForwardedEntry$' -benchmem
+go test ./internal/nativeudp -run '^$' -bench '^BenchmarkNativeUDP(ForwardedEntry|AuthenticatedReceive)$' -benchmem
 go test ./internal/client/transport -run '^$' -bench '^BenchmarkRawUDPConnectedCopy$' -benchmem
 go test ./internal/utils/handlers -run '^$' -bench '^BenchmarkWebSocketRelaySend$' -benchmem
+go test ./internal/server/transport -run '^TestQuietUDPDirection' -race -count=1
+go test ./internal/server/transport -run '^$' -bench '^BenchmarkRawUDPTunnelReceive$' -benchmem
 ```
 
 Validation in this session: native UDP's complete tests and race tests passed,
@@ -432,11 +450,16 @@ gate fails on the baseline source and passes on the changes. Handler tests and
 raw UDP client regressions passed normally/under race where selected; WebSocket
 tests cover full duplex, peer close, idle cancellation, final bytes with EOF,
 large/multiple messages and adaptive buffer growth. The new buffer-growth test
-also fails on the baseline source.
+also fails on the baseline source. Receive ownership tests leave successive
+messages queued while decrypting later frames; peer checks cover IPv4, mapped
+IPv4, IPv6 scope zones and wrapper addresses. A fake-clock server test advances
+through 111 seconds of shared idle activity without real waiting.
 
 The Windows handler/client runs used a temporary Go overlay to adapt existing
 Linux-only socket-option declarations in `reuse_port.go` and `tcp_dialer.go`.
-Those portability substitutions are outside the patch. Full Linux `go build`,
+The server's focused Windows runs additionally supplied an unused listener
+declaration in that overlay; timer and UDP tests never call it. Those portability
+substitutions are outside the patch. Full Linux `go build`,
 `go vet` and `staticcheck` passed without that overlay. `govulncheck` reported
 zero reachable vulnerabilities; it also listed three advisories in required
 modules that the application does not appear to call.

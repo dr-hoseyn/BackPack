@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"net/netip"
 	"sync"
 	"time"
 
@@ -221,7 +222,7 @@ func (s *UdpTransport) acceptTunnelConn(g *udpGen, listener *net.UDPConn) {
 		case <-g.ctx.Done():
 			return
 		default:
-			n, addr, err := listener.ReadFromUDP(buf)
+			n, from, err := listener.ReadFromUDPAddrPort(buf)
 			if err != nil {
 				if errors.Is(err, net.ErrClosed) {
 					return // the generation ended and closed it
@@ -232,7 +233,7 @@ func (s *UdpTransport) acceptTunnelConn(g *udpGen, listener *net.UDPConn) {
 			}
 
 			// Create a unique identifier for the connection based on IP and port
-			key := addr.String()
+			key := udpPeerKey(from)
 
 			if s.deliverTunnelPayload(g.ctx, key, buf[:n]) {
 				continue
@@ -243,13 +244,15 @@ func (s *UdpTransport) acceptTunnelConn(g *udpGen, listener *net.UDPConn) {
 				// sent to it lands here. At error level every junk datagram
 				// was a journal line, so anyone could fill the disk and bury
 				// the real errors at line rate.
-				s.logger.Debugf("invalid token received from %s", addr.String())
+				s.logger.Debugf("invalid token received from %s", key)
 				continue
 			}
 
 			// Initialize the payload channel for the new connection
 			payloadChan := make(chan []byte, udpPayloadQueue)
 
+			// Materialize an address only once per association, for reply writes.
+			addr := net.UDPAddrFromAddrPort(from)
 			// Create a new TunnelUDPConn
 			tunnelConn := TunnelUDPConn{
 				timeCreated: time.Now().UnixNano(), // Just for debugging
@@ -285,6 +288,13 @@ func (s *UdpTransport) acceptTunnelConn(g *udpGen, listener *net.UDPConn) {
 			}
 		}
 	}
+}
+
+// UDPAddr.String renders mapped IPv4 addresses as ordinary IPv4. Match that
+// form so value reads on dual-stack listeners still find associations and their
+// existing retirement paths, which key by the retained UDPAddr.
+func udpPeerKey(peer netip.AddrPort) string {
+	return netip.AddrPortFrom(peer.Addr().Unmap(), peer.Port()).String()
 }
 
 // deliverTunnelPayload reports whether key names an established association.

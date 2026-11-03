@@ -299,25 +299,33 @@ func (c *UdpTransport) udpCopy(srcConn, dstConn *net.UDPConn, port int, dstIsTun
 	buf := make([]byte, network.MaxDatagram)
 	readTimeout := 60 * time.Second
 
-	for {
-		// Either direction keeps this flow alive. Use the remaining shared idle
-		// budget, so a final packet does not leave the quiet reader another 60s.
+	// Set the deadline only initially and when it expires. Successful packets
+	// update shared activity; the next timeout checks the remaining budget from
+	// both directions. Updating netpoll's timer on every packet added timer-lock
+	// contention to every read on a busy UDP flow.
+	refreshDeadline := func() bool {
 		remaining := readTimeout - (time.Since(started) - time.Duration(activity.Load()))
 		if remaining <= 0 {
-			return
+			return false
 		}
 		err := srcConn.SetReadDeadline(time.Now().Add(remaining))
 		if err != nil {
 			c.logger.Errorf("failed to set read deadline: %v", err)
-			return
+			return false
 		}
+		return true
+	}
+	if !refreshDeadline() {
+		return
+	}
 
+	for {
 		// Both endpoints are connected UDP sockets. The kernel already filters
 		// the peer; Read avoids building an unused source address per datagram.
 		n, err := srcConn.Read(buf)
 		if err != nil {
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-				if time.Since(started)-time.Duration(activity.Load()) < readTimeout {
+				if refreshDeadline() {
 					continue
 				}
 				c.logger.Debug("read from UDP timed out")

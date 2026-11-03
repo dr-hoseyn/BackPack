@@ -309,7 +309,7 @@ func (l *Link) read() {
 			continue
 		}
 		copy(id[:], b[1:17])
-		if l.dial && from.String() != l.peer.String() {
+		if l.dial && !samePacketPeer(from, l.peer) {
 			l.dropped.Add(1)
 			continue
 		}
@@ -362,7 +362,11 @@ func (l *Link) read() {
 			}
 			if k != nil && time.Since(k.created) < sessionLife {
 				counter := binary.BigEndian.Uint64(b[17:25])
-				payload, e := k.recv.Decrypt(nil, counter, b[:headerSize], b[headerSize:n])
+				// Fragment plaintext is consumed by assemble before the next read.
+				// Decrypt into the receive scratch instead of allocating a second
+				// packet-sized buffer for every fragment. Unfragmented messages
+				// must still own their bytes while queued for the application.
+				payload, e := k.recv.Decrypt(b[headerSize:headerSize], counter, b[:headerSize], b[headerSize:n])
 				if e == nil && k.replay.ValidateCounter(counter, 1<<60) && len(payload) > 0 {
 					if !l.dial && l.pending[id] == k {
 						delete(l.pending, id)
@@ -382,7 +386,8 @@ func (l *Link) read() {
 						pong = true
 					case 1:
 					case 2:
-						message = payload[1:]
+						message = make([]byte, len(payload)-1)
+						copy(message, payload[1:])
 					case 3:
 						message = l.assemble(id, payload)
 					}
@@ -405,4 +410,19 @@ func (l *Link) read() {
 			}
 		}
 	}
+}
+
+// Native carriers use UDP endpoints, whose value fields can be compared without
+// formatting two strings per packet. Keep the net.Addr fallback for wrappers
+// that expose another address type.
+func samePacketPeer(from, peer net.Addr) bool {
+	a, aUDP := from.(*net.UDPAddr)
+	b, bUDP := peer.(*net.UDPAddr)
+	if aUDP && bUDP {
+		if a == nil || b == nil {
+			return a == b
+		}
+		return a.Port == b.Port && a.Zone == b.Zone && a.IP.Equal(b.IP)
+	}
+	return from.String() == peer.String()
 }
