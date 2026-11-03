@@ -34,7 +34,9 @@ checks = {
     "goodput_at_least_98_percent_of_buffered_baseline": candidate["echo_mbps"] >= base["echo_mbps"] * .98,
     "cpu_per_gib_within_20_percent": candidate["cpu_seconds_per_gib"] <= base["cpu_seconds_per_gib"] * 1.20,
     "probe_p99_within_existing_runner_tolerance": candidate["probe_p99_ms"] <= base["probe_p99_ms"] * 1.5 + 2,
-    "idle_heap_reduction_at_least_20_percent": candidate["heap_delta_bytes"] <= base["heap_delta_bytes"] * .80,
+    # The final fix withdraws receive-frame reuse; its memory saving is no
+    # longer an intended benefit. Guard against growth beyond the old path.
+    "idle_heap_within_20_percent_of_buffered_baseline": candidate["heap_delta_bytes"] <= base["heap_delta_bytes"] * 1.20,
 }
 print(json.dumps({
     "scope": f"{os.environ.get('MUX_MODE')}: same-runner 80ms RTT, 0.1% loss, 200 Mbit/s; five paired seeds 42-46; eight workers, eight 4 MiB round trips each; independent network namespaces",
