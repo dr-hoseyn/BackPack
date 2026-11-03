@@ -467,8 +467,11 @@ modules that the application does not appear to call.
 The complete Linux end-to-end/soak suite was not executed on this Windows host.
 Direct Windows execution also found existing platform failures in metrics
 permission tests and the client's refused-dial/source-scanning tests; the client
-failures reproduce against `b97a566c`. Linux end-to-end and WAN capacity testing
-remain necessary before release; no release or server configuration was changed.
+failures reproduce against `b97a566c`. Linux CI now runs the complete test, race and coverage suites on the PR; its
+latest status is recorded in the PR description. The preceding `71e296ed` run
+passed full test/race and sustained-load suites; its instrumented timing failure
+is addressed below. WAN capacity testing remains necessary before a deployment;
+no release or server configuration was changed.
 
 ## WSSMux frame overhead and failed-session recovery (2026-11-03)
 
@@ -498,6 +501,27 @@ the same public-configuration resource fixture for both revisions on one runner.
 Three alternating samples per revision report CPU/GiB, goodput, fresh-user p99
 and idle heap in the `wssmux-measurements` artifact. This comparison does not
 replace or weaken any existing required check.
+
+The explicit-baseline Linux run completed successfully:
+[WSSMux verification and comparison](https://github.com/dr-hoseyn/BackPack/actions/runs/41621205212).
+It compared `b97a566c` against production changes at `b5595a93` (later changes
+only extend tests and separate coverage timing). Medians of three alternating
+samples, with the same 1000 idle users and 600 Mbit/s offered workload:
+
+| Metric | Baseline | Candidate |
+|---|---:|---:|
+| Verified application goodput | 599.4 Mbit/s | 599.7 Mbit/s |
+| CPU seconds per GiB | 15.98 | 15.96 |
+| Fresh-user p99 | 0.850 ms | 0.991 ms |
+| Idle heap delta | 107920040 B | 107811320 B |
+
+These differences do not establish a throughput, CPU or memory improvement for
+WSSMux as a whole. The lower deadline-maintenance overhead is measurable in
+isolation, and failed-session recovery is covered by regressions on both the
+client/uTLS and server/standard-TLS directions. The same run passed negotiated
+framing/authentication, the 600 Mbit/s capacity gate (7070.3 Mbit/s download on
+that runner's loopback), mixed-load verification and quiet-session retirement.
+Loopback capacity does not predict capacity on a real Internet route.
 
 The SOCKS packet adapter used by native Hysteria2/TUIC also reads value source
 addresses. Its real-loopback receive benchmark changed from one allocation to
