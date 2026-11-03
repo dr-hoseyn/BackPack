@@ -494,6 +494,18 @@ that extra wait. WS and WSS tests now check both the write deadline and the idle
 reader's prompt exit, including five race-detector repetitions. The new idle
 reader assertion fails against the original source.
 
+WSSMux also now supervises fatal HTTP/TLS listener exits. A permanent accept
+error previously closed the tunnel port while its generation continued waiting
+for cancellation, so reconnecting clients could never reach a replacement
+listener. The supervisor now closes pending HTTP sockets and requests a new
+generation, using the existing listener-release barrier and bind retry policy.
+The delayed recovery carries its original context and checks it under the shared
+restart lock: an old listener's failure cannot restart a newer generation after
+a reload. Intentional shutdown and certificate configuration errors retain their
+existing behavior. Tests inject permanent accept failures for WS and authenticated
+WSS, prove a replacement control channel authenticates, and cover shutdown and
+stale-generation recovery under the race detector.
+
 The WSS Mux security/capacity workflow retains its existing authentication,
 600 Mbit/s download, 1000-user mixed-load and quiet-session retirement checks.
 A manual dispatch may additionally set `baseline_ref` to a git revision, building

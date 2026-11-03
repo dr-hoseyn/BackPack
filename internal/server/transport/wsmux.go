@@ -34,7 +34,7 @@ type wsMuxGen struct {
 	reqNewConnChan chan struct{}
 	usageMonitor   *traffic.Usage
 	// seat holds the client this generation serves, and serving starts what
-	// outlives any one client — once, whichever claim comes first. See
+	// outlives any one client â€” once, whichever claim comes first. See
 	// clientSeat.
 	seat    clientSeat
 	serving sync.Once
@@ -117,7 +117,7 @@ func NewWSMuxServer(parentCtx context.Context, config *WsMuxConfig, logger *logr
 }
 
 // Start brings up the first run. Every later one comes from Restart, which
-// builds its own generation and hands it straight to start — so the fields read
+// builds its own generation and hands it straight to start â€” so the fields read
 // here are written once, by the constructor, before any other goroutine exists.
 func (s *WsMuxTransport) Start() {
 	s.start(s.newGen(s.run.context()))
@@ -140,14 +140,20 @@ func (s *WsMuxTransport) start(g *wsMuxGen) {
 }
 
 func (s *WsMuxTransport) Restart() {
-	s.restart(s.controlChannel.Close, func(ctx context.Context) {
-		s.controlChannel.Clear()
-		s.counterMutex.Lock()
-		atomic.StoreInt32(&s.streamCounter, 0)
-		atomic.StoreInt32(&s.sessionCounter, 0)
-		s.counterMutex.Unlock()
-		go s.start(s.newGen(ctx))
-	})
+	s.restart(s.controlChannel.Close, s.startAfterRestart)
+}
+
+func (s *WsMuxTransport) restartGeneration(expected context.Context) {
+	s.lifecycle.restartGeneration(s.controlChannel.Close, s.startAfterRestart, expected)
+}
+
+func (s *WsMuxTransport) startAfterRestart(ctx context.Context) {
+	s.controlChannel.Clear()
+	s.counterMutex.Lock()
+	atomic.StoreInt32(&s.streamCounter, 0)
+	atomic.StoreInt32(&s.sessionCounter, 0)
+	s.counterMutex.Unlock()
+	go s.start(s.newGen(ctx))
 }
 
 // newGen builds one generation's channels and usage monitor.
@@ -239,8 +245,8 @@ func (s *WsMuxTransport) tunnelListener(g *wsMuxGen) {
 			s.logger.Tracef("received http request from %s", r.RemoteAddr)
 
 			// Only a genuine tunnel connection (websocket upgrade, tunnel path,
-			// valid credential) is served as a tunnel. Everything else — a
-			// browser, a scanner, a probe with the wrong token — gets the decoy
+			// valid credential) is served as a tunnel. Everything else â€” a
+			// browser, a scanner, a probe with the wrong token â€” gets the decoy
 			// website, so on 443 this looks like an ordinary HTTPS site rather
 			// than a tunnel that answers with 401.
 			if !isTunnelRequest(r, s.config.Token, s.config.SimpleAuth) {
@@ -325,55 +331,59 @@ func (s *WsMuxTransport) tunnelListener(g *wsMuxGen) {
 	}
 	defer ln.Close()
 
-	if s.config.Mode == config.WSMUX {
-		go func() {
-			s.logger.Infof("%s server starting, listening on %s", s.config.Mode, addr)
-			if !s.controlChannel.IsSet() {
-				s.logger.Infof("waiting for %s control channel connection", s.config.Mode)
-			}
-			// The bind already succeeded, so this is the HTTP server itself
-			// stopping. Ending the run is right; ending the process is not.
-			if err := server.Serve(ln); err != nil && err != http.ErrServerClosed {
-				s.logger.Errorf("%s server on %s stopped: %v", s.config.Mode, addr, err)
-			}
-		}()
-	} else {
-		// Built up front so a certificate problem fails at startup rather than
-		// per-handshake on a listener that is already accepting.
+	if s.config.Mode != config.WSMUX {
+		// Fail configuration errors before serving. Retrying a missing PEM
+		// file would hide the operator action required to repair this setup.
 		tlsCfg, err := network.ServerTLSConfig(s.tlsSettings(), s.logger.Warnf)
 		if err != nil {
-			ln.Close()
-			// Reported and stopped, not fatal. See the same passage in ws.go.
-			s.logger.Errorf("%s on %s cannot start: its TLS certificate could not be "+
-				"set up: %v", s.config.Mode, addr, err)
+			s.logger.Errorf("%s on %s cannot start: its TLS certificate could not be set up: %v", s.config.Mode, addr, err)
 			return
 		}
 		server.TLSConfig = tlsCfg
+	}
+	s.serveTunnelListener(g, server, ln)
+}
 
-		go func() {
-			s.logger.Infof("%s server starting, listening on %s", s.config.Mode, addr)
-			if !s.controlChannel.IsSet() {
-				s.logger.Infof("waiting for %s control channel connection", s.config.Mode)
-			}
-			// Empty paths: the certificate comes from TLSConfig.GetCertificate,
-			// so renewal needs no restart.
-			if err := server.ServeTLS(ln, "", ""); err != nil && err != http.ErrServerClosed {
-				s.logger.Errorf("%s server on %s stopped: %v", s.config.Mode, addr, err)
-			}
-		}()
+// serveTunnelListener supervises the HTTP accept loop as well as generation
+// cancellation. A fatal accept failure used to log once and leave the tunnel
+// port permanently closed while this goroutine waited for a live context.
+func (s *WsMuxTransport) serveTunnelListener(g *wsMuxGen, server *http.Server, ln net.Listener) {
+	ended := make(chan error, 1)
+	go func() {
+		s.logger.Infof("%s server starting, listening on %s", s.config.Mode, ln.Addr())
+		if !s.controlChannel.IsSet() {
+			s.logger.Infof("waiting for %s control channel connection", s.config.Mode)
+		}
+		if s.config.Mode == config.WSMUX {
+			ended <- server.Serve(ln)
+		} else {
+			// GetCertificate still picks up renewed certificates per handshake.
+			ended <- server.ServeTLS(ln, "", "")
+		}
+	}()
+
+	failed := false
+	select {
+	case err := <-ended:
+		// Even ErrServerClosed is unexpected while this generation is live:
+		// the shutdown below is the only intentional Close of this server.
+		if g.ctx.Err() == nil {
+			s.logger.Errorf("%s server on %s stopped: %v; recovering its listener", s.config.Mode, ln.Addr(), err)
+			failed = true
+		}
+	case <-g.ctx.Done():
 	}
 
-	<-g.ctx.Done()
-
-	// close connection
+	// Hijacked connections are not owned by http.Server. End the failed
+	// generation promptly so its control claim, sessions and forwarded ports
+	// cannot remain apparently healthy while new clients cannot reach it.
+	if failed {
+		go s.restartGeneration(g.ctx)
+	}
 	if s.controlChannel.IsSet() {
 		s.controlChannel.Close()
 	}
-
-	// This generation has ended. Close pending HTTP/TLS setup sockets as
-	// well as the listener; graceful shutdown can wait indefinitely on a
-	// slow request, delaying restart even though its tunnel is already gone.
-	s.logger.Infof("shutting down the websocket server on %s", addr)
+	s.logger.Infof("shutting down the websocket server on %s", ln.Addr())
 	if err := server.Close(); err != nil {
 		s.logger.Errorf("failed to close the websocket listener: %v", err)
 	}
@@ -418,7 +428,7 @@ func (s *WsMuxTransport) tlsSettings() network.TLSSettings {
 		ACMEEmail:    s.config.ACMEEmail,
 		ACMECacheDir: s.config.ACMECacheDir,
 		// Only used when no certificate was configured at all, and cosmetic
-		// even then — but a generated certificate that names the address it is
+		// even then â€” but a generated certificate that names the address it is
 		// served from reads as a certificate rather than as a mistake.
 		SelfSignedHost: certHost(s.config.BindAddr),
 	}
@@ -427,7 +437,7 @@ func (s *WsMuxTransport) tlsSettings() network.TLSSettings {
 // session binds this transport's channels, counters and settings to the shared
 // loop. It is the whole of what is transport-specific about running a session.
 // Its context is the seated client's, so the session ends with the client that
-// opened it rather than with the generation — which now outlives its clients.
+// opened it rather than with the generation â€” which now outlives its clients.
 func (s *WsMuxTransport) session(g *wsMuxGen, owner context.Context) muxSession {
 	return muxSession{
 		ctx:           owner,
