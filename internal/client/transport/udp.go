@@ -312,8 +312,9 @@ func (c *UdpTransport) udpCopy(srcConn, dstConn *net.UDPConn, port int, dstIsTun
 			return
 		}
 
-		// Read from the UDP source connection
-		n, _, err := srcConn.ReadFromUDP(buf)
+		// Both endpoints are connected UDP sockets. The kernel already filters
+		// the peer; Read avoids building an unused source address per datagram.
+		n, err := srcConn.Read(buf)
 		if err != nil {
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 				if time.Since(started)-time.Duration(activity.Load()) < readTimeout {

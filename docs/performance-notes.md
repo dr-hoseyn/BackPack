@@ -367,6 +367,86 @@ one buffer, so each had the rest of it as capacity and the append ran over the
 next packet. Nothing had written more than one packet at a time before, so it
 had never shown. Each packet now gets a 64 KB slot of its own.
 
+## Forwarded UDP and quiet WebSocket resource use (2026-11-03)
+
+Reviewed against `dr-hoseyn/BackPack` main at `b97a566c`. These changes reduce
+work on the forwarding path without changing authentication, framing, configured
+bandwidth limits or peer compatibility.
+
+- Native UDP entry sockets now read `netip.AddrPort` values and look up flows
+  using the forwarded socket and source endpoint together. Previously every
+  packet allocated source-address storage and formatted both endpoints into a
+  string. Replies and expiry use the same value address. Two forwarded ports
+  reached by the same sender still have independent flows and backend choices.
+- Raw reverse UDP uses `Read` on its connected tunnel/backend sockets, avoiding
+  an unused source address on every datagram. Empty datagrams and packet
+  boundaries retain their existing behavior.
+- WS/WSS forwarding starts its TCP read direction with the adaptive 16 KiB
+  buffer and grows to 64 KiB after a full read. The receive direction borrows a
+  bulk copy buffer only while copying a WebSocket message. A quiet connection
+  therefore checks out 16 KiB of relay buffers instead of 128 KiB before bulk
+  traffic. This is buffer ownership, not a claim about total process RSS:
+  `sync.Pool` may retain returned buffers until a later collection.
+- The WebSocket relay runs one copy in its caller, saving one goroutine per
+  connection. A context cancellation callback closes both sockets; the caller
+  still joins both copy directions before returning its connection quota.
+- Disabled TCP-to-WebSocket trace logging no longer boxes a byte count on every
+  write. An overwritten assignment in port mapping expansion was also removed
+  so the full Linux staticcheck gate passes.
+
+Allocation measurements below use Go 1.26.10, Windows/amd64, an Intel
+Core i7-11370H, three 300 ms runs per case. Each before/after pair runs the same
+new benchmark against the baseline/current production source. Native UDP uses
+real forwarded socket reads and encryption, with a synchronous encrypted sink;
+raw UDP and WebSocket benchmarks use real loopback sockets.
+
+| Path | Before: objects/op | After: objects/op |
+|---|---:|---:|
+| Native UDP entry, 64 B, IPv4/IPv6 | 10 | 1 |
+| Native UDP entry, 1200 B, IPv4/IPv6 | 11 | 2 |
+| Raw connected UDP copy, 1200 B | 1 | 0 |
+| WebSocket send, 1024 B / 64 KiB | 2 | 1 |
+
+Native UDP allocated bytes fell from 160 to 16 B/op for 64-byte IPv4
+payloads, and from 176 to 32 B/op for 1200-byte IPv4 payloads. IPv6 fell
+from 144 to 16 and from 160 to 32 B/op respectively. The remaining native
+allocations are the cipher's per-fragment nonce. Timing varied between runs;
+these measurements establish lower allocation pressure, not a WAN throughput
+increase.
+
+Reproduce on Linux:
+
+```sh
+go test ./internal/nativeudp -count=1 -timeout 2m
+go test -race ./internal/nativeudp ./internal/utils/handlers -count=1 -timeout 3m
+go test -race ./internal/client/transport -run '^(TestRawUDP|TestUDPBackend)' -count=1 -timeout 2m
+go test ./internal/nativeudp -run '^$' -bench '^BenchmarkNativeUDPForwardedEntry$' -benchmem
+go test ./internal/client/transport -run '^$' -bench '^BenchmarkRawUDPConnectedCopy$' -benchmem
+go test ./internal/utils/handlers -run '^$' -bench '^BenchmarkWebSocketRelaySend$' -benchmem
+```
+
+Validation in this session: native UDP's complete tests and race tests passed,
+including encrypted IPv4/IPv6 replies, empty/fragmented payloads, two forwarded
+ports sharing one sender, and an allocation regression gate. The allocation
+gate fails on the baseline source and passes on the changes. Handler tests and
+raw UDP client regressions passed normally/under race where selected; WebSocket
+tests cover full duplex, peer close, idle cancellation, final bytes with EOF,
+large/multiple messages and adaptive buffer growth. The new buffer-growth test
+also fails on the baseline source.
+
+The Windows handler/client runs used a temporary Go overlay to adapt existing
+Linux-only socket-option declarations in `reuse_port.go` and `tcp_dialer.go`.
+Those portability substitutions are outside the patch. Full Linux `go build`,
+`go vet` and `staticcheck` passed without that overlay. `govulncheck` reported
+zero reachable vulnerabilities; it also listed three advisories in required
+modules that the application does not appear to call.
+
+The complete Linux end-to-end/soak suite was not executed on this Windows host.
+Direct Windows execution also found existing platform failures in metrics
+permission tests and the client's refused-dial/source-scanning tests; the client
+failures reproduce against `b97a566c`. Linux end-to-end and WAN capacity testing
+remain necessary before release; no release or server configuration was changed.
+
 ## What is measured on every build
 
 The numbers above are one-offs. These are gates, and they fail the build:
@@ -405,6 +485,13 @@ See `internal/tunnel/l3/bench_gate_test.go`.
 اندازه گرفته شد ولی پیش‌فرض خاموش ماند، چون سود روی loopback شاهدِ میدانی نیست.
 و دو ایده — MSS خودکار روی تونل معکوس، و batching رلهٔ معکوس — ساخته یا اندازه
 گرفته شدند و **بی‌اثر** بودند؛ هر دو با عددشان اینجا ثبت شده‌اند.
+
+بازبینی ۲۰۲۶/۱۱/۰۳: تخصیص موقت مسیر UDP بومی از ۱۰–۱۱ به ۱–۲ مورد برای هر
+بسته رسید. بافرهای در اختیار اتصال کم‌ترافیک WS/WSS از ۱۲۸ به ۱۶ کیلوبایت
+کاهش یافت و یک goroutine از هر اتصال حذف شد. بنچمارک محلی کاهش تخصیص حافظه را
+نشان می‌دهد؛ افزایش سرعت روی اینترنت هنوز اندازه‌گیری نشده است. تست‌های مرتبط
+با race، ساخت Linux، vet و staticcheck موفق بودند؛ اجرای کامل تست‌های سرتاسری
+Linux پیش از انتشار باقی مانده است.
 
 </div>
 
