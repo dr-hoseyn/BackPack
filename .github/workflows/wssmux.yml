@@ -29,7 +29,7 @@ jobs:
       - name: Authenticate before HTTP and validate real binary frames
         run: >-
           go test -race ./internal/utils/network ./internal/client/transport ./internal/server/transport ./internal/e2e
-          -run '^(TestWSS|TestWSMux|TestWebSocket|TestAWSS|TestMuxUpgrade|TestTLSTransports|TestMuxCapacityGrows)'
+          -run '^(TestWSS|TestWSMux|TestWebSocket|TestAWSS|TestMuxUpgrade|TestTLSTransports|TestMuxCapacityGrows|TestMuxSessionFailure)'
           -count=1 -timeout 4m
       - name: Provision private trust in real setup-link bearer clients
         run: >-

@@ -506,6 +506,17 @@ existing behavior. Tests inject permanent accept failures for WS and authenticat
 WSS, prove a replacement control channel authenticates, and cover shutdown and
 stale-generation recovery under the race detector.
 
+Backend work now also belongs to the physical mux session that accepted it,
+not just the longer-lived control generation. Losing one data connection
+cancels that session's pending TCP/UDP backend DNS/dials and idle flows while
+sibling sessions remain usable. A regression holds backend DNS for a 30-second
+dial budget, closes its data session, and verifies all work joins within one
+second without cancelling the generation; a sibling session carries an echo
+throughout. Both TCP and UDP forms fail against the prior source and pass under
+the race detector with session-scoped cancellation. Normal TCP backend failures
+still reach the existing health report; cancelled session dials no longer report
+a healthy local service as unreachable.
+
 The WSS Mux security/capacity workflow retains its existing authentication,
 600 Mbit/s download, 1000-user mixed-load and quiet-session retirement checks.
 A manual dispatch may additionally set `baseline_ref` to a git revision, building
