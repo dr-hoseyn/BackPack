@@ -42,9 +42,11 @@ func (c *webSocketStream) Read(p []byte) (int, error) {
 		if c.reader == nil {
 			kind, reader, err := c.conn.NextReader()
 			if err != nil {
+				c.conn.Close()
 				return 0, err
 			}
 			if kind != websocket.BinaryMessage {
+				c.conn.Close()
 				return 0, &net.OpError{Op: "read", Net: "websocket", Err: errWSBinaryRequired}
 			}
 			c.reader = reader
@@ -56,6 +58,9 @@ func (c *webSocketStream) Read(p []byte) (int, error) {
 				return n, nil
 			}
 			continue
+		}
+		if err != nil {
+			c.conn.Close()
 		}
 		return n, err
 	}
@@ -86,6 +91,7 @@ func (c *webSocketStream) WriteBuffers(v [][]byte) (int, error) {
 	defer c.writeMu.Unlock()
 	w, err := c.conn.NextWriter(websocket.BinaryMessage)
 	if err != nil {
+		c.conn.Close()
 		return 0, err
 	}
 	n := 0
@@ -94,10 +100,18 @@ func (c *webSocketStream) WriteBuffers(v [][]byte) (int, error) {
 		n += written
 		if err != nil {
 			_ = w.Close()
+			c.conn.Close()
 			return n, err
 		}
 	}
-	return n, w.Close()
+	err = w.Close()
+	if err != nil {
+		// Gorilla's framed stream cannot resume after a write error. Closing
+		// also wakes smux's idle reader/AcceptStream immediately, allowing its
+		// pool slot to be repaired instead of waiting for keepalive expiry.
+		c.conn.Close()
+	}
+	return n, err
 }
 
 func (c *webSocketStream) Close() error         { return c.conn.Close() }

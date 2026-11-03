@@ -470,6 +470,40 @@ permission tests and the client's refused-dial/source-scanning tests; the client
 failures reproduce against `b97a566c`. Linux end-to-end and WAN capacity testing
 remain necessary before release; no release or server configuration was changed.
 
+## WSSMux frame overhead and failed-session recovery (2026-11-03)
+
+The mux deadline wrapper now remembers the effective write deadline. Repeated
+frame writes with the same deadline leave the socket timer alone. Explicit
+stream deadline changes always reach the socket; combined upgrade deadlines,
+failed changes and connection close invalidate or update the cached value.
+On the same Windows/amd64 host, three 300 ms real-socket microbenchmarks changed
+`BenchmarkWSMuxFrameDeadlineRefresh` from 43.9–47.3 to 15.0–15.6 ns/op, with
+zero allocations on both revisions. This measures deadline maintenance only,
+not end-to-end WSSMux speed.
+
+A fatal framed read/write now closes the physical connection immediately.
+Gorilla cannot resume the stream after such an error. Previously an idle smux
+reader could remain blocked after a writer failed, keeping a client pool slot
+occupied until keepalive expiry. TLS close also needs to abort its underlying
+socket first: uTLS otherwise attempts `close_notify` with a five-second write
+budget on the congested socket. A real authenticated TLS regression test exposed
+that extra wait. WS and WSS tests now check both the write deadline and the idle
+reader's prompt exit, including five race-detector repetitions. The new idle
+reader assertion fails against the original source.
+
+The WSS Mux security/capacity workflow retains its existing authentication,
+600 Mbit/s download, 1000-user mixed-load and quiet-session retirement checks.
+A manual dispatch may additionally set `baseline_ref` to a git revision, building
+the same public-configuration resource fixture for both revisions on one runner.
+Three alternating samples per revision report CPU/GiB, goodput, fresh-user p99
+and idle heap in the `wssmux-measurements` artifact. This comparison does not
+replace or weaken any existing required check.
+
+The SOCKS packet adapter used by native Hysteria2/TUIC also reads value source
+addresses. Its real-loopback receive benchmark changed from one allocation to
+zero per packet. Source validation, SOCKS fragmentation rejection and
+empty/large datagrams are covered independently of optional helper binaries.
+
 ## What is measured on every build
 
 The numbers above are one-offs. These are gates, and they fail the build:
