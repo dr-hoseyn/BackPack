@@ -2,13 +2,19 @@ package handlers
 
 import (
 	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/backpack/backpack/internal/metrics"
+	"github.com/backpack/backpack/internal/traffic"
 	"github.com/xtaci/smux"
 )
 
@@ -65,11 +71,15 @@ func TestMuxReceiveRelayPreservesPayloadAndTunnelAccounting(t *testing.T) {
 			send, receive := muxRelaySource(t, version)
 			destination, peer := muxTCPDestination(t)
 			want := bytes.Repeat([]byte("mux-copy-payload"), 16000)
+			usageCtx, stopUsage := context.WithCancel(t.Context())
+			defer stopUsage()
+			usageFile := filepath.Join(t.TempDir(), "traffic.json")
+			usage := traffic.NewDataStore(usageCtx, usageFile, true, quietLogger())
 			inBefore, outBefore := metrics.Traffic()
 			done := make(chan struct{})
 			go func() {
 				defer close(done)
-				transferData(metrics.CountedConn(receive), destination, quietLogger(), nil, 0, false)
+				transferData(metrics.CountedConn(receive), destination, quietLogger(), usage, 8080, true)
 			}()
 			written := make(chan error, 1)
 			go func() {
@@ -94,7 +104,33 @@ func TestMuxReceiveRelayPreservesPayloadAndTunnelAccounting(t *testing.T) {
 			if inAfter-inBefore != uint64(len(want)) || outAfter != outBefore {
 				t.Fatalf("mux receive accounting in=%d out=%d", inAfter-inBefore, outAfter-outBefore)
 			}
+			stopUsage()
+			usage.Run() // Flush the same per-port counters the sniffer persists.
+			data, err := os.ReadFile(usageFile)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var ports []traffic.PortUsage
+			if err := json.Unmarshal(data, &ports); err != nil || len(ports) != 1 || ports[0].Port != 8080 || ports[0].Usage != uint64(len(want)) {
+				t.Fatalf("mux receive lost per-port accounting: %s %v", data, err)
+			}
 		})
+	}
+}
+
+func TestMuxReceiveWriterRejectsShortWritesAndReportsPartialProgress(t *testing.T) {
+	for _, writeErr := range []error{nil, net.ErrClosed} {
+		from := &halfConn{}
+		to := &queuedWriteConn{wrote: 3, err: writeErr}
+		writer := &muxRelayWriter{from: from, to: to, log: quietLogger()}
+		n, err := writer.Write([]byte("frame still has a tail"))
+		want := writeErr
+		if want == nil {
+			want = io.ErrShortWrite
+		}
+		if n != 3 || !errors.Is(err, want) {
+			t.Fatalf("short mux frame write returned %d, %v; want 3, %v", n, err, want)
+		}
 	}
 }
 
