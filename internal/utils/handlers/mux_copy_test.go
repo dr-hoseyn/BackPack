@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -118,35 +119,6 @@ func TestMuxReceiveRelayPreservesPayloadAndTunnelAccounting(t *testing.T) {
 	}
 }
 
-func TestMuxReceiveWriterRejectsShortWritesAndReportsPartialProgress(t *testing.T) {
-	for _, writeErr := range []error{nil, net.ErrClosed} {
-		from := &halfConn{}
-		to := &queuedWriteConn{wrote: 3, err: writeErr}
-		writer := &muxRelayWriter{from: from, to: to, log: quietLogger()}
-		n, err := writer.Write([]byte("frame still has a tail"))
-		want := writeErr
-		if want == nil {
-			want = io.ErrShortWrite
-		}
-		if n != 3 || !errors.Is(err, want) {
-			t.Fatalf("short mux frame write returned %d, %v; want 3, %v", n, err, want)
-		}
-	}
-}
-
-func TestMuxReceiveFastCopyDoesNotUnwrapPacingOrUnknownWriters(t *testing.T) {
-	_, receive := muxRelaySource(t, 2)
-	destination, _ := muxTCPDestination(t)
-	// An opaque wrapper can pace bytes or hold failed writes. It must continue
-	// receiving owned relay buffers rather than borrowed smux receive slices.
-	wrappedSource := struct{ net.Conn }{receive}
-	wrappedDestination := struct{ net.Conn }{destination}
-	if transferMuxToTCP(wrappedSource, destination, quietLogger(), nil, 0, false) ||
-		transferMuxToTCP(receive, wrappedDestination, quietLogger(), nil, 0, false) {
-		t.Fatal("direct mux receive copy bypassed an unknown connection wrapper")
-	}
-}
-
 func TestMuxReceiveRelayCancellationJoinsBothDirections(t *testing.T) {
 	for _, version := range []int{1, 2} {
 		t.Run(fmt.Sprint(version), func(t *testing.T) {
@@ -183,6 +155,56 @@ func TestMuxReceiveRelayCancellationJoinsBothDirections(t *testing.T) {
 				t.Fatal("mux sender remained blocked after cancellation")
 			}
 		})
+	}
+}
+
+// v2 starts with a 256 KiB peer window. Read advertises the configured window
+// before writing to the backend; WriterTo delays that update until Write
+// returns. If the backend is congested, that needlessly stalls the mux sender
+// even though the session still has receive capacity for the stream.
+func TestMuxReceiveWindowCreditDoesNotWaitForBlockedTCP(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("requires Linux TCP send/receive buffer backpressure semantics")
+	}
+	send, receive := muxRelaySource(t, 2)
+	destination, peer := muxTCPDestination(t)
+	if err := destination.(*net.TCPConn).SetWriteBuffer(1024); err != nil {
+		t.Fatal(err)
+	}
+	if err := peer.(*net.TCPConn).SetReadBuffer(1024); err != nil {
+		t.Fatal(err)
+	}
+	// Fill the socket without a peer reader, then clear the timeout. All later
+	// writes must wait for cancellation rather than reaching the TCP peer.
+	_ = destination.SetWriteDeadline(time.Now().Add(100 * time.Millisecond))
+	n, err := destination.Write(make([]byte, 4<<20))
+	var timeout net.Error
+	if n == 0 || !errors.As(err, &timeout) || !timeout.Timeout() {
+		t.Fatalf("could not congest TCP destination: wrote %d bytes, error %v", n, err)
+	}
+	_ = destination.SetWriteDeadline(time.Time{})
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		TCPConnectionHandler(ctx, false, metrics.CountedConn(receive), destination, quietLogger(), nil, 0, false)
+	}()
+	written := make(chan error, 1)
+	go func() { _, err := send.Write(make([]byte, 1<<20)); written <- err }()
+	select {
+	case err := <-written:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("blocked TCP write withheld mux receive credit despite available stream capacity")
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("congested relay did not join its workers after cancellation")
 	}
 }
 

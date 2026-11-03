@@ -551,13 +551,13 @@ addresses. Its real-loopback receive benchmark changed from one allocation to
 zero per packet. Source validation, SOCKS fragmentation rejection and
 empty/large datagrams are covered independently of optional helper binaries.
 
-## Reusing mux receive frames for TCP forwarding (2026-11-03)
+## Receive-frame reuse: measured and subsequently withdrawn (2026-11-03)
 
-A plain smux-to-TCP relay now uses smux's `WriterTo` to consume each owned
-receive frame directly. It no longer checks out a second relay buffer or copies
-each frame through it. The optimization unwraps only the known accounting
+An initial smux-to-TCP optimization used smux's `WriterTo` to consume each owned
+receive frame directly, without retaining a second relay buffer or copying
+each frame through it. The experiment unwrapped only the known accounting
 wrapper; pacing/unknown wrappers and destinations other than real TCP sockets
-keep the existing buffered path. TCP consumes the borrowed slice synchronously,
+kept the existing buffered path. TCP consumes the borrowed slice synchronously,
 so smux can recycle it after Write returns. Failed or short writes end the
 stream instead of allowing a frame tail to be discarded. Tunnel byte counts,
 per-port usage, EOF and cancellation are covered for smux versions 1 and 2.
@@ -582,15 +582,17 @@ Both use the same public-configuration fixture against baseline `b2a6ebf6`.
 | Lossy path, auto version 1: fresh-user p99 | 1294.138 ms | 1071.344 ms |
 | Lossy path, explicit version 2: fresh-user p99 | 1489.661 ms | 1302.468 ms |
 
-The repeatable result is 28–30% lower idle heap, about 32 KiB less retained
+The initial result was 28–30% lower idle heap, about 32 KiB less retained
 relay storage per forwarded connection across both endpoints. These are combined
 client/server heap figures, not a promise about process RSS on every server.
 CPU changes were small. The explicit-version-2 lossy sample was about 7% slower,
 while auto version 1 was faster; all existing CPU, goodput and fresh-user latency
 regression gates passed. This evidence supports a memory improvement within
 those performance tolerances, not a general increase in Internet throughput.
-Existing stream windows, mux versions, session limits and bandwidth caps are
+Existing stream windows, mux versions, session limits and bandwidth caps were
 unchanged. The quiet-user retirement and authenticated capacity checks passed.
+The direct-frame optimization was later withdrawn as described below; these
+memory reductions are historical measurements, not a benefit of the final code.
 
 Reproduce focused tests and the socket benchmark on Linux:
 
@@ -603,6 +605,42 @@ The resource workflow's optional `baseline_ref` input now permits the same
 CPU/goodput/latency/heap gates against an explicit revision; PR runs retain
 `v1.16.0` as their baseline and keep every previous threshold. Artifacts record
 both baseline and candidate commit hashes.
+
+### Restoring read-side credit before blocked backend writes
+
+The follow-up investigation found a reproducible flow-control difference in
+smux v2: `Read` advertises the configured receive window before the backend
+write, while `WriterTo` waits for that write to return. With a congested TCP
+backend, the latter can strand the sender at its initial 256 KiB window even
+though the session still has receive capacity. A real-socket
+[Linux regression](https://github.com/dr-hoseyn/BackPack/actions/runs/41644508025)
+fails on the previous `WriterTo` source and passes three times under the race
+detector on the corrected `Read` path. It also checks cancellation joins both
+relay workers.
+
+A smaller-buffer `Read` alternative fixed that stall, but it did not meet the
+stricter throughput target in a separate
+[five-seed, longer lossy-path comparison](https://github.com/dr-hoseyn/BackPack/actions/runs/41643905868).
+Each independent process transferred 256 MiB of verified application data with
+eight workers, 80 ms RTT, 0.1% loss and a 200 Mbit/s link. Baseline buffered reads,
+direct-frame forwarding and 1 KiB initial reads measured median goodputs of
+86.2, 83.6 and 82.3 Mbit/s respectively. The 1 KiB candidate missed the
+predeclared target of at least 98% of baseline throughput and was not retained.
+This also shows why the earlier three-sample 7% difference is not an exact
+estimate of a universal slowdown.
+
+The final relay restores the original pooled `Read` path: 16 KiB initially,
+growing to 64 KiB after a full read. All production Go source matches recovery
+revision `b2a6ebf6`; the listener/session fixes and deadline amortization remain.
+The 28–30% heap saving from direct-frame reuse is deliberately withdrawn in
+favor of the established forwarding behavior. Network packet loss itself is
+unchanged; this addresses application flow control and the risky optimization.
+
+The optional `wssmux-loss.yml` workflow rotates the buffered reference, prior
+direct-frame reference and candidate across five paired seeds, recording every
+sample and revision. Its stricter 98% throughput diagnostic is separate from
+the unchanged required resource/quality gates. The final rollback compares
+memory with the buffered baseline; it does not claim the abandoned heap saving.
 
 ## What is measured on every build
 
@@ -649,13 +687,13 @@ See `internal/tunnel/l3/bench_gate_test.go`.
 
 بازبینی ۲۰۲۶/۱۱/۰۳: تخصیص موقت مسیر UDP بومی از ۱۰–۱۱ به ۱–۲ مورد برای هر
 بسته رسید. بافرهای در اختیار اتصال کم‌ترافیک WS/WSS از ۱۲۸ به ۱۶ کیلوبایت
-کاهش یافت و یک goroutine از هر اتصال حذف شد. در WSSMux، حذف بافر اضافی دریافت
-smux در آزمون ۱۰۰۰ کاربر، heap مجموع کلاینت و سرور را حدود ۲۸ تا ۳۰ درصد کاهش
-داد. خرابی listener باعث بازسازی همان نسل می‌شود و پایان هر نشست داده، کارهای
-backend همان نشست را لغو می‌کند. افزایش عمومی سرعت ثابت نشده است: در مسیر دارای
-loss، سرعت نسخهٔ ۲ حدود ۷ درصد کمتر و نسخهٔ خودکار ۱ بیشتر بود؛ هر دو از حدود
-رگرسیون موجود عبور کردند. جزئیات، لینک اجرای آزمون‌های Linux و محدودیت‌های
-اندازه‌گیری در بخش‌های بالا آمده‌اند.
+کاهش یافت و یک goroutine از هر اتصال حذف شد. در WSSMux، خرابی listener باعث
+بازسازی همان نسل می‌شود و پایان هر نشست داده، کارهای backend همان نشست را لغو
+می‌کند. بهینه‌سازی دریافت مستقیم فریم، پس از مشاهدهٔ افت سرعت و توقف اعلام ظرفیت
+آزاد دریافت هنگام انسداد backend، کنار گذاشته شد؛ انتقال به مسیر Read قبلی برگشت.
+در نتیجه صرفه‌جویی ۲۸ تا ۳۰ درصدی heap آن آزمایش دیگر بخشی از نسخهٔ نهایی نیست.
+افزایش عمومی سرعت یا حذف loss شبکه ادعا نمی‌شود. جزئیات و لینک آزمون‌ها در بالا
+آمده‌اند.
 
 </div>
 
