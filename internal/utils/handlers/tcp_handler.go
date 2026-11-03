@@ -79,18 +79,14 @@ func awaitRelay(ctx context.Context, done <-chan struct{}, ends ...io.Closer) {
 // bandwidth-limited connection is not, because pacing bytes means looking at
 // them. Anything that is not two plain TCP sockets — a mux stream, a KCP
 // session, a websocket, a rate-limited conn, or any platform that is not
-// Linux — uses a user-space copy. A plain smux-to-TCP direction starts with a
-// smaller pooled buffer while preserving smux Read's flow-control timing.
-// The buffered copy is also where splice lands if the kernel declines it.
+// Linux — falls through to the buffered copy, which is also where the fast
+// path lands if the kernel declines it.
 func transferData(from net.Conn, to net.Conn, logger *logrus.Logger, usage *traffic.Usage, remotePort int, sniffer bool) {
 	if spliceTransfer(from, to, logger, usage, remotePort, sniffer) {
 		countSpliced()
 		return
 	}
 	countBuffered()
-	if transferMuxToTCP(from, to, logger, usage, remotePort, sniffer) {
-		return
-	}
 
 	buf := newRelayCopyBuffer()
 	if copyBuffered(from, to, &buf, logger, usage, remotePort, sniffer) {

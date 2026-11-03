@@ -119,19 +119,6 @@ func TestMuxReceiveRelayPreservesPayloadAndTunnelAccounting(t *testing.T) {
 	}
 }
 
-func TestMuxReceiveFastCopyDoesNotUnwrapPacingOrUnknownWriters(t *testing.T) {
-	_, receive := muxRelaySource(t, 2)
-	destination, _ := muxTCPDestination(t)
-	// An opaque wrapper can pace bytes or hold failed writes. It must continue
-	// receiving the standard relay buffers rather than the mux-specific path.
-	wrappedSource := struct{ net.Conn }{receive}
-	wrappedDestination := struct{ net.Conn }{destination}
-	if transferMuxToTCP(wrappedSource, destination, quietLogger(), nil, 0, false) ||
-		transferMuxToTCP(receive, wrappedDestination, quietLogger(), nil, 0, false) {
-		t.Fatal("direct mux receive copy bypassed an unknown connection wrapper")
-	}
-}
-
 func TestMuxReceiveRelayCancellationJoinsBothDirections(t *testing.T) {
 	for _, version := range []int{1, 2} {
 		t.Run(fmt.Sprint(version), func(t *testing.T) {
