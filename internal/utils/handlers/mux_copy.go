@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"io"
 	"net"
 
 	"github.com/backpack/backpack/internal/metrics"
@@ -40,13 +41,28 @@ type muxRelayWriter struct {
 
 func (w *muxRelayWriter) Write(p []byte) (int, error) {
 	// Count a consumed tunnel frame even if the backend write then fails,
-	// matching CountedConn.Read on the buffered path. writeAll preserves short
-	// writes and per-port usage without allowing smux to recycle a live slice.
+	// matching CountedConn.Read on the buffered path. The destination is a real
+	// TCP socket: a successful Write consumes the whole frame synchronously.
 	if w.counted {
 		metrics.AddBytes(uint64(len(p)), 0)
 	}
-	if !writeAll(w.from, w.to, p, w.log, w.usage, w.port, w.sniffer) {
-		return 0, net.ErrClosed
+	n, err := w.to.Write(p)
+	if err == nil && n != len(p) {
+		// smux.WriterTo does not itself reject a short successful write.
+		// Never let it recycle the frame and silently discard the remainder.
+		err = io.ErrShortWrite
 	}
-	return len(p), nil
+	if err != nil {
+		w.log.Trace("unable to write mux receive frame: ", err)
+		w.from.Close()
+		w.to.Close()
+		return n, err
+	}
+	if w.log.IsLevelEnabled(logrus.TraceLevel) {
+		w.log.Tracef("read data: %d bytes, written data: %d bytes", len(p), n)
+	}
+	if w.sniffer {
+		w.usage.AddOrUpdatePort(w.port, uint64(n))
+	}
+	return n, nil
 }
