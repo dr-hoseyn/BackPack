@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -118,27 +117,11 @@ func TestMuxReceiveRelayPreservesPayloadAndTunnelAccounting(t *testing.T) {
 	}
 }
 
-func TestMuxReceiveWriterRejectsShortWritesAndReportsPartialProgress(t *testing.T) {
-	for _, writeErr := range []error{nil, net.ErrClosed} {
-		from := &halfConn{}
-		to := &queuedWriteConn{wrote: 3, err: writeErr}
-		writer := &muxRelayWriter{from: from, to: to, log: quietLogger()}
-		n, err := writer.Write([]byte("frame still has a tail"))
-		want := writeErr
-		if want == nil {
-			want = io.ErrShortWrite
-		}
-		if n != 3 || !errors.Is(err, want) {
-			t.Fatalf("short mux frame write returned %d, %v; want 3, %v", n, err, want)
-		}
-	}
-}
-
 func TestMuxReceiveFastCopyDoesNotUnwrapPacingOrUnknownWriters(t *testing.T) {
 	_, receive := muxRelaySource(t, 2)
 	destination, _ := muxTCPDestination(t)
 	// An opaque wrapper can pace bytes or hold failed writes. It must continue
-	// receiving owned relay buffers rather than borrowed smux receive slices.
+	// receiving the standard relay buffers rather than the mux-specific path.
 	wrappedSource := struct{ net.Conn }{receive}
 	wrappedDestination := struct{ net.Conn }{destination}
 	if transferMuxToTCP(wrappedSource, destination, quietLogger(), nil, 0, false) ||

@@ -26,27 +26,32 @@ func (c *sizedReadConn) Read(p []byte) (int, error) {
 func (*sizedReadConn) Close() error { return nil }
 
 func TestAdaptiveRelayPreservesPayloadAndGrowsOnlyForFullReads(t *testing.T) {
-	for _, size := range []int{0, 1, smallRelayBufferSize - 1, smallRelayBufferSize, 3 * relayBufferSize} {
-		payload := bytes.Repeat([]byte{0x39}, size)
-		from := &sizedReadConn{data: payload}
-		to := &completedWriteConn{}
-		buffer := newRelayCopyBuffer()
-		if !copyBuffered(from, to, &buffer, quietLogger(), nil, 0, false) {
-			t.Fatal("completed transfer lost buffer ownership")
+	for _, initial := range []struct {
+		newBuffer func() relayCopyBuffer
+		size      int
+	}{{newRelayCopyBuffer, smallRelayBufferSize}, {newMuxRelayCopyBuffer, muxRelayBufferSize}} {
+		for _, size := range []int{0, 1, initial.size - 1, initial.size, 3 * relayBufferSize} {
+			payload := bytes.Repeat([]byte{0x39}, size)
+			from := &sizedReadConn{data: payload}
+			to := &completedWriteConn{}
+			buffer := initial.newBuffer()
+			if !copyBuffered(from, to, &buffer, quietLogger(), nil, 0, false) {
+				t.Fatal("completed transfer lost buffer ownership")
+			}
+			if !bytes.Equal(payload, to.received) {
+				t.Fatalf("payload corrupted at size %d", size)
+			}
+			if from.sizes[0] != initial.size {
+				t.Fatalf("quiet direction starts with %d bytes", from.sizes[0])
+			}
+			if size < initial.size && slices.Contains(from.sizes, relayBufferSize) {
+				t.Fatal("short transfer acquired a bulk buffer")
+			}
+			if size >= initial.size && from.sizes[1] != relayBufferSize {
+				t.Fatal("full read did not immediately grow for bulk transfer")
+			}
+			buffer.release()
 		}
-		if !bytes.Equal(payload, to.received) {
-			t.Fatalf("payload corrupted at size %d", size)
-		}
-		if from.sizes[0] != smallRelayBufferSize {
-			t.Fatalf("quiet direction starts with %d bytes", from.sizes[0])
-		}
-		if size < smallRelayBufferSize && slices.Contains(from.sizes, relayBufferSize) {
-			t.Fatal("short transfer acquired a bulk buffer")
-		}
-		if size >= smallRelayBufferSize && from.sizes[1] != relayBufferSize {
-			t.Fatal("full read did not immediately grow for bulk transfer")
-		}
-		buffer.release()
 	}
 }
 
@@ -70,15 +75,17 @@ func TestAdaptiveRelayWarmPoolDoesNotAllocate(t *testing.T) {
 		// pools therefore measure injected cold allocations, not reuse cost.
 		t.Skip("allocation budget runs without race-injected pool discards")
 	}
-	b := newRelayCopyBuffer()
-	b.grow(smallRelayBufferSize)
-	b.release()
-	if got := testing.AllocsPerRun(500, func() {
-		b := newRelayCopyBuffer()
-		b.grow(smallRelayBufferSize)
+	for _, newBuffer := range []func() relayCopyBuffer{newRelayCopyBuffer, newMuxRelayCopyBuffer} {
+		b := newBuffer()
+		b.grow(len(*b.p))
 		b.release()
-	}); got != 0 {
-		t.Fatalf("warm adaptive buffer allocated %.0f times", got)
+		if got := testing.AllocsPerRun(500, func() {
+			b := newBuffer()
+			b.grow(len(*b.p))
+			b.release()
+		}); got != 0 {
+			t.Fatalf("warm adaptive buffer allocated %.0f times", got)
+		}
 	}
 }
 

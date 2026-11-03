@@ -31,6 +31,16 @@ const relayBufferSize = 64 * 1024
 // a full read, without waiting to gather data or changing connection deadlines.
 const smallRelayBufferSize = 16 * 1024
 
+// smux already buffers received frames. Its quiet TCP relays can start much
+// smaller without reducing bulk throughput: a full read immediately promotes
+// the next read to the normal relay size.
+const muxRelayBufferSize = 1024
+
+var muxRelayBuffers = sync.Pool{New: func() any {
+	b := make([]byte, muxRelayBufferSize)
+	return &b
+}}
+
 var smallRelayBuffers = sync.Pool{New: func() any {
 	b := make([]byte, smallRelayBufferSize)
 	return &b
@@ -45,18 +55,24 @@ func newRelayCopyBuffer() relayCopyBuffer {
 	return relayCopyBuffer{p: smallRelayBuffers.Get().(*[]byte), adaptive: true}
 }
 
+func newMuxRelayCopyBuffer() relayCopyBuffer {
+	return relayCopyBuffer{p: muxRelayBuffers.Get().(*[]byte), adaptive: true}
+}
+
 func (b *relayCopyBuffer) grow(n int) {
-	if b.adaptive && n == len(*b.p) && n == smallRelayBufferSize {
-		old := b.p
+	if b.adaptive && n == len(*b.p) && n < relayBufferSize {
+		old := *b
 		b.p = getRelayBuffer()
-		smallRelayBuffers.Put(old)
+		old.release()
 	}
 }
 
 // Failed writes may leave smux holding the slice. The caller deliberately
 // discards that buffer rather than returning it to either pool.
 func (b *relayCopyBuffer) release() {
-	if len(*b.p) == smallRelayBufferSize {
+	if len(*b.p) == muxRelayBufferSize {
+		muxRelayBuffers.Put(b.p)
+	} else if len(*b.p) == smallRelayBufferSize {
 		smallRelayBuffers.Put(b.p)
 	} else {
 		putRelayBuffer(b.p)
