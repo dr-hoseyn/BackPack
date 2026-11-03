@@ -517,8 +517,12 @@ The numbers above are one-offs. These are gates, and they fail the build:
   which is a syscall or an allocation appearing in a per-packet loop. That is an
   order of magnitude, not a margin.
 
-Both skip under `-race`, which multiplies wall-clock time by between five and
-twenty. The allocation half still runs.
+The combined benchmark gates skip under `-race`, which multiplies wall-clock
+time by between five and twenty; dedicated allocation tests still run. Under
+coverage, the benchmark allocation assertions remain active while wall-clock
+ceilings are enforced by the ordinary, uninstrumented test suite. Instrumented
+coverage once measured unchanged sealing at 3.217 microseconds against its
+3-microsecond production ceiling; no ceiling or coverage floor was raised.
 
 See `internal/tunnel/l3/bench_gate_test.go`.
 
