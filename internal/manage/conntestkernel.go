@@ -277,14 +277,21 @@ func ctKernelAsk(ctx context.Context, link ConnTestLink, line string) (string, e
 	if err == nil {
 		stop := context.AfterFunc(probe, func() { _ = conn.Close() })
 		_ = conn.SetDeadline(time.Now().Add(time.Second))
-		_, err = conn.Write([]byte(line + "\n"))
+		wire, nonce, sealErr := ctSeal(link.Tok, "request", nil, []byte(line))
+		err = sealErr
 		if err == nil {
-			var packet [1201]byte
+			_, err = conn.Write(wire)
+		}
+		if err == nil {
+			var packet [1201 + ctWireOverhead]byte
 			n, readErr := conn.Read(packet[:])
 			if readErr == nil && n > 0 && n < len(packet) {
 				stop()
 				_ = conn.Close()
-				return strings.TrimSpace(string(packet[:n])), nil
+				plain, _, openErr := ctOpen(link.Tok, "reply", nonce, packet[:n])
+				if openErr == nil {
+					return strings.TrimSpace(string(plain)), nil
+				}
 			}
 		}
 		stop()

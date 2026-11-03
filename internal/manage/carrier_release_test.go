@@ -131,3 +131,48 @@ func TestNewCarrierLinksOmitOnlyLocalSSHCredentials(t *testing.T) {
 		}
 	}
 }
+
+func TestCoordinatorKernelUDPRemainsEncryptedAndFast(t *testing.T) {
+	port := ctPickPort(map[int]bool{}, true)
+	c, err := startCTCoordinator(port, "kernel-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.close()
+	link := ConnTestLink{Host: "127.0.0.1", Coord: port, Tok: "kernel-secret"}
+	started := time.Now()
+	reply, err := ctKernelAsk(context.Background(), link, "hello "+link.Tok)
+	if err != nil || reply != "ok" {
+		t.Fatalf("encrypted kernel exchange: %q %v", reply, err)
+	}
+	if time.Since(started) > 750*time.Millisecond {
+		t.Fatal("kernel control waited for its old plaintext UDP timeout")
+	}
+}
+func TestCoordinatorAdditionalCarriersKeepReverseAndDirectDNS(t *testing.T) {
+	port := ctPickPort(map[int]bool{}, true)
+	c, err := startCTCoordinator(port, "shared-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.close()
+	link := ConnTestLink{Host: "127.0.0.1", Coord: port, Tok: "shared-secret"}
+	for _, kind := range []string{"reverse", "direct"} {
+		link.Cases = append(link.Cases, ShareLink{Kind: kind, Tr: "dns", From: "iran", Port: "20001"})
+	}
+	c.setTestConfig(link)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	got, err := fetchConnTestLink(ctx, connTestAddr{Host: link.Host, Coord: port, Tok: link.Tok})
+	if err != nil || len(got.Cases) != 2 {
+		t.Fatalf("DNS carrier settings collided: %d cases, %v", len(got.Cases), err)
+	}
+	seen := map[string]bool{}
+	for _, l := range got.Cases {
+		key := l.Kind + "/" + l.Tr
+		if seen[key] || l.Tok != ctCaseToken(link.Tok, l.Kind, l.Tr) {
+			t.Fatalf("damaged DNS settings: %+v", l)
+		}
+		seen[key] = true
+	}
+}

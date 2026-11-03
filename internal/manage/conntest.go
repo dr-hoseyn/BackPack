@@ -360,10 +360,11 @@ func fetchConnTestLink(ctx context.Context, a connTestAddr) (ConnTestLink, error
 				}
 				seen := make(map[string]bool)
 				for _, c := range extra {
-					if !ctAdditionalCarrier(c) || seen[c.Tr] {
+					key := c.Kind + "/" + c.Tr
+					if !ctAdditionalCarrier(c) || seen[key] {
 						return out, errors.New("invalid additional test carrier")
 					}
-					seen[c.Tr] = true
+					seen[key] = true
 				}
 				out.Cases = append(out.Cases, extra...)
 			}
