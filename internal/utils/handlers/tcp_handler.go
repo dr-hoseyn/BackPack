@@ -87,6 +87,9 @@ func transferData(from net.Conn, to net.Conn, logger *logrus.Logger, usage *traf
 		return
 	}
 	countBuffered()
+	if transferMuxToTCP(from, to, logger, usage, remotePort, sniffer) {
+		return
+	}
 
 	buf := newRelayCopyBuffer()
 	if copyBuffered(from, to, &buf, logger, usage, remotePort, sniffer) {
