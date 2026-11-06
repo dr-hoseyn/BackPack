@@ -348,7 +348,9 @@ func downloadAsset(tag, destDir string, logf func(string)) (string, error) {
 		}
 		_, err = io.Copy(f, resp.Body)
 		resp.Body.Close()
-		f.Close()
+		if closeErr := f.Close(); err == nil {
+			err = closeErr
+		}
 		if err != nil {
 			lastErr = err
 			continue
@@ -431,25 +433,31 @@ func verifyChecksum(path, want string) error {
 // extractBinary pulls the `backpack` executable out of the release archive and
 // atomically replaces the installed binary.
 func extractBinary(archive string) error {
-	// Written next to the target so the final rename is atomic: the file being
-	// replaced is the one running every tunnel on this machine.
-	tmp := app.BinPath + ".new"
-	if err := extractBinaryTo(archive, tmp); err != nil {
-		os.Remove(tmp)
-		return err
-	}
-	return os.Rename(tmp, app.BinPath)
+	return replaceBinary(archive, app.BinPath)
 }
 
-// extractBinaryTo pulls the `backpack` binary out of a release archive and
-// writes it to dest.
-//
-// Split out from extractBinary so the same reader serves the install and the
-// look: an archive the operator downloaded by hand is extracted to a temporary
-// file and asked what version it is, before anything on this machine is
-// touched. One implementation means the file that is inspected and the file
-// that is installed cannot be found by different rules.
-func extractBinaryTo(archive, dest string) error {
+func replaceBinary(archive, target string) error {
+	// Written next to the target so the final rename is atomic: the file being
+	// replaced is the one running every tunnel on this machine.
+	out, err := os.CreateTemp(filepath.Dir(target), ".backpack-update-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(out.Name())
+	err = extractBinaryTo(archive, out)
+	if err == nil {
+		err = out.Chmod(0755)
+	}
+	if closeErr := out.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return err
+	}
+	return os.Rename(out.Name(), target)
+}
+
+func extractBinaryTo(archive string, out io.Writer) error {
 	f, err := os.Open(archive)
 	if err != nil {
 		return err
@@ -473,15 +481,16 @@ func extractBinaryTo(archive, dest string) error {
 		if hdr.Typeflag != tar.TypeReg || filepath.Base(hdr.Name) != "backpack" {
 			continue
 		}
-		out, err := os.OpenFile(dest, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0755)
-		if err != nil {
-			return err
+		if hdr.Size == 0 {
+			return fmt.Errorf("empty backpack binary in release archive")
 		}
 		if _, err := io.Copy(out, tr); err != nil {
-			out.Close()
 			return err
 		}
-		return out.Close()
+		// gzip verifies its checksum only on reaching the end of the stream.
+		// A complete tar member alone does not prove the archive is intact.
+		_, err = io.Copy(io.Discard, gz)
+		return err
 	}
 	return fmt.Errorf("no `backpack` binary found inside the archive")
 }
@@ -503,7 +512,15 @@ func ApplyUpdate(logf func(string)) error {
 		return nil
 	}
 
-	archive, err := downloadAsset(tag, app.InstallDir, logf)
+	if err := os.MkdirAll(app.InstallDir, 0755); err != nil {
+		return err
+	}
+	stage, err := os.MkdirTemp(app.InstallDir, ".update-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(stage)
+	archive, err := downloadAsset(tag, stage, logf)
 	if err != nil {
 		return err
 	}
@@ -519,12 +536,10 @@ func ApplyUpdate(logf func(string)) error {
 	// is not.
 	sums, want, cerr := fetchChecksums(tag, filepath.Base(archive))
 	if cerr != nil {
-		os.Remove(archive)
 		return fmt.Errorf("could not fetch the checksum list for %s, so the download cannot be "+
 			"verified: %w\nInstall offline instead — see the README", tag, cerr)
 	}
 	if want == "" {
-		os.Remove(archive)
 		return fmt.Errorf("release %s publishes no checksum for %s, so the download cannot be "+
 			"verified\nInstall offline instead — see the README", tag, filepath.Base(archive))
 	}
@@ -532,11 +547,9 @@ func ApplyUpdate(logf func(string)) error {
 	// publisher's. Verifying the archive against a list nobody vouched for is
 	// the check this closes — see releasesig.go.
 	if serr := verifyChecksumSignature(tag, sums); serr != nil {
-		os.Remove(archive)
 		return serr
 	}
 	if verr := verifyChecksum(archive, want); verr != nil {
-		os.Remove(archive)
 		return fmt.Errorf("the downloaded release failed verification: %w", verr)
 	}
 	if releasesAreSigned() {

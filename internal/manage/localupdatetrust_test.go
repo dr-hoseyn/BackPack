@@ -12,6 +12,11 @@ import (
 // shell script that leaves a marker behind whenever it is run.
 func writeScriptArchive(t *testing.T, path, marker string) {
 	t.Helper()
+	writeUpdateArchive(t, path, []byte("#!/bin/sh\ntouch '"+marker+"'\necho v9.9.9\n"))
+}
+
+func writeUpdateArchive(t *testing.T, path string, body []byte) {
+	t.Helper()
 	f, err := os.Create(path)
 	if err != nil {
 		t.Fatal(err)
@@ -19,7 +24,6 @@ func writeScriptArchive(t *testing.T, path, marker string) {
 	defer f.Close()
 	gz := gzip.NewWriter(f)
 	tw := tar.NewWriter(gz)
-	body := []byte("#!/bin/sh\ntouch '" + marker + "'\necho v9.9.9\n")
 	if err := tw.WriteHeader(&tar.Header{Name: "backpack", Mode: 0o755, Size: int64(len(body)), Typeflag: tar.TypeReg}); err != nil {
 		t.Fatal(err)
 	}
@@ -34,12 +38,7 @@ func writeScriptArchive(t *testing.T, path, marker string) {
 	}
 }
 
-// The Update menu runs the binary inside a local archive to show its version,
-// as root, the moment the menu is drawn. So where it looks has to be somewhere
-// nobody else can write: `sudo backpack` keeps the caller's working directory,
-// and an archive planted in /tmp by an unprivileged account was executed as
-// root. install.sh has refused world-writable directories since BP-011; this
-// is the same rule for the other place a local archive is picked up.
+// World-writable directories must never supply an offline update.
 func TestALocalArchiveInAWritableDirectoryIsNeitherOfferedNorRun(t *testing.T) {
 	for _, mode := range []os.FileMode{0o777, 0o757, 0o1777} {
 		dir := t.TempDir()
@@ -59,9 +58,7 @@ func TestALocalArchiveInAWritableDirectoryIsNeitherOfferedNorRun(t *testing.T) {
 	}
 }
 
-// A directory only this user can write is still searched, and the version is
-// still read from it — the feature keeps working where it is safe.
-func TestALocalArchiveInAPrivateDirectoryIsStillOffered(t *testing.T) {
+func TestALocalArchiveInAPrivateDirectoryIsOfferedWithoutExecutingIt(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.Chmod(dir, 0o755); err != nil {
 		t.Fatal(err)
@@ -74,8 +71,11 @@ func TestALocalArchiveInAPrivateDirectoryIsStillOffered(t *testing.T) {
 	if !ok {
 		t.Fatal("an archive in a private directory was not offered")
 	}
-	if u.Version != "v9.9.9" {
-		t.Fatalf("version = %q, want the one the binary reports", u.Version)
+	if u.Version != "" {
+		t.Fatalf("discovery claimed version %q", u.Version)
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("discovery ran the executable: %v", err)
 	}
 }
 
