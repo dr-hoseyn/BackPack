@@ -1,11 +1,13 @@
 package network
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha1"
 	"encoding/base64"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -59,6 +61,30 @@ func TestMuxUpgradePreservesDataCoalescedWithTheHTTPResponse(t *testing.T) {
 			if string(got) != string(payload) {
 				t.Fatalf("corrupt mux prefix: %x", got)
 			}
+			if stream := conn.NetConn().(*muxUpgradeConn); stream.reader != nil {
+				t.Fatal("upgrade buffer remained attached after its tail was consumed")
+			}
 		})
+	}
+}
+
+type upgradeBenchmarkConn struct {
+	net.Conn
+	input bytes.Reader
+}
+
+func (c *upgradeBenchmarkConn) Read(p []byte) (int, error) { return c.input.Read(p) }
+
+func BenchmarkMuxUpgradeReader(b *testing.B) {
+	response := []byte("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n")
+	b.ReportAllocs()
+	for b.Loop() {
+		var buf [128]byte
+		var raw upgradeBenchmarkConn
+		raw.input.Reset(response)
+		stream := muxUpgradeStream(&raw)
+		if n, err := stream.Read(buf[:]); err != nil || n != len(response) {
+			b.Fatalf("read %d, %v", n, err)
+		}
 	}
 }

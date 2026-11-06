@@ -3,6 +3,7 @@ package network
 import (
 	"bufio"
 	"net"
+	"sync"
 	"time"
 )
 
@@ -19,8 +20,12 @@ type muxUpgradeConn struct {
 	done   bool
 }
 
+var muxUpgradeReaders = sync.Pool{New: func() any { return bufio.NewReader(nil) }}
+
 func muxUpgradeStream(conn net.Conn) net.Conn {
-	return &muxUpgradeConn{Conn: &streamDeadlineConn{Conn: conn}, reader: bufio.NewReader(conn)}
+	reader := muxUpgradeReaders.Get().(*bufio.Reader)
+	reader.Reset(conn)
+	return &muxUpgradeConn{Conn: &streamDeadlineConn{Conn: conn}, reader: reader}
 }
 
 func (c *muxUpgradeConn) setStreamWriteDeadline(t time.Time) error {
@@ -28,12 +33,16 @@ func (c *muxUpgradeConn) setStreamWriteDeadline(t time.Time) error {
 }
 
 func (c *muxUpgradeConn) Read(p []byte) (int, error) {
-	if c.done {
-		if c.reader.Buffered() != 0 {
-			return c.reader.Read(p)
-		}
+	if c.reader == nil {
 		// No extra buffering or copies on the steady-state data path.
 		return c.Conn.Read(p)
+	}
+	if c.done {
+		n, err := c.reader.Read(p)
+		if c.reader.Buffered() == 0 {
+			c.releaseReader()
+		}
+		return n, err
 	}
 	for i := range p {
 		b, err := c.reader.ReadByte()
@@ -44,10 +53,19 @@ func (c *muxUpgradeConn) Read(p []byte) (int, error) {
 		c.tail = c.tail<<8 | uint32(b)
 		if c.tail == 0x0d0a0d0a { // end of the HTTP response headers
 			c.done = true
+			if c.reader.Buffered() == 0 {
+				c.releaseReader()
+			}
 			return i + 1, nil
 		}
 	}
 	return len(p), nil
+}
+
+func (c *muxUpgradeConn) releaseReader() {
+	c.reader.Reset(nil)
+	muxUpgradeReaders.Put(c.reader)
+	c.reader = nil
 }
 
 // WSMuxUpgradeStream bounds the HTTP reader and preserves stream deadlines.
