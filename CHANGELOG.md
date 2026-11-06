@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## v1.20.1 — 2026-11-06
+
+- Recover the WSMUX and WSSMUX listener after a fatal accept-loop failure.
+- Cancel backend dials and relays when their physical mux session fails.
+- Update the compression dependencies affected by
+  [GO-2026-6865](https://pkg.go.dev/vuln/GO-2026-6865) and
+  [GO-2026-6888](https://pkg.go.dev/vuln/GO-2026-6888).
+
 ## v1.20.0 — 2026-11-01
 
 - Add built-in TLS, bidirectional streaming gRPC over HTTP/2, pinned-host SSH

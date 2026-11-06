@@ -8,7 +8,7 @@ require (
 	github.com/cilium/ebpf v0.22.0
 	github.com/flynn/noise v1.1.0
 	github.com/gorilla/websocket v1.5.3
-	github.com/klauspost/compress v1.18.7
+	github.com/klauspost/compress v1.20.3
 	github.com/klauspost/reedsolomon v1.14.2
 	github.com/quic-go/connect-ip-go v0.6.0
 	github.com/quic-go/masque-go v0.6.0
@@ -28,7 +28,7 @@ require (
 )
 
 require (
-	github.com/andybalholm/brotli v1.0.6 // indirect
+	github.com/andybalholm/brotli v1.2.8 // indirect
 	github.com/dunglas/httpsfv v1.1.1 // indirect
 	github.com/ebitengine/purego v0.11.1 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
