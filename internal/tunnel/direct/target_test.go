@@ -1,8 +1,14 @@
 package direct
 
 import (
+	"context"
+	"errors"
+	"net"
 	"strings"
 	"testing"
+	"time"
+
+	"golang.org/x/net/dns/dnsmessage"
 )
 
 // The metadata services are refused, and nothing else is.
@@ -62,5 +68,64 @@ func TestAMalformedTargetIsRejected(t *testing.T) {
 func TestAnUnresolvableNamePassesThrough(t *testing.T) {
 	if err := vetTarget("this-name-does-not-exist.invalid:443"); err != nil {
 		t.Errorf("an unresolvable name was refused by the target check: %v", err)
+	}
+}
+
+func TestDirectDialRejectsAReboundMetadataAddress(t *testing.T) {
+	dns, err := net.ListenPacket("udp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dns.Close()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		var buf [512]byte
+		queries := 0
+		for {
+			n, addr, err := dns.ReadFrom(buf[:])
+			if err != nil {
+				return
+			}
+			var request dnsmessage.Message
+			if request.Unpack(buf[:n]) != nil || len(request.Questions) != 1 {
+				continue
+			}
+			response := dnsmessage.Message{
+				Header:    dnsmessage.Header{ID: request.ID, Response: true, RecursionAvailable: true},
+				Questions: request.Questions,
+			}
+			question := request.Questions[0]
+			if question.Type == dnsmessage.TypeA {
+				ip := [4]byte{169, 254, 169, 254}
+				if queries == 0 {
+					ip = [4]byte{127, 0, 0, 1}
+				}
+				queries++
+				response.Answers = []dnsmessage.Resource{{
+					Header: dnsmessage.ResourceHeader{Name: question.Name, Class: dnsmessage.ClassINET},
+					Body:   &dnsmessage.AResource{A: ip},
+				}}
+			}
+			if wire, err := response.Pack(); err == nil {
+				_, _ = dns.WriteTo(wire, addr)
+			}
+		}
+	}()
+	defer func() { dns.Close(); <-done }()
+
+	previous := net.DefaultResolver
+	net.DefaultResolver = &net.Resolver{PreferGo: true, Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, "udp4", dns.LocalAddr().String())
+	}}
+	defer func() { net.DefaultResolver = previous }()
+
+	// UDP Dial alone sends no datagram to the resolved address.
+	conn, err := dialBackend(context.Background(), "udp", "metadata-rebind.invalid.:80", 2*time.Second)
+	if conn != nil {
+		conn.Close()
+	}
+	if !errors.Is(err, errMetadataTarget) {
+		t.Fatalf("dial returned %v instead of rejecting the rebound address", err)
 	}
 }

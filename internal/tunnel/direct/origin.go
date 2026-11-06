@@ -277,7 +277,7 @@ func dialBackend(ctx context.Context, network, target string, timeout time.Durat
 	if err := vetTargetContext(ctx, target); err != nil {
 		return nil, err
 	}
-	dialer := net.Dialer{}
+	dialer := net.Dialer{ControlContext: checkBackendAddress}
 	return dialer.DialContext(ctx, network, target)
 }
 
