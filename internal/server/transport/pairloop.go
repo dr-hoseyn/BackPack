@@ -156,6 +156,8 @@ func expired(local LocalTCPConn) bool {
 // disagree about whether the release belongs there.
 func drop(local LocalTCPConn, limits *limiter, log *logrus.Logger) {
 	log.Debugf("timeouted local connection: %d ms", nowMillis()-local.timeCreated)
-	local.conn.Close()
+	if local.conn != nil {
+		local.conn.Close()
+	}
 	limits.release()
 }

@@ -224,9 +224,6 @@ func (m muxSession) run(session *smux.Session) {
 			_ = stream.SetWriteDeadline(time.Now().Add(pairingWait(incomingConn.timeCreated)))
 			if err := utils.SendBinaryString(stream, incomingConn.remoteAddr); err != nil {
 				m.log.Tracef("failed to send address over stream: %v", err)
-				// The stream is unusable and nothing else will close it.
-				stream.Close()
-
 				// Give back the mux slot this attempt took. It was not given
 				// back, so a session that failed this way MuxCon times stopped
 				// taking connections at all: the loop blocks at the top on a
@@ -241,6 +238,9 @@ func (m muxSession) run(session *smux.Session) {
 				if !requeueLocal(m.local, incomingConn, m.limits, m.log) {
 					m.add(m.streams, -1)
 				}
+				// smux can wait for its sender to write the close frame.
+				// Release the local connection before that wait.
+				stream.Close()
 				continue
 			}
 			_ = stream.SetWriteDeadline(time.Time{})

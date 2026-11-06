@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"io"
 	"net"
 	"strings"
 	"testing"
@@ -30,7 +31,7 @@ func TestRequeueingALocalConnectionNeverBlocks(t *testing.T) {
 	if !lim.acquire() {
 		t.Fatal("the limiter refused the first slot")
 	}
-	if !requeueLocal(ch, LocalTCPConn{conn: a}, lim, log) {
+	if !requeueLocal(ch, LocalTCPConn{conn: a, timeCreated: nowMillis()}, lim, log) {
 		t.Fatal("a connection was dropped while the queue had room")
 	}
 
@@ -45,7 +46,7 @@ func TestRequeueingALocalConnectionNeverBlocks(t *testing.T) {
 	defer d.Close()
 
 	done := make(chan bool, 1)
-	go func() { done <- requeueLocal(ch, LocalTCPConn{conn: c}, lim, log) }()
+	go func() { done <- requeueLocal(ch, LocalTCPConn{conn: c, timeCreated: nowMillis()}, lim, log) }()
 
 	select {
 	case ok := <-done:
@@ -73,13 +74,35 @@ func TestRequeueingWorksWithNoLimitsConfigured(t *testing.T) {
 	a, b := net.Pipe()
 	defer a.Close()
 	defer b.Close()
-	if !requeueLocal(ch, LocalTCPConn{conn: a}, nil, quietLogger()) {
+	if !requeueLocal(ch, LocalTCPConn{conn: a, timeCreated: nowMillis()}, nil, quietLogger()) {
 		t.Fatal("an unlimited tunnel could not re-queue a connection")
 	}
 	c, d := net.Pipe()
 	defer d.Close()
-	if requeueLocal(ch, LocalTCPConn{conn: c}, nil, quietLogger()) {
+	if requeueLocal(ch, LocalTCPConn{conn: c, timeCreated: nowMillis()}, nil, quietLogger()) {
 		t.Fatal("a full queue reported success")
+	}
+}
+
+func TestExpiredMuxPairingReleasesConnectionInsteadOfRequeueing(t *testing.T) {
+	ch := make(chan LocalTCPConn, 1)
+	lim := newLimiter(Limits{MaxConnections: 1})
+	if !lim.acquire() {
+		t.Fatal("could not acquire the test slot")
+	}
+	local, peer := net.Pipe()
+	defer local.Close()
+	defer peer.Close()
+	created := nowMillis() - (pairingTimeout + time.Second).Milliseconds()
+	if requeueLocal(ch, LocalTCPConn{conn: local, timeCreated: created}, lim, quietLogger()) || len(ch) != 0 {
+		t.Fatal("expired request took a place in the retry queue")
+	}
+	if lim.active.Load() != 0 {
+		t.Fatal("expired request retained its connection limit slot")
+	}
+	peer.SetReadDeadline(time.Now().Add(time.Second))
+	if _, err := peer.Read(make([]byte, 1)); err != io.EOF {
+		t.Fatalf("expired socket was not closed: %v", err)
 	}
 }
 

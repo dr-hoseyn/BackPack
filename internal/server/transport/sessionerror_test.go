@@ -234,7 +234,7 @@ func TestRequeueLocalNeverLosesASlot(t *testing.T) {
 		lim.acquire()
 		ch := make(chan LocalTCPConn, 1)
 		conn := &pairedConn{}
-		if !requeueLocal(ch, LocalTCPConn{conn: conn}, lim, log) {
+		if !requeueLocal(ch, LocalTCPConn{conn: conn, timeCreated: nowMillis()}, lim, log) {
 			t.Fatal("a re-queue with room reported failure")
 		}
 		if conn.wasClosed() {
@@ -250,7 +250,7 @@ func TestRequeueLocalNeverLosesASlot(t *testing.T) {
 		lim.acquire()
 		ch := make(chan LocalTCPConn) // unbuffered, nothing reading
 		conn := &pairedConn{}
-		if requeueLocal(ch, LocalTCPConn{conn: conn}, lim, log) {
+		if requeueLocal(ch, LocalTCPConn{conn: conn, timeCreated: nowMillis()}, lim, log) {
 			t.Fatal("a re-queue with no room reported success")
 		}
 		if !conn.wasClosed() {
@@ -266,7 +266,7 @@ func TestRequeueLocalNeverLosesASlot(t *testing.T) {
 		lim := newLimiter(Limits{MaxConnections: 4})
 		lim.acquire()
 		ch := make(chan LocalTCPConn)
-		if requeueLocal(ch, LocalTCPConn{}, lim, log) {
+		if requeueLocal(ch, LocalTCPConn{timeCreated: nowMillis()}, lim, log) {
 			t.Fatal("reported success with nowhere to put it")
 		}
 		if lim.active.Load() != 0 {

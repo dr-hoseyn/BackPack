@@ -44,7 +44,7 @@ func pairingWait(createdMillis int64) time.Duration {
 func nowMillis() int64 { return time.Now().UnixMilli() }
 
 // requeueLocal puts a connection back on the local queue for another attempt,
-// or gives up on it when there is no room.
+// or gives up on it when the deadline passed or there is no room.
 //
 // The send must not block, and it was a bare `g.localChannel <- incomingConn`.
 // That send is made from inside the goroutine that drains this very channel: in
@@ -60,6 +60,10 @@ func nowMillis() int64 { return time.Now().UnixMilli() }
 // full. Dropping one client is the cost; the alternative is dropping all of
 // them until somebody restarts the service.
 func requeueLocal(ch chan LocalTCPConn, conn LocalTCPConn, lim *limiter, logger *logrus.Logger) bool {
+	if expired(conn) {
+		drop(conn, lim, logger)
+		return false
+	}
 	select {
 	case ch <- conn:
 		return true
