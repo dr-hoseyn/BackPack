@@ -407,4 +407,4 @@ journalctl -u backpack-monitor -n 100
 
 ---
 
-*Last verified against Backpack v1.20.0*
+*Last verified against Backpack v1.20.1*
