@@ -251,12 +251,14 @@ func acceptSession(conn net.Conn, cfg *Config) (*tunnelSession, error) {
 // Waiting for that answer is what turns a dead backend into a failure the edge
 // can act on — refusing the user's connection — rather than a stream that
 // opens and closes a moment later for no visible reason.
-func openStream(session *tunnelSession, kind byte, target string, timeout time.Duration) (net.Conn, error) {
+func openStream(ctx context.Context, session *tunnelSession, kind byte, target string, timeout time.Duration) (net.Conn, error) {
 	stream, err := session.OpenStream()
 	if err != nil {
 		return nil, err
 	}
 	_ = stream.SetDeadline(time.Now().Add(timeout))
+	stop := context.AfterFunc(ctx, func() { stream.Close() })
+	defer stop()
 
 	if err := writeRequest(stream, kind, target); err != nil {
 		stream.Close()
@@ -270,6 +272,10 @@ func openStream(session *tunnelSession, kind byte, target string, timeout time.D
 	if answer[0] != streamOK {
 		stream.Close()
 		return nil, fmt.Errorf("direct: the origin could not reach %s", target)
+	}
+	if err := ctx.Err(); err != nil {
+		stream.Close()
+		return nil, err
 	}
 
 	// Cleared before the stream carries user bytes, which have no deadline.
