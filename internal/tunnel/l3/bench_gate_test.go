@@ -78,6 +78,9 @@ func TestThePacketPathStaysWithinBudget(t *testing.T) {
 		// alloc tests, which are unaffected by the detector.
 		t.Skip("wall-clock budgets are meaningless under the race detector")
 	}
+	if testing.CoverMode() != "" {
+		t.Skip("coverage instruments this packet path; timing budgets run in the regular suite")
+	}
 	for _, p := range hotPaths() {
 		t.Run(p.name, func(t *testing.T) {
 			res := testing.Benchmark(p.run)
