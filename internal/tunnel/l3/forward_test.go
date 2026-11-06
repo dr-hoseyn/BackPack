@@ -353,6 +353,44 @@ func TestForwarderPacesUDPAcrossFlowsWithoutBlockingSmallDatagrams(t *testing.T)
 	}
 }
 
+func TestForwarderRoutesUDPRepliesAcrossAddressFamilies(t *testing.T) {
+	probe, err := net.ListenPacket("udp6", "[::1]:0")
+	if err != nil {
+		t.Skipf("IPv6 loopback unavailable: %v", err)
+	}
+	probe.Close()
+	backend := echoUDP(t, "reply:")
+	port := freePort(t)
+	startForwarder(t, []string{fmt.Sprintf("[::]:%d=%s", port, backend)}, true)
+
+	var clients []*net.UDPConn
+	payloads := [][]byte{nil, bytes.Repeat([]byte{'v'}, 2048)}
+	for i, host := range []string{"127.0.0.1", "::1"} {
+		addr, err := net.ResolveUDPAddr("udp", net.JoinHostPort(host, fmt.Sprint(port)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		conn, err := net.DialUDP("udp", nil, addr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer conn.Close()
+		conn.SetDeadline(time.Now().Add(3 * time.Second))
+		if _, err := conn.Write(payloads[i]); err != nil {
+			t.Fatal(err)
+		}
+		clients = append(clients, conn)
+	}
+	buf := make([]byte, 4096)
+	for i, conn := range clients {
+		n, err := conn.Read(buf)
+		want := append([]byte("reply:"), payloads[i]...)
+		if err != nil || !bytes.Equal(buf[:n], want) {
+			t.Fatalf("client %d received %d bytes, wanted %d: %v", i, n, len(want), err)
+		}
+	}
+}
+
 // Several datagrams from one client must all reach the same backend socket and
 // come back, which is what the flow table is for.
 func TestForwarderKeepsUDPFlows(t *testing.T) {

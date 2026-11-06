@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"net/netip"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -402,17 +403,18 @@ func (f *udpFlow) noteBackendReadError(ctx context.Context, err error) {
 }
 
 func (f *Forwarder) serveUDP(ctx context.Context, m portmap.Mapping, bound func(), pacer *udpWriteQueue) error {
-	conn, err := net.ListenPacket("udp", m.Listen)
+	packetConn, err := net.ListenPacket("udp", m.Listen)
 	bound()
 	if err != nil {
 		return err
 	}
+	conn := packetConn.(*net.UDPConn) // ListenPacket with "udp" always returns a UDP socket.
 	stopClose := context.AfterFunc(ctx, func() { conn.Close() })
 	defer stopClose()
 
 	f.log.Infof("l3: forwarding udp %s", m)
 
-	var flows sync.Map // client address string -> *udpFlow
+	var flows sync.Map // netip.AddrPort -> *udpFlow
 	var workers sync.WaitGroup
 	flowCtx, cancelFlows := context.WithCancel(ctx)
 	defer func() {
@@ -430,7 +432,7 @@ func (f *Forwarder) serveUDP(ctx context.Context, m portmap.Mapping, bound func(
 	pool := newBackendPool(m.Targets)
 	buf := make([]byte, udpBufferSize)
 	for {
-		n, client, err := conn.ReadFrom(buf)
+		n, client, err := conn.ReadFromUDPAddrPort(buf)
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil
@@ -466,14 +468,13 @@ func (f *Forwarder) serveUDP(ctx context.Context, m portmap.Mapping, bound func(
 func (f *Forwarder) udpFlowFor(
 	ctx context.Context,
 	flows *sync.Map,
-	local net.PacketConn,
-	client net.Addr,
+	local *net.UDPConn,
+	client netip.AddrPort,
 	pool *backendPool,
 	pacer *udpWriteQueue,
 	workers *sync.WaitGroup,
 ) (*udpFlow, error) {
-	key := client.String()
-	if existing, ok := flows.Load(key); ok {
+	if existing, ok := flows.Load(client); ok {
 		return existing.(*udpFlow), nil
 	}
 
@@ -507,7 +508,7 @@ func (f *Forwarder) udpFlowFor(
 	// Two goroutines could reach here for the same client at once; only one
 	// flow may survive, or the loser's reply reader would write into a socket
 	// nobody is tracking.
-	if actual, loaded := flows.LoadOrStore(key, flow); loaded {
+	if actual, loaded := flows.LoadOrStore(client, flow); loaded {
 		flow.close()
 		member.done()
 		f.limiter.Release()
@@ -516,7 +517,7 @@ func (f *Forwarder) udpFlowFor(
 
 	f.stats.accepted.Add(1)
 	f.stats.active.Add(1)
-	workers.Go(func() { f.pumpUDPReplies(flows, key, flow, local, client) })
+	workers.Go(func() { f.pumpUDPReplies(flows, flow, local, client) })
 	return flow, nil
 }
 
@@ -524,13 +525,12 @@ func (f *Forwarder) udpFlowFor(
 // to, until the flow is closed or goes quiet.
 func (f *Forwarder) pumpUDPReplies(
 	flows *sync.Map,
-	key string,
 	flow *udpFlow,
-	local net.PacketConn,
-	client net.Addr,
+	local *net.UDPConn,
+	client netip.AddrPort,
 ) {
 	defer func() {
-		flows.Delete(key)
+		flows.CompareAndDelete(client, flow)
 		flow.close()
 		flow.member.done()
 		f.stats.active.Add(-1)
@@ -558,7 +558,7 @@ func (f *Forwarder) pumpUDPReplies(
 			return
 		}
 		flow.touch()
-		if _, err := local.WriteTo(buf[:n], client); err != nil {
+		if _, err := local.WriteToUDPAddrPort(buf[:n], client); err != nil {
 			return
 		}
 	}
