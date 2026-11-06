@@ -45,17 +45,25 @@ func TestInstallerKeepsExecutableWhenExtractionFails(t *testing.T) {
 INSTALL_DIR="$stage"
 BIN_PATH="$stage/installed"
 printf 'old binary' > "$BIN_PATH"
+touch "$stage/webui.service"
+systemctl() {
+  [[ "$(cat "$BIN_PATH")" == 'old binary' ]] || return 1
+  echo "$*" >> "$stage/systemctl"
+}
 printf 'broken archive' > "$stage/$ASSET"
 if install_binary_from_tar; then
   echo 'installed broken archive' >&2
   exit 1
 fi
 [[ "$(cat "$BIN_PATH")" == 'old binary' ]]
+[[ -f "$stage/webui.service" && ! -e "$stage/systemctl" ]]
 printf 'new binary' > "$stage/backpack"
 tar -czf "$stage/$ASSET" -C "$stage" backpack
 install_binary_from_tar
 [[ "$(cat "$BIN_PATH")" == 'new binary' ]]
 [[ "$(cat "$stage/install_path")" == "$stage" ]]
+[[ ! -e "$stage/webui.service" ]]
+[[ "$(cat "$stage/systemctl")" == $'disable --now backpack-webui.service\ndaemon-reload' ]]
 shopt -s nullglob
 staged_files=("$BIN_PATH".*)
 [[ "${#staged_files[@]}" -eq 0 ]]
@@ -86,5 +94,8 @@ warn() { echo "$*" >&2; }
 err() { echo "$*" >&2; }
 fetch() { echo "unexpected network download" >&2; exit 3; }
 `
-	return prefix + strings.ReplaceAll(source[start:end], "/etc/backpack/install_path", `"$stage/install_path"`)
+	return prefix + strings.NewReplacer(
+		"/etc/backpack/install_path", `"$stage/install_path"`,
+		"/etc/systemd/system/backpack-webui.service", `"$stage/webui.service"`,
+	).Replace(source[start:end])
 }

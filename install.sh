@@ -451,6 +451,26 @@ install_release() {
   return 0
 }
 
+publish_binary() {
+  local staged="$1"
+  if [[ ! -s "$staged" ]]; then
+    err "Prepared backpack executable is empty."
+    return 1
+  fi
+  chmod 0755 "$staged" || return 1
+
+  # A CLI-only installation retires the old web service before replacing
+  # its executable. Wait until the replacement is ready before stopping it.
+  local web_unit=/etc/systemd/system/backpack-webui.service
+  if [[ -f "$web_unit" ]]; then
+    systemctl disable --now backpack-webui.service || { err "Could not stop the retired web service"; return 1; }
+    rm -f -- "$web_unit" || return 1
+    systemctl daemon-reload || { err "Could not reload systemd after retiring the web service"; return 1; }
+  fi
+  mv -fT -- "$staged" "$BIN_PATH" || return 1
+  echo "$INSTALL_DIR" > /etc/backpack/install_path
+}
+
 install_binary_from_tar() (
   local staged
   staged="$(mktemp "${BIN_PATH}.XXXXXX")" || exit 1
@@ -461,9 +481,7 @@ install_binary_from_tar() (
     err "Release archive does not contain a usable backpack executable."
     exit 1
   fi
-  chmod 0755 "$staged" || exit 1
-  mv -fT -- "$staged" "$BIN_PATH" || exit 1
-  echo "$INSTALL_DIR" > /etc/backpack/install_path
+  publish_binary "$staged"
 )
 
 # ---------------------------------------------------------------------------
@@ -590,6 +608,30 @@ go_new_enough() {
      (got_major == want_major && got_minor > want_minor) ||
      (got_major == want_major && got_minor == want_minor && got_patch >= want_patch) ))
 }
+install_go_toolchain() (
+  local prefix="$1" stage
+  stage="$(mktemp -d "$prefix/.backpack-go.XXXXXX")" || exit 1
+  trap '
+    # The staged tree still exists if its final rename did not happen.
+    if [[ -d "$stage/go" && ( -e "$stage/previous" || -L "$stage/previous" ) ]]; then
+      if [[ -e "$prefix/go" || -L "$prefix/go" ]] || ! mv -T -- "$stage/previous" "$prefix/go"; then
+        err "Could not restore the previous Go toolchain. It is saved in $stage/previous."
+        exit 1
+      fi
+    fi
+    rm -rf -- "$stage"
+  ' EXIT
+  download_go "$stage/go.tgz" || { err "Could not obtain Go."; exit 1; }
+  tar -C "$stage" -xzf "$stage/go.tgz" || exit 1
+  if ! go_new_enough "$stage/go/bin/go"; then
+    err "Downloaded Go does not satisfy ${GO_VERSION}."
+    exit 1
+  fi
+  if [[ -e "$prefix/go" || -L "$prefix/go" ]]; then
+    mv -T -- "$prefix/go" "$stage/previous" || exit 1
+  fi
+  mv -T -- "$stage/go" "$prefix/go"
+)
 ensure_go() {
   local candidate
   candidate="$(command -v go || true)"
@@ -599,19 +641,12 @@ ensure_go() {
     GO_BIN=/usr/local/go/bin/go
   else
     warn "Installing Go ${GO_VERSION}..."
-    (
-      local stage
-      stage="$(mktemp -d "${TMPDIR:-/tmp}/backpack-go.XXXXXX")" || exit 1
-      trap 'rm -rf -- "$stage"' EXIT
-      download_go "$stage/go.tgz" || { err "Could not obtain Go."; exit 1; }
-      rm -rf /usr/local/go && tar -C /usr/local -xzf "$stage/go.tgz"
-    ) || exit 1
+    install_go_toolchain /usr/local || exit 1
     GO_BIN=/usr/local/go/bin/go
-    go_new_enough "$GO_BIN" || { err "Installed Go does not satisfy ${GO_VERSION}."; exit 1; }
   fi
   info "Go: $(GOTOOLCHAIN=local "$GO_BIN" version) (${GO_BIN})"
 }
-build_from_source() {
+build_from_source() (
   cd "$SCRIPT_DIR"
   ensure_go
   # Pipes allow fallback on blocked proxies (403), outages and network errors.
@@ -619,18 +654,12 @@ build_from_source() {
   export GOPROXY="${GOPROXY:-https://proxy.golang.org|https://mirror-go.runflare.com|https://goproxy.cn|direct}"
   export GOSUMDB=off GOTOOLCHAIN=local
   info "Building from source (module proxy order: ${GOPROXY})."
-  CGO_ENABLED=0 "$GO_BIN" build -trimpath -ldflags "-s -w" -o "$BIN_PATH" .
-  echo "$INSTALL_DIR" > /etc/backpack/install_path
-}
-
-# A CLI-only installation must not leave an older release's web service alive.
-# Stop it before replacing the executable, including when the old process still
-# has the previous binary mapped. Retain old settings as inert backup material.
-if [[ -f /etc/systemd/system/backpack-webui.service ]]; then
-  systemctl disable --now backpack-webui.service || { err "Could not stop the retired web service"; exit 1; }
-  rm -f /etc/systemd/system/backpack-webui.service
-  systemctl daemon-reload || { err "Could not reload systemd after retiring the web service"; exit 1; }
-fi
+  local staged
+  staged="$(mktemp "${BIN_PATH}.XXXXXX")" || exit 1
+  trap 'rm -f -- "$staged"' EXIT
+  CGO_ENABLED=0 "$GO_BIN" build -trimpath -ldflags "-s -w" -o "$staged" . || exit 1
+  publish_binary "$staged"
+)
 
 # Select the engine build independently of optional helper installation.
 if [[ "${BP_BUILD_FROM_SOURCE:-0}" == 1 ]]; then
