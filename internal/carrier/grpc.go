@@ -3,6 +3,7 @@ package carrier
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -33,7 +34,8 @@ type grpcConn struct {
 	once     sync.Once
 	rmu, wmu sync.Mutex
 	left     uint32
-	closed   bool // protected by wmu; ResponseWriter cannot outlive its handler
+	readErr  error // terminal framing error, protected by rmu
+	closed   bool  // protected by wmu; ResponseWriter cannot outlive its handler
 }
 
 func (c *grpcConn) Read(p []byte) (int, error) {
@@ -42,21 +44,33 @@ func (c *grpcConn) Read(p []byte) (int, error) {
 	}
 	c.rmu.Lock()
 	defer c.rmu.Unlock()
+	if c.readErr != nil {
+		return 0, c.readErr
+	}
 	for c.left == 0 {
 		var h [5]byte
-		if _, err := io.ReadFull(c.reader, h[:]); err != nil {
+		if n, err := io.ReadFull(c.reader, h[:]); err != nil {
+			if n != 0 {
+				c.readErr = err // a partial header cannot be restarted
+			}
 			return 0, err
 		}
-		c.left = binary.BigEndian.Uint32(h[1:])
-		if h[0] != 0 || c.left > 1<<20 {
-			return 0, fmt.Errorf("invalid gRPC message envelope")
+		size := binary.BigEndian.Uint32(h[1:])
+		if h[0] != 0 || size > 1<<20 {
+			c.readErr = errors.New("invalid gRPC message envelope")
+			return 0, c.readErr
 		}
+		c.left = size
 	}
-	if uint32(len(p)) > c.left {
+	if len(p) > int(c.left) {
 		p = p[:c.left]
 	}
 	n, err := c.reader.Read(p)
 	c.left -= uint32(n)
+	if errors.Is(err, io.EOF) && c.left != 0 {
+		c.readErr = io.ErrUnexpectedEOF
+		return n, c.readErr
+	}
 	return n, err
 }
 func (c *grpcConn) Write(p []byte) (int, error) {

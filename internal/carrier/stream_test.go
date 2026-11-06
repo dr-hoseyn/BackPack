@@ -113,10 +113,21 @@ func TestCarrierHandshakeCancelsPromptly(t *testing.T) {
 
 func TestGRPCRejectsUnboundedAndCompressedFrames(t *testing.T) {
 	for _, h := range [][]byte{{1, 0, 0, 0, 1}, {0, 0x7f, 0xff, 0xff, 0xff}} {
-		c := &grpcConn{reader: bytes.NewReader(h)}
+		c := &grpcConn{reader: bytes.NewReader(append(h, 'x'))}
 		if _, err := c.Read(make([]byte, 1)); err == nil {
 			t.Fatal("invalid frame was accepted")
 		}
+		if n, err := c.Read(make([]byte, 1)); n != 0 || err == nil {
+			t.Fatalf("read after invalid envelope returned %d, %v", n, err)
+		}
+	}
+}
+
+func TestGRPCReportsTruncatedPayload(t *testing.T) {
+	c := &grpcConn{reader: bytes.NewReader([]byte{0, 0, 0, 0, 2, 'x'})}
+	got, err := io.ReadAll(c)
+	if string(got) != "x" || !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Fatalf("truncated message returned %q, %v", got, err)
 	}
 }
 
