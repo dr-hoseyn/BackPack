@@ -328,17 +328,14 @@ fetch() {
 }
 
 # verify_asset <file> <sumsfile>
-# Confirms the downloaded archive matches the checksum published with the
-# release. This matters most on restricted networks: the archive usually
-# arrives through a third-party mirror, and without this there is nothing
-# stopping that mirror from substituting a different binary.
+# Confirms the archive matches the checksum published with the release.
 verify_asset() {
   local file="$1" sums="$2"
   local expected actual
 
-  expected="$(grep -E "[[:space:]]\\*?${ASSET}\$" "$sums" 2>/dev/null | awk '{print $1}' | head -1)"
-  if [[ -z "$expected" ]]; then
-    warn "No checksum published for ${ASSET} — cannot verify this download."
+  expected="$(awk -v asset="$ASSET" '{ sub(/\r$/, "") } $2 == asset || $2 == "*" asset { print $1; exit }' "$sums")" || return 1
+  if [[ ! "$expected" =~ ^[[:xdigit:]]{64}$ ]]; then
+    warn "No valid checksum for ${ASSET} in ${sums}."
     return 1
   fi
 
@@ -351,7 +348,7 @@ verify_asset() {
     return 1
   fi
 
-  if [[ "$expected" != "$actual" ]]; then
+  if [[ "${expected,,}" != "$actual" ]]; then
     err "CHECKSUM MISMATCH for ${ASSET}"
     err "  expected: ${expected}"
     err "  actual:   ${actual}"
@@ -410,18 +407,20 @@ install_release() {
         continue
       fi
       info "Using local release asset: ${cand}"
-      cp "$cand" "$INSTALL_DIR/$ASSET"
+      # install_release runs in an if condition, so errexit does not catch a
+      # failed copy. Never continue with a stale archive from a previous run.
+      if [[ ! "$cand" -ef "$INSTALL_DIR/$ASSET" ]] && ! cp "$cand" "$INSTALL_DIR/$ASSET"; then
+        err "Could not copy local release asset: ${cand}"
+        exit 1
+      fi
       # An offline install can carry SHA256SUMS beside the archive; verify it
       # when it is there, and say plainly when it is not.
       if [[ -f "$localsums" ]]; then
-        # `|| rc=$?` rather than a bare call: `set -e` is currently suppressed
-        # here because install_release runs inside `if`, so a bare call happens
-        # to work — but only for that reason. Moving the call site would make a
-        # failed verification kill the script instead of reaching the warning.
-        local rc=0
-        verify_asset "$INSTALL_DIR/$ASSET" "$localsums" || rc=$?
-        if [[ $rc -eq 2 ]]; then
-          rm -f "$INSTALL_DIR/$ASSET"
+        if ! verify_asset "$INSTALL_DIR/$ASSET" "$localsums"; then
+          err "Refusing to install a local archive that could not be verified."
+          if [[ ! "$cand" -ef "$INSTALL_DIR/$ASSET" ]]; then
+            rm -f "$INSTALL_DIR/$ASSET"
+          fi
           exit 1
         fi
       else
@@ -452,12 +451,20 @@ install_release() {
   return 0
 }
 
-install_binary_from_tar() {
-  tar -xzf "$INSTALL_DIR/$ASSET" -C "$INSTALL_DIR" backpack
-  install -m 0755 "$INSTALL_DIR/backpack" "$BIN_PATH"
-  rm -f "$INSTALL_DIR/backpack"
+install_binary_from_tar() (
+  local staged
+  staged="$(mktemp "${BIN_PATH}.XXXXXX")" || exit 1
+  trap 'rm -f -- "$staged"' EXIT
+  # Extract only the payload and replace the old executable on the same
+  # filesystem after extraction succeeds. Readers always see a complete file.
+  if ! tar -xOzf "$INSTALL_DIR/$ASSET" -- backpack > "$staged" || [[ ! -s "$staged" ]]; then
+    err "Release archive does not contain a usable backpack executable."
+    exit 1
+  fi
+  chmod 0755 "$staged" || exit 1
+  mv -fT -- "$staged" "$BIN_PATH" || exit 1
   echo "$INSTALL_DIR" > /etc/backpack/install_path
-}
+)
 
 # ---------------------------------------------------------------------------
 # Build-from-source fallback (only used when the release download fails and
@@ -592,8 +599,13 @@ ensure_go() {
     GO_BIN=/usr/local/go/bin/go
   else
     warn "Installing Go ${GO_VERSION}..."
-    download_go /tmp/go-bp.tgz || { err "Could not obtain Go."; exit 1; }
-    rm -rf /usr/local/go && tar -C /usr/local -xzf /tmp/go-bp.tgz
+    (
+      local stage
+      stage="$(mktemp -d "${TMPDIR:-/tmp}/backpack-go.XXXXXX")" || exit 1
+      trap 'rm -rf -- "$stage"' EXIT
+      download_go "$stage/go.tgz" || { err "Could not obtain Go."; exit 1; }
+      rm -rf /usr/local/go && tar -C /usr/local -xzf "$stage/go.tgz"
+    ) || exit 1
     GO_BIN=/usr/local/go/bin/go
     go_new_enough "$GO_BIN" || { err "Installed Go does not satisfy ${GO_VERSION}."; exit 1; }
   fi
