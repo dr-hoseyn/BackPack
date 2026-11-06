@@ -1,6 +1,7 @@
 package l3
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/binary"
 	"fmt"
@@ -37,10 +38,9 @@ import (
 //   - It does not retransmit, ever. A group with more losses than it has parity
 //     is a group with a hole, and the layer above deals with that as it always
 //     has.
-//   - It does not deduplicate. A rebuilt packet may arrive after the original
-//     did, which the tunnel's replay window above already discards — the AEAD
-//     counter is exactly the right place for that, and this layer has no
-//     business opening the sealed datagram to find out.
+//   - It suppresses byte-identical copies within a group. Conflicting data
+//     shards still reach the tunnel above, where authentication and replay
+//     protection decide which packets to accept.
 
 // The wire format this layer prepends to every carrier datagram:
 //
@@ -98,9 +98,9 @@ func (f FECConfig) Validate() error {
 		}
 		return nil
 	}
-	if f.Data+f.Parity > 256 {
-		return fmt.Errorf("l3: fec_data + fec_parity is %d; Reed-Solomon allows at most 256 shards",
-			f.Data+f.Parity)
+	if f.Data > 256-f.Parity {
+		return fmt.Errorf("l3: fec_data (%d) + fec_parity (%d) exceeds the 256-shard Reed-Solomon limit",
+			f.Data, f.Parity)
 	}
 	if f.Parity >= f.Data {
 		return fmt.Errorf("l3: fec_parity (%d) is not smaller than fec_data (%d); that sends more "+
@@ -147,7 +147,6 @@ type fecGroup struct {
 	haveData  int      // how many data shards arrived
 	haveTotal int      // data + parity shards arrived
 	size      int      // the padded shard size, learned from any parity shard
-	delivered []bool   // data shards already handed up, so a rebuild is not re-delivered
 	done      bool     // reconstruction already attempted and satisfied
 	addr      net.Addr
 }
@@ -156,11 +155,11 @@ type fecGroup struct {
 // rather than a silent pass-through, because a tunnel whose peer is adding
 // parity and whose own end is not will discard every parity packet as garbage.
 func newFECCarrier(below DatagramCarrier, cfg FECConfig) (DatagramCarrier, error) {
-	if !cfg.Enabled() {
-		return below, nil
-	}
 	if err := cfg.Validate(); err != nil {
 		return nil, err
+	}
+	if !cfg.Enabled() {
+		return below, nil
 	}
 	enc, err := reedsolomon.New(cfg.Data, cfg.Parity)
 	if err != nil {
@@ -356,8 +355,11 @@ func (c *fecCarrier) absorb(kind byte, group uint32, index byte, body []byte, ad
 	}
 	// Reject malformed lengths before they can occupy a shard or mark it delivered.
 	// This is structural validation; the outer FEC format is not authenticated.
+	var payload []byte
 	if kind == fecKindData {
-		if _, ok := trimShard(body); !ok {
+		var ok bool
+		payload, ok = trimShard(body)
+		if !ok {
 			return nil, false
 		}
 	}
@@ -367,39 +369,35 @@ func (c *fecCarrier) absorb(kind byte, group uint32, index byte, body []byte, ad
 	g := c.groups[group]
 	if g == nil {
 		g = &fecGroup{
-			shards:    make([][]byte, total),
-			delivered: make([]bool, c.cfg.Data),
-			addr:      addr,
+			shards: make([][]byte, total),
+			addr:   addr,
 		}
 		c.groups[group] = g
 		c.order = append(c.order, group)
 		c.evict()
 	}
 
-	if g.shards[int(index)] == nil {
-		g.shards[int(index)] = append([]byte(nil), body...)
-		g.haveTotal++
-		if int(index) < c.cfg.Data {
-			g.haveData++
+	if existing := g.shards[index]; existing != nil {
+		if kind == fecKindData {
+			prior, _ := trimShard(existing)
+			// An unauthenticated shard can claim the same slot as a real
+			// packet. Only identical payloads can be discarded here.
+			if !bytes.Equal(prior, payload) {
+				return payload, true
+			}
 		}
-		// Every parity shard is full size, so any one of them tells the
-		// receiver how wide this group's shards are.
-		if kind == fecKindParity && g.size == 0 {
-			g.size = len(body)
-		}
+		return nil, false
 	}
-
-	var out []byte
-	var deliver bool
-	if kind == fecKindData && !g.delivered[int(index)] {
-		g.delivered[int(index)] = true
-		if payload, ok := trimShard(body); ok {
-			out, deliver = payload, true
-		}
+	g.shards[index] = append([]byte(nil), body...)
+	g.haveTotal++
+	if kind == fecKindData {
+		g.haveData++
+	} else if g.size == 0 {
+		// Every parity shard is full size.
+		g.size = len(body)
 	}
-
 	c.rebuild(g)
-	return out, deliver
+	return payload, kind == fecKindData
 }
 
 // rebuild fills a group's holes from its parity, when there is enough to do it,
@@ -431,12 +429,12 @@ func (c *fecCarrier) rebuild(g *fecGroup) {
 	}
 	g.done = true
 	for i := 0; i < c.cfg.Data; i++ {
-		if g.delivered[i] || work[i] == nil {
+		if g.shards[i] != nil || work[i] == nil {
 			continue
 		}
 		if payload, ok := trimShard(work[i]); ok {
-			g.delivered[i] = true
-			c.pending = append(c.pending, fecReady{data: append([]byte(nil), payload...), addr: &fecRecoveredAddr{g.addr}})
+			g.shards[i] = work[i]
+			c.pending = append(c.pending, fecReady{data: payload, addr: &fecRecoveredAddr{g.addr}})
 		}
 	}
 }
