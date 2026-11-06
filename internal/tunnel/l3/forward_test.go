@@ -348,6 +348,9 @@ func TestForwarderPacesUDPAcrossFlowsWithoutBlockingSmallDatagrams(t *testing.T)
 	case <-time.After(time.Second):
 		t.Fatal("forwarder did not stop")
 	}
+	if active := f.Stats().Active; active != 0 {
+		t.Fatalf("forwarder returned with %d UDP flows still active", active)
+	}
 }
 
 // Several datagrams from one client must all reach the same backend socket and
@@ -549,6 +552,7 @@ func TestForwarderReleasesPortsOnShutdown(t *testing.T) {
 
 	forwarder, err := NewForwarder(Config{
 		Ports: []string{fmt.Sprintf("%s=%s", addr, backend)}, PeerIP: "127.0.0.1",
+		MaxConnections: 1,
 	}, quietLogger())
 	if err != nil {
 		t.Fatalf("NewForwarder: %v", err)
@@ -558,9 +562,21 @@ func TestForwarderReleasesPortsOnShutdown(t *testing.T) {
 	wg.Add(1)
 	go func() { defer wg.Done(); _ = forwarder.Run(ctx) }()
 
-	dialUntilReady(t, addr).Close()
+	conn := dialUntilReady(t, addr)
+	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(3 * time.Second))
+	if _, err := conn.Write([]byte("ping")); err != nil {
+		t.Fatal(err)
+	}
+	var response [6]byte
+	if _, err := io.ReadFull(conn, response[:]); err != nil {
+		t.Fatal(err)
+	}
 	cancel()
 	wg.Wait()
+	if forwarder.Stats().Active != 0 || forwarder.limiter.Active() != 0 {
+		t.Fatal("forwarder returned before releasing the active TCP connection")
+	}
 
 	// The port has to be bindable again, or a restart would fail.
 	listener, err := net.Listen("tcp", addr)

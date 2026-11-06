@@ -66,6 +66,26 @@ func (q *udpWriteQueue) enqueue(flow *udpFlow, p []byte) bool {
 	return true
 }
 
+// discard makes room immediately when a flow closes, even if the pacer
+// is waiting for tokens on another flow.
+func (q *udpWriteQueue) discard(flow *udpFlow) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if elem := q.byFlow[flow]; elem != nil {
+		q.discardPending(elem)
+	}
+}
+
+func (q *udpWriteQueue) discardPending(elem *list.Element) {
+	pending := elem.Value.(*udpPendingFlow)
+	for _, packet := range pending.queue {
+		q.bytes -= len(packet)
+	}
+	q.packets -= len(pending.queue)
+	delete(q.byFlow, pending.flow)
+	q.active.Remove(elem)
+}
+
 // turn charges at most a quantum to one flow, preserving each flow's FIFO.
 // Socket writes happen outside the lock so ingress never waits on pacing or I/O.
 func (q *udpWriteQueue) turn(limiter *limits.Limiter) (*udpFlow, []byte, time.Duration) {
@@ -75,12 +95,7 @@ func (q *udpWriteQueue) turn(limiter *limits.Limiter) (*udpFlow, []byte, time.Du
 		elem := q.active.Front()
 		pending := elem.Value.(*udpPendingFlow)
 		if pending.flow.ctx.Err() != nil {
-			for _, packet := range pending.queue {
-				q.bytes -= len(packet)
-			}
-			q.packets -= len(pending.queue)
-			delete(q.byFlow, pending.flow)
-			q.active.Remove(elem)
+			q.discardPending(elem)
 			continue
 		}
 		packet := pending.queue[0]
@@ -111,6 +126,9 @@ func (q *udpWriteQueue) run(ctx context.Context, limiter *limits.Limiter, log *l
 	for ctx.Err() == nil {
 		flow, packet, delay := q.turn(limiter)
 		if flow != nil {
+			if flow.ctx.Err() != nil {
+				continue
+			}
 			_ = flow.socket.SetWriteDeadline(time.Now().Add(udpWriteWait))
 			if _, err := flow.socket.Write(packet); err != nil && flow.ctx.Err() == nil {
 				log.Debugf("l3: forwarding udp to %s: %v", flow.socket.RemoteAddr(), err)

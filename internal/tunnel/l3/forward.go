@@ -244,6 +244,12 @@ func (f *Forwarder) serveTCP(ctx context.Context, m portmap.Mapping, bound func(
 	defer listener.Close()
 	stopClose := context.AfterFunc(ctx, func() { listener.Close() })
 	defer stopClose()
+	handlerCtx, cancelHandlers := context.WithCancel(ctx)
+	var handlers sync.WaitGroup
+	defer func() {
+		cancelHandlers()
+		handlers.Wait()
+	}()
 
 	f.log.Infof("l3: forwarding tcp %s", m)
 
@@ -256,7 +262,7 @@ func (f *Forwarder) serveTCP(ctx context.Context, m portmap.Mapping, bound func(
 			}
 			return err
 		}
-		go f.handleTCP(ctx, conn, m, pool)
+		handlers.Go(func() { f.handleTCP(handlerCtx, conn, m, pool) })
 	}
 }
 
@@ -276,6 +282,9 @@ func (f *Forwarder) handleTCP(ctx context.Context, local net.Conn, m portmap.Map
 
 	backend, member, err := pool.dial(ctx, "tcp")
 	if err != nil {
+		if ctx.Err() != nil {
+			return
+		}
 		f.stats.refused.Add(1)
 		f.noteBackend(m, err)
 		return
@@ -359,6 +368,7 @@ type udpFlow struct {
 	backend  net.Conn
 	socket   *net.UDPConn
 	ctx      context.Context
+	pacer    *udpWriteQueue
 	member   *backendMember     // counted against it while the flow lives
 	cancel   context.CancelFunc // releases pacing when this flow closes
 	lastSeen atomic.Int64       // unix nanoseconds
@@ -366,6 +376,9 @@ type udpFlow struct {
 
 func (f *udpFlow) close() {
 	f.cancel()
+	if f.pacer != nil {
+		f.pacer.discard(f)
+	}
 	_ = f.backend.Close()
 }
 
@@ -394,21 +407,25 @@ func (f *Forwarder) serveUDP(ctx context.Context, m portmap.Mapping, bound func(
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
 	stopClose := context.AfterFunc(ctx, func() { conn.Close() })
 	defer stopClose()
 
 	f.log.Infof("l3: forwarding udp %s", m)
 
 	var flows sync.Map // client address string -> *udpFlow
+	var workers sync.WaitGroup
+	flowCtx, cancelFlows := context.WithCancel(ctx)
 	defer func() {
+		cancelFlows()
+		conn.Close() // wake reply writers as well as the listener
 		flows.Range(func(_, v any) bool {
 			v.(*udpFlow).close()
 			return true
 		})
+		workers.Wait()
 	}()
 
-	go f.reapUDPFlows(ctx, &flows)
+	workers.Go(func() { f.reapUDPFlows(flowCtx, &flows) })
 
 	pool := newBackendPool(m.Targets)
 	buf := make([]byte, udpBufferSize)
@@ -421,8 +438,11 @@ func (f *Forwarder) serveUDP(ctx context.Context, m portmap.Mapping, bound func(
 			return err
 		}
 
-		flow, err := f.udpFlowFor(ctx, &flows, conn, client, pool)
+		flow, err := f.udpFlowFor(flowCtx, &flows, conn, client, pool, pacer, &workers)
 		if err != nil {
+			if flowCtx.Err() != nil {
+				return nil
+			}
 			f.stats.refused.Add(1)
 			// Left at debug deliberately: this path also reports the
 			// connection limit, and a UDP dial is connectionless and
@@ -449,6 +469,8 @@ func (f *Forwarder) udpFlowFor(
 	local net.PacketConn,
 	client net.Addr,
 	pool *backendPool,
+	pacer *udpWriteQueue,
+	workers *sync.WaitGroup,
 ) (*udpFlow, error) {
 	key := client.String()
 	if existing, ok := flows.Load(key); ok {
@@ -478,7 +500,7 @@ func (f *Forwarder) udpFlowFor(
 	flowCtx, cancelFlow := context.WithCancel(ctx)
 	flow := &udpFlow{
 		backend: f.limiter.Wrap(flowCtx, udpConn), socket: udpConn,
-		ctx: flowCtx, member: member, cancel: cancelFlow,
+		ctx: flowCtx, member: member, cancel: cancelFlow, pacer: pacer,
 	}
 	flow.touch()
 
@@ -494,14 +516,13 @@ func (f *Forwarder) udpFlowFor(
 
 	f.stats.accepted.Add(1)
 	f.stats.active.Add(1)
-	go f.pumpUDPReplies(ctx, flows, key, flow, local, client)
+	workers.Go(func() { f.pumpUDPReplies(flows, key, flow, local, client) })
 	return flow, nil
 }
 
 // pumpUDPReplies carries what the backend sends back to the client it belongs
 // to, until the flow is closed or goes quiet.
 func (f *Forwarder) pumpUDPReplies(
-	ctx context.Context,
 	flows *sync.Map,
 	key string,
 	flow *udpFlow,
@@ -526,14 +547,14 @@ func (f *Forwarder) pumpUDPReplies(
 		_ = flow.backend.SetReadDeadline(time.Now().Add(udpFlowIdle))
 		n, err := flow.backend.Read(buf)
 		if err != nil {
-			if ctx.Err() != nil {
+			if flow.ctx.Err() != nil {
 				return
 			}
 			var netErr net.Error
 			if errors.As(err, &netErr) && netErr.Timeout() && !flow.idle(time.Now(), udpFlowIdle) {
 				continue // the client is still sending; keep waiting for a reply
 			}
-			flow.noteBackendReadError(ctx, err)
+			flow.noteBackendReadError(flow.ctx, err)
 			return
 		}
 		flow.touch()
