@@ -322,7 +322,8 @@ func ConnTestSuiteBest(paths []ConnTestPath) ConnTestBest {
 			choice.Host, choice.Family = p.Host, p.Family
 			candidates = append(candidates, choice)
 		}
-		if best.Transport == "" || b.Mbps > best.Mbps || (b.Mbps == best.Mbps && b.RTTms < best.RTTms) {
+		betterRTT := b.hasRTT() && (!best.hasRTT() || b.RTTms < best.RTTms)
+		if best.Transport == "" || b.Mbps > best.Mbps || (b.Mbps == best.Mbps && betterRTT) {
 			best = b
 		}
 	}

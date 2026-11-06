@@ -153,8 +153,18 @@ func ctSuiteSummary(out io.Writer, paths []ConnTestPath) {
 			ctWriteNote(out, p.Error)
 		}
 		if p.State == "done" && p.Best.Transport != "" {
-			fmt.Fprintf(out, "      %s · download %.2f Mb/s · upload %.2f Mb/s · RTT %d ms\n",
-				p.Best.Transport, p.Best.Mbps, p.Best.UploadMbps, p.Best.RTTms)
+			b := p.Best
+			fmt.Fprintf(out, "      %s · %s", b.Transport, b.rttLabel())
+			if b.Mbps > 0 {
+				fmt.Fprintf(out, " · download %.2f Mb/s", b.Mbps)
+			}
+			if b.UploadMbps > 0 {
+				fmt.Fprintf(out, " · upload %.2f Mb/s", b.UploadMbps)
+			}
+			if b.Mbps <= 0 && b.UploadMbps <= 0 {
+				fmt.Fprint(out, " · speed not measured")
+			}
+			fmt.Fprintln(out)
 		}
 	}
 	best := ConnTestSuiteBest(paths)

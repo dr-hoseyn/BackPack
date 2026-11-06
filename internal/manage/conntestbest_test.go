@@ -168,3 +168,27 @@ func TestConnTestIPv4LookupHonorsCancellation(t *testing.T) {
 		t.Fatal("already cancelled lookup succeeded")
 	}
 }
+func TestConnectionTestSummaryDistinguishesMissingMeasurements(t *testing.T) {
+	unknown := ConnTestBest{Host: "192.0.2.1", Family: "IPv4", Transport: "direct udp"}
+	measured := ConnTestBest{Host: "2001:db8::1", Family: "IPv6", Transport: "direct udp", RTTMeasured: true, RTTms: 12}
+	paths := []ConnTestPath{
+		{Host: unknown.Host, Family: unknown.Family, State: "done", Best: unknown},
+		{Host: measured.Host, Family: measured.Family, State: "done", Best: measured},
+	}
+	for _, order := range [][]ConnTestPath{paths, {paths[1], paths[0]}} {
+		if best := ConnTestSuiteBest(order); best.Host != measured.Host {
+			t.Fatalf("missing RTT won a speed tie: %+v", best)
+		}
+	}
+	paths[1].Best.RTTms = 0
+	var summary strings.Builder
+	ctSuiteSummary(&summary, paths)
+	for _, want := range []string{"RTT not measured", "RTT <1 ms", "speed not measured"} {
+		if !strings.Contains(summary.String(), want) {
+			t.Fatalf("missing %q in summary:\n%s", want, summary.String())
+		}
+	}
+	if strings.Contains(summary.String(), "0.00 Mb/s") || strings.Contains(ConnTestBestTable(unknown), "0.0 Mbps") {
+		t.Fatal("an unmeasured speed was displayed as zero")
+	}
+}

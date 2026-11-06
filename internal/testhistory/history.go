@@ -210,6 +210,7 @@ type Summary struct {
 	Received      int     `json:"received"`
 	Loss          float64 `json:"loss_pct"`
 	RTTms         float64 `json:"rtt_ms"`
+	RTTEchoes     int     `json:"rtt_echoes"`
 	JitterMs      float64 `json:"jitter_ms"`
 	Download      float64 `json:"median_download_mbps"`
 	Upload        float64 `json:"median_upload_mbps"`
@@ -257,8 +258,12 @@ func Compare(runs []Run) []Summary {
 				}
 				g.Sent += m.Sent
 				g.Received += m.Received
-				g.rtt += m.RTTms * float64(m.Received)
-				if m.JitterMeasured {
+				// Spoof probes record a receipt count without timing a round trip.
+				if m.Kind != "spoof" && m.Received > 0 {
+					g.rtt += m.RTTms * float64(m.Received)
+					g.RTTEchoes += m.Received
+				}
+				if m.JitterMeasured && m.Kind != "spoof" && m.Received > 0 {
 					g.jitter += m.JitterMs * float64(m.Received)
 					g.jitterEchoes += m.Received
 					g.JitterSamples++
@@ -283,9 +288,8 @@ func Compare(runs []Run) []Summary {
 		if g.Sent > 0 {
 			g.Loss = 100 * float64(g.Sent-g.Received) / float64(g.Sent)
 		}
-		if g.Received > 0 {
-			g.RTTms = g.rtt / float64(g.Received)
-
+		if g.RTTEchoes > 0 {
+			g.RTTms = g.rtt / float64(g.RTTEchoes)
 		}
 		if g.jitterEchoes > 0 {
 			g.JitterMs = g.jitter / float64(g.jitterEchoes)

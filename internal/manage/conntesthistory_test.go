@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/backpack/backpack/internal/testhistory"
 )
 
 func TestConnectionTestHistoryStoresMeasurementsWithoutPrivateDiagnostics(t *testing.T) {
@@ -28,5 +30,22 @@ func TestConnectionTestHistoryStoresMeasurementsWithoutPrivateDiagnostics(t *tes
 		if !strings.Contains(table, want) {
 			t.Fatalf("missing %s: %s", want, table)
 		}
+	}
+}
+
+func TestConnectionTestHistoryDoesNotInventProbeMeasurements(t *testing.T) {
+	run := testhistory.Run{Complete: true, Paths: []testhistory.Path{{
+		Host: "192.0.2.1", Family: "IPv4", State: "done",
+		Rows: []testhistory.Measurement{
+			{Kind: "reverse", Transport: "tcp", Status: "down"},
+			{Kind: "spoof", Transport: "udp", Status: "ok", Sent: 2, Received: 2},
+		},
+	}}}
+	table := ConnTestHistoryTable([]testhistory.Run{run}, true)
+	if !strings.Contains(table, "no probes sent") ||
+		!strings.Contains(table, "loss 0.00% (2/2 probes)") ||
+		strings.Count(table, "RTT not measured") != 2 ||
+		strings.Contains(table, "(0/0") {
+		t.Fatal(table)
 	}
 }
