@@ -137,16 +137,25 @@ func (b *ctPathBoard) update(i int, p ConnTestPath) {
 }
 
 func ctSuiteSummary(out io.Writer, paths []ConnTestPath) {
-	fmt.Fprintln(out, "\nIP path comparison:")
+	title := "IP path comparison"
+	if len(paths) == 1 {
+		title = "IP path result"
+	}
+	width := len("Address")
 	for _, p := range paths {
-		fmt.Fprintf(out, "  %s · %s · %s", p.Family, p.Host, p.State)
+		width = max(width, len(p.Host))
+	}
+	fmt.Fprintln(out, "\n"+title)
+	fmt.Fprintf(out, "  %-6s %-*s %s\n", "Path", width, "Address", "Status")
+	for _, p := range paths {
+		fmt.Fprintf(out, "  %-6s %-*s %s\n", p.Family, width, p.Host, p.State)
 		if p.Error != "" {
-			fmt.Fprintf(out, " · %s", p.Error)
+			ctWriteNote(out, p.Error)
 		}
-		if p.Best.Transport != "" {
-			fmt.Fprintf(out, " · %s · down %.2f / up %.2f Mb/s · %d ms", p.Best.Transport, p.Best.Mbps, p.Best.UploadMbps, p.Best.RTTms)
+		if p.State == "done" && p.Best.Transport != "" {
+			fmt.Fprintf(out, "      %s · download %.2f Mb/s · upload %.2f Mb/s · RTT %d ms\n",
+				p.Best.Transport, p.Best.Mbps, p.Best.UploadMbps, p.Best.RTTms)
 		}
-		fmt.Fprintln(out)
 	}
 	best := ConnTestSuiteBest(paths)
 	fmt.Fprint(out, ConnTestRecommendationsTable(best.Recommendations))
