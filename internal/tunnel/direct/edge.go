@@ -310,6 +310,10 @@ func (e *Edge) openFor(ctx context.Context, kind byte, m portmap.Mapping) (net.C
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	if len(m.Targets) == 0 {
+		return nil, errors.New("direct: no backends configured")
+	}
+	remainingSessions := len(e.sessions.snapshot())
 	session := e.pickSession()
 	if session == nil {
 		return nil, errNoSession
@@ -317,7 +321,7 @@ func (e *Edge) openFor(ctx context.Context, kind byte, m portmap.Mapping) (net.C
 
 	var lastErr error
 	start := int((e.backendCursor.Add(1) - 1) % uint64(len(m.Targets)))
-	for i := range m.Targets {
+	for i := 0; i < len(m.Targets); {
 		target := m.Targets[(start+i)%len(m.Targets)]
 		stream, err := openStream(ctx, session, kind, target, e.cfg.DialTimeout)
 		if err == nil {
@@ -327,9 +331,20 @@ func (e *Edge) openFor(ctx context.Context, kind byte, m portmap.Mapping) (net.C
 			return nil, ctx.Err()
 		}
 		lastErr = err
-	}
-	if lastErr == nil {
-		lastErr = errors.New("direct: no backends configured")
+		if session.Usable() {
+			i++
+			continue
+		}
+		// A dead session says nothing about this backend. Retry the same
+		// target on another session before moving on to the next backend.
+		remainingSessions--
+		if remainingSessions <= 0 {
+			break
+		}
+		session = e.pickSession()
+		if session == nil {
+			break
+		}
 	}
 	return nil, lastErr
 }
