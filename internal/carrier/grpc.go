@@ -33,8 +33,11 @@ type grpcConn struct {
 	closeFn  func()
 	once     sync.Once
 	rmu, wmu sync.Mutex
+	header   [5]byte
+	headerN  int
 	left     uint32
 	readErr  error // terminal framing error, protected by rmu
+	writeErr error // terminal framing error, protected by wmu
 	closed   bool  // protected by wmu; ResponseWriter cannot outlive its handler
 }
 
@@ -48,15 +51,18 @@ func (c *grpcConn) Read(p []byte) (int, error) {
 		return 0, c.readErr
 	}
 	for c.left == 0 {
-		var h [5]byte
-		if n, err := io.ReadFull(c.reader, h[:]); err != nil {
-			if n != 0 {
-				c.readErr = err // a partial header cannot be restarted
+		n, err := io.ReadFull(c.reader, c.header[c.headerN:])
+		c.headerN += n
+		if err != nil {
+			if c.headerN != 0 && (errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF)) {
+				c.readErr = io.ErrUnexpectedEOF
+				return 0, c.readErr
 			}
 			return 0, err
 		}
-		size := binary.BigEndian.Uint32(h[1:])
-		if h[0] != 0 || size > 1<<20 {
+		c.headerN = 0
+		size := binary.BigEndian.Uint32(c.header[1:])
+		if c.header[0] != 0 || size > 1<<20 {
 			c.readErr = errors.New("invalid gRPC message envelope")
 			return 0, c.readErr
 		}
@@ -79,22 +85,30 @@ func (c *grpcConn) Write(p []byte) (int, error) {
 	if c.closed {
 		return 0, net.ErrClosed
 	}
+	if c.writeErr != nil {
+		return 0, c.writeErr
+	}
 	total := 0
 	for len(p) > 0 {
 		n := min(len(p), messageSize)
 		var h [5]byte
 		binary.BigEndian.PutUint32(h[1:], uint32(n))
-		if _, err := writeFull(c.writer, h[:]); err != nil {
+		if written, err := writeFull(c.writer, h[:]); err != nil {
+			if written != 0 {
+				c.writeErr = err
+			}
 			return total, err
 		}
 		m, err := writeFull(c.writer, p[:n])
 		total += m
 		if err != nil {
+			c.writeErr = err // the header is already on the wire
 			return total, err
 		}
 		p = p[n:]
 		if c.flush != nil {
 			if err := c.flush(); err != nil {
+				c.writeErr = err
 				return total, err
 			}
 		}

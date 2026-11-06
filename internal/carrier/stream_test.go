@@ -12,6 +12,7 @@ import (
 	"io"
 	"math/big"
 	"net"
+	"os"
 	"testing"
 	"time"
 
@@ -128,6 +129,55 @@ func TestGRPCReportsTruncatedPayload(t *testing.T) {
 	got, err := io.ReadAll(c)
 	if string(got) != "x" || !errors.Is(err, io.ErrUnexpectedEOF) {
 		t.Fatalf("truncated message returned %q, %v", got, err)
+	}
+}
+
+type grpcTimeoutReader struct {
+	timedOut bool
+}
+
+func (r *grpcTimeoutReader) Read(p []byte) (int, error) {
+	if !r.timedOut {
+		r.timedOut = true
+		return copy(p, []byte{0, 0}), os.ErrDeadlineExceeded
+	}
+	return 0, io.EOF
+}
+
+func TestGRPCResumesHeaderAfterReadTimeout(t *testing.T) {
+	c := &grpcConn{reader: io.MultiReader(&grpcTimeoutReader{}, bytes.NewReader([]byte{0, 0, 1, 'x'}))}
+	var got [1]byte
+	if _, err := c.Read(got[:]); !errors.Is(err, os.ErrDeadlineExceeded) {
+		t.Fatalf("first read returned %v", err)
+	}
+	if n, err := c.Read(got[:]); n != 1 || err != nil || got[0] != 'x' {
+		t.Fatalf("read after timeout returned %d, %v, %q", n, err, got)
+	}
+}
+
+type grpcPartialWriter struct {
+	bytes.Buffer
+}
+
+func (w *grpcPartialWriter) Write(p []byte) (int, error) {
+	if w.Len() == 5 {
+		n, _ := w.Buffer.Write(p[:1])
+		return n, os.ErrDeadlineExceeded
+	}
+	return w.Buffer.Write(p)
+}
+
+func TestGRPCWriteFailureCannotCorruptNextFrame(t *testing.T) {
+	w := new(grpcPartialWriter)
+	c := &grpcConn{writer: w}
+	if n, err := c.Write([]byte("first")); n != 1 || !errors.Is(err, os.ErrDeadlineExceeded) {
+		t.Fatalf("partial write returned %d, %v", n, err)
+	}
+	if n, err := c.Write([]byte("second")); n != 0 || !errors.Is(err, os.ErrDeadlineExceeded) {
+		t.Fatalf("write after partial frame returned %d, %v", n, err)
+	}
+	if w.Len() != 6 {
+		t.Fatalf("another frame was appended to the partial frame: %x", w.Bytes())
 	}
 }
 
