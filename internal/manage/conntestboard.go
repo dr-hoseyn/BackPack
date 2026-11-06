@@ -169,9 +169,13 @@ func ctWriteNote(out io.Writer, text string) {
 }
 
 func ctWriteWrapped(out io.Writer, prefix, continuation, text string) {
+	ctWriteWrappedWidth(out, utf8.RuneCountInString(ctHeader), prefix, continuation, text)
+}
+
+func ctWriteWrappedWidth(out io.Writer, width int, prefix, continuation, text string) {
 	line, hasWords := prefix, false
 	for _, word := range strings.Fields(text) {
-		if hasWords && utf8.RuneCountInString(line)+1+utf8.RuneCountInString(word) > utf8.RuneCountInString(ctHeader) {
+		if hasWords && utf8.RuneCountInString(line)+1+utf8.RuneCountInString(word) > width {
 			fmt.Fprintln(out, line)
 			line, hasWords = continuation, false
 		}

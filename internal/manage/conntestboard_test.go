@@ -142,7 +142,11 @@ func TestConnTestManagedNamesKeepColumnsAligned(t *testing.T) {
 			if !strings.HasPrefix(line, "Transport") {
 				continue
 			}
-			at := utf8.RuneCountInString(line[:strings.Index(line, "60.3 Mbps")])
+			index := strings.Index(line, "RTT not measured")
+			if index < 0 {
+				t.Fatalf("transport measurement missing: %q", line)
+			}
+			at := utf8.RuneCountInString(line[:index])
 			if measured < 0 {
 				measured = at
 			}

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/backpack/backpack/internal/tui"
 )
@@ -137,39 +139,105 @@ func (b *ctPathBoard) update(i int, p ConnTestPath) {
 }
 
 func ctSuiteSummary(out io.Writer, paths []ConnTestPath) {
-	title := "IP path comparison"
+	width, _ := ctTerminalSize(out)
+	styled := width > 0
+	if styled {
+		width = max(1, width-1)
+	} else {
+		width = 80
+	}
+	ctWriteSuiteSummary(out, paths, width, styled)
+}
+
+func ctWriteSuiteSummary(out io.Writer, paths []ConnTestPath, width int, styled bool) {
+	color := func(code, text string) string {
+		if styled {
+			return tui.Color(code, text)
+		}
+		return text
+	}
+	title := "IP PATH COMPARISON"
 	if len(paths) == 1 {
-		title = "IP path result"
+		title = "IP PATH RESULT"
 	}
-	width := len("Address")
+	completed := 0
 	for _, p := range paths {
-		width = max(width, len(p.Host))
+		if p.State == "done" {
+			completed++
+		}
 	}
-	fmt.Fprintln(out, "\n"+title)
-	fmt.Fprintf(out, "  %-6s %-*s %s\n", "Path", width, "Address", "Status")
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, color(tui.Bold+tui.Red, title))
+	fmt.Fprintln(out, color(tui.Gray, strings.Repeat("─", min(width, 64))))
+	fmt.Fprintf(out, "  %d/%d paths completed\n", completed, len(paths))
 	for _, p := range paths {
-		fmt.Fprintf(out, "  %-6s %-*s %s\n", p.Family, width, p.Host, p.State)
+		status, accent := strings.ToUpper(p.State), tui.Gray
+		switch p.State {
+		case "done":
+			status, accent = "COMPLETE", tui.White
+		case "unavailable":
+			accent = tui.Red
+		}
+		label := fmt.Sprintf("  %s  %s", p.Family, p.Host)
+		badge := "[" + status + "]"
+		fmt.Fprintln(out)
+		if len(label)+2+len(badge) <= width {
+			fmt.Fprintf(out, "%s  %s\n", color(tui.Bold+tui.White, label), color(accent, badge))
+		} else {
+			ctWriteWrappedWidth(out, width, "  ", "    ", label)
+			fmt.Fprintln(out, "    "+color(accent, badge))
+		}
 		if p.Error != "" {
-			ctWriteNote(out, p.Error)
+			ctWriteWrappedWidth(out, width, "    ", "    ", p.Error)
 		}
 		if p.State == "done" && p.Best.Transport != "" {
 			b := p.Best
-			fmt.Fprintf(out, "      %s · %s", b.Transport, b.rttLabel())
+			fmt.Fprintln(out, "    "+ctSuiteTransportName(b.Transport))
+			metrics := []string{b.rttLabel()}
 			if b.Mbps > 0 {
-				fmt.Fprintf(out, " · download %.2f Mb/s", b.Mbps)
+				metrics = append(metrics, fmt.Sprintf("Download %.2f Mb/s", b.Mbps))
 			}
 			if b.UploadMbps > 0 {
-				fmt.Fprintf(out, " · upload %.2f Mb/s", b.UploadMbps)
+				metrics = append(metrics, fmt.Sprintf("Upload %.2f Mb/s", b.UploadMbps))
 			}
 			if b.Mbps <= 0 && b.UploadMbps <= 0 {
-				fmt.Fprint(out, " · speed not measured")
+				metrics = append(metrics, "speed not measured")
 			}
-			fmt.Fprintln(out)
+			if line := strings.Join(metrics, "  ·  "); utf8.RuneCountInString(line)+4 <= width {
+				fmt.Fprintln(out, "    "+line)
+			} else {
+				for _, metric := range metrics {
+					fmt.Fprintln(out, "    "+metric)
+				}
+			}
 		}
 	}
-	best := ConnTestSuiteBest(paths)
-	fmt.Fprint(out, ConnTestRecommendationsTable(best.Recommendations))
-	if best.Transport != "" {
-		fmt.Fprintf(out, "Recommended: %s · %s · %s\n", best.Family, best.Host, best.Transport)
+	if len(paths) < 2 {
+		return // The per-path verdict already printed its recommendations.
 	}
+	best := ConnTestSuiteBest(paths)
+	if recommendations := ConnTestRecommendationsTable(best.Recommendations); recommendations != "" {
+		fmt.Fprintln(out)
+		for _, line := range strings.Split(strings.TrimRight(recommendations, "\n"), "\n") {
+			if line == "RECOMMENDED BY USE" {
+				fmt.Fprintln(out, color(tui.Bold+tui.Red, line))
+				continue
+			}
+			indent := line[:len(line)-len(strings.TrimLeft(line, " "))]
+			ctWriteWrappedWidth(out, width, indent, indent+"  ", line)
+		}
+	} else if best.Transport != "" {
+		fmt.Fprintln(out)
+		fmt.Fprintln(out, color(tui.Bold+tui.Red, "RECOMMENDED PATH"))
+		ctWriteWrappedWidth(out, width, "  ", "    ", best.Family+" "+best.Host)
+		fmt.Fprintln(out, "    "+ctSuiteTransportName(best.Transport))
+	}
+}
+
+func ctSuiteTransportName(transport string) string {
+	kind, name, ok := strings.Cut(transport, " ")
+	if !ok {
+		return ctName(transport)
+	}
+	return ctKind(kind) + " " + ctName(name)
 }
