@@ -20,6 +20,8 @@ func NewWatchedMuxSession(conn net.Conn, cfg *smux.Config, start func(io.ReadWri
 	var wire net.Conn = socket
 	if writer, ok := conn.(muxVectorWriter); ok {
 		wire = &muxVectorSocket{muxSocket: socket, writer: writer}
+	} else if tcp, ok := conn.(*net.TCPConn); ok {
+		wire = &muxTCPSocket{muxSocket: socket, tcp: tcp, buffers: make(net.Buffers, 0, 2)}
 	}
 	session, err := start(wire, cfg)
 	if err != nil {
@@ -102,4 +104,27 @@ func (c *muxVectorSocket) WriteBuffers(p [][]byte) (int, error) {
 		return c.result(0, err)
 	}
 	return c.result(c.writer.WriteBuffers(p))
+}
+
+// Only a concrete TCP socket takes this path. Passing TLS or WebSocket
+// wrappers to net.Buffers would turn one frame into separate writes instead
+// of a single vectored socket write. smux has exactly one sender.
+type muxTCPSocket struct {
+	*muxSocket
+	tcp     *net.TCPConn
+	buffers net.Buffers
+}
+
+func (c *muxTCPSocket) WriteBuffers(p [][]byte) (int, error) {
+	if err := c.prepareWrite(); err != nil {
+		return c.result(0, err)
+	}
+	// WriteTo consumes its descriptors. Copy those, never the payload or the
+	// caller's descriptors, and reuse their storage across frames.
+	c.buffers = append(c.buffers[:0], p...)
+	saved := c.buffers
+	n, err := c.buffers.WriteTo(c.tcp)
+	clear(saved)
+	c.buffers = saved[:0]
+	return c.result(int(n), err)
 }
