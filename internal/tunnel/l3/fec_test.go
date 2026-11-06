@@ -216,6 +216,65 @@ func TestFECConflictingShardDoesNotSuppressOriginal(t *testing.T) {
 	}
 }
 
+func TestFECRecoversAcrossReceiveWindowReuse(t *testing.T) {
+	send, recv := newLossyPair(nil)
+	cfg := FECConfig{Data: 4, Parity: 2}
+	send.drop = func(n int) bool {
+		group, shard := n/(cfg.Data+cfg.Parity), n%(cfg.Data+cfg.Parity)
+		return group >= fecWindow && group%2 == 0 && shard == 0
+	}
+	tx, _ := newFECCarrier(send, cfg, nil)
+	rx, _ := newFECCarrier(recv, cfg, nil)
+	for group := range 3 * fecWindow {
+		want := map[string]bool{}
+		for shard := range cfg.Data {
+			size := (group+shard)%4*300 + 100
+			msg := fmt.Sprintf("%d/%d:%s", group, shard, bytes.Repeat([]byte{'x'}, size))
+			want[msg] = true
+			if _, err := tx.WriteTo([]byte(msg), recv.addr); err != nil {
+				t.Fatal(err)
+			}
+		}
+		for _, got := range drain(t, rx) {
+			if !want[string(got)] {
+				t.Fatalf("group %d delivered duplicate or stale bytes: %q", group, got)
+			}
+			delete(want, string(got))
+		}
+		if len(want) != 0 {
+			t.Fatalf("group %d lost %d datagrams", group, len(want))
+		}
+	}
+}
+
+func BenchmarkFECReceiveCleanPath(b *testing.B) {
+	for _, size := range []int{128, 1200} {
+		b.Run(fmt.Sprint(size), func(b *testing.B) {
+			_, recv := newLossyPair(nil)
+			cfg := FECConfig{Data: 10, Parity: 3}
+			rx, err := newFECCarrier(recv, cfg, nil)
+			if err != nil {
+				b.Fatal(err)
+			}
+			carrier := rx.(*fecCarrier)
+			body := make([]byte, fecLenPrefix+size)
+			body[0], body[1] = byte(size>>8), byte(size)
+			b.SetBytes(int64(size * cfg.Data))
+			b.ReportAllocs()
+			b.ResetTimer()
+			for group := range b.N {
+				for i := range cfg.Data + cfg.Parity {
+					kind := byte(fecKindData)
+					if i >= cfg.Data {
+						kind = fecKindParity
+					}
+					carrier.absorb(kind, uint32(group), byte(i), body, recv.addr)
+				}
+			}
+		})
+	}
+}
+
 func TestFECDoesNotRedeliverAnIdenticalRecoveredShard(t *testing.T) {
 	send, recv := newLossyPair(nil)
 	cfg := FECConfig{Data: 2, Parity: 1}

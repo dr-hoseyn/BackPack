@@ -102,6 +102,10 @@ func fecMAC(key *[sha256.Size]byte, frame []byte) [sha256.Size]byte {
 // for any more.
 const fecWindow = 16
 
+// Retain ordinary packet buffers across groups. Larger shards still work but
+// do not pin jumbo-sized allocations in every slot after the burst ends.
+const fecReuseShardCap = 2048
+
 // FECConfig describes a scheme: for every Data packets,
 // Parity extra ones are sent, and any Parity of the group's packets may be lost
 // without losing anything. Both zero means no FEC at all. Auth requires
@@ -177,7 +181,7 @@ type fecReady struct {
 
 // fecGroup is the receiver's state for one group.
 type fecGroup struct {
-	shards    [][]byte // nil where not yet received; index by shard number
+	shards    [][]byte // zero length where not yet received; index by shard number
 	haveData  int      // how many data shards arrived
 	haveTotal int      // data + parity shards arrived
 	size      int      // the padded shard size, learned from any parity shard
@@ -433,16 +437,13 @@ func (c *fecCarrier) absorb(kind byte, group uint32, index byte, body []byte, ad
 	}
 	g := c.groups[group]
 	if g == nil {
-		g = &fecGroup{
-			shards: make([][]byte, total),
-			addr:   addr,
-		}
-		c.groups[group] = g
-		c.order = append(c.order, group)
-		c.evict()
+		g = c.newGroup(group, total, addr)
 	}
 
-	if existing := g.shards[index]; existing != nil {
+	if kind == fecKindParity && (g.done || g.haveData == c.cfg.Data) {
+		return nil, false
+	}
+	if existing := g.shards[index]; len(existing) != 0 {
 		if kind == fecKindData {
 			prior, _ := trimShard(existing)
 			// An unauthenticated shard can claim the same slot as a real
@@ -453,7 +454,7 @@ func (c *fecCarrier) absorb(kind byte, group uint32, index byte, body []byte, ad
 		}
 		return nil, false
 	}
-	g.shards[index] = append([]byte(nil), body...)
+	g.shards[index] = append(g.shards[index][:0], body...)
 	g.haveTotal++
 	if kind == fecKindData {
 		g.haveData++
@@ -475,7 +476,7 @@ func (c *fecCarrier) rebuild(g *fecGroup) {
 	// shards travelled unpadded, so they are widened back here.
 	work := make([][]byte, len(g.shards))
 	for i, s := range g.shards {
-		if s == nil {
+		if len(s) == 0 {
 			continue
 		}
 		if len(s) == g.size {
@@ -494,7 +495,7 @@ func (c *fecCarrier) rebuild(g *fecGroup) {
 	}
 	g.done = true
 	for i := 0; i < c.cfg.Data; i++ {
-		if g.shards[i] != nil || work[i] == nil {
+		if len(g.shards[i]) != 0 || work[i] == nil {
 			continue
 		}
 		if payload, ok := trimShard(work[i]); ok {
@@ -504,14 +505,31 @@ func (c *fecCarrier) rebuild(g *fecGroup) {
 	}
 }
 
-// evict drops the oldest groups once the window is full. The caller holds
-// recvMu.
-func (c *fecCarrier) evict() {
-	for len(c.order) > fecWindow {
+// newGroup replaces the oldest group when the receive window is full. The
+// caller holds recvMu. A rebuilt packet may still be owned by pending, so
+// reconstructed groups never lend their storage to a new group.
+func (c *fecCarrier) newGroup(id uint32, total int, addr net.Addr) *fecGroup {
+	var g *fecGroup
+	if len(c.order) == fecWindow {
 		oldest := c.order[0]
-		c.order = c.order[1:]
+		g = c.groups[oldest]
 		delete(c.groups, oldest)
+		copy(c.order, c.order[1:])
+		c.order[len(c.order)-1] = id
+		for i, shard := range g.shards {
+			if g.done || cap(shard) > fecReuseShardCap {
+				g.shards[i] = nil
+			} else {
+				g.shards[i] = shard[:0]
+			}
+		}
+		*g = fecGroup{shards: g.shards, addr: addr}
+	} else {
+		g = &fecGroup{shards: make([][]byte, total), addr: addr}
+		c.order = append(c.order, id)
 	}
+	c.groups[id] = g
+	return g
 }
 
 // putFECHeader writes the fixed prefix.
