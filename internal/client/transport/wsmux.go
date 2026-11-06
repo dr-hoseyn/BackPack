@@ -105,14 +105,9 @@ func (c *WsMuxTransport) channelDialer() {
 			return
 		default:
 
-			tunnelWSConn, err := network.WebSocketDialer(c.state.Ctx(), c.config.Outbound, c.config.Endpoints.Current(), c.config.EdgeIP, "/channel", c.config.DialTimeOut, c.config.KeepAlive, true, c.config.Token, c.config.Mode, c.config.SimpleAuth, 3, 0, 0, c.config.MSS, c.config.WSS)
+			tunnelWSConn, err := c.dialControl(c.state.Ctx())
 			if err != nil {
 				c.logger.Errorf("control channel dialer: %v", err)
-				// The current endpoint did not answer — move to the next one so a
-				// filtered IP or blocked port cannot stall the tunnel forever.
-				if next := c.config.Endpoints.Rotate(); c.config.Endpoints.Len() > 1 {
-					c.logger.Infof("trying next server endpoint: %s", next)
-				}
 				bo.Wait(c.state.Ctx())
 				continue
 			}
@@ -131,6 +126,34 @@ func (c *WsMuxTransport) channelDialer() {
 			return
 		}
 	}
+}
+
+func (c *WsMuxTransport) dialControl(ctx context.Context) (*websocket.Conn, error) {
+	cfg := c.config
+	dial := func(addr string, attempts int) (*websocket.Conn, error) {
+		return network.WebSocketDialer(ctx, cfg.Outbound, addr, cfg.EdgeIP, "/channel", cfg.DialTimeOut, cfg.KeepAlive, true, cfg.Token, cfg.Mode, cfg.SimpleAuth, attempts, 0, 0, cfg.MSS, cfg.WSS)
+	}
+	if cfg.Endpoints.Len() < 2 {
+		return dial(cfg.Endpoints.Current(), 3)
+	}
+
+	// Give each route one full handshake before retrying any route. A TCP
+	// accept alone cannot identify a working TLS/WebSocket path, and racing
+	// authenticated upgrades could claim the server's control seat twice.
+	var lastErr error
+	for _, addr := range cfg.Endpoints.InPreferenceOrder() {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		conn, err := dial(addr, 1)
+		if err == nil {
+			cfg.Endpoints.Prefer(addr)
+			return conn, nil
+		}
+		lastErr = fmt.Errorf("%s: %w", addr, err)
+		c.logger.Debugf("control endpoint failed: %v", lastErr)
+	}
+	return nil, lastErr
 }
 
 // poolMaintainer keeps the pool the right size. The policy is poolSizer's,
