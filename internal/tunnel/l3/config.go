@@ -398,7 +398,7 @@ func ConfigFromTable(table config.L3Config) (Config, error) {
 		MaxConnections: table.MaxConnections,
 		BandwidthMbps:  table.BandwidthMbps,
 		// Read only by the carrier they belong to; both are ignored otherwise.
-		FEC:       FECConfig{Data: table.FECData, Parity: table.FECParity},
+		FEC:       FECConfig{Data: table.FECData, Parity: table.FECParity, Auth: table.FECAuth},
 		Multipath: MultipathConfig{Paths: table.Paths},
 		Spoof:     table.SpoofConfig,
 		SNIDomain: table.SNIDomain,

@@ -305,6 +305,7 @@ func askL3CarrierExtras(cfg *l3Spec, side directSide) bool {
 			off := false
 			cfg.AutoMTU = &off
 			cfg.MTU, cfg.FECData, cfg.FECParity = 1280, 0, 0
+			cfg.FECAuth = false
 		}
 		cfg.Masque.ServerName = strings.TrimSpace(tui.PromptDefault("TLS Server Name (Certificate Hostname)", cfg.Masque.ServerName))
 		if side == sideKharej {
@@ -860,6 +861,7 @@ func askL3FECPair(cfg *l3Spec) {
 	cfg.FECParity = tui.PromptInt("FEC Spare Packets", cfg.FECParity)
 	if cfg.FECData <= 0 || cfg.FECParity <= 0 {
 		cfg.FECData, cfg.FECParity = 0, 0
+		cfg.FECAuth = false
 		tui.Info("FEC Off.")
 		return
 	}

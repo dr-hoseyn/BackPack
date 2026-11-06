@@ -202,7 +202,11 @@ func openCarrierContext(ctx context.Context, cfg Config) (DatagramCarrier, net.A
 	// Error correction wraps whichever carrier was opened, so the scheme is the
 	// same over udp, spoof, pck and xdi and the MTU calculation picks up its
 	// cost through Overhead(). Disabled, this hands the carrier straight back.
-	wrapped, err := newFECCarrier(carrier, cfg.FEC)
+	var keys *fecKeys
+	if cfg.FEC.Auth {
+		keys = deriveFECKeys(cfg.Token, cfg.Mode == ModeDial)
+	}
+	wrapped, err := newFECCarrier(carrier, cfg.FEC, keys)
 	if err != nil {
 		carrier.Close()
 		return nil, nil, err

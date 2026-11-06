@@ -32,6 +32,13 @@ such as `20000-20010` are accepted. Transient outbound sockets are not reserved.
 Reserve new fixed service ports before installing the service, or rerun the
 command after changing the service inventory.
 
+Configured and explicit reservations are saved for boot. TCP ports discovered
+only from live listeners are refreshed whenever the profile is applied again
+and are reclaimed once the listener disappears. Reserve fixed services
+explicitly if they need protection while stopped or before Backpack starts.
+Existing reservations from older profiles are retained because those profiles
+recorded both kinds together.
+
 On kernels supporting busy polling, the profile also sets `net.core.busy_read`
 and `net.core.busy_poll` to zero. This avoids spinning for packets on busy VPS
 CPUs. Their original values are backed up before modification and restored by

@@ -20,6 +20,7 @@ package limits
 import (
 	"context"
 	"fmt"
+	"math"
 	"net"
 	"os"
 	"sync"
@@ -90,6 +91,24 @@ func (l *Limiter) Active() int {
 		return 0
 	}
 	return int(l.active.Load())
+}
+
+// HasBandwidthCap reports whether forwarding needs to pace bytes.
+func (l *Limiter) HasBandwidthCap() bool { return l != nil && l.bucket != nil }
+
+// TryTakeBytes charges bytes without reserving future tokens. A positive
+// duration tells a scheduler when to retry, leaving other flows free to run.
+// The caller supplies a chunk no larger than the configured burst.
+func (l *Limiter) TryTakeBytes(n int) time.Duration {
+	if n == 0 {
+		return 0
+	}
+	now := time.Now()
+	if l.bucket.AllowN(now, n) {
+		return 0
+	}
+	missing := float64(n) - l.bucket.TokensAt(now)
+	return max(time.Nanosecond, time.Duration(math.Ceil(missing/float64(l.bucket.Limit())*float64(time.Second))))
 }
 
 // Wrap applies the bandwidth cap to a connection. Without a cap the connection

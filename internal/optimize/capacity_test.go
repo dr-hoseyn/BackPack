@@ -77,8 +77,10 @@ func TestCapacityDisablesBusyPollingAndRestoresTheOriginalCPUTradeoff(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(live) < 2 || live[len(live)-1] != [2]string{"net.core.busy_poll", "0"} {
-		t.Fatal(live)
+	for _, row := range live {
+		if row[0] == "net.core.busy_poll" || row[0] == "net.core.busy_read" {
+			t.Fatal("the capacity transaction already applied", row)
+		}
 	}
 	profile, _ := os.ReadFile(capacityFile)
 	if !strings.Contains(string(profile), "net.core.busy_read = 0") || !strings.Contains(string(profile), "net.core.busy_poll = 0") {
@@ -254,7 +256,7 @@ func TestReservedPortSyntaxIsStrict(t *testing.T) {
 }
 
 func TestHighConcurrencySurvivesOptimizeWithoutBreakingBootRollback(t *testing.T) {
-	_, _ = capacityFixture(t)
+	state, _ := capacityFixture(t)
 	if _, err := enableHighConcurrency([]int{443}); err != nil {
 		t.Fatal(err)
 	}
@@ -270,10 +272,10 @@ func TestHighConcurrencySurvivesOptimizeWithoutBreakingBootRollback(t *testing.T
 		return out
 	}
 	l, p := values(live), values(persisted)
-	if l["net.ipv4.ip_local_port_range"] != HighConcurrencyRange || p["net.ipv4.ip_local_port_range"] != "32768 60999" {
+	if state.Range != HighConcurrencyRange || l["net.ipv4.ip_local_port_range"] != "" || p["net.ipv4.ip_local_port_range"] != "32768 60999" {
 		t.Fatal(l, p)
 	}
-	if !strings.Contains(l["net.ipv4.ip_local_reserved_ports"], "25000") || p["net.ipv4.ip_local_reserved_ports"] != "9000,62050-62051" {
+	if !strings.Contains(state.Reserved, "25000") || l["net.ipv4.ip_local_reserved_ports"] != "" || p["net.ipv4.ip_local_reserved_ports"] != "9000,62050-62051" {
 		t.Fatal(l, p)
 	}
 	b, _ := os.ReadFile(capacityFile)
@@ -286,6 +288,94 @@ func TestHighConcurrencySurvivesOptimizeWithoutBreakingBootRollback(t *testing.T
 	live, _, err = capacityTuningRows([]int{443})
 	if err != nil || values(live)["net.ipv4.ip_local_port_range"] != "32768 60999" {
 		t.Fatal(live, err)
+	}
+}
+
+func TestCapacityReclaimsOnlyOwnedListenerReservations(t *testing.T) {
+	state, _ := capacityFixture(t)
+	if _, err := enableHighConcurrency([]int{41000}); err != nil {
+		t.Fatal(err)
+	}
+	boot, err := os.ReadFile(capacityFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(boot), capacityAutoPrefix+"19384\n") ||
+		!strings.Contains(string(boot), capacityReservedPrefix+"9000,41000,62050-62051\n") {
+		t.Fatalf("boot and live ownership were mixed: %s", boot)
+	}
+	// Simulate an operator adding a manual reservation while the profile is
+	// active and the temporary listener exiting.
+	if err := capacitySysctl("net.ipv4.ip_local_reserved_ports", state.Reserved+",42000"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(procNetDir, "tcp"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := capacityTuningRows(nil); err != nil {
+		t.Fatal(err)
+	}
+	if state.Reserved != "9000,41000,42000,62050-62051" {
+		t.Fatal(state.Reserved)
+	}
+	// A stopped listener can come back and be discovered again.
+	if err := os.WriteFile(filepath.Join(procNetDir, "tcp"), []byte("0: 0100007F:4BB8 00000000:0000 0A\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := enableHighConcurrency(nil); err != nil {
+		t.Fatal(err)
+	}
+	if state.Reserved != "9000,19384,41000,42000,62050-62051" {
+		t.Fatal(state.Reserved)
+	}
+}
+
+func TestCapacityRetainsLegacyReservationsWithUnknownOwnership(t *testing.T) {
+	state, _ := capacityFixture(t)
+	if _, err := enableHighConcurrency(nil); err != nil {
+		t.Fatal(err)
+	}
+	legacy := capacityHeader + capacityReservedPrefix + state.Reserved + ",41000\n"
+	if err := os.WriteFile(capacityFile, []byte(legacy), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(procNetDir, "tcp"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := enableHighConcurrency(nil); err != nil {
+		t.Fatal(err)
+	}
+	if state.Reserved != "9000,19384,41000,62050-62051" {
+		t.Fatal(state.Reserved)
+	}
+}
+
+func TestCapacityRefreshFailureKeepsLivePortsAndOwnership(t *testing.T) {
+	state, _ := capacityFixture(t)
+	if _, err := enableHighConcurrency(nil); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(capacityFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(procNetDir, "tcp"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	set := capacitySysctl
+	capacitySysctl = func(key, value string) error {
+		if key == "net.ipv4.ip_local_port_range" && state.Reserved == "9000,62050-62051" {
+			capacitySysctl = set // fail only the refresh, not the rollback
+			return errors.New("cannot apply range")
+		}
+		return set(key, value)
+	}
+	if _, _, err := capacityTuningRows(nil); err == nil {
+		t.Fatal("failed refresh reported success")
+	}
+	after, err := os.ReadFile(capacityFile)
+	if err != nil || string(after) != string(before) || state.Reserved != "9000,19384,62050-62051" {
+		t.Fatalf("failed refresh changed ownership or live ports: %q, %s, %v", after, state.Reserved, err)
 	}
 }
 

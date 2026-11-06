@@ -48,7 +48,7 @@ func TestReviewedHandshakeCacheRequiresTheOriginalMessage(t *testing.T) {
 
 func TestReviewedFECMalformedShardCannotConsumeAValidSlot(t *testing.T) {
 	a, _ := newLossyPair(nil)
-	raw, err := newFECCarrier(a, FECConfig{Data: 2, Parity: 1})
+	raw, err := newFECCarrier(a, FECConfig{Data: 2, Parity: 1}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -254,12 +254,12 @@ func TestReviewedFECRecoveredIngressCanReceiveReply(t *testing.T) {
 				below = newMultipathCarrier([]DatagramCarrier{&pinnedCarrier{DatagramCarrier: below}, &pinnedCarrier{DatagramCarrier: reviewedUDPPath(localUDP(t))}}, nil)
 				source = &receivedPath{Addr: source, owner: below.(*multipathCarrier), index: 0}
 			}
-			tx, err := newFECCarrier(below, FECConfig{Data: 2, Parity: 1})
+			tx, err := newFECCarrier(below, FECConfig{Data: 2, Parity: 1}, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
 			defer tx.Close()
-			rx, err := newFECCarrier(reviewedUDPPath(b), FECConfig{Data: 2, Parity: 1})
+			rx, err := newFECCarrier(reviewedUDPPath(b), FECConfig{Data: 2, Parity: 1}, nil)
 			if err != nil {
 				t.Fatal(err)
 			}

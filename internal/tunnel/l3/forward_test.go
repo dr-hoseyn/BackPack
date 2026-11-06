@@ -281,6 +281,75 @@ func TestForwarderCarriesUDP(t *testing.T) {
 	t.Fatal("no reply came back through the udp forwarder")
 }
 
+func TestForwarderPacesUDPAcrossFlowsWithoutBlockingSmallDatagrams(t *testing.T) {
+	backend, err := net.ListenPacket("udp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer backend.Close()
+	addr := fmt.Sprintf("127.0.0.1:%d", freePort(t))
+	f, err := NewForwarder(Config{
+		Ports: []string{addr + "=" + backend.LocalAddr().String()}, AcceptUDP: true,
+		PeerIP: "127.0.0.1", BandwidthMbps: 1,
+	}, quietLogger())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- f.Run(ctx) }()
+	select {
+	case <-f.Ready():
+	case <-time.After(5 * time.Second):
+		t.Fatal("listeners did not start")
+	}
+	dial := func() net.Conn {
+		c, err := net.Dial("udp4", addr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { c.Close() })
+		return c
+	}
+	bulk, light := dial(), dial()
+	write := func(c net.Conn, data []byte) {
+		if _, err := c.Write(data); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if delay := f.limiter.TryTakeBytes(125000); delay != 0 {
+		t.Fatal("could not drain the initial burst")
+	}
+	large := bytes.Repeat([]byte("x"), 60000)
+	write(bulk, large)
+	write(bulk, []byte("bulk tail"))
+	// A second source on the same listener must progress before the first
+	// source has accumulated roughly half a second of pacing credit.
+	start := time.Now()
+	write(light, []byte("light"))
+	_ = backend.SetReadDeadline(start.Add(2 * time.Second))
+	buf := make([]byte, udpBufferSize)
+	for i, want := range [][]byte{[]byte("light"), large, []byte("bulk tail")} {
+		n, _, err := backend.ReadFrom(buf)
+		if err != nil || !bytes.Equal(buf[:n], want) {
+			t.Fatalf("datagram %d: got %d bytes, want %d, err %v", i, n, len(want), err)
+		}
+		if i == 0 {
+			t.Logf("light datagram arrived in %s while the bulk flow was pacing", time.Since(start))
+		}
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("forwarder did not stop")
+	}
+}
+
 // Several datagrams from one client must all reach the same backend socket and
 // come back, which is what the flow table is for.
 func TestForwarderKeepsUDPFlows(t *testing.T) {

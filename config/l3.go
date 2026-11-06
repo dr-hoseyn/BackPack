@@ -123,6 +123,9 @@ type L3Config struct {
 	// FECParity is how many parity packets accompany each group. Both ends must
 	// agree on this and on fec_data.
 	FECParity int `toml:"fec_parity"`
+	// FECAuth authenticates data and parity shards with the tunnel token.
+	// Enable it on both peers after upgrading them.
+	FECAuth bool `toml:"fec_auth"`
 
 	// Paths spreads the udp carrier over this many sockets, on consecutive
 	// ports starting at the one in Addr. One (or zero) is a single socket.

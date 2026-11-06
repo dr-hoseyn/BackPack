@@ -168,6 +168,11 @@ func (f *Forwarder) Run(ctx context.Context) error {
 	var wg sync.WaitGroup
 	var firstErr error
 	var errOnce sync.Once
+	var udpPacer *udpWriteQueue
+	if f.acceptUDP && f.limiter.HasBandwidthCap() {
+		udpPacer = newUDPWriteQueue()
+		wg.Go(func() { udpPacer.run(genCtx, f.limiter, f.log) })
+	}
 
 	// One count per listener, dropped as soon as that listener has finished
 	// trying to bind — whether it succeeded or not. Run cannot report
@@ -207,7 +212,7 @@ func (f *Forwarder) Run(ctx context.Context) error {
 			wg.Add(1)
 			go func(m portmap.Mapping) {
 				defer wg.Done()
-				if err := f.serveUDP(genCtx, m, binding.Done); err != nil && ctx.Err() == nil {
+				if err := f.serveUDP(genCtx, m, binding.Done, udpPacer); err != nil && ctx.Err() == nil {
 					f.log.Errorf("l3: udp forwarder for %s stopped: %v", m.Listen, err)
 					errOnce.Do(func() {
 						firstErr = err
@@ -352,6 +357,8 @@ func (f *Forwarder) noteBackend(m portmap.Mapping, err error) {
 // so a flow is recognised by its source address and ends when it goes quiet.
 type udpFlow struct {
 	backend  net.Conn
+	socket   *net.UDPConn
+	ctx      context.Context
 	member   *backendMember     // counted against it while the flow lives
 	cancel   context.CancelFunc // releases pacing when this flow closes
 	lastSeen atomic.Int64       // unix nanoseconds
@@ -381,7 +388,7 @@ func (f *udpFlow) noteBackendReadError(ctx context.Context, err error) {
 	f.member.downUntil.Store(time.Now().Add(backendCooldown).UnixNano())
 }
 
-func (f *Forwarder) serveUDP(ctx context.Context, m portmap.Mapping, bound func()) error {
+func (f *Forwarder) serveUDP(ctx context.Context, m portmap.Mapping, bound func(), pacer *udpWriteQueue) error {
 	conn, err := net.ListenPacket("udp", m.Listen)
 	bound()
 	if err != nil {
@@ -425,6 +432,10 @@ func (f *Forwarder) serveUDP(ctx context.Context, m portmap.Mapping, bound func(
 			continue
 		}
 		flow.touch()
+		if pacer != nil {
+			pacer.enqueue(flow, buf[:n])
+			continue
+		}
 		if _, err := flow.backend.Write(buf[:n]); err != nil {
 			f.log.Debugf("l3: forwarding udp to %s: %v", m.Targets, err)
 		}
@@ -465,7 +476,10 @@ func (f *Forwarder) udpFlowFor(
 	}
 
 	flowCtx, cancelFlow := context.WithCancel(ctx)
-	flow := &udpFlow{backend: f.limiter.Wrap(flowCtx, udpConn), member: member, cancel: cancelFlow}
+	flow := &udpFlow{
+		backend: f.limiter.Wrap(flowCtx, udpConn), socket: udpConn,
+		ctx: flowCtx, member: member, cancel: cancelFlow,
+	}
 	flow.touch()
 
 	// Two goroutines could reach here for the same client at once; only one

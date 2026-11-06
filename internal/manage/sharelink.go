@@ -97,9 +97,10 @@ type ShareLink struct {
 	LocalIP string `json:"li,omitempty"`
 	PeerIP  string `json:"pi,omitempty"`
 
-	FECData   int `json:"fd,omitempty"`
-	FECParity int `json:"fp,omitempty"`
-	Paths     int `json:"pa,omitempty"`
+	FECData   int  `json:"fd,omitempty"`
+	FECParity int  `json:"fp,omitempty"`
+	FECAuth   bool `json:"fa,omitempty"`
+	Paths     int  `json:"pa,omitempty"`
 
 	// Direct only, and all three paired. They were left out, and a tunnel
 	// whose Iran side had set one of them came up on the kharej without it:
@@ -367,8 +368,9 @@ type PeerForm struct {
 	// The exact error-correction pair. FEC above says only whether it is on,
 	// and a far end given "on" took the recommended pair — not the one the
 	// producer had chosen, and two different pairs cannot decode each other.
-	FECData   int `json:"fecData,omitempty"`
-	FECParity int `json:"fecParity,omitempty"`
+	FECData   int  `json:"fecData,omitempty"`
+	FECParity int  `json:"fecParity,omitempty"`
+	FECAuth   bool `json:"fecAuth,omitempty"`
 
 	GREKey   uint32 `json:"greKey,omitempty"`   // direct
 	MSSClamp int    `json:"mssClamp,omitempty"` // direct
@@ -435,6 +437,7 @@ func MirrorForPeer(l ShareLink) PeerForm {
 		FEC:        l.FECData > 0 && l.FECParity > 0,
 		FECData:    l.FECData,
 		FECParity:  l.FECParity,
+		FECAuth:    l.FECAuth,
 		Stealth:    l.Stealth,
 		GREKey:     l.GREKey,
 		MSSClamp:   l.L3MSS,
@@ -684,6 +687,7 @@ func shareLinkOf(name, host string, cfg config.Config) (string, error) {
 		l.MTU = cfg.L3.MTU
 		l.LocalIP, l.PeerIP = cfg.L3.LocalIP, cfg.L3.PeerIP
 		l.FECData, l.FECParity = cfg.L3.FECData, cfg.L3.FECParity
+		l.FECAuth = cfg.L3.FECAuth
 		l.Paths = cfg.L3.Paths
 		l.GREKey, l.L3MSS, l.AutoMTU = cfg.L3.GREKey, cfg.L3.MSSClamp, cfg.L3.AutoMTU
 		sc := cfg.L3.SpoofConfig

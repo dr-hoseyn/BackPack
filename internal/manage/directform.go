@@ -88,6 +88,7 @@ type NewDirectTunnel struct {
 	FEC       bool `json:"fec"`
 	FECData   int  `json:"fecData"`
 	FECParity int  `json:"fecParity"`
+	FECAuth   bool `json:"fecAuth"`
 
 	// MTU, MSSClamp and AutoMTU are set from the other side's setup link.
 	// Zero and nil keep the defaults.
@@ -503,6 +504,7 @@ func (n NewDirectTunnel) spec() (l3Spec, error) {
 		plan := defaultL3FEC()
 		spec.FECData, spec.FECParity = plan.Data, plan.Parity
 	}
+	spec.FECAuth = n.FECAuth
 	if n.MTU > 0 {
 		spec.MTU = n.MTU
 	}
@@ -910,6 +912,7 @@ func applyDirectEdit(l config.L3Config, e DirectEdit) (config.L3Config, error) {
 			l.FECData, l.FECParity = plan.Data, plan.Parity
 		} else {
 			l.FECData, l.FECParity = 0, 0
+			l.FECAuth = false
 		}
 	}
 	return l, nil
@@ -946,7 +949,7 @@ func directSpecFrom(name string, l config.L3Config) l3Spec {
 		MTU:       l.MTU,
 		AutoMTU:   l.AutoMTU,
 		SockBuf:   l.SockBuf, MSSClamp: l.MSSClamp,
-		FECData: l.FECData, FECParity: l.FECParity,
+		FECData: l.FECData, FECParity: l.FECParity, FECAuth: l.FECAuth,
 		Paths:  l.Paths,
 		Preset: l.Preset, TxQueueLen: l.TxQueueLen, Qdisc: l.Qdisc,
 		Ports:          l.Ports,

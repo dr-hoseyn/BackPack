@@ -53,7 +53,7 @@ var shareFieldIDs = []string{
 	"hmode",
 	"htkey", "htdisco", "htpsk", "hderp", "hdr",
 	"hih",
-	"krp", "dnr", "dnq", "co",
+	"krp", "dnr", "dnq", "co", "fa",
 }
 
 // shareWords are the values a link repeats, each written as its index. Never

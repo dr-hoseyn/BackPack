@@ -2,7 +2,9 @@ package l3
 
 import (
 	"bytes"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -54,18 +56,44 @@ import (
 // The length is what lets a rebuilt shard be trimmed back to the packet it was,
 // since every shard in a group is padded to a common size before the parity is
 // computed over them.
+// Authenticated frames set the high bit of kind and append a 16-byte MAC
+// over the header and body. The tag is outside the Reed-Solomon shard.
 const (
 	fecHeaderLen = 6
 	fecLenPrefix = 2
 
 	fecKindData   byte = 0
 	fecKindParity byte = 1
+	fecKindAuth   byte = 0x80
 )
 
 // fecOverhead is what this layer costs a data packet: its header and the length
 // that precedes the payload. Parity packets are extra packets rather than extra
 // bytes on an existing one, so they do not enter the MTU.
 const fecOverhead = fecHeaderLen + fecLenPrefix
+const fecTagLen = 16
+
+type fecKeys struct {
+	send [sha256.Size]byte
+	recv [sha256.Size]byte
+}
+
+func deriveFECKeys(token string, dial bool) *fecKeys {
+	toListener := sha256.Sum256([]byte("backpack l3 fec v1 dial\x00" + token))
+	toDialer := sha256.Sum256([]byte("backpack l3 fec v1 listen\x00" + token))
+	if dial {
+		return &fecKeys{send: toListener, recv: toDialer}
+	}
+	return &fecKeys{send: toDialer, recv: toListener}
+}
+
+func fecMAC(key *[sha256.Size]byte, frame []byte) [sha256.Size]byte {
+	mac := hmac.New(sha256.New, key[:])
+	mac.Write(frame)
+	var tag [sha256.Size]byte
+	mac.Sum(tag[:0])
+	return tag
+}
 
 // fecWindow is how many recent groups a receiver keeps shards for. A group is
 // only useful until its data has been delivered and its parity can no longer
@@ -74,12 +102,14 @@ const fecOverhead = fecHeaderLen + fecLenPrefix
 // for any more.
 const fecWindow = 16
 
-// FECConfig is the two numbers that describe a scheme: for every Data packets,
+// FECConfig describes a scheme: for every Data packets,
 // Parity extra ones are sent, and any Parity of the group's packets may be lost
-// without losing anything. Both zero means no FEC at all.
+// without losing anything. Both zero means no FEC at all. Auth requires
+// both peers to sign and verify the wire frames.
 type FECConfig struct {
 	Data   int
 	Parity int
+	Auth   bool
 }
 
 // Enabled reports whether a scheme was asked for. A half-configured pair is not
@@ -92,6 +122,9 @@ func (f FECConfig) Enabled() bool { return f.Data > 0 && f.Parity > 0 }
 // refused where it is written rather than at the first packet.
 func (f FECConfig) Validate() error {
 	if !f.Enabled() {
+		if f.Auth {
+			return fmt.Errorf("l3: fec_auth requires fec_data and fec_parity")
+		}
 		if f.Data != 0 || f.Parity != 0 {
 			return fmt.Errorf("l3: fec needs both fec_data and fec_parity set (got %d and %d); "+
 				"leave both at 0 for no error correction", f.Data, f.Parity)
@@ -114,6 +147,7 @@ type fecCarrier struct {
 	below DatagramCarrier
 	cfg   FECConfig
 	enc   reedsolomon.Encoder
+	keys  *fecKeys
 
 	sendMu    sync.Mutex
 	sendGrp   uint32
@@ -154,12 +188,15 @@ type fecGroup struct {
 // newFECCarrier wraps below in the scheme. An unusable scheme is an error here
 // rather than a silent pass-through, because a tunnel whose peer is adding
 // parity and whose own end is not will discard every parity packet as garbage.
-func newFECCarrier(below DatagramCarrier, cfg FECConfig) (DatagramCarrier, error) {
+func newFECCarrier(below DatagramCarrier, cfg FECConfig, keys *fecKeys) (DatagramCarrier, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
 	if !cfg.Enabled() {
 		return below, nil
+	}
+	if cfg.Auth && keys == nil {
+		return nil, fmt.Errorf("l3: authenticated FEC requires directional keys")
 	}
 	enc, err := reedsolomon.New(cfg.Data, cfg.Parity)
 	if err != nil {
@@ -176,12 +213,20 @@ func newFECCarrier(below DatagramCarrier, cfg FECConfig) (DatagramCarrier, error
 		sendGrp: binary.BigEndian.Uint32(first[:]),
 		below:   below,
 		cfg:     cfg,
+		keys:    keys,
 		enc:     enc,
 		groups:  make(map[uint32]*fecGroup),
 	}, nil
 }
 
-func (c *fecCarrier) Overhead() int { return c.below.Overhead() + fecOverhead }
+func (c *fecCarrier) tagLen() int {
+	if c.keys != nil {
+		return fecTagLen
+	}
+	return 0
+}
+
+func (c *fecCarrier) Overhead() int { return c.below.Overhead() + fecOverhead + c.tagLen() }
 
 func (c *fecCarrier) CarrierName() string {
 	return fmt.Sprintf("%s+fec%d/%d", c.below.CarrierName(), c.cfg.Data, c.cfg.Parity)
@@ -230,10 +275,7 @@ func (c *fecCarrier) WriteTo(p []byte, addr net.Addr) (int, error) {
 	frame := c.wireFrame(fecHeaderLen + need)
 	putFECHeader(frame, fecKindData, c.sendGrp, byte(c.sendIdx))
 	copy(frame[fecHeaderLen:], shard)
-	n, err := c.below.WriteTo(frame, addr)
-	if err == nil && n != len(frame) {
-		err = io.ErrShortWrite
-	}
+	err := c.writeFrame(frame, addr)
 	c.sendIdx++
 	if c.sendIdx == c.cfg.Data {
 		c.flushParity()
@@ -247,12 +289,23 @@ func (c *fecCarrier) WriteTo(p []byte, addr net.Addr) (int, error) {
 // wireFrame is borrowed until the underlying synchronous write returns.
 // Every caller holds sendMu, including parity generation.
 func (c *fecCarrier) wireFrame(size int) []byte {
-	if cap(c.sendFrame) < size {
-		c.sendFrame = make([]byte, size)
-	} else {
-		c.sendFrame = c.sendFrame[:size]
+	if cap(c.sendFrame) < size+c.tagLen() {
+		c.sendFrame = make([]byte, size+c.tagLen())
 	}
-	return c.sendFrame
+	return c.sendFrame[:size]
+}
+
+func (c *fecCarrier) writeFrame(frame []byte, addr net.Addr) error {
+	if c.keys != nil {
+		frame[0] |= fecKindAuth
+		tag := fecMAC(&c.keys.send, frame)
+		frame = append(frame, tag[:fecTagLen]...)
+	}
+	n, err := c.below.WriteTo(frame, addr)
+	if err == nil && n != len(frame) {
+		return io.ErrShortWrite
+	}
+	return err
 }
 
 // flushParity sends the group's redundancy without changing the wire format.
@@ -289,7 +342,7 @@ func (c *fecCarrier) flushParity() {
 		putFECHeader(frame, fecKindParity, c.sendGrp, byte(i))
 		copy(frame[fecHeaderLen:], c.sendPad[i])
 		// Data is already on the wire; parity remains best effort.
-		_, _ = c.below.WriteTo(frame, c.sendPeer)
+		_ = c.writeFrame(frame, c.sendPeer)
 	}
 }
 
@@ -301,7 +354,7 @@ func (c *fecCarrier) ReadFrom(p []byte) (int, net.Addr, error) {
 	if n, addr, ok := c.takePending(p); ok {
 		return n, addr, nil
 	}
-	need := len(p) + fecHeaderLen + fecLenPrefix
+	need := len(p) + fecOverhead + c.tagLen()
 	if cap(c.readFrame) < need {
 		c.readFrame = make([]byte, need)
 	}
@@ -311,7 +364,19 @@ func (c *fecCarrier) ReadFrom(p []byte) (int, net.Addr, error) {
 		if err != nil {
 			return 0, nil, err
 		}
-		kind, group, index, body, ok := parseFECHeader(buf[:n])
+		frame := buf[:n]
+		if c.keys != nil {
+			if n < fecOverhead+fecTagLen || frame[0]&fecKindAuth == 0 {
+				continue
+			}
+			frame = frame[:n-fecTagLen]
+			want := fecMAC(&c.keys.recv, frame)
+			if !hmac.Equal(want[:fecTagLen], buf[n-fecTagLen:n]) {
+				continue
+			}
+			frame[0] &^= fecKindAuth
+		}
+		kind, group, index, body, ok := parseFECHeader(frame)
 		if !ok {
 			continue // not ours, or truncated: the layer above never sees it
 		}

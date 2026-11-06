@@ -167,6 +167,7 @@ type L3Spec struct {
 	SockBuf        int
 	FECData        int
 	FECParity      int
+	FECAuth        bool
 	Paths          int
 	MSSClamp       int
 	Preset         string
@@ -284,6 +285,9 @@ func (s L3Spec) Render() string {
 	if s.FECData > 0 && s.FECParity > 0 {
 		writeKV(&b, "fec_data", fmt.Sprint(s.FECData))
 		writeKV(&b, "fec_parity", fmt.Sprint(s.FECParity))
+	}
+	if s.FECAuth {
+		writeKV(&b, "fec_auth", "true")
 	}
 	// One socket is the default and needs no key; more than one is written so
 	// both ends read the same number out of their own file.
