@@ -128,11 +128,21 @@ func (l *lifecycle) Wait(ctx context.Context) { l.listeners.wait(ctx) }
 // and next resets whatever per-generation state the transport keeps and starts
 // the new generation on ctx.
 func (l *lifecycle) restart(closeControl func(), next func(ctx context.Context)) {
+	l.restartGeneration(closeControl, next)
+}
+
+// A listener failure belongs to the generation that owned it. A delayed
+// recovery must not tear down a newer generation installed by a config reload
+// or an explicit restart while the failed listener was winding down.
+func (l *lifecycle) restartGeneration(closeControl func(), next func(ctx context.Context), expected ...context.Context) {
 	if !l.restartMutex.TryLock() {
 		l.logger.Warn("server restart already in progress, skipping restart attempt")
 		return
 	}
 	defer l.restartMutex.Unlock()
+	if len(expected) > 0 && (expected[0].Err() != nil || l.run.context() != expected[0]) {
+		return
+	}
 
 	l.logger.Info("restarting server...")
 

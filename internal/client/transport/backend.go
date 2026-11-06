@@ -24,6 +24,9 @@ import (
 
 // backendOpts is how a transport's users reach the local service.
 type backendOpts struct {
+	// owner narrows a mux backend's lifetime to its physical session. The
+	// control channel and sibling sessions may remain healthy when one fails.
+	owner       context.Context
 	dialTimeout time.Duration
 	keepAlive   time.Duration
 	// rcvBuf and sndBuf are the socket buffers for a backend on another
@@ -33,6 +36,13 @@ type backendOpts struct {
 	mss    int
 	// sniffer records per-port usage for the panel.
 	sniffer bool
+}
+
+func (o backendOpts) context(generation context.Context) context.Context {
+	if o.owner != nil {
+		return o.owner
+	}
+	return generation
 }
 
 // loopbackBuffer is the socket buffer for a backend on this machine, where a
@@ -62,9 +72,12 @@ func (l *lifecycle) dialBackend(addr string, o backendOpts) net.Conn {
 	if isLoopback(addr) {
 		rcv, snd = loopbackBuffer, loopbackBuffer
 	}
-	conn, err := network.TcpDialer(l.state.Ctx(), addr, o.dialTimeout, o.keepAlive, true, 1, rcv, snd, o.mss)
+	ctx := o.context(l.state.Ctx())
+	conn, err := network.TcpDialer(ctx, addr, o.dialTimeout, o.keepAlive, true, 1, rcv, snd, o.mss)
 	if err != nil {
-		localDial.Report(l.logger, addr, err)
+		if ctx.Err() == nil {
+			localDial.Report(l.logger, addr, err)
+		}
 		return nil
 	}
 	// The last hop worked, so any run of failures recorded for the panel ends
@@ -82,14 +95,14 @@ func (l *lifecycle) relay(user net.Conn, addr string, port int, o backendOpts) {
 		user.Close()
 		return
 	}
-	handlers.TCPConnectionHandler(l.state.Ctx(), false, metrics.CountedConn(user), backend, l.logger, l.state.Usage(), port, o.sniffer)
+	handlers.TCPConnectionHandler(o.context(l.state.Ctx()), false, metrics.CountedConn(user), backend, l.logger, l.state.Usage(), port, o.sniffer)
 }
 
 // relayStream serves one user arriving on a stream that names its own target:
 // a UDP flow is handed to the UDP forwarder, anything else is resolved and
 // relayed.
 func (l *lifecycle) relayStream(stream net.Conn, target string, o backendOpts) {
-	if dialForwardedUDP(l.state.Ctx(), o.dialTimeout, stream, target, l.logger, l.state.Usage(), o.sniffer) {
+	if dialForwardedUDP(o.context(l.state.Ctx()), o.dialTimeout, stream, target, l.logger, l.state.Usage(), o.sniffer) {
 		return
 	}
 	port, addr, err := network.ResolveRemoteAddr(target)
@@ -105,7 +118,8 @@ func (l *lifecycle) relayStream(stream net.Conn, target string, o backendOpts) {
 // user: the target it names is read in the stream's own goroutine, so a stream
 // that is slow to name one never holds up the streams behind it.
 func (l *lifecycle) serveSession(session *smux.Session, from net.Addr, o backendOpts) {
-	ctx := l.state.Ctx()
+	ctx, cancel := context.WithCancel(l.state.Ctx())
+	o.owner = ctx
 	// The session is the generation's: when the generation ends the session
 	// goes with it, and AcceptStream below returns. Waiting for the peer to
 	// notice instead is waiting for ever over KCP, where nothing tells the
@@ -113,6 +127,10 @@ func (l *lifecycle) serveSession(session *smux.Session, from net.Addr, o backend
 	stop := context.AfterFunc(ctx, func() { session.Close() })
 	defer func() {
 		stop()
+		// Ending one data session must also cancel its pending DNS/dials and
+		// idle backend flows. Waiting for the whole generation stranded them
+		// across pool repairs while the control channel stayed connected.
+		cancel()
 		// However the loop ended, the session ends with it — including when
 		// the generation was already over before the first AcceptStream.
 		session.Close()
