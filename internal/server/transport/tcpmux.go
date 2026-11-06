@@ -388,7 +388,7 @@ func (s *TcpMuxTransport) deliverTunnelConn(g *tcpMuxGen, conn net.Conn, nonce s
 				return false
 			}
 		}
-		session, err := smux.Client(conn, s.smuxCfg())
+		session, err := network.NewWatchedMuxSession(conn, s.smuxCfg(), smux.Client)
 		if err != nil {
 			s.logger.Errorf("failed to create MUX session: %v", err)
 			return false

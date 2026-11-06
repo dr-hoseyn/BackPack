@@ -276,7 +276,7 @@ func (c *TcpMuxTransport) handleSession(tunnelConn net.Conn) {
 	}()
 
 	// SMUX server
-	session, err := smux.Server(tunnelConn, c.smuxCfg())
+	session, err := network.NewWatchedMuxSession(tunnelConn, c.smuxCfg(), smux.Server)
 	if err != nil {
 		c.logger.Errorf("failed to create mux session: %v", err)
 		return

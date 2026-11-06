@@ -18,21 +18,39 @@ import (
 )
 
 func TestWSMuxBinaryStreamAndLegacyCompatibility(t *testing.T) {
-	for _, framed := range []bool{true, false} {
-		t.Run(map[bool]string{true: "framed", false: "legacy"}[framed], func(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		mode   config.TransportType
+		framed bool
+	}{
+		{"framed WS", config.WSMUX, true},
+		{"legacy WS", config.WSMUX, false},
+		{"framed WSS", config.WSSMUX, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			const token = "test-token"
 			up := websocket.Upgrader{ReadBufferSize: wsReadBufferSize, WriteBufferSize: wsWriteBufferSize, WriteBufferPool: wsWriteBuffers}
-			if framed {
+			if tc.framed {
 				up.Subprotocols = []string{WSMuxBinaryProtocol}
 			}
 			serverDone := make(chan error, 1)
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				c, e := up.Upgrade(WSMuxResponse(w), r, nil)
+			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				headers := make(http.Header)
+				if tc.mode == config.WSSMUX {
+					proof, err := WSSServerAnswer(r.TLS, token)
+					if err != nil {
+						serverDone <- err
+						return
+					}
+					headers.Set(WSSServerProofHeader, proof)
+				}
+				c, e := up.Upgrade(WSMuxResponse(w), r, headers)
 				if e != nil {
 					serverDone <- e
 					return
 				}
 				defer c.Close()
-				s, e := smux.Server(WSMuxStream(c), nil)
+				s, e := NewWatchedMuxSession(WSMuxStream(c), nil, smux.Server)
 				if e != nil {
 					serverDone <- e
 					return
@@ -45,17 +63,25 @@ func TestWSMuxBinaryStreamAndLegacyCompatibility(t *testing.T) {
 				}
 				_, e = io.Copy(stream, stream)
 				serverDone <- e
-			}))
+			})
+			var srv *httptest.Server
+			var options []WSDialOption
+			if tc.mode == config.WSSMUX {
+				srv = httptest.NewTLSServer(handler)
+				options = append(options, trustTestWSS(t, srv))
+			} else {
+				srv = httptest.NewServer(handler)
+			}
 			defer srv.Close()
-			c, e := WebSocketDialer(context.Background(), nil, srv.Listener.Addr().String(), "", "/tunnel", 2*time.Second, time.Second, true, "test-token", config.WSMUX, false, 1, 0, 0, 0)
+			c, e := WebSocketDialer(context.Background(), nil, srv.Listener.Addr().String(), "", "/tunnel", 2*time.Second, time.Second, true, token, tc.mode, false, 1, 0, 0, 0, options...)
 			if e != nil {
 				t.Fatal(e)
 			}
 			defer c.Close()
-			if (c.Subprotocol() == WSMuxBinaryProtocol) != framed {
+			if (c.Subprotocol() == WSMuxBinaryProtocol) != tc.framed {
 				t.Fatal("framing disagreement")
 			}
-			s, e := smux.Client(WSMuxStream(c), nil)
+			s, e := NewWatchedMuxSession(WSMuxStream(c), nil, smux.Client)
 			if e != nil {
 				t.Fatal(e)
 			}

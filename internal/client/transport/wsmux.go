@@ -199,7 +199,7 @@ func (c *WsMuxTransport) handleSession(tunnelConn *websocket.Conn, mux network.W
 	// SMUX server
 	cfg := *c.smuxConfig
 	cfg.Version = mux.NegotiatedVersion
-	session, err := smux.Server(network.WSMuxStream(tunnelConn), &cfg)
+	session, err := network.NewWatchedMuxSession(network.WSMuxStream(tunnelConn), &cfg, smux.Server)
 	if err != nil {
 		c.logger.Errorf("failed to create mux session: %v", err)
 		return
