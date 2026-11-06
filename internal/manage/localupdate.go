@@ -170,6 +170,12 @@ func ApplyLocalUpdate(u LocalUpdate, logf func(string)) error {
 		logf("No SHA256SUMS beside the archive — installing it unverified.")
 	}
 
+	unlock, err := lockUpdate()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
 	healthPolicy, err := prepareUpdateHealth(logf)
 	if err != nil {
 		return err

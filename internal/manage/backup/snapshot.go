@@ -3,7 +3,6 @@ package backup
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/backpack/backpack/internal/manage/core"
 	"io"
 	"os"
 	"path/filepath"
@@ -12,6 +11,7 @@ import (
 	"time"
 
 	"github.com/backpack/backpack/internal/app"
+	"github.com/backpack/backpack/internal/manage/core"
 )
 
 // snapshotRetention is how many pre-update snapshots are kept on disk.
@@ -21,7 +21,7 @@ const snapshotRetention = 5
 type SnapshotMeta struct {
 	Stamp   string   `json:"stamp"`   // 20260714-2210
 	Version string   `json:"version"` // the version that was running when taken
-	Created string   `json:"created"` // RFC3339
+	Created string   `json:"created"` // RFC3339, optionally with fractional seconds
 	Reason  string   `json:"reason"`  // e.g. "pre-update"
 	Tunnels []string `json:"tunnels"` // tunnel names captured
 }
@@ -39,9 +39,13 @@ func Root() string { return app.InstallDir + "/snapshots" }
 // TakeSnapshot copies the running binary and the whole config directory into a
 // timestamped folder so a failed update or a bad config change can be undone.
 func TakeSnapshot(reason string) (Snapshot, error) {
-	stamp := time.Now().Format("20060102-150405")
-	dir := filepath.Join(Root(), reason+"-"+stamp)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	now := time.Now()
+	stamp := now.Format("20060102-150405")
+	if err := os.MkdirAll(Root(), 0755); err != nil {
+		return Snapshot{}, err
+	}
+	dir, err := os.MkdirTemp(Root(), reason+"-"+stamp+"-")
+	if err != nil {
 		return Snapshot{}, err
 	}
 
@@ -66,7 +70,7 @@ func TakeSnapshot(reason string) (Snapshot, error) {
 	meta := SnapshotMeta{
 		Stamp:   stamp,
 		Version: app.Version,
-		Created: time.Now().UTC().Format(time.RFC3339),
+		Created: now.UTC().Format(time.RFC3339Nano),
 		Reason:  reason,
 		Tunnels: names,
 	}
@@ -82,7 +86,11 @@ func TakeSnapshot(reason string) (Snapshot, error) {
 
 // ListSnapshots returns every snapshot, newest first.
 func ListSnapshots() []Snapshot {
-	entries, err := os.ReadDir(Root())
+	return listSnapshots(Root())
+}
+
+func listSnapshots(root string) []Snapshot {
+	entries, err := os.ReadDir(root)
 	if err != nil {
 		return nil
 	}
@@ -91,22 +99,23 @@ func ListSnapshots() []Snapshot {
 		if !e.IsDir() {
 			continue
 		}
-		dir := filepath.Join(Root(), e.Name())
+		dir := filepath.Join(root, e.Name())
 		s := Snapshot{Dir: dir}
-		if data, err := os.ReadFile(filepath.Join(dir, "meta.json")); err == nil {
-			json.Unmarshal(data, &s.Meta)
-		}
-		if s.Meta.Stamp == "" {
-			// Fall back to the directory name so hand-made folders still list.
-			if i := strings.LastIndex(e.Name(), "-"); i > 0 && len(e.Name()) > i+1 {
-				s.Meta.Stamp = e.Name()
-			} else {
-				s.Meta.Stamp = e.Name()
-			}
+		data, err := os.ReadFile(filepath.Join(dir, "meta.json"))
+		if err != nil || json.Unmarshal(data, &s.Meta) != nil || s.Meta.Stamp == "" {
+			// In-progress and interrupted copies are not restore points.
+			continue
 		}
 		out = append(out, s)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Dir > out[j].Dir })
+	sort.Slice(out, func(i, j int) bool {
+		a, _ := time.Parse(time.RFC3339Nano, out[i].Meta.Created)
+		b, _ := time.Parse(time.RFC3339Nano, out[j].Meta.Created)
+		if !a.Equal(b) {
+			return a.After(b)
+		}
+		return out[i].Dir > out[j].Dir
+	})
 	return out
 }
 

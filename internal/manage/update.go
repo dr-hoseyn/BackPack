@@ -561,6 +561,12 @@ func ApplyUpdate(logf func(string)) error {
 		logf("Checksum verified (this build pins no release key, so the checksum list itself is unverified).")
 	}
 
+	unlock, err := lockUpdate()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
 	healthPolicy, err := prepareUpdateHealth(logf)
 	if err != nil {
 		return err
@@ -675,5 +681,10 @@ func unhealthyAfterUpdate(skip []string) []string {
 
 // RollbackUpdate restores a snapshot on demand (menu: Update → Rollback).
 func RollbackUpdate(s Snapshot, logf func(string)) error {
+	unlock, err := lockUpdate()
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	return backup.RestoreSnapshot(s, logf)
 }

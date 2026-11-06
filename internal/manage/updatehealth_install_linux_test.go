@@ -124,6 +124,18 @@ func TestUpdateHealthLocalUpdateRestoresBinaryAndConfiguration(t *testing.T) {
 		}
 	}
 	u := LocalUpdate{Path: archive, Version: "new-test-version"}
+	unlock, err := lockUpdate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	updateErr := ApplyLocalUpdate(u, nil)
+	rollbackErr := RollbackUpdate(Snapshot{}, nil)
+	unlock()
+	for _, err := range []error{updateErr, rollbackErr} {
+		if err == nil || !strings.Contains(err.Error(), "already in progress") {
+			t.Fatalf("overlapping update or rollback reached the installation phase: %v", err)
+		}
+	}
 	baselineBroken.Store(true)
 	err = ApplyLocalUpdate(u, func(s string) { t.Log(s) })
 	if err == nil || !strings.Contains(err.Error(), "update not installed") {
