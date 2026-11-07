@@ -266,7 +266,7 @@ func editPortsMenu(name string) {
 				{Title: "Iran Address", Desc: "IP or domain"},
 				{Title: "Transport", Desc: "keeps the token"},
 				{Title: "Backup Addresses", Desc: "failover when the main IP is blocked"},
-				{Title: "Automatic Address Failover", Desc: "switch IPv4/IPv6 on failure or poor quality"},
+				{Title: "Automatic Address Failover", Desc: "prefer healthier IPv4/IPv6 routes"},
 				{Title: "Fallback Transports", Desc: "failover when the transport is blocked"},
 				{Title: "Preset", Desc: "Balance, Turbo or Aggressive"},
 				{Title: "Load Balancing", Desc: "use all addresses at once"},

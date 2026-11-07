@@ -648,12 +648,11 @@ type ClientConfig struct {
 	// must reach the SAME server, since the control channel — and therefore
 	// the tunnel's identity — lives on one of them.
 	LoadBalance bool `toml:"load_balance"`
-	// HealthFailover scores the primary and backup addresses and reconnects the
-	// control channel and pool on the healthier route. Switching interrupts
-	// active sessions. It needs distinct backup addresses and overrides
-	// LoadBalance. TCP routes can use connect timing when ICMP is unavailable.
-	// KCP, QUIC and raw-packet carriers keep dial-failure fallback instead of
-	// disruptive ICMP-only switching, because ping cannot validate their port.
+	// HealthFailover scores the primary and backup addresses. WebSocket
+	// carriers steer new data dials and keep the active control channel and
+	// streams. Other supported TCP carriers reconnect the tunnel on a switch.
+	// It needs distinct backup addresses and overrides LoadBalance. Datagram
+	// carriers without a TCP control port keep dial-failure fallback.
 	HealthFailover bool `toml:"health_failover"`
 	// Embedded so the kcp_* keys sit at the top level of the [client] table
 	// alongside every other tuning key.
