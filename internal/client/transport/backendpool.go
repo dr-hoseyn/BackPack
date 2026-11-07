@@ -54,30 +54,30 @@ type backendPool struct {
 	groups map[string]*backendGroup
 }
 
-// pick returns a backend to dial for this target. For a single backend it is a
-// no-op passthrough; for several it hands out the next healthy one.
+// candidates returns backends in dial order, with a round-robin healthy
+// backend first when one is available.
 //
 // A target only becomes a group once it has survived parsing into two or more
 // real addresses. "a:1|" is one backend and "||" is none, and neither has
 // anything to balance — the old code counted the pipe rather than the result,
 // so a mapping like "||" built a group with an empty list and the round-robin
 // then took `g.next % 0` and brought the process down.
-func (p *backendPool) pick(target string) string {
+func (p *backendPool) candidates(target string) []string {
 	if !strings.Contains(target, backendSep) {
-		return target
+		return []string{target}
 	}
 	list := splitBackends(target)
 	switch {
 	case len(list) == 0:
-		return target // nothing usable; let the dial fail and be reported
+		return []string{target} // nothing usable; let the dial fail and be reported
 	case len(list) == 1:
-		return list[0]
+		return list
 	case len(list) > backendMaxMembers:
 		list = list[:backendMaxMembers]
 	}
 	// Key on the parsed list rather than the raw target so that spacing and a
 	// trailing separator do not each get a pool of their own.
-	return p.group(strings.Join(list, backendSep), list).pick()
+	return p.group(strings.Join(list, backendSep), list).candidates()
 }
 
 // group returns the pool for a parsed backend list, creating it the first time
@@ -147,29 +147,29 @@ func (g *backendGroup) lastUsedAt() time.Time {
 	return g.lastUsed
 }
 
-// pick returns the next healthy backend, round-robin. If none are healthy it
-// still returns one (best effort) rather than dropping the connection — the
-// dial will fail and be reported, which is more useful than silence.
-func (g *backendGroup) pick() string {
+// candidates advances the rotation once per incoming connection. A backend
+// marked down can still be used as a fallback if it recovered between checks.
+func (g *backendGroup) candidates() []string {
 	g.startCheck()
 
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.lastUsed = time.Now()
 	n := len(g.list)
-	if n == 0 {
-		return ""
-	}
-	for i := 0; i < n; i++ {
-		idx := g.next % n
-		g.next++
-		if g.healthy[idx] {
-			return g.list[idx]
+	start := g.next
+	order := make([]string, 0, n)
+	for _, healthy := range []bool{true, false} {
+		for i := 0; i < n; i++ {
+			idx := (start + i) % n
+			if g.healthy[idx] == healthy {
+				order = append(order, g.list[idx])
+				if len(order) == 1 {
+					g.next = (idx + 1) % n
+				}
+			}
 		}
 	}
-	idx := g.next % n
-	g.next++
-	return g.list[idx]
+	return order
 }
 
 // startCheck runs one health-check pass, at most one at a time and at most
@@ -178,7 +178,7 @@ func (g *backendGroup) pick() string {
 // This used to be a goroutine per group looping forever, which meant a group
 // was never collectible and never stopped probing — it outlived the tunnel
 // generation that created it and went on dialling backends nothing was routing
-// to. Driving the checks from pick() instead ties the probing to actual use:
+// to. Driving the checks from candidates() instead ties the probing to use:
 // an abandoned group finishes its current pass and then does nothing at all.
 // The cost is that a backend that recovers while no traffic is flowing is not
 // noticed until the next connection arrives, which is the moment the answer
