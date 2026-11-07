@@ -36,12 +36,14 @@ func enqueueMuxSession(queue chan pooledMuxSession, owner context.Context, sessi
 	}
 	select {
 	case queue <- pooledMuxSession{Session: session, owner: owner, idleFloor: floor}:
+		stop := context.AfterFunc(owner, func() { session.Close() })
 		go func() {
-			select {
-			case <-owner.Done():
-				session.Close()
-			case <-session.CloseChan():
-			}
+			defer stop()
+			// In reverse mux only this side opens streams. AcceptStream
+			// also reports smux parser errors that leave the socket and
+			// CloseChan open. Retire the session on either event.
+			_, _ = session.AcceptStream()
+			session.Close()
 		}()
 		return true
 	default:

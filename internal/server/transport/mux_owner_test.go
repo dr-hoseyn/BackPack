@@ -104,3 +104,29 @@ func TestQueuedMuxSessionClosesWhenItsOwnerEnds(t *testing.T) {
 		t.Fatal("queued session retained its socket after owner cancellation")
 	}
 }
+
+func TestQueuedMuxSessionRetiresAfterProtocolError(t *testing.T) {
+	conn, peer := net.Pipe()
+	defer peer.Close()
+	cfg := smux.DefaultConfig()
+	cfg.KeepAliveDisabled = true
+	session, err := smux.Client(conn, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+	queue := make(chan pooledMuxSession, 1)
+	if !enqueueMuxSession(queue, t.Context(), session) {
+		t.Fatal("live session was not admitted")
+	}
+	// A syntactically complete smux header with an impossible version.
+	peer.SetWriteDeadline(time.Now().Add(time.Second))
+	if _, err := peer.Write([]byte{255, 0, 0, 0, 0, 0, 0, 0}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-session.CloseChan():
+	case <-time.After(time.Second):
+		t.Fatal("the protocol error left an unusable session in the pool")
+	}
+}
