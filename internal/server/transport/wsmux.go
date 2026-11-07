@@ -143,10 +143,6 @@ func (s *WsMuxTransport) Restart() {
 	s.restart(s.controlChannel.Close, s.startAfterRestart)
 }
 
-func (s *WsMuxTransport) restartGeneration(expected context.Context) {
-	s.lifecycle.restartGeneration(s.controlChannel.Close, s.startAfterRestart, expected)
-}
-
 func (s *WsMuxTransport) startAfterRestart(ctx context.Context) {
 	s.controlChannel.Clear()
 	s.counterMutex.Lock()
@@ -341,52 +337,7 @@ func (s *WsMuxTransport) tunnelListener(g *wsMuxGen) {
 		}
 		server.TLSConfig = tlsCfg
 	}
-	s.serveTunnelListener(g, server, ln)
-}
-
-// serveTunnelListener supervises the HTTP accept loop as well as generation
-// cancellation. A fatal accept failure used to log once and leave the tunnel
-// port permanently closed while this goroutine waited for a live context.
-func (s *WsMuxTransport) serveTunnelListener(g *wsMuxGen, server *http.Server, ln net.Listener) {
-	ended := make(chan error, 1)
-	go func() {
-		s.logger.Infof("%s server starting, listening on %s", s.config.Mode, ln.Addr())
-		if !s.controlChannel.IsSet() {
-			s.logger.Infof("waiting for %s control channel connection", s.config.Mode)
-		}
-		if s.config.Mode == config.WSMUX {
-			ended <- server.Serve(ln)
-		} else {
-			// GetCertificate still picks up renewed certificates per handshake.
-			ended <- server.ServeTLS(ln, "", "")
-		}
-	}()
-
-	failed := false
-	select {
-	case err := <-ended:
-		// Even ErrServerClosed is unexpected while this generation is live:
-		// the shutdown below is the only intentional Close of this server.
-		if g.ctx.Err() == nil {
-			s.logger.Errorf("%s server on %s stopped: %v; recovering its listener", s.config.Mode, ln.Addr(), err)
-			failed = true
-		}
-	case <-g.ctx.Done():
-	}
-
-	// Hijacked connections are not owned by http.Server. End the failed
-	// generation promptly so its control claim, sessions and forwarded ports
-	// cannot remain apparently healthy while new clients cannot reach it.
-	if failed {
-		go s.restartGeneration(g.ctx)
-	}
-	if s.controlChannel.IsSet() {
-		s.controlChannel.Close()
-	}
-	s.logger.Infof("shutting down the websocket server on %s", ln.Addr())
-	if err := server.Close(); err != nil {
-		s.logger.Errorf("failed to close the websocket listener: %v", err)
-	}
+	s.serveWebSocketListener(g.ctx, server, ln, s.config.Mode, &s.controlChannel, s.startAfterRestart)
 }
 
 func (s *WsMuxTransport) handleLoop(g *wsMuxGen) {

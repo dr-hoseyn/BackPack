@@ -131,10 +131,12 @@ func (s *WsTransport) start(g *wsGen) {
 
 }
 func (s *WsTransport) Restart() {
-	s.restart(s.controlChannel.Close, func(ctx context.Context) {
-		s.controlChannel.Clear()
-		go s.start(s.newGen(ctx))
-	})
+	s.restart(s.controlChannel.Close, s.startAfterRestart)
+}
+
+func (s *WsTransport) startAfterRestart(ctx context.Context) {
+	s.controlChannel.Clear()
+	go s.start(s.newGen(ctx))
 }
 
 // newGen builds one generation's channels and usage monitor.
@@ -309,20 +311,7 @@ func (s *WsTransport) tunnelListener(g *wsGen) {
 	}
 	defer ln.Close()
 
-	if s.config.Mode == config.WS {
-		go func() {
-			s.logger.Infof("ws server starting, listening on %s", addr)
-			if !s.controlChannel.IsSet() {
-				s.logger.Info("waiting for ws control channel connection")
-			}
-			// The bind already succeeded, so this is the HTTP server itself
-			// stopping. Ending the run is right; ending the process is not —
-			// the supervisor would restart it into the same condition.
-			if err := server.Serve(ln); err != nil && err != http.ErrServerClosed {
-				s.logger.Errorf("ws server on %s stopped: %v", addr, err)
-			}
-		}()
-	} else {
+	if s.config.Mode != config.WS {
 		// Built before the goroutine starts so a bad certificate or an
 		// unwritable ACME cache is reported here, at startup, instead of
 		// surfacing later as handshake failures on a listener that is up.
@@ -334,41 +323,13 @@ func (s *WsTransport) tunnelListener(g *wsGen) {
 			// that turned one bad certificate into a crash loop, where what the
 			// operator needed was the sentence explaining it, once, on a
 			// process still running to be asked.
-			ln.Close()
 			s.logger.Errorf("wss on %s cannot start: its TLS certificate could not be "+
 				"set up: %v", addr, err)
 			return
 		}
 		server.TLSConfig = tlsCfg
-
-		go func() {
-			s.logger.Infof("wss server starting, listening on %s", addr)
-			if !s.controlChannel.IsSet() {
-				s.logger.Info("waiting for wss control channel connection")
-			}
-			// Empty paths: the certificate comes from TLSConfig.GetCertificate,
-			// which is what allows a renewed certificate to be picked up
-			// without restarting the tunnel.
-			if err := server.ServeTLS(ln, "", ""); err != nil && err != http.ErrServerClosed {
-				s.logger.Errorf("wss server on %s stopped: %v", addr, err)
-			}
-		}()
 	}
-
-	<-g.ctx.Done()
-
-	// This generation has ended. Close pending HTTP/TLS setup sockets as
-	// well as the listener; graceful shutdown can wait indefinitely on a
-	// slow request, delaying restart even though its tunnel is already gone.
-	s.logger.Infof("shutting down the webSocket server on %s", addr)
-	if err := server.Close(); err != nil {
-		s.logger.Errorf("failed to close the websocket listener: %v", err)
-	}
-
-	if s.controlChannel.IsSet() {
-		s.controlChannel.Close()
-	}
-
+	s.serveWebSocketListener(g.ctx, server, ln, s.config.Mode, &s.controlChannel, s.startAfterRestart)
 }
 
 func (s *WsTransport) handleLoop(g *wsGen) {
