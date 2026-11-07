@@ -4,6 +4,12 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      baseline_ref:
+        description: Baseline git ref for identical resource and lossy-path comparisons
+        required: false
+        default: v1.16.0
+        type: string
 permissions:
   contents: read
 concurrency:
@@ -15,6 +21,7 @@ jobs:
     timeout-minutes: 20
     env:
       GOMAXPROCS: '4'
+      BP_RESOURCE_BASELINE_REF: ${{ inputs.baseline_ref || 'v1.16.0' }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -27,12 +34,13 @@ jobs:
         run: |
           go test ./internal/utils/handlers -run '^TestAdaptiveRelay' -count=5 -v -timeout 1m
           go test -race ./internal/utils/handlers ./internal/utils/network ./internal/client/transport ./internal/server/transport \
-            -run '^Test(AdaptiveRelay|WSMux|MuxIdle|ConcurrentMux|MuxPool)' -count=5 -v -timeout 3m
+            -run '^Test(AdaptiveRelay|WSMux|MuxIdle|ConcurrentMux|MuxPool|MuxReceive|MuxSessionFailure)' -count=5 -v -timeout 3m
           go test -race ./internal/e2e -run '^TestWSMuxNegotiatedVersionsCarryRealTraffic$' -count=2 -v -timeout 3m
-      - name: Build candidate and identical measurement on v1.16.0
+      - name: Build candidate and the identical baseline measurement
         run: |
           set -euo pipefail
-          git worktree add --detach "$RUNNER_TEMP/resource-base" v1.16.0
+          git worktree add --detach -- "$RUNNER_TEMP/resource-base" "$BP_RESOURCE_BASELINE_REF"
+          echo "BP_RESOURCE_BASELINE_SHA=$(git -C "$RUNNER_TEMP/resource-base" rev-parse HEAD)" >> "$GITHUB_ENV"
           cp internal/e2e/wssmux_resources_test.go "$RUNNER_TEMP/resource-base/internal/e2e/"
           go test -c -o "$RUNNER_TEMP/resource-candidate" ./internal/e2e
           (cd "$RUNNER_TEMP/resource-base" && go test -c -o "$RUNNER_TEMP/resource-baseline" ./internal/e2e)

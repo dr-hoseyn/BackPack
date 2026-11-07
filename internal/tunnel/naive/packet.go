@@ -207,14 +207,16 @@ func (c *SOCKSPacketConn) ReadFrom(p []byte) (int, net.Addr, error) {
 	c.rmu.Lock()
 	defer c.rmu.Unlock()
 	for {
-		n, from, err := c.UDPConn.ReadFromUDP(c.rx[:])
+		n, from, err := c.UDPConn.ReadFromUDPAddrPort(c.rx[:])
 		if err != nil {
 			return 0, nil, err
 		}
 		c.mu.Lock()
 		relay := c.relay
 		c.mu.Unlock()
-		if relay == nil || !from.IP.Equal(relay.IP) || from.Port != relay.Port || n < len(c.header) {
+		// The relay is a literal loopback endpoint. Compare value addresses so
+		// native Hysteria2/TUIC packets need no temporary source-IP allocation.
+		if relay == nil || int(from.Port()) != relay.Port || from.Addr().Unmap() != relay.AddrPort().Addr().Unmap() || n < len(c.header) {
 			continue
 		}
 		// No fragments, domains, changed destinations or malformed reserved bytes.

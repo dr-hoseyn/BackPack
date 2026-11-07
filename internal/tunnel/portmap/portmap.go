@@ -148,7 +148,6 @@ func Expand(specs []string, defaultHost string) ([]Mapping, error) {
 		}
 		if !hasTarget {
 			// "443" forwards to the same port on the peer.
-			right = left
 			// ...but the listen side's host, if any, is local and must not
 			// become the target's.
 			right = strconv.Itoa(listen.lo)

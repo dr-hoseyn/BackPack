@@ -78,8 +78,13 @@ func TestThePacketPathStaysWithinBudget(t *testing.T) {
 		// alloc tests, which are unaffected by the detector.
 		t.Skip("wall-clock budgets are meaningless under the race detector")
 	}
-	if testing.CoverMode() != "" {
-		t.Skip("coverage instruments this packet path; timing budgets run in the regular suite")
+	// Coverage counters add work to this measured packet path. Keep the exact
+	// allocation gate here, but compare production timing only in the ordinary
+	// test suite. Coverage CI otherwise failed on unchanged sealing code at
+	// 3.217us against the uninstrumented 3us ceiling.
+	checkTime := testing.CoverMode() == ""
+	if !checkTime {
+		t.Log("coverage instrumentation: checking allocations; timing is gated by the ordinary test suite")
 	}
 	for _, p := range hotPaths() {
 		t.Run(p.name, func(t *testing.T) {
@@ -92,7 +97,7 @@ func TestThePacketPathStaysWithinBudget(t *testing.T) {
 
 			t.Logf("%s: %v per packet, %d allocs", p.name, per, perAlloc)
 
-			if per > p.ceiling {
+			if checkTime && per > p.ceiling {
 				t.Errorf("%s costs %v, ceiling %v. The ceiling is three times what this "+
 					"path measured when it was set, so this is not runner noise — "+
 					"something was added to a per-packet loop.", p.name, per, p.ceiling)

@@ -367,6 +367,281 @@ one buffer, so each had the rest of it as capacity and the append ran over the
 next packet. Nothing had written more than one packet at a time before, so it
 had never shown. Each packet now gets a 64 KB slot of its own.
 
+## Forwarded UDP and quiet WebSocket resource use (2026-11-03)
+
+Reviewed against `dr-hoseyn/BackPack` main at `b97a566c`. These changes reduce
+work on the forwarding path without changing authentication, framing, configured
+bandwidth limits or peer compatibility.
+
+- Native UDP entry sockets now read `netip.AddrPort` values and look up flows
+  using the forwarded socket and source endpoint together. Previously every
+  packet allocated source-address storage and formatted both endpoints into a
+  string. Replies and expiry use the same value address. Two forwarded ports
+  reached by the same sender still have independent flows and backend choices.
+- Native UDP decrypts fragments in the receive scratch. Reassembly consumes
+  them before the next read; unfragmented queued messages retain independent
+  storage, including empty datagrams. Client peer checks compare UDP endpoint
+  fields instead of allocating formatted strings for every fragment.
+- Raw reverse UDP server listeners use value address reads and materialize
+  `UDPAddr` only for new associations. Mapped IPv4 sources are canonicalized to
+  the existing string-key form so dual-stack reads and flow retirement agree.
+- Raw reverse UDP uses `Read` on its connected tunnel/backend sockets, avoiding
+  an unused source address on every datagram. Empty datagrams and packet
+  boundaries retain their existing behavior. Read deadlines and server idle
+  timers are refreshed on expiry rather than on every packet. Shared monotonic
+  activity still gives either direction a full 60-second idle budget.
+- WS/WSS forwarding starts its TCP read direction with the adaptive 16 KiB
+  buffer and grows to 64 KiB after a full read. The receive direction borrows a
+  bulk copy buffer only while copying a WebSocket message. A quiet connection
+  therefore checks out 16 KiB of relay buffers instead of 128 KiB before bulk
+  traffic. This is buffer ownership, not a claim about total process RSS:
+  `sync.Pool` may retain returned buffers until a later collection.
+- The WebSocket relay runs one copy in its caller, saving one goroutine per
+  connection. A context cancellation callback closes both sockets; the caller
+  still joins both copy directions before returning its connection quota.
+- Disabled TCP-to-WebSocket trace logging no longer boxes a byte count on every
+  write. An overwritten assignment in port mapping expansion was also removed
+  so the full Linux staticcheck gate passes.
+
+Allocation measurements below use Go 1.26.10, Windows/amd64, an Intel
+Core i7-11370H, three 300 ms runs per case. Each before/after pair runs the same
+new benchmark against the baseline/current production source. Native UDP uses
+real forwarded socket reads and encryption, with a synchronous encrypted sink.
+The authenticated-receive benchmark supplies valid cipher frames synchronously
+and includes the source cipher's nonce costs; it excludes sockets and helper
+processes. Raw UDP and WebSocket benchmarks use real loopback sockets.
+
+| Path | Before: objects/op | After: objects/op |
+|---|---:|---:|
+| Native UDP entry, 64 B, IPv4/IPv6 | 10 | 1 |
+| Native UDP entry, 1200 B, IPv4/IPv6 | 11 | 2 |
+| Native UDP authenticated client receive, 64 B | 9 | 3 |
+| Native UDP authenticated client receive, 1200 B | 20 | 6 |
+| Native UDP authenticated client receive, 60000 B | 542 | 122 |
+| Native UDP authenticated server receive, 60000 B | 182 | 122 |
+| Raw connected UDP copy, 1200 B | 1 | 0 |
+| WebSocket send, 1024 B / 64 KiB | 2 | 1 |
+
+Native UDP allocated bytes fell from 160 to 16 B/op for 64-byte IPv4
+payloads, and from 176 to 32 B/op for 1200-byte IPv4 payloads. IPv6 fell
+from 144 to 16 and from 160 to 32 B/op respectively. The remaining entry
+allocations are the cipher's per-fragment nonce. Authenticated client receive
+of a 60000-byte datagram fell from about 132825 to 67540 B/op. Timing varied between runs;
+these measurements establish lower allocation pressure, not a WAN throughput
+increase.
+
+Reproduce on Linux:
+
+```sh
+go test ./internal/nativeudp -count=1 -timeout 2m
+go test -race ./internal/nativeudp ./internal/utils/handlers -count=1 -timeout 3m
+go test -race ./internal/client/transport -run '^(TestRawUDP|TestUDPBackend)' -count=1 -timeout 2m
+go test ./internal/nativeudp -run '^$' -bench '^BenchmarkNativeUDP(ForwardedEntry|AuthenticatedReceive)$' -benchmem
+go test ./internal/client/transport -run '^$' -bench '^BenchmarkRawUDPConnectedCopy$' -benchmem
+go test ./internal/utils/handlers -run '^$' -bench '^BenchmarkWebSocketRelaySend$' -benchmem
+go test ./internal/server/transport -run '^TestQuietUDPDirection' -race -count=1
+go test ./internal/server/transport -run '^$' -bench '^BenchmarkRawUDPTunnelReceive$' -benchmem
+```
+
+Validation in this session: native UDP's complete tests and race tests passed,
+including encrypted IPv4/IPv6 replies, empty/fragmented payloads, two forwarded
+ports sharing one sender, and an allocation regression gate. The allocation
+gate fails on the baseline source and passes on the changes. Handler tests and
+raw UDP client regressions passed normally/under race where selected; WebSocket
+tests cover full duplex, peer close, idle cancellation, final bytes with EOF,
+large/multiple messages and adaptive buffer growth. The new buffer-growth test
+also fails on the baseline source. Receive ownership tests leave successive
+messages queued while decrypting later frames; peer checks cover IPv4, mapped
+IPv4, IPv6 scope zones and wrapper addresses. A fake-clock server test advances
+through 111 seconds of shared idle activity without real waiting.
+
+The Windows handler/client runs used a temporary Go overlay to adapt existing
+Linux-only socket-option declarations in `reuse_port.go` and `tcp_dialer.go`.
+The server's focused Windows runs additionally supplied an unused listener
+declaration in that overlay; timer and UDP tests never call it. Those portability
+substitutions are outside the patch. Full Linux `go build`,
+`go vet` and `staticcheck` passed without that overlay. `govulncheck` reported
+zero reachable vulnerabilities; it also listed three advisories in required
+modules that the application does not appear to call.
+
+The complete Linux end-to-end/soak suite was not executed on this Windows host.
+Direct Windows execution also found existing platform failures in metrics
+permission tests and the client's refused-dial/source-scanning tests; the client
+failures reproduce against `b97a566c`. Linux CI now runs the complete test, race and coverage suites on the PR; its
+latest status is recorded in the PR description. The preceding `71e296ed` run
+passed full test/race and sustained-load suites; its instrumented timing failure
+is addressed below. WAN capacity testing remains necessary before a deployment;
+no release or server configuration was changed.
+
+## WSSMux frame overhead and failed-session recovery (2026-11-03)
+
+The mux deadline wrapper now remembers the effective write deadline. Repeated
+frame writes with the same deadline leave the socket timer alone. Explicit
+stream deadline changes always reach the socket; combined upgrade deadlines,
+failed changes and connection close invalidate or update the cached value.
+On the same Windows/amd64 host, three 300 ms real-socket microbenchmarks changed
+`BenchmarkWSMuxFrameDeadlineRefresh` from 43.9–47.3 to 15.0–15.6 ns/op, with
+zero allocations on both revisions. This measures deadline maintenance only,
+not end-to-end WSSMux speed.
+
+A fatal framed read/write now closes the physical connection immediately.
+Gorilla cannot resume the stream after such an error. Previously an idle smux
+reader could remain blocked after a writer failed, keeping a client pool slot
+occupied until keepalive expiry. TLS close also needs to abort its underlying
+socket first: uTLS otherwise attempts `close_notify` with a five-second write
+budget on the congested socket. A real authenticated TLS regression test exposed
+that extra wait. WS and WSS tests now check both the write deadline and the idle
+reader's prompt exit, including five race-detector repetitions. The new idle
+reader assertion fails against the original source.
+
+WSSMux also now supervises fatal HTTP/TLS listener exits. A permanent accept
+error previously closed the tunnel port while its generation continued waiting
+for cancellation, so reconnecting clients could never reach a replacement
+listener. The supervisor now closes pending HTTP sockets and requests a new
+generation, using the existing listener-release barrier and bind retry policy.
+The delayed recovery carries its original context and checks it under the shared
+restart lock: an old listener's failure cannot restart a newer generation after
+a reload. Intentional shutdown and certificate configuration errors retain their
+existing behavior. Tests inject permanent accept failures for WS and authenticated
+WSS, prove a replacement control channel authenticates, and cover shutdown and
+stale-generation recovery under the race detector.
+
+Backend work now also belongs to the physical mux session that accepted it,
+not just the longer-lived control generation. Losing one data connection
+cancels that session's pending TCP/UDP backend DNS/dials and idle flows while
+sibling sessions remain usable. A regression holds backend DNS for a 30-second
+dial budget, closes its data session, and verifies all work joins within one
+second without cancelling the generation; a sibling session carries an echo
+throughout. Both TCP and UDP forms fail against the prior source and pass under
+the race detector with session-scoped cancellation. Normal TCP backend failures
+still reach the existing health report; cancelled session dials no longer report
+a healthy local service as unreachable.
+
+The WSS Mux security/capacity workflow retains its existing authentication,
+600 Mbit/s download, 1000-user mixed-load and quiet-session retirement checks.
+A manual dispatch may additionally set `baseline_ref` to a git revision, building
+the same public-configuration resource fixture for both revisions on one runner.
+Three alternating samples per revision report CPU/GiB, goodput, fresh-user p99
+and idle heap in the `wssmux-measurements` artifact. This comparison does not
+replace or weaken any existing required check.
+
+The explicit-baseline Linux run completed successfully:
+[WSSMux verification and comparison](https://github.com/dr-hoseyn/BackPack/actions/runs/41621205212).
+It compared `b97a566c` against production changes at `b5595a93`. The additional
+receive-frame optimization below was measured separately against `b2a6ebf6`. Medians of three alternating
+samples, with the same 1000 idle users and 600 Mbit/s offered workload:
+
+| Metric | Baseline | Candidate |
+|---|---:|---:|
+| Verified application goodput | 599.4 Mbit/s | 599.7 Mbit/s |
+| CPU seconds per GiB | 15.98 | 15.96 |
+| Fresh-user p99 | 0.850 ms | 0.991 ms |
+| Idle heap delta | 107920040 B | 107811320 B |
+
+These differences do not establish a throughput, CPU or memory improvement for
+WSSMux as a whole. The lower deadline-maintenance overhead is measurable in
+isolation, and failed-session recovery is covered by regressions on both the
+client/uTLS and server/standard-TLS directions. The same run passed negotiated
+framing/authentication, the 600 Mbit/s capacity gate (7070.3 Mbit/s download on
+that runner's loopback), mixed-load verification and quiet-session retirement.
+Loopback capacity does not predict capacity on a real Internet route.
+
+The SOCKS packet adapter used by native Hysteria2/TUIC also reads value source
+addresses. Its real-loopback receive benchmark changed from one allocation to
+zero per packet. Source validation, SOCKS fragmentation rejection and
+empty/large datagrams are covered independently of optional helper binaries.
+
+## Receive-frame reuse: measured and subsequently withdrawn (2026-11-03)
+
+An initial smux-to-TCP optimization used smux's `WriterTo` to consume each owned
+receive frame directly, without retaining a second relay buffer or copying
+each frame through it. The experiment unwrapped only the known accounting
+wrapper; pacing/unknown wrappers and destinations other than real TCP sockets
+kept the existing buffered path. TCP consumes the borrowed slice synchronously,
+so smux can recycle it after Write returns. Failed or short writes end the
+stream instead of allowing a frame tail to be discarded. Tunnel byte counts,
+per-port usage, EOF and cancellation are covered for smux versions 1 and 2.
+
+The change was first measured outside the PR branch. The
+[bounded-profile comparison](https://github.com/dr-hoseyn/BackPack/actions/runs/41632246215)
+used three alternating processes per revision, 1000 idle users and 600 Mbit/s
+offered load; the
+[resource and lossy-path comparison](https://github.com/dr-hoseyn/BackPack/actions/runs/41632932057)
+used five alternating loopback samples and three per lossy-path protocol mode.
+Both use the same public-configuration fixture against baseline `b2a6ebf6`.
+
+| Workload / metric | Baseline | Receive-frame reuse |
+|---|---:|---:|
+| Bounded: 1000-user idle heap delta | 107512088 B | 74989400 B |
+| Bounded: application goodput | 599.5 Mbit/s | 599.5 Mbit/s |
+| Bounded: CPU seconds/GiB | 11.10 | 10.96 |
+| Default resource profile: idle heap delta | 115222776 B | 82789992 B |
+| Default resource profile: goodput | 6380.7 Mbit/s | 6421.8 Mbit/s |
+| Lossy path, auto version 1: goodput | 77.7 Mbit/s | 82.2 Mbit/s |
+| Lossy path, explicit version 2: goodput | 84.5 Mbit/s | 78.5 Mbit/s |
+| Lossy path, auto version 1: fresh-user p99 | 1294.138 ms | 1071.344 ms |
+| Lossy path, explicit version 2: fresh-user p99 | 1489.661 ms | 1302.468 ms |
+
+The initial result was 28–30% lower idle heap, about 32 KiB less retained
+relay storage per forwarded connection across both endpoints. These are combined
+client/server heap figures, not a promise about process RSS on every server.
+CPU changes were small. The explicit-version-2 lossy sample was about 7% slower,
+while auto version 1 was faster; all existing CPU, goodput and fresh-user latency
+regression gates passed. This evidence supports a memory improvement within
+those performance tolerances, not a general increase in Internet throughput.
+Existing stream windows, mux versions, session limits and bandwidth caps were
+unchanged. The quiet-user retirement and authenticated capacity checks passed.
+The direct-frame optimization was later withdrawn as described below; these
+memory reductions are historical measurements, not a benefit of the final code.
+
+Reproduce focused tests and the socket benchmark on Linux:
+
+```sh
+go test -race ./internal/utils/handlers -run '^TestMuxReceive' -count=3 -timeout 2m
+go test ./internal/utils/handlers -run '^$' -bench '^BenchmarkMuxToTCPRelay$' -benchmem
+```
+
+The resource workflow's optional `baseline_ref` input now permits the same
+CPU/goodput/latency/heap gates against an explicit revision; PR runs retain
+`v1.16.0` as their baseline and keep every previous threshold. Artifacts record
+both baseline and candidate commit hashes.
+
+### Restoring read-side credit before blocked backend writes
+
+The follow-up investigation found a reproducible flow-control difference in
+smux v2: `Read` advertises the configured receive window before the backend
+write, while `WriterTo` waits for that write to return. With a congested TCP
+backend, the latter can strand the sender at its initial 256 KiB window even
+though the session still has receive capacity. A real-socket
+[Linux regression](https://github.com/dr-hoseyn/BackPack/actions/runs/41644508025)
+fails on the previous `WriterTo` source and passes three times under the race
+detector on the corrected `Read` path. It also checks cancellation joins both
+relay workers.
+
+A smaller-buffer `Read` alternative fixed that stall, but it did not meet the
+stricter throughput target in a separate
+[five-seed, longer lossy-path comparison](https://github.com/dr-hoseyn/BackPack/actions/runs/41643905868).
+Each independent process transferred 256 MiB of verified application data with
+eight workers, 80 ms RTT, 0.1% loss and a 200 Mbit/s link. Baseline buffered reads,
+direct-frame forwarding and 1 KiB initial reads measured median goodputs of
+86.2, 83.6 and 82.3 Mbit/s respectively. The 1 KiB candidate missed the
+predeclared target of at least 98% of baseline throughput and was not retained.
+This also shows why the earlier three-sample 7% difference is not an exact
+estimate of a universal slowdown.
+
+The final relay restores the original pooled `Read` path: 16 KiB initially,
+growing to 64 KiB after a full read. All production Go source matches recovery
+revision `b2a6ebf6`; the listener/session fixes and deadline amortization remain.
+The 28–30% heap saving from direct-frame reuse is deliberately withdrawn in
+favor of the established forwarding behavior. Network packet loss itself is
+unchanged; this addresses application flow control and the risky optimization.
+
+The optional `wssmux-loss.yml` workflow rotates the buffered reference, prior
+direct-frame reference and candidate across five paired seeds, recording every
+sample and revision. Its stricter 98% throughput diagnostic is separate from
+the unchanged required resource/quality gates. The final rollback compares
+memory with the buffered baseline; it does not claim the abandoned heap saving.
+
 ## What is measured on every build
 
 The numbers above are one-offs. These are gates, and they fail the build:
@@ -380,8 +655,12 @@ The numbers above are one-offs. These are gates, and they fail the build:
   which is a syscall or an allocation appearing in a per-packet loop. That is an
   order of magnitude, not a margin.
 
-Both skip under `-race`, which multiplies wall-clock time by between five and
-twenty. The allocation half still runs.
+The combined benchmark gates skip under `-race`, which multiplies wall-clock
+time by between five and twenty; dedicated allocation tests still run. Under
+coverage, the benchmark allocation assertions remain active while wall-clock
+ceilings are enforced by the ordinary, uninstrumented test suite. Instrumented
+coverage once measured unchanged sealing at 3.217 microseconds against its
+3-microsecond production ceiling; no ceiling or coverage floor was raised.
 
 See `internal/tunnel/l3/bench_gate_test.go`.
 
@@ -405,6 +684,16 @@ See `internal/tunnel/l3/bench_gate_test.go`.
 اندازه گرفته شد ولی پیش‌فرض خاموش ماند، چون سود روی loopback شاهدِ میدانی نیست.
 و دو ایده — MSS خودکار روی تونل معکوس، و batching رلهٔ معکوس — ساخته یا اندازه
 گرفته شدند و **بی‌اثر** بودند؛ هر دو با عددشان اینجا ثبت شده‌اند.
+
+بازبینی ۲۰۲۶/۱۱/۰۳: تخصیص موقت مسیر UDP بومی از ۱۰–۱۱ به ۱–۲ مورد برای هر
+بسته رسید. بافرهای در اختیار اتصال کم‌ترافیک WS/WSS از ۱۲۸ به ۱۶ کیلوبایت
+کاهش یافت و یک goroutine از هر اتصال حذف شد. در WSSMux، خرابی listener باعث
+بازسازی همان نسل می‌شود و پایان هر نشست داده، کارهای backend همان نشست را لغو
+می‌کند. بهینه‌سازی دریافت مستقیم فریم، پس از مشاهدهٔ افت سرعت و توقف اعلام ظرفیت
+آزاد دریافت هنگام انسداد backend، کنار گذاشته شد؛ انتقال به مسیر Read قبلی برگشت.
+در نتیجه صرفه‌جویی ۲۸ تا ۳۰ درصدی heap آن آزمایش دیگر بخشی از نسخهٔ نهایی نیست.
+افزایش عمومی سرعت یا حذف loss شبکه ادعا نمی‌شود. جزئیات و لینک آزمون‌ها در بالا
+آمده‌اند.
 
 </div>
 

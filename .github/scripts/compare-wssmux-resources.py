@@ -1,5 +1,6 @@
 """Compare the same verified workload in independent processes on one runner."""
 import json
+import os
 import pathlib
 import re
 import statistics
@@ -40,7 +41,10 @@ checks = {
 if not delayed:
     checks["idle_heap_improves_at_least_15_percent"] = candidate["heap_delta_bytes"] <= base["heap_delta_bytes"] * .85
 result = {"scope": "combined client/server process; 1000 idle streams plus eight verified bulk transfers and fresh-user probes on loopback",
-          "baseline": "v1.16.0", "reports": reports, "checks": checks,
+          "baseline": os.environ.get("BP_RESOURCE_BASELINE_REF", "v1.16.0"),
+          "baseline_sha": os.environ.get("BP_RESOURCE_BASELINE_SHA"),
+          "candidate_sha": os.environ.get("GITHUB_SHA"),
+          "reports": reports, "checks": checks,
           "idle_heap_reduction_percent": 100 * (1 - candidate["heap_delta_bytes"] / base["heap_delta_bytes"]),
           "cpu_per_gib_change_percent": 100 * (candidate["cpu_seconds_per_gib"] / base["cpu_seconds_per_gib"] - 1)}
 if delayed:

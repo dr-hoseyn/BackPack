@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/netip"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -23,9 +24,16 @@ type flow struct {
 	id     uint64
 	target string
 	entry  *net.UDPConn
-	peer   *net.UDPAddr
+	peer   netip.AddrPort
 	last   atomic.Int64
 	queue  chan []byte
+}
+
+// A source belongs to one forwarded socket. Value addresses avoid allocating
+// an IP slice and formatting both endpoints for every packet of an open flow.
+type sourceKey struct {
+	entry *net.UDPConn
+	peer  netip.AddrPort
 }
 
 // Engine bounds flow count, per-flow pending datagrams and bandwidth. Outage
@@ -42,7 +50,7 @@ type Engine struct {
 	sendBuf           []byte // at most maxPayload bytes, reused until Link.Write returns
 	mu                sync.Mutex
 	flows             map[uint64]*flow
-	sources           map[string]*flow
+	sources           map[sourceKey]*flow
 	sockets           []*net.UDPConn
 	next              uint64
 	wg                sync.WaitGroup
@@ -75,7 +83,7 @@ func newEngine(parent context.Context, pc net.PacketConn, peer net.Addr, token s
 		cancel()
 		return nil, err
 	}
-	e := &Engine{ctx: ctx, cancel: cancel, link: link, max: maxFlows, flows: map[uint64]*flow{}, sources: map[string]*flow{}, server: peer == nil}
+	e := &Engine{ctx: ctx, cancel: cancel, link: link, max: maxFlows, flows: map[uint64]*flow{}, sources: map[sourceKey]*flow{}, server: peer == nil}
 	var seed [8]byte
 	if _, err := rand.Read(seed[:]); err != nil {
 		link.Close()
@@ -198,7 +206,7 @@ func (e *Engine) entry(conn *net.UDPConn, targets []string) {
 	b := make([]byte, 65535)
 	var nextTarget uint64
 	for {
-		n, from, err := conn.ReadFromUDP(b)
+		n, from, err := conn.ReadFromUDPAddrPort(b)
 		if err != nil {
 			return
 		}
@@ -206,7 +214,7 @@ func (e *Engine) entry(conn *net.UDPConn, targets []string) {
 			e.drops.Add(1)
 			continue
 		}
-		key := conn.LocalAddr().String() + "/" + from.String()
+		key := sourceKey{entry: conn, peer: from}
 		e.mu.Lock()
 		f := e.sources[key]
 		if f == nil && len(e.flows) < e.max {
@@ -264,7 +272,7 @@ func (e *Engine) receive() {
 			}
 			f.last.Store(time.Now().UnixNano())
 			_ = f.entry.SetWriteDeadline(time.Now().Add(time.Second))
-			if _, err := f.entry.WriteToUDP(payload, f.peer); err == nil {
+			if _, err := f.entry.WriteToUDPAddrPort(payload, f.peer); err == nil {
 				e.bytesIn.Add(uint64(len(payload)))
 				metrics.AddBytes(uint64(len(payload)), 0)
 			} else {
@@ -379,7 +387,7 @@ func (e *Engine) reap() {
 			for id, f := range e.flows {
 				if now.Sub(time.Unix(0, f.last.Load())) > idle {
 					delete(e.flows, id)
-					delete(e.sources, f.entry.LocalAddr().String()+"/"+f.peer.String())
+					delete(e.sources, sourceKey{entry: f.entry, peer: f.peer})
 				}
 			}
 			e.mu.Unlock()

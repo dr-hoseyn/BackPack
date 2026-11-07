@@ -52,10 +52,12 @@ func (c *webSocketStream) Read(p []byte) (int, error) {
 			kind, reader, err := c.conn.NextReader()
 			if err != nil {
 				c.readErr = err
+				c.conn.Close()
 				return 0, err
 			}
 			if kind != websocket.BinaryMessage {
 				c.readErr = &net.OpError{Op: "read", Net: "websocket", Err: errWSBinaryRequired}
+				c.conn.Close()
 				return 0, c.readErr
 			}
 			c.reader = reader
@@ -71,6 +73,7 @@ func (c *webSocketStream) Read(p []byte) (int, error) {
 		if err != nil {
 			c.reader = nil
 			c.readErr = err
+			c.conn.Close()
 		}
 		return n, err
 	}

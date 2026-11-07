@@ -15,18 +15,18 @@ import (
 // WSConnectionHandler relays between a websocket tunnel connection and a TCP
 // connection to the backend, until either side ends.
 func WSConnectionHandler(ctx context.Context, wsConn *websocket.Conn, tcpConn net.Conn, logger *logrus.Logger, usage *traffic.Usage, remotePort int, sniffer bool) {
-	// Two independent copies, for the reason given in TCPConnectionHandler: a
-	// ReadMessage on an idle websocket blocks exactly as long as an idle TCP
-	// Read does, and cancellation has to be able to interrupt it.
+	// As in the TCP relay, cancellation must interrupt an idle read in either
+	// direction. Reuse the caller for one copy instead of keeping a third
+	// goroutine parked for the entire connection lifetime.
+	stop := context.AfterFunc(ctx, func() { wsConn.Close(); tcpConn.Close() })
+	defer stop()
 	done := make(chan struct{}, 2)
 	go func() {
 		transferWebSocketToTCP(wsConn, tcpConn, logger, usage, remotePort, sniffer)
 		done <- struct{}{}
 	}()
-	go func() {
-		transferTCPToWebSocket(tcpConn, wsConn, logger, usage, remotePort, sniffer)
-		done <- struct{}{}
-	}()
+	transferTCPToWebSocket(tcpConn, wsConn, logger, usage, remotePort, sniffer)
+	done <- struct{}{}
 
 	awaitRelay(ctx, done, wsConn, tcpConn)
 }
@@ -39,8 +39,6 @@ func transferWebSocketToTCP(wsConn *websocket.Conn, tcpConn net.Conn, logger *lo
 	// Keep the capability-hiding adapters for the whole relay: boxing new
 	// adapters for every message allocates twice on the receive hot path.
 	reader, writer := &readerOnly{}, &writerOnly{tcpConn}
-	bufp := getRelayBuffer()
-	defer putRelayBuffer(bufp)
 	for {
 		messageType, message, err := wsConn.NextReader()
 		if err != nil {
@@ -57,7 +55,11 @@ func transferWebSocketToTCP(wsConn *websocket.Conn, tcpConn net.Conn, logger *lo
 		// Only handle text or binary messages (ignore control messages like pings)
 		if messageType == websocket.TextMessage || messageType == websocket.BinaryMessage {
 			reader.r = message
+			// Hold the bulk buffer only while copying a message. NextReader
+			// can wait indefinitely on an idle connection; it needs no buffer.
+			bufp := getRelayBuffer()
 			n, err := io.CopyBuffer(writer, reader, *bufp)
+			putRelayBuffer(bufp)
 			w := int(n)
 			if err != nil {
 				logger.Trace("unable to relay a WebSocket message to the TCP connection: ", err)
@@ -79,16 +81,12 @@ func transferWebSocketToTCP(wsConn *websocket.Conn, tcpConn net.Conn, logger *lo
 
 // transferTCPToWebSocket transfers data from a TCP connection to a WebSocket connection
 func transferTCPToWebSocket(tcpConn net.Conn, wsConn *websocket.Conn, logger *logrus.Logger, usage *traffic.Usage, remotePort int, sniffer bool) {
-	// The same pooled 64 KiB buffer the TCP relay copies through, for the same
-	// two reasons (see relaybuf.go): a relay's cost is syscalls, and 16 KiB took
-	// four times as many of them per gigabyte as 64 KiB does; and allocating it
-	// per connection put a 16 KiB slice through the garbage collector for every
-	// connection forwarded. This path was simply missed when the TCP one was
-	// fixed.
-	bufp := getRelayBuffer()
-	defer putRelayBuffer(bufp)
-	buf := *bufp
+	// Quiet directions retain only 16 KiB. A full read grows to the TCP
+	// relay's 64 KiB bulk buffer without delaying a short response.
+	buffer := newRelayCopyBuffer()
+	defer buffer.release()
 	for {
+		buf := *buffer.p
 		// Reader bytes come before its error, including a final read with EOF.
 		n, readErr := tcpConn.Read(buf)
 		if n > 0 {
@@ -105,7 +103,9 @@ func transferTCPToWebSocket(tcpConn net.Conn, wsConn *websocket.Conn, logger *lo
 
 			// Leaving over the tunnel, after the message was written successfully.
 			metrics.AddBytes(0, uint64(n))
-			logger.Tracef("transferred data from TCP to WebSocket: %d bytes", n)
+			if logger.IsLevelEnabled(logrus.TraceLevel) {
+				logger.Tracef("transferred data from TCP to WebSocket: %d bytes", n)
+			}
 			if sniffer {
 				usage.AddOrUpdatePort(remotePort, uint64(n))
 			}
@@ -120,6 +120,7 @@ func transferTCPToWebSocket(tcpConn net.Conn, wsConn *websocket.Conn, logger *lo
 			wsConn.Close()
 			return
 		}
+		buffer.grow(n)
 	}
 
 }

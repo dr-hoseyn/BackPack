@@ -3,6 +3,12 @@ name: WSS Mux security and capacity
 on:
   pull_request:
   workflow_dispatch:
+    inputs:
+      baseline_ref:
+        description: Optional baseline git ref for a same-runner WSSMux comparison
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
@@ -14,14 +20,16 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
       - name: Authenticate before HTTP and validate real binary frames
         run: >-
-          go test -race ./internal/utils/network ./internal/client/transport ./internal/e2e
-          -run '^(TestWSS|TestWSMux|TestWebSocket|TestAWSS|TestMuxUpgrade|TestTLSTransports|TestMuxCapacityGrows)'
+          go test -race ./internal/utils/network ./internal/client/transport ./internal/server/transport ./internal/e2e
+          -run '^(TestWSS|TestWSMux|TestWebSocket|TestAWSS|TestMuxUpgrade|TestTLSTransports|TestMuxCapacityGrows|TestMuxSessionFailure)'
           -count=1 -timeout 4m
       - name: Provision private trust in real setup-link bearer clients
         run: >-
@@ -50,9 +58,66 @@ jobs:
           BP_RESOURCE_RETIREMENT: '1'
           BP_WSSMUX_BOUNDED: '1'
         run: go test ./internal/e2e -run '^TestWSMuxPoolRetiresAfterLoadWithoutDisconnectingQuietUser$' -count=1 -v -timeout 3m
+      - name: Compare the identical WSSMux workload against an explicit baseline
+        if: github.event_name == 'workflow_dispatch' && inputs.baseline_ref != ''
+        env:
+          BASELINE_REF: ${{ inputs.baseline_ref }}
+          GOMAXPROCS: '4'
+          BP_RESOURCE_BENCHMARK: '1'
+          BP_WSSMUX_BOUNDED: '1'
+          BP_RESOURCE_IDLE_CONNECTIONS: '1000'
+          BP_RESOURCE_TARGET_MBPS: '600'
+        run: |
+          set -euo pipefail
+          ulimit -n 16384
+          git worktree add --detach -- "$RUNNER_TEMP/wssmux-base" "$BASELINE_REF"
+          git -C "$RUNNER_TEMP/wssmux-base" rev-parse HEAD > wssmux-baseline-sha.log
+          cp internal/e2e/wssmux_resources_test.go "$RUNNER_TEMP/wssmux-base/internal/e2e/"
+          go test -c -o "$RUNNER_TEMP/wssmux-candidate" ./internal/e2e
+          (cd "$RUNNER_TEMP/wssmux-base" && go test -c -o "$RUNNER_TEMP/wssmux-baseline" ./internal/e2e)
+          for sample in 1 2 3; do
+            order="baseline candidate"
+            if [ $((sample % 2)) -eq 0 ]; then order="candidate baseline"; fi
+            for kind in $order; do
+              "$RUNNER_TEMP/wssmux-$kind" -test.run '^TestWSMuxResourceProfile$' -test.v -test.timeout 2m \
+                | tee "wssmux-ab-$kind-$sample.log"
+            done
+          done
+          python3 - <<'PY' | tee wssmux-ab.json
+          import glob, json, os, pathlib, re, statistics
+          reports = {}
+          for kind in ('baseline', 'candidate'):
+              samples = []
+              for name in sorted(glob.glob(f'wssmux-ab-{kind}-*.log')):
+                  text = pathlib.Path(name).read_text()
+                  if '--- PASS: TestWSMuxResourceProfile' not in text:
+                      raise SystemExit(f'Incomplete comparison sample: {name}')
+                  values = {}
+                  for tag in ('RESOURCE_IDLE', 'RESOURCE_MIXED'):
+                      line = re.search(rf'{tag} (.+)', text)
+                      if line is None:
+                          raise SystemExit(f'Missing {tag}: {name}')
+                      values.update({k: float(v) for k, v in re.findall(r'(\w+)=(-?[\d.]+)', line[1])})
+                  samples.append(values)
+              if len(samples) != 3:
+                  raise SystemExit(f'Expected three {kind} samples')
+              reports[kind] = {key: statistics.median(s[key] for s in samples) for key in samples[0]}
+          base, candidate = reports['baseline'], reports['candidate']
+          print(json.dumps({
+              'scope': 'same-runner bounded WSSMux; 1000 idle users, eight verified bulk workers, 600 Mbit/s offered load and fresh-user probes',
+              'baseline_sha': pathlib.Path('wssmux-baseline-sha.log').read_text().strip(),
+              'candidate_sha': os.environ['GITHUB_SHA'],
+              'medians': reports,
+              'change_percent': {key: 100 * (candidate[key] / base[key] - 1) for key in
+                                 ('cpu_seconds_per_gib', 'echo_mbps', 'probe_p99_ms', 'heap_delta_bytes') if base[key] != 0}
+          }, indent=2))
+          PY
+          cat wssmux-ab.json >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: wssmux-measurements
-          path: wssmux-*.log
+          path: |
+            wssmux-*.log
+            wssmux-*.json
           retention-days: 14
