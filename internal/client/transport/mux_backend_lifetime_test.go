@@ -14,6 +14,9 @@ import (
 )
 
 func TestMuxSessionFailureCancelsBackendDNSWithoutEndingSiblingSessions(t *testing.T) {
+	if !isolateDefaultResolver(t) {
+		return
+	}
 	for _, target := range []string{"mux-session-backend.invalid:443", "udp://mux-session-backend.invalid:53"} {
 		t.Run(target, func(t *testing.T) {
 			original := net.DefaultResolver

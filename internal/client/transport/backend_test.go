@@ -6,6 +6,8 @@ import (
 	"errors"
 	"io"
 	"net"
+	"os"
+	"os/exec"
 	"sync"
 	"testing"
 	"time"
@@ -116,8 +118,33 @@ func TestARefusedBackendClosesTheUsersConnection(t *testing.T) {
 	<-done
 }
 
+// A test that replaces net.DefaultResolver cannot share a process with
+// transport workers from other tests that may still be dialing.
+func isolateDefaultResolver(t *testing.T) bool {
+	t.Helper()
+	const env = "BACKPACK_ISOLATED_RESOLVER_TEST"
+	if os.Getenv(env) == t.Name() {
+		return true
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, exe, "-test.run=^"+t.Name()+"$", "-test.timeout=8s")
+	cmd.Env = append(os.Environ(), env+"="+t.Name())
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("isolated DNS regression: %v\n%s", err, out)
+	}
+	return false
+}
+
 // Raw UDP uses the same DNS budget for its tunnel endpoint and local backend.
 func TestRawUDPBackendAndEndpointDNSRespectCancellationAndTimeout(t *testing.T) {
+	if !isolateDefaultResolver(t) {
+		return
+	}
 	for _, backendPhase := range []bool{false, true} {
 		for _, cancelGeneration := range []bool{true, false} {
 			name := "endpoint"
@@ -203,6 +230,9 @@ func TestRawUDPBackendAndEndpointDNSRespectCancellationAndTimeout(t *testing.T) 
 // DNS is part of the UDP backend dial budget, and cancellation must not leave
 // an old generation waiting for a resolver before it can reconnect.
 func TestUDPBackendDNSObeysGenerationAndDialTimeout(t *testing.T) {
+	if !isolateDefaultResolver(t) {
+		return
+	}
 	for _, cancelGeneration := range []bool{true, false} {
 		name := "timeout"
 		if cancelGeneration {
