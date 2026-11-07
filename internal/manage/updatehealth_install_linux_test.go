@@ -76,6 +76,9 @@ func TestUpdateHealthLocalUpdateRestoresBinaryAndConfiguration(t *testing.T) {
 				if err := os.WriteFile(app.ConfigPath(name), append(before, []byte("\n# changed by failed upgrade\n")...), 0600); err != nil {
 					t.Error(err)
 				}
+				if err := os.Chmod(app.ConfigPath(name), 0644); err != nil {
+					t.Error(err)
+				}
 			}
 			io.WriteString(w, "new version cannot carry expected data")
 			return
@@ -158,10 +161,28 @@ func TestUpdateHealthLocalUpdateRestoresBinaryAndConfiguration(t *testing.T) {
 	if restored, _ := os.ReadFile(app.ConfigPath(name)); string(restored) != originalConfig {
 		t.Fatalf("previous configuration was not restored: %q", restored)
 	}
+	info, err := os.Stat(app.ConfigPath(name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0600 {
+		t.Fatalf("rollback kept modified config permissions: %o", info.Mode().Perm())
+	}
 	if _, err := os.Stat(archive); err != nil {
 		t.Fatal("failed update archive was removed")
 	}
 	if err := updatehealth.Probe(context.Background(), policy.Checks[0]); err != nil {
 		t.Fatalf("restored version did not pass its original check: %v", err)
+	}
+	snapshots := ListSnapshots()
+	if len(snapshots) != 1 {
+		t.Fatalf("expected the pre-update snapshot: %v", snapshots)
+	}
+	failRestart := "#!/bin/sh\nif [ \"$1\" = restart ] && [ \"$2\" = " + app.ServiceName(name) + " ]; then exit 1; fi\necho active\n"
+	if err := os.WriteFile(filepath.Join(fakeBin, "systemctl"), []byte(failRestart), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := RollbackUpdate(snapshots[0], nil); err == nil || !strings.Contains(err.Error(), "failed to restart after rollback") {
+		t.Fatalf("rollback did not report the service restart failure: %v", err)
 	}
 }

@@ -2,6 +2,7 @@ package backup
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -140,13 +141,8 @@ func RestoreSnapshot(s Snapshot, logf func(string)) error {
 	// 1) Binary.
 	if bin := filepath.Join(s.Dir, "backpack"); core.FileExists(bin) {
 		logf("Restoring the previous binary...")
-		tmp := app.BinPath + ".rollback"
-		if err := copyFile(bin, tmp, 0755); err != nil {
+		if err := copyFile(bin, app.BinPath, 0755); err != nil {
 			return fmt.Errorf("could not restore the binary: %w", err)
-		}
-		if err := os.Rename(tmp, app.BinPath); err != nil {
-			os.Remove(tmp)
-			return fmt.Errorf("could not replace the binary: %w", err)
 		}
 	}
 
@@ -160,10 +156,15 @@ func RestoreSnapshot(s Snapshot, logf func(string)) error {
 
 	// 3) Re-register and restart everything.
 	logf("Restarting services...")
+	var failures []error
 	for _, t := range core.List() {
-		_ = core.WriteUnit(t.Name)
+		if err := core.WriteUnit(t.Name); err != nil {
+			failures = append(failures, fmt.Errorf("restore service unit %s: %w", t.Name, err))
+		}
 	}
-	_ = core.DaemonReload()
+	if err := core.DaemonReload(); err != nil {
+		failures = append(failures, fmt.Errorf("reload restored service units: %w", err))
+	}
 	// The same order as the update itself, for the same reason: a rollback
 	// started from the panel runs inside the panel's unit. See
 	// core/restartorder.go.
@@ -172,12 +173,16 @@ func RestoreSnapshot(s Snapshot, logf func(string)) error {
 	if len(later) > 0 {
 		logf(strings.Join(later, ", ") + " restarts next — this connection drops for a moment.")
 	}
-	return nil
+	if failed > 0 {
+		failures = append(failures, fmt.Errorf("%d tunnel service(s) failed to restart after rollback", failed))
+	}
+	return errors.Join(failures...)
 }
 
 // --- small file helpers -----------------------------------------------------
 
-// copyFile copies src to dst with the given mode, replacing dst.
+// copyFile publishes a complete copy with the requested mode. Replacing the
+// destination inode also avoids following a destination symlink.
 func copyFile(src, dst string, mode os.FileMode) error {
 	in, err := os.Open(src)
 	if err != nil {
@@ -187,15 +192,22 @@ func copyFile(src, dst string, mode os.FileMode) error {
 	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
 		return err
 	}
-	out, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode)
+	out, err := os.CreateTemp(filepath.Dir(dst), ".snapshot-copy-*")
 	if err != nil {
 		return err
 	}
-	if _, err := io.Copy(out, in); err != nil {
-		out.Close()
+	defer os.Remove(out.Name())
+	_, err = io.Copy(out, in)
+	if err == nil {
+		err = out.Chmod(mode)
+	}
+	if closeErr := out.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
 		return err
 	}
-	return out.Close()
+	return os.Rename(out.Name(), dst)
 }
 
 // copyTree recursively copies a directory, preserving file permissions.
@@ -217,6 +229,11 @@ func copyTree(src, dst string) error {
 		}
 		target := filepath.Join(dst, rel)
 		if fi.IsDir() {
+			if existing, err := os.Lstat(target); err == nil && !existing.IsDir() {
+				return fmt.Errorf("snapshot directory would replace a non-directory: %s", target)
+			} else if err != nil && !os.IsNotExist(err) {
+				return err
+			}
 			return os.MkdirAll(target, 0755)
 		}
 		if !fi.Mode().IsRegular() {

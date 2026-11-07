@@ -4,8 +4,46 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
+
+func TestSnapshotCopyReplacesFileWithSavedPermissions(t *testing.T) {
+	dir := t.TempDir()
+	src, dst := filepath.Join(dir, "saved"), filepath.Join(dir, "live")
+	if err := os.WriteFile(src, []byte("saved token"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dst, []byte("changed token"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dst, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := copyFile(src, dst, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := os.ReadFile(dst); err != nil || string(got) != "saved token" {
+		t.Fatalf("restored content = %q (%v)", got, err)
+	}
+	info, err := os.Stat(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0600 {
+		t.Fatalf("restored token permissions = %o", info.Mode().Perm())
+	}
+	occupied := filepath.Join(dir, "directory")
+	if err := os.Mkdir(occupied, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := copyFile(src, occupied, 0600); err == nil {
+		t.Fatal("replaced a directory with a file")
+	}
+	if staged, err := filepath.Glob(filepath.Join(dir, ".snapshot-copy-*")); err != nil || len(staged) != 0 {
+		t.Fatalf("copy leaked staging files: %v (%v)", staged, err)
+	}
+}
 
 func TestListSnapshotsOrdersSameSecondAndSkipsIncompleteCopies(t *testing.T) {
 	root := t.TempDir()
