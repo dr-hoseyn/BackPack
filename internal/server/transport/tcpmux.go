@@ -445,7 +445,8 @@ func (s *TcpMuxTransport) session(g *tcpMuxGen, owner context.Context) muxSessio
 // forwarder is this transport's forwarded ports for one generation.
 func (s *TcpMuxTransport) forwarder(g *tcpMuxGen) portForwarder {
 	return portForwarder{
-		ctx: g.ctx, ports: s.config.Ports, acceptUDP: s.config.AcceptUDP,
+		expireQueued: s.session(g, g.ctx).dropLocal,
+		ctx:          g.ctx, ports: s.config.Ports, acceptUDP: s.config.AcceptUDP,
 		queue: g.localChannel, limits: s.limits, listeners: &s.listeners, log: s.logger,
 		tune:   nodelayTune(s.config.Nodelay, s.logger),
 		queued: muxRequestForGeneration(g.ctx, &s.counterMutex, &s.streamCounter, &s.sessionCounter, s.config.MuxCon, g.reqNewConnChan, s.logger),

@@ -203,6 +203,7 @@ type LocalTCPConn struct {
 	conn        net.Conn
 	remoteAddr  string
 	timeCreated int64
+	pairing     *queuedMuxPairing
 }
 
 type LocalUDPConn struct {

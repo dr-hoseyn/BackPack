@@ -119,6 +119,11 @@ func (m muxSession) add(counter *int32, delta int32) {
 	}
 }
 
+func (m muxSession) dropLocal(local LocalTCPConn) {
+	drop(local, m.limits, m.log)
+	m.add(m.streams, -1)
+}
+
 // run carries connections over one session until the session or the run ends.
 func (m muxSession) run(session *smux.Session) {
 	// The mux slot counter. Its capacity is the ceiling on streams in flight on
@@ -197,18 +202,14 @@ func (m muxSession) run(session *smux.Session) {
 
 		case incomingConn := <-m.local:
 			idleSince = time.Now()
-			if nowMillis()-incomingConn.timeCreated > pairingTimeout.Milliseconds() {
-				m.log.Debugf("timeouted local connection: %d ms", nowMillis()-incomingConn.timeCreated)
-				incomingConn.conn.Close()
-
-				// Free the slot this connection took on accept. It is otherwise
-				// released only by the handler goroutine, which never runs for a
-				// connection that timed out waiting to be paired — so a tunnel
-				// with max_connections set loses a slot to every timeout and
-				// eventually refuses everything.
-				m.limits.release()
-
-				m.add(m.streams, -1)
+			if incomingConn.pairing != nil && incomingConn.pairing.isExpired() {
+				<-counter
+				continue
+			}
+			if expired(incomingConn) {
+				if incomingConn.pairing.claim() {
+					m.dropLocal(incomingConn)
+				}
 				<-counter
 				continue
 			}
@@ -216,14 +217,23 @@ func (m muxSession) run(session *smux.Session) {
 			// smux's OpenStream may wait on its shared sender longer than a
 			// local connection's pairing budget. Expire just the local
 			// connection while waiting, leaving existing streams alone.
-			workers.Add(1)
-			timer := time.AfterFunc(pairingWait(incomingConn.timeCreated), func() {
-				defer workers.Done()
-				drop(incomingConn, m.limits, m.log)
-				m.add(m.streams, -1)
-			})
+			var timer *time.Timer
+			if incomingConn.pairing == nil {
+				workers.Add(1)
+				timer = time.AfterFunc(pairingWait(incomingConn.timeCreated), func() {
+					defer workers.Done()
+					m.dropLocal(incomingConn)
+				})
+			}
 			stream, err := session.OpenStream()
-			if !timer.Stop() {
+			claimed := incomingConn.pairing.claim()
+			if timer != nil {
+				claimed = timer.Stop()
+				if claimed {
+					workers.Done()
+				}
+			}
+			if !claimed {
 				// The timer owns the local connection and its slot now.
 				if err != nil {
 					retired = true
@@ -234,15 +244,13 @@ func (m muxSession) run(session *smux.Session) {
 				stream.Close()
 				continue
 			}
-			workers.Done()
 			if err != nil {
 				retired = true // failed returns the session's slot itself.
 				m.failed(&incomingConn, err)
 				return
 			}
 			if expired(incomingConn) {
-				drop(incomingConn, m.limits, m.log)
-				m.add(m.streams, -1)
+				m.dropLocal(incomingConn)
 				<-counter
 				stream.Close()
 				continue
@@ -272,6 +280,7 @@ func (m muxSession) run(session *smux.Session) {
 				continue
 			}
 			_ = stream.SetWriteDeadline(time.Time{})
+			incomingConn.pairing = nil
 
 			// Handle data exchange between connections
 			workers.Add(1)

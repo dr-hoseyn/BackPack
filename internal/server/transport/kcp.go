@@ -527,7 +527,8 @@ func (s *KcpTransport) session(g *kcpGen, owner context.Context) muxSession {
 // forwarder is this transport's forwarded ports for one generation.
 func (s *KcpTransport) forwarder(g *kcpGen) portForwarder {
 	return portForwarder{
-		ctx: g.ctx, ports: s.config.Ports, acceptUDP: s.config.AcceptUDP,
+		expireQueued: s.session(g, g.ctx).dropLocal,
+		ctx:          g.ctx, ports: s.config.Ports, acceptUDP: s.config.AcceptUDP,
 		queue: g.localChannel, limits: s.limits, listeners: &s.listeners, log: s.logger,
 		tune:   alwaysNodelay(s.logger),
 		queued: muxRequestForGeneration(g.ctx, &s.counterMutex, &s.streamCounter, &s.sessionCounter, s.config.MuxCon, g.reqNewConnChan, s.logger),

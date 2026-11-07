@@ -3,6 +3,7 @@ package transport
 import (
 	"context"
 	"io"
+	"sync"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -43,6 +44,55 @@ func pairingWait(createdMillis int64) time.Duration {
 // nowMillis is what every transport already measures connection age with.
 func nowMillis() int64 { return time.Now().UnixMilli() }
 
+// queuedMuxPairing owns a socket's deadline from queue admission through
+// stream opening. Only one of expiry, pairing or generation drain takes it.
+type queuedMuxPairing struct {
+	mu      sync.Mutex
+	timer   *time.Timer
+	expired bool
+	expire  func()
+}
+
+// arm is called under mu. The timer identity prevents an old callback from
+// expiring a connection that was claimed and then requeued.
+func (p *queuedMuxPairing) arm(created int64) {
+	var timer *time.Timer
+	timer = time.AfterFunc(pairingWait(created), func() {
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		if p.timer != timer {
+			return
+		}
+		p.timer = nil
+		p.expired = true
+		p.expire()
+	})
+	p.timer = timer
+}
+
+func (p *queuedMuxPairing) isExpired() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.expired
+}
+
+// claim stops expiry and gives the caller responsibility for the socket.
+func (p *queuedMuxPairing) claim() bool {
+	if p == nil {
+		return true
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.expired {
+		return false
+	}
+	if p.timer != nil {
+		p.timer.Stop()
+		p.timer = nil
+	}
+	return true
+}
+
 // requeueLocal puts a connection back on the local queue for another attempt,
 // or gives up on it when the deadline passed or there is no room.
 //
@@ -64,8 +114,15 @@ func requeueLocal(ch chan LocalTCPConn, conn LocalTCPConn, lim *limiter, logger 
 		drop(conn, lim, logger)
 		return false
 	}
+	if conn.pairing != nil {
+		conn.pairing.mu.Lock()
+		defer conn.pairing.mu.Unlock()
+	}
 	select {
 	case ch <- conn:
+		if conn.pairing != nil {
+			conn.pairing.arm(conn.timeCreated)
+		}
 		return true
 	default:
 		if conn.conn != nil {
@@ -92,6 +149,9 @@ func drainOnEnd(ctx context.Context, queue <-chan LocalTCPConn, limits *limiter)
 	sweepAfterEnd(ctx, func() bool {
 		select {
 		case c := <-queue:
+			if !c.pairing.claim() {
+				return true
+			}
 			if c.conn != nil {
 				c.conn.Close()
 			}
