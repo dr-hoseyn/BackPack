@@ -37,7 +37,7 @@ type sessionErrorSubject struct {
 	// setCounters primes them.
 	setCounters func(session, stream int32)
 	// queue is the channel the connection should land back on.
-	queue chan LocalTCPConn
+	queue *muxLocalQueue
 	// requests is the channel a replacement is asked for on.
 	requests chan struct{}
 	limits   *limiter
@@ -53,7 +53,7 @@ func muxSubjects(t *testing.T, queueSize int) []sessionErrorSubject {
 	{
 		lim := newLimiter(Limits{MaxConnections: 8})
 		g := &tcpMuxGen{
-			localChannel:   make(chan LocalTCPConn, queueSize),
+			localChannel:   newMuxLocalQueue(queueSize),
 			reqNewConnChan: make(chan struct{}, 1),
 		}
 		s := &TcpMuxTransport{lifecycle: lifecycle{logger: log}, limits: lim, config: &TcpMuxConfig{MuxCon: 8}}
@@ -73,7 +73,7 @@ func muxSubjects(t *testing.T, queueSize int) []sessionErrorSubject {
 	{
 		lim := newLimiter(Limits{MaxConnections: 8})
 		g := &wsMuxGen{
-			localChannel:   make(chan LocalTCPConn, queueSize),
+			localChannel:   newMuxLocalQueue(queueSize),
 			reqNewConnChan: make(chan struct{}, 1),
 		}
 		s := &WsMuxTransport{lifecycle: lifecycle{logger: log}, limits: lim, config: &WsMuxConfig{MuxCon: 8}}
@@ -93,7 +93,7 @@ func muxSubjects(t *testing.T, queueSize int) []sessionErrorSubject {
 	{
 		lim := newLimiter(Limits{MaxConnections: 8})
 		g := &kcpGen{
-			localChannel:   make(chan LocalTCPConn, queueSize),
+			localChannel:   newMuxLocalQueue(queueSize),
 			reqNewConnChan: make(chan struct{}, 1),
 		}
 		s := &KcpTransport{lifecycle: lifecycle{logger: log}, limits: lim, config: &KcpConfig{MuxCon: 8}}
@@ -134,12 +134,11 @@ func TestAFailedSessionRequeuesItsConnection(t *testing.T) {
 			if stream != 5 {
 				t.Errorf("stream counter = %d, want it untouched for a re-queued connection", stream)
 			}
-			select {
-			case got := <-s.queue:
+			if got, ok := s.queue.pop(); ok {
 				if got.remoteAddr != "127.0.0.1:80" {
 					t.Errorf("the wrong connection was re-queued: %+v", got)
 				}
-			default:
+			} else {
 				t.Error("the connection was not put back on the queue, so the client it " +
 					"belongs to waits for a stream that will never be opened")
 			}
@@ -165,7 +164,7 @@ func TestAConnectionThatCannotBeRequeuedIsCountedOut(t *testing.T) {
 	for _, s := range muxSubjects(t, 1) {
 		t.Run(s.name, func(t *testing.T) {
 			// Fill the queue so the re-queue cannot succeed.
-			s.queue <- LocalTCPConn{conn: &pairedConn{}, timeCreated: nowMillis()}
+			s.queue.push(LocalTCPConn{conn: &pairedConn{}, timeCreated: nowMillis()}, nil)
 			s.setCounters(1, 4)
 			if !s.limits.acquire() {
 				t.Fatal("setup: no slot")
@@ -232,7 +231,7 @@ func TestRequeueLocalNeverLosesASlot(t *testing.T) {
 	t.Run("there is room", func(t *testing.T) {
 		lim := newLimiter(Limits{MaxConnections: 4})
 		lim.acquire()
-		ch := make(chan LocalTCPConn, 1)
+		ch := newMuxLocalQueue(1)
 		conn := &pairedConn{}
 		if !requeueLocal(ch, LocalTCPConn{conn: conn, timeCreated: nowMillis()}, lim, log) {
 			t.Fatal("a re-queue with room reported failure")
@@ -248,7 +247,7 @@ func TestRequeueLocalNeverLosesASlot(t *testing.T) {
 	t.Run("there is no room", func(t *testing.T) {
 		lim := newLimiter(Limits{MaxConnections: 4})
 		lim.acquire()
-		ch := make(chan LocalTCPConn) // unbuffered, nothing reading
+		ch := newMuxLocalQueue(0) // no capacity
 		conn := &pairedConn{}
 		if requeueLocal(ch, LocalTCPConn{conn: conn, timeCreated: nowMillis()}, lim, log) {
 			t.Fatal("a re-queue with no room reported success")
@@ -265,7 +264,7 @@ func TestRequeueLocalNeverLosesASlot(t *testing.T) {
 	t.Run("nothing to close", func(t *testing.T) {
 		lim := newLimiter(Limits{MaxConnections: 4})
 		lim.acquire()
-		ch := make(chan LocalTCPConn)
+		ch := newMuxLocalQueue(0)
 		if requeueLocal(ch, LocalTCPConn{timeCreated: nowMillis()}, lim, log) {
 			t.Fatal("reported success with nowhere to put it")
 		}

@@ -24,7 +24,7 @@ type tcpMuxGen struct {
 	ctx              context.Context
 	tunnelChannel    chan pooledMuxSession
 	handshakeChannel chan controlCandidate
-	localChannel     chan LocalTCPConn
+	localChannel     *muxLocalQueue
 	reqNewConnChan   chan struct{}
 	usageMonitor     *traffic.Usage
 	// seat holds the client this generation serves; see clientSeat.
@@ -226,7 +226,7 @@ func (s *TcpMuxTransport) newGen(ctx context.Context) *tcpMuxGen {
 		ctx:              ctx,
 		tunnelChannel:    make(chan pooledMuxSession, s.config.ChannelSize),
 		handshakeChannel: make(chan controlCandidate, 1),
-		localChannel:     make(chan LocalTCPConn, s.config.ChannelSize),
+		localChannel:     newMuxLocalQueue(s.config.ChannelSize),
 		reqNewConnChan:   make(chan struct{}, s.config.ChannelSize),
 		usageMonitor:     s.usageMonitor(ctx),
 	}
@@ -447,7 +447,7 @@ func (s *TcpMuxTransport) forwarder(g *tcpMuxGen) portForwarder {
 	return portForwarder{
 		expireQueued: s.session(g, g.ctx).dropLocal,
 		ctx:          g.ctx, ports: s.config.Ports, acceptUDP: s.config.AcceptUDP,
-		queue: g.localChannel, limits: s.limits, listeners: &s.listeners, log: s.logger,
+		muxQueue: g.localChannel, limits: s.limits, listeners: &s.listeners, log: s.logger,
 		tune:   nodelayTune(s.config.Nodelay, s.logger),
 		queued: muxRequestForGeneration(g.ctx, &s.counterMutex, &s.streamCounter, &s.sessionCounter, s.config.MuxCon, g.reqNewConnChan, s.logger),
 	}

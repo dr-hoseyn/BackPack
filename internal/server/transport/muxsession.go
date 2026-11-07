@@ -89,7 +89,7 @@ func enqueueMuxSession(queue chan pooledMuxSession, owner context.Context, sessi
 // where the next one can see them.
 type muxSession struct {
 	ctx        context.Context
-	local      chan LocalTCPConn
+	local      *muxLocalQueue
 	usage      *traffic.Usage
 	reqNewConn chan struct{}
 
@@ -200,7 +200,12 @@ func (m muxSession) run(session *smux.Session) {
 			}
 			continue
 
-		case incomingConn := <-m.local:
+		case <-m.local.ready:
+			incomingConn, ok := m.local.pop()
+			if !ok {
+				<-counter
+				continue
+			}
 			idleSince = time.Now()
 			if incomingConn.pairing != nil && incomingConn.pairing.isExpired() {
 				<-counter

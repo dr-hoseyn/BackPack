@@ -51,6 +51,7 @@ type queuedMuxPairing struct {
 	timer   *time.Timer
 	expired bool
 	expire  func()
+	remove  func()
 }
 
 // arm is called under mu. The timer identity prevents an old callback from
@@ -65,6 +66,8 @@ func (p *queuedMuxPairing) arm(created int64) {
 		}
 		p.timer = nil
 		p.expired = true
+		p.remove()
+		p.remove = nil
 		p.expire()
 	})
 	p.timer = timer
@@ -90,6 +93,7 @@ func (p *queuedMuxPairing) claim() bool {
 		p.timer.Stop()
 		p.timer = nil
 	}
+	p.remove = nil
 	return true
 }
 
@@ -109,29 +113,20 @@ func (p *queuedMuxPairing) claim() bool {
 // is exactly what the accept path already does when it finds the same channel
 // full. Dropping one client is the cost; the alternative is dropping all of
 // them until somebody restarts the service.
-func requeueLocal(ch chan LocalTCPConn, conn LocalTCPConn, lim *limiter, logger *logrus.Logger) bool {
+func requeueLocal(queue *muxLocalQueue, conn LocalTCPConn, lim *limiter, logger *logrus.Logger) bool {
 	if expired(conn) {
 		drop(conn, lim, logger)
 		return false
 	}
-	if conn.pairing != nil {
-		conn.pairing.mu.Lock()
-		defer conn.pairing.mu.Unlock()
-	}
-	select {
-	case ch <- conn:
-		if conn.pairing != nil {
-			conn.pairing.arm(conn.timeCreated)
-		}
+	if queue.push(conn, nil) {
 		return true
-	default:
-		if conn.conn != nil {
-			logger.Warnf("the local queue is full, dropping a client from %s", conn.conn.RemoteAddr())
-			conn.conn.Close()
-		}
-		lim.release()
-		return false
 	}
+	if conn.conn != nil {
+		logger.Debugf("the local queue cannot accept a retry from %s", conn.conn.RemoteAddr())
+		conn.conn.Close()
+	}
+	lim.release()
+	return false
 }
 
 // drainOnEnd gives back everything still queued in a generation's local
@@ -149,9 +144,6 @@ func drainOnEnd(ctx context.Context, queue <-chan LocalTCPConn, limits *limiter)
 	sweepAfterEnd(ctx, func() bool {
 		select {
 		case c := <-queue:
-			if !c.pairing.claim() {
-				return true
-			}
 			if c.conn != nil {
 				c.conn.Close()
 			}

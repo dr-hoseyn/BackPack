@@ -26,7 +26,7 @@ type kcpGen struct {
 	ctx              context.Context
 	tunnelChannel    chan pooledMuxSession
 	handshakeChannel chan net.Conn
-	localChannel     chan LocalTCPConn
+	localChannel     *muxLocalQueue
 	reqNewConnChan   chan struct{}
 	usageMonitor     *traffic.Usage
 	// bye is said once the seated client has been told this run is ending;
@@ -263,7 +263,7 @@ func (s *KcpTransport) newGen(ctx context.Context) *kcpGen {
 		ctx:              ctx,
 		tunnelChannel:    make(chan pooledMuxSession, s.config.ChannelSize),
 		handshakeChannel: make(chan net.Conn),
-		localChannel:     make(chan LocalTCPConn, s.config.ChannelSize),
+		localChannel:     newMuxLocalQueue(s.config.ChannelSize),
 		reqNewConnChan:   make(chan struct{}, s.config.ChannelSize),
 		usageMonitor:     s.usageMonitor(ctx),
 	}
@@ -529,7 +529,7 @@ func (s *KcpTransport) forwarder(g *kcpGen) portForwarder {
 	return portForwarder{
 		expireQueued: s.session(g, g.ctx).dropLocal,
 		ctx:          g.ctx, ports: s.config.Ports, acceptUDP: s.config.AcceptUDP,
-		queue: g.localChannel, limits: s.limits, listeners: &s.listeners, log: s.logger,
+		muxQueue: g.localChannel, limits: s.limits, listeners: &s.listeners, log: s.logger,
 		tune:   alwaysNodelay(s.logger),
 		queued: muxRequestForGeneration(g.ctx, &s.counterMutex, &s.streamCounter, &s.sessionCounter, s.config.MuxCon, g.reqNewConnChan, s.logger),
 	}

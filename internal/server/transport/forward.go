@@ -28,6 +28,7 @@ type portForwarder struct {
 	ports     []string
 	acceptUDP bool
 	queue     chan LocalTCPConn
+	muxQueue  *muxLocalQueue
 	limits    *limiter
 	listeners *listenerSet
 	log       *logrus.Logger
@@ -46,7 +47,11 @@ type portForwarder struct {
 
 // run binds every mapping and returns; the listeners live until ctx ends.
 func (f portForwarder) run() {
-	go drainOnEnd(f.ctx, f.queue, f.limits)
+	if f.muxQueue != nil {
+		go f.muxQueue.drain(f.ctx, f.limits)
+	} else {
+		go drainOnEnd(f.ctx, f.queue, f.limits)
+	}
 	eachForward(f.ports, f.log, func(localAddr, target string) {
 		go f.listen(localAddr, target)
 	})
@@ -187,20 +192,16 @@ func (f portForwarder) admitUDP(conn net.Conn, target string) bool {
 }
 
 func (f portForwarder) offer(local LocalTCPConn) bool {
-	if f.expireQueued != nil {
+	if f.muxQueue != nil {
 		p := &queuedMuxPairing{}
 		local.pairing = p
 		p.expire = func() { f.expireQueued(local) }
-		p.mu.Lock()
-		defer p.mu.Unlock()
+		return f.muxQueue.push(local, f.queued)
 	}
 	select {
 	case f.queue <- local:
 		if f.queued != nil {
 			f.queued()
-		}
-		if local.pairing != nil {
-			local.pairing.arm(local.timeCreated)
 		}
 		return true
 	default:

@@ -41,13 +41,13 @@ func TestMuxPairingExpiresWhileSenderIsBlocked(t *testing.T) {
 	if !limits.acquire() {
 		t.Fatal("could not reserve the test connection")
 	}
-	queue := make(chan LocalTCPConn, 1)
+	queue := newMuxLocalQueue(1)
 	streams, sessions := int32(1), int32(1)
 	loop := muxSession{
 		ctx: t.Context(), local: queue, muxCon: 1, limits: limits,
 		log: quietLogger(), streams: &streams, sessions: &sessions, reqNewConn: make(chan struct{}, 1),
 	}
-	f := portForwarder{queue: queue, expireQueued: loop.dropLocal}
+	f := portForwarder{muxQueue: queue, expireQueued: loop.dropLocal}
 	if !f.offer(LocalTCPConn{
 		conn: local, remoteAddr: "127.0.0.1:80",
 		timeCreated: nowMillis() - (pairingTimeout - 400*time.Millisecond).Milliseconds(),
@@ -76,7 +76,7 @@ func TestMuxPairingExpiresWhileSenderIsBlocked(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("mux worker did not stop after closing the session")
 	}
-	if len(queue) != 0 || limits.active.Load() != 0 || atomic.LoadInt32(&streams) != 0 || atomic.LoadInt32(&sessions) != 0 {
+	if queue.entries.Len() != 0 || limits.active.Load() != 0 || atomic.LoadInt32(&streams) != 0 || atomic.LoadInt32(&sessions) != 0 {
 		t.Fatal("expired pairing was requeued or retained a slot")
 	}
 }
@@ -91,15 +91,23 @@ func TestMuxQueueExpiresWithoutAnySession(t *testing.T) {
 			local, user := net.Pipe()
 			defer local.Close()
 			defer user.Close()
-			queue := make(chan LocalTCPConn, 1)
+			queue := newMuxLocalQueue(1)
 			var streams int32
 			loop := muxSession{limits: limits, log: quietLogger(), streams: &streams}
-			f := portForwarder{queue: queue, expireQueued: loop.dropLocal, queued: func() { atomic.AddInt32(&streams, 1) }}
+			expiredDone := make(chan struct{}, 1)
+			f := portForwarder{
+				muxQueue: queue,
+				expireQueued: func(c LocalTCPConn) {
+					loop.dropLocal(c)
+					expiredDone <- struct{}{}
+				},
+				queued: func() { atomic.AddInt32(&streams, 1) },
+			}
 			if !f.offer(LocalTCPConn{conn: local, timeCreated: nowMillis() - (pairingTimeout - 300*time.Millisecond).Milliseconds()}) {
 				t.Fatal("could not queue the test connection")
 			}
 			if retry {
-				request := <-queue
+				request, _ := queue.pop()
 				if !request.pairing.claim() || !requeueLocal(queue, request, limits, loop.log) {
 					t.Fatal("could not requeue the test connection")
 				}
@@ -108,12 +116,53 @@ func TestMuxQueueExpiresWithoutAnySession(t *testing.T) {
 			if _, err := user.Read(make([]byte, 1)); err != io.EOF {
 				t.Fatalf("unserved request remained open: %v", err)
 			}
-			if request := <-queue; request.pairing.claim() {
-				t.Fatal("expired entry could still be claimed by a worker or drain")
+			if _, ok := queue.pop(); ok {
+				t.Fatal("expired entry remained in the queue")
+			}
+			select {
+			case <-expiredDone:
+			case <-time.After(time.Second):
+				t.Fatal("expiry did not finish")
 			}
 			if limits.active.Load() != 0 || atomic.LoadInt32(&streams) != 0 {
 				t.Fatal("unserved request kept its quota or stream count")
 			}
+			if !limits.acquire() {
+				t.Fatal("the expired slot was not available to a new connection")
+			}
+			next, nextPeer := net.Pipe()
+			defer nextPeer.Close()
+			if !f.offer(LocalTCPConn{conn: next, timeCreated: nowMillis()}) {
+				next.Close()
+				t.Fatal("a new connection could not use the expired queue entry's place")
+			}
+			request, ok := queue.pop()
+			if !ok || request.conn != next || !request.pairing.claim() {
+				t.Fatal("the new connection was not available to pair")
+			}
+			next.Close()
+			limits.release()
 		})
+	}
+}
+
+func TestMuxQueueWakesWorkersForEachPendingRequestInOrder(t *testing.T) {
+	queue := newMuxLocalQueue(3)
+	targets := []string{"first", "second", "third"}
+	for _, target := range targets {
+		if !queue.push(LocalTCPConn{remoteAddr: target}, nil) {
+			t.Fatal("queue filled early")
+		}
+	}
+	for _, target := range targets {
+		select {
+		case <-queue.ready:
+		default:
+			t.Fatal("pending request has no worker wakeup")
+		}
+		request, ok := queue.pop()
+		if !ok || request.remoteAddr != target {
+			t.Fatalf("next request was %q, want %q", request.remoteAddr, target)
+		}
 	}
 }

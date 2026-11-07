@@ -19,7 +19,7 @@ import (
 // that empties it is parked on a send into it, and the tunnel stops for good
 // with every socket still open and nothing in the log to say why.
 func TestRequeueingALocalConnectionNeverBlocks(t *testing.T) {
-	ch := make(chan LocalTCPConn, 1)
+	ch := newMuxLocalQueue(1)
 	lim := newLimiter(Limits{MaxConnections: 4})
 	log := quietLogger()
 
@@ -70,7 +70,7 @@ func TestRequeueingALocalConnectionNeverBlocks(t *testing.T) {
 
 // A limiter that is not configured must not be a nil dereference on this path.
 func TestRequeueingWorksWithNoLimitsConfigured(t *testing.T) {
-	ch := make(chan LocalTCPConn, 1)
+	ch := newMuxLocalQueue(1)
 	a, b := net.Pipe()
 	defer a.Close()
 	defer b.Close()
@@ -85,7 +85,7 @@ func TestRequeueingWorksWithNoLimitsConfigured(t *testing.T) {
 }
 
 func TestExpiredMuxPairingReleasesConnectionInsteadOfRequeueing(t *testing.T) {
-	ch := make(chan LocalTCPConn, 1)
+	ch := newMuxLocalQueue(1)
 	lim := newLimiter(Limits{MaxConnections: 1})
 	if !lim.acquire() {
 		t.Fatal("could not acquire the test slot")
@@ -94,7 +94,7 @@ func TestExpiredMuxPairingReleasesConnectionInsteadOfRequeueing(t *testing.T) {
 	defer local.Close()
 	defer peer.Close()
 	created := nowMillis() - (pairingTimeout + time.Second).Milliseconds()
-	if requeueLocal(ch, LocalTCPConn{conn: local, timeCreated: created}, lim, quietLogger()) || len(ch) != 0 {
+	if requeueLocal(ch, LocalTCPConn{conn: local, timeCreated: created}, lim, quietLogger()) || ch.entries.Len() != 0 {
 		t.Fatal("expired request took a place in the retry queue")
 	}
 	if lim.active.Load() != 0 {
