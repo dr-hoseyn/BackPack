@@ -124,8 +124,9 @@ func attemptDialWebSocket(ctx context.Context, out *Outbound, addr string, edgeI
 			option.applyWS(&settings)
 		}
 	}
+	dataPath := path != "/channel" && path != WSProbePath
 	var muxOptions *WSMuxOptions
-	if (mode == config.WSMUX || mode == config.WSSMUX) && path != "/channel" {
+	if (mode == config.WSMUX || mode == config.WSSMUX) && dataPath {
 		muxOptions = settings.mux
 		if muxOptions != nil {
 			muxOptions.offer(headers)
@@ -138,7 +139,7 @@ func attemptDialWebSocket(ctx context.Context, out *Outbound, addr string, edgeI
 	// checking the server's answer; nil otherwise.
 	var ekm []byte
 	var learnedALPN string
-	rawMux := path != "/channel" && (mode == config.WSMUX || mode == config.WSSMUX)
+	rawMux := dataPath && (mode == config.WSMUX || mode == config.WSSMUX)
 
 	// Handle edgeIP assignment
 	if edgeIP != "" {
@@ -156,7 +157,7 @@ func attemptDialWebSocket(ctx context.Context, out *Outbound, addr string, edgeI
 	}
 
 	// path generation
-	if path != "/channel" {
+	if dataPath {
 		path = path + "/" + hex.EncodeToString(suffix[:])
 	}
 
@@ -288,6 +289,10 @@ func attemptDialWebSocket(ctx context.Context, out *Outbound, addr string, edgeI
 			tunnelWSConn.Close()
 			return nil, err
 		}
+	}
+	if path == WSProbePath && resp.Header.Get(WSProbeAckHeader) != "1" {
+		tunnelWSConn.Close()
+		return nil, errors.New("websocket endpoint did not acknowledge the health probe")
 	}
 	if muxOptions != nil {
 		if err := muxOptions.accept(resp.Header); err != nil {

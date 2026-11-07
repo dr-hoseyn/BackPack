@@ -92,7 +92,8 @@ func (c *WsTransport) channelDialer() {
 		case <-c.state.Ctx().Done():
 			return
 		default:
-			tunnelWSConn, err := network.WebSocketDialer(c.state.Ctx(), c.config.Outbound, c.config.Endpoints.Current(), c.config.EdgeIP, "/channel", c.config.DialTimeOut, c.config.KeepAlive, true, c.config.Token, c.config.Mode, c.config.SimpleAuth, 3, 0, 0, c.config.MSS, c.config.WSS)
+			addr := c.config.Endpoints.Current()
+			tunnelWSConn, err := network.WebSocketDialer(c.state.Ctx(), c.config.Outbound, addr, c.config.EdgeIP, "/channel", c.config.DialTimeOut, c.config.KeepAlive, true, c.config.Token, c.config.Mode, c.config.SimpleAuth, 3, 0, 0, c.config.MSS, c.config.WSS)
 			if err != nil {
 				c.logger.Errorf("control channel dialer: %v", err)
 				// The current endpoint did not answer — move to the next one so a
@@ -105,6 +106,7 @@ func (c *WsTransport) channelDialer() {
 			}
 			// See metrics.Snapshot.Connected: the watchdog asks the engine, not the
 			// socket table.
+			c.config.Endpoints.Prefer(addr)
 			metrics.ReportPeer(tunnelWSConn.RemoteAddr().String())
 			c.state.SetWSConn(tunnelWSConn)
 			c.logger.Info("control channel established successfully")
@@ -146,6 +148,37 @@ func (c *WsTransport) control() controlLoop {
 	return loop
 }
 
+func (c *WsTransport) dialTunnel(ctx context.Context) (*websocket.Conn, error) {
+	const maxAttempts = 3
+	cfg := c.config
+	dial := func(addr string, attempts int) (*websocket.Conn, error) {
+		return network.WebSocketDialer(ctx, cfg.Outbound, addr, cfg.EdgeIP, "/tunnel", cfg.DialTimeOut, cfg.KeepAlive, cfg.Nodelay, cfg.Token, cfg.Mode, cfg.SimpleAuth, attempts, 1024*1024, 1024*1024, cfg.MSS, cfg.WSS)
+	}
+	first := cfg.Endpoints.Next()
+	if !cfg.Endpoints.DataHealthSteering() {
+		return dial(first, maxAttempts)
+	}
+	conn, err := dial(first, 1)
+	if err == nil {
+		return conn, nil
+	}
+	attempts := 1
+	for _, addr := range cfg.Endpoints.InPreferenceOrder() {
+		if attempts >= maxAttempts || ctx.Err() != nil {
+			break
+		}
+		if addr == first {
+			continue
+		}
+		attempts++
+		conn, err = dial(addr, 1)
+		if err == nil {
+			return conn, nil
+		}
+	}
+	return nil, err
+}
+
 func (c *WsTransport) tunnelDialer() {
 	ready, ok := c.beginPoolDial(c.config.ConnPoolSize * poolGrowthLimit)
 	if !ok {
@@ -156,11 +189,7 @@ func (c *WsTransport) tunnelDialer() {
 	c.logger.Debugf("initiating new websocket tunnel connection to address %s", c.config.RemoteAddr)
 	ctx := c.state.Ctx()
 
-	// Dial to the tunnel server
-	// Next() rather than Current(): with load balancing enabled the pool
-	// spreads its connections over every configured endpoint, so one
-	// congested route only slows its own share of the traffic.
-	tunnelConn, err := network.WebSocketDialer(c.state.Ctx(), c.config.Outbound, c.config.Endpoints.Next(), c.config.EdgeIP, "/tunnel", c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay, c.config.Token, c.config.Mode, c.config.SimpleAuth, 3, 1024*1024, 1024*1024, c.config.MSS, c.config.WSS)
+	tunnelConn, err := c.dialTunnel(ctx)
 	if err != nil {
 		c.logger.Errorf("tunnel server dialer: %v", err)
 

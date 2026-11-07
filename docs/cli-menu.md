@@ -281,7 +281,7 @@ only the entries that apply to its role and transport.
 | **Change server address** | The Iran IP or domain. |
 | **Change transport** | As above — switch both ends. |
 | **Backup server addresses** | The full new list; empty clears them. The client walks the list until one answers. [More](failover-load-balancing.md) |
-| **Automatic Address Failover** | Choose the healthier server address and reconnect the active control channel and pool. Supports IPv4 with IPv6 backup on the same server; switches interrupt existing sessions. [More](failover-load-balancing.md#ipv4-primary-with-ipv6-backup) |
+| **Automatic Address Failover** | Prefer the healthier address. WebSocket carriers steer new data connections. Other supported TCP carriers reconnect the tunnel on a switch. Supports IPv4 with IPv6 backup on the same server. [More](failover-load-balancing.md#ipv4-primary-with-ipv6-backup) |
 | **Change performance preset** | As above. |
 | **Load balancing** | Off: backups are spares, used one at a time. On: connections are spread over all of them at once. **Every address must reach the same server.** |
 | **TCP MSS clamp**, **TCP packet flags**, **IP Spoofing** | As on the server, where the transport applies. |
@@ -519,7 +519,7 @@ FEC؛ و zero-copy (فقط روی tcp ساده).
 
 ---
 
-*Last verified against Backpack v1.20.2*
+*Last verified against Backpack v1.20.3*
 
 
 Connection Test also provides [saved history and repeated-run comparison](connection-test-history.md)

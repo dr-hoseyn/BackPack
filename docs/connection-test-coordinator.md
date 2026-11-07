@@ -34,4 +34,4 @@ with the test and cannot be promoted as a production sshd login.
 
 </div>
 
-*Last verified against Backpack v1.20.2, 2026-11-01.*
+*Last verified against Backpack v1.20.3, 2026-11-01.*

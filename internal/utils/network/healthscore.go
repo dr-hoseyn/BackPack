@@ -150,7 +150,7 @@ func (e *Endpoints) steerLoop(ctx context.Context, interval time.Duration, log f
 	defer ticker.Stop()
 
 	choice := healthChoice{candidate: -1, incumbent: -1}
-
+	var lastPolicy *healthRouting
 	for {
 		select {
 		case <-ctx.Done():
@@ -158,22 +158,25 @@ func (e *Endpoints) steerLoop(ctx context.Context, interval time.Duration, log f
 		case <-ticker.C:
 		}
 
-		probe, switched := e.healthProbe.Load(), e.healthSwitch.Load()
-		scores := e.measureHealth(ctx, probe)
+		policy := e.health.Load()
+		if policy != lastPolicy {
+			choice = healthChoice{candidate: -1, incumbent: -1}
+			lastPolicy = policy
+		}
+		if policy == nil || policy.probe == nil {
+			continue
+		}
+		scores := e.measureHealth(ctx, policy.probe)
 		if ctx.Err() != nil {
 			return
 		}
-		if probe != e.healthProbe.Load() || switched != e.healthSwitch.Load() {
-			choice = healthChoice{candidate: -1, incumbent: -1}
-			continue // the transport changed while this batch was being measured
-		}
-		e.applyHealthScores(ctx, &choice, scores, log)
+		e.applyHealthScores(ctx, &choice, scores, policy, log)
 	}
 }
 
 // Probe at most four routes at once. One blackholed IPv4 endpoint must not
 // delay measuring every IPv6 backup by its entire timeout.
-func (e *Endpoints) measureHealth(ctx context.Context, probe *func(context.Context, string, int) EndpointScore) []EndpointScore {
+func (e *Endpoints) measureHealth(ctx context.Context, probe func(context.Context, string, int) EndpointScore) []EndpointScore {
 	scores := make([]EndpointScore, len(e.list))
 	jobs := make(chan int)
 	var workers sync.WaitGroup
@@ -181,11 +184,7 @@ func (e *Endpoints) measureHealth(ctx context.Context, probe *func(context.Conte
 	for n := 0; n < min(4, len(e.list)); n++ {
 		workers.Go(func() {
 			for i := range jobs {
-				if probe != nil {
-					scores[i] = (*probe)(ctx, e.list[i], 5)
-				} else {
-					scores[i] = scoreEndpoint(ctx, e.list[i], 5)
-				}
+				scores[i] = probe(ctx, e.list[i], 5)
 				if scores[i].Reachable && reach != nil && !(*reach)(e.list[i]) {
 					scores[i].Reachable, scores[i].Score = false, 1e9
 				}
@@ -236,21 +235,33 @@ func (h *healthChoice) choose(scores []EndpointScore, cur int) (int, bool) {
 	return cur, false
 }
 
-func (e *Endpoints) applyHealthScores(ctx context.Context, choice *healthChoice, scores []EndpointScore, log func(string)) {
+func (e *Endpoints) applyHealthScores(ctx context.Context, choice *healthChoice, scores []EndpointScore, policy *healthRouting, log func(string)) {
 	previous := e.preferred.Load()
 	cur := e.clampIdx(previous)
 	best, change := choice.choose(scores, cur)
-	// Do not overwrite a dial's preference if it changes during this decision.
-	if !change || ctx.Err() != nil || !e.preferred.CompareAndSwap(previous, int64(best)) {
+	if !change {
 		return
 	}
-	e.idx.Store(int64(best))
+	// A retired carrier's measurements cannot publish a route for the next
+	// carrier. Do not overwrite a concurrent dial's new preference either.
+	e.healthMu.Lock()
+	if ctx.Err() != nil || policy != e.health.Load() || !e.preferred.CompareAndSwap(previous, int64(best)) {
+		e.healthMu.Unlock()
+		return
+	}
+	action := "failover: steering"
+	if policy != nil && policy.dataOnly {
+		action = "failover: steering new WebSocket data connections"
+	} else {
+		e.idx.Store(int64(best))
+	}
+	e.healthMu.Unlock()
 	if log != nil {
-		log("failover: steering from " + e.list[cur] + " to healthiest exit " + e.list[best] +
+		log(action + " from " + e.list[cur] + " to healthiest exit " + e.list[best] +
 			" (score " + strconv.FormatFloat(scores[best].Score, 'f', 0, 64) + ")")
 	}
-	if f := e.healthSwitch.Load(); f != nil {
-		(*f)(e.list[cur], e.list[best])
+	if policy != nil && policy.onSwitch != nil {
+		policy.onSwitch(e.list[cur], e.list[best])
 	}
 }
 

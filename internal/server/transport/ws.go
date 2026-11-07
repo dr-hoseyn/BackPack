@@ -245,11 +245,16 @@ func (s *WsTransport) tunnelListener(g *wsGen) {
 				return
 			}
 
+			proof := serverProof(r, s.config.Token, s.config.SimpleAuth)
+			if r.URL.Path == network.WSProbePath {
+				serveWSProbe(w, r, &upgrader, proof)
+				return
+			}
 			var owner context.Context
 			if r.URL.Path != "/channel" {
 				owner = g.seat.client()
 			}
-			conn, err := upgrader.Upgrade(w, r, serverProof(r, s.config.Token, s.config.SimpleAuth))
+			conn, err := upgrader.Upgrade(w, r, proof)
 			if err != nil {
 				s.logger.Errorf("failed to upgrade connection from %s: %v", r.RemoteAddr, err)
 				return

@@ -53,7 +53,12 @@ func toggleHealthFailover(name string, spec TunnelSpec) {
 	tui.Info("For IPv4 to IPv6: add [IPv6]:port in Backup Addresses first.")
 	tui.Info("All addresses must reach the same server, listening on both IP families.")
 	tui.Info("Requires a TCP control port; ping alone cannot prove a datagram tunnel is healthy.")
-	tui.Warn("A switch reconnects the tunnel and interrupts existing connections.")
+	switch config.TransportType(spec.Transport) {
+	case config.WS, config.WSS, config.WSMUX, config.WSSMUX:
+		tui.Info("WebSocket scores steer new data connections. Update both peers to enable these probes.")
+	default:
+		tui.Warn("A switch reconnects the tunnel and interrupts existing connections.")
+	}
 	verb := "Enable"
 	if spec.HealthFailover {
 		verb = "Disable"

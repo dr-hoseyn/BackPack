@@ -17,10 +17,10 @@ func TestDatagramHealthFailoverDoesNotSteerToAPingableClosedPort(t *testing.T) {
 			e.SetSpread(true)
 			e.Rotate() // the primary failed the real tunnel handshake
 			var probes atomic.Int32
-			e.SetHealthProbe(func(context.Context, string, int) network.EndpointScore {
+			e.SetHealthRouting(func(context.Context, string, int) network.EndpointScore {
 				probes.Add(1)
 				return network.EndpointScore{Reachable: true, Score: 0}
-			})
+			}, nil, false)
 			stop := startHealthSteering(t.Context(), tr, e, time.Millisecond, nil)
 			time.Sleep(10 * time.Millisecond)
 			stop()
@@ -39,13 +39,13 @@ func TestTCPHealthSteeringStillMeasuresAndStops(t *testing.T) {
 		t.Run(string(tr), func(t *testing.T) {
 			e := network.NewEndpoints("primary:443", "backup:443")
 			measured := make(chan struct{}, 8)
-			e.SetHealthProbe(func(context.Context, string, int) network.EndpointScore {
+			e.SetHealthRouting(func(context.Context, string, int) network.EndpointScore {
 				select {
 				case measured <- struct{}{}:
 				default:
 				}
 				return network.EndpointScore{Reachable: true, Score: 10}
-			})
+			}, nil, false)
 			stop := startHealthSteering(t.Context(), tr, e, time.Millisecond, nil)
 			select {
 			case <-measured:
