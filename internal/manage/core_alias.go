@@ -96,7 +96,7 @@ type (
 
 var (
 	TakeSnapshot    = backup.TakeSnapshot
-	RestoreSnapshot = backup.RestoreSnapshot
+	RestoreSnapshot = RollbackUpdate
 	ListSnapshots   = backup.ListSnapshots
 	SnapshotRoot    = backup.Root
 

@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+## v1.20.2 — 2026-11-07
+
+- Recover WS, WSS and WSSMux listeners after accept failures. Repair lost
+  WSSMux data sessions sooner, fall back to healthy routes, and release
+  TCPMux and WSSMux pairing slots as queued connections expire.
+- Try another configured TCP backend within the original dial budget when
+  the selected backend fails. Keep Direct stream setup tied to its listener
+  and validate the resolved backend before connecting.
+- Reduce frame and UDP forwarding overhead. Harden WebSocket and gRPC
+  framing, improve fairness under L3 UDP load, and add optional authentication
+  of L3 FEC shards. Enable `fec_auth = true` on both peers after upgrading them.
+- Make Connection Test results easier to read in narrow terminals. Report
+  unavailable measurements and paths lost during dual-stack tests separately
+  from measured zero values.
+- Verify update archives before replacing binaries, serialize updates and
+  rollbacks, and preserve file modes when restoring a snapshot.
+
+<div dir="rtl">
+
+بازیابی WSSMux و TCPMux سریع‌تر انجام می‌شود و در پورت‌های چندمقصدی، خرابی یک
+مقصد می‌تواند در همان اتصال جبران شود. گزارش Connection Test در ترمینال باریک
+خواناتر است و نتیجهٔ ناموجود را از مقدار صفر جدا نشان می‌دهد. نصب، به‌روزرسانی
+و بازگردانی نسخه هم در برابر خطا مقاوم‌تر شده‌اند.
+
+</div>
+
 ## v1.20.1 — 2026-11-06
 
 - Recover the WSMUX and WSSMUX listener after a fatal accept-loop failure.

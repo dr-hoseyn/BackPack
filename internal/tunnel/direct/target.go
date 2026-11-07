@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/netip"
+	"syscall"
 )
 
 // What the origin refuses to dial.
@@ -95,4 +97,22 @@ func isMetadataAddr(ip net.IP) bool {
 		}
 	}
 	return false
+}
+
+// The dialer resolves a hostname again and calls this for each candidate IP
+// before connecting. A DNS change between the two lookups cannot bypass the
+// metadata restriction.
+func checkBackendAddress(_ context.Context, _, address string, _ syscall.RawConn) error {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return err
+	}
+	ip, err := netip.ParseAddr(host)
+	if err != nil {
+		return err
+	}
+	if isMetadataAddr(net.IP(ip.AsSlice())) {
+		return errMetadataTarget
+	}
+	return nil
 }

@@ -51,9 +51,6 @@ func updateMenu() {
 // the answer is visible before the option is chosen.
 func localUpdateDesc() string {
 	if u, ok := manage.FindLocalUpdate(); ok {
-		if u.Version != "" {
-			return "found " + u.Version + " in " + filepath.Dir(u.Path)
-		}
 		return "found " + filepath.Base(u.Path) + " in " + filepath.Dir(u.Path)
 	}
 	return "put " + manage.LocalAssetName() + " in /root first"
@@ -86,13 +83,7 @@ func runLocalUpdate() {
 	fmt.Printf("  %sFile%s     %s\n", tui.Gray, tui.Reset, u.Path)
 	fmt.Printf("  %sSize%s     %.1f MB\n", tui.Gray, tui.Reset, float64(u.Size)/(1<<20))
 	fmt.Printf("  %sAdded%s    %s\n", tui.Gray, tui.Reset, u.When.Format("2006-01-02 15:04"))
-	if u.Version != "" {
-		fmt.Printf("  %sVersion%s  %s%s%s  (this server runs %s)\n",
-			tui.Gray, tui.Reset, tui.Bold+tui.White, u.Version, tui.Reset, app.Version)
-	} else {
-		fmt.Printf("  %sVersion%s  %sunknown — the binary inside did not answer%s\n",
-			tui.Gray, tui.Reset, tui.Gray, tui.Reset)
-	}
+	fmt.Printf("  %sVersion%s  reported after installation (this server runs %s)\n", tui.Gray, tui.Reset, app.Version)
 	if u.Checksums != "" {
 		fmt.Printf("  %sChecksum%s %s\n", tui.Gray, tui.Reset, u.Checksums)
 	} else {
@@ -100,13 +91,6 @@ func runLocalUpdate() {
 			tui.Gray, tui.Reset, tui.Gray, tui.Reset)
 	}
 	fmt.Println()
-
-	// Said plainly rather than refused. Reinstalling the same version is a
-	// reasonable thing to want — a binary that was corrupted, a rollback being
-	// undone — and going backwards is sometimes the whole point.
-	if u.Version != "" && u.Version == app.Version {
-		tui.Warn("Same Version As Running — Reinstalling Is Fine.")
-	}
 
 	tui.Info("A Restore Point Is Taken First; A Failed Update Rolls Back.")
 	fmt.Println()

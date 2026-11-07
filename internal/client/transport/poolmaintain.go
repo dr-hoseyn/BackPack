@@ -76,6 +76,8 @@ type poolSizer struct {
 	spawn   func(func())
 	pending *int32
 	maxSize int
+	// sessionLost optionally wakes floor repair before the next sizing tick.
+	sessionLost <-chan struct{}
 	// Only peers that negotiated safe retirement participate in mux shrink.
 	sessions *muxPoolSessions
 }
@@ -86,6 +88,17 @@ func (p poolSizer) launch() {
 	} else {
 		go p.dial()
 	}
+}
+
+func (p poolSizer) repair(target int) bool {
+	if p.pending == nil {
+		return false
+	}
+	missing := target - poolOccupancy(p.pending, p.open)
+	for i := 0; i < missing && p.ctx.Err() == nil; i++ {
+		p.launch()
+	}
+	return missing > 0
 }
 
 // maintain reacts once a second. Growing by one every ten seconds took minutes
@@ -119,13 +132,23 @@ func (p poolSizer) maintain() {
 	load.spare = !p.mux
 	load.mbps() // establish a baseline before the first sizing decision
 	lastSample := time.Now()
+	repairedEarly := false
 
 	for {
 		select {
 		case <-p.ctx.Done():
 			return
 
+		case <-p.sessionLost:
+			// A peer that immediately closes each new session must not
+			// trigger an unbounded reconnect loop. Allow one early floor
+			// repair between sizing ticks; higher targets use the tick.
+			if !repairedEarly {
+				repairedEarly = p.repair(p.size)
+			}
+
 		case now := <-ticker.C:
+			repairedEarly = false
 			// Use elapsed time: scheduler delays must not turn a multi-second
 			// request count into a one-second burst.
 			seconds := max(now.Sub(lastSample).Seconds(), 1)
@@ -208,12 +231,7 @@ func (p poolSizer) maintain() {
 			}
 			// Repairs and growth use one reconciler, so a growth decision does
 			// not launch the same missing connections twice.
-			if p.pending != nil {
-				missing := newPoolSize - int(atomic.LoadInt32(p.open)+atomic.LoadInt32(p.pending))
-				for i := 0; i < missing && p.ctx.Err() == nil; i++ {
-					p.launch()
-				}
-			}
+			p.repair(newPoolSize)
 			metrics.ReportPool(openAvg, newPoolSize, p.size, mbps)
 		}
 	}

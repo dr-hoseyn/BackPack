@@ -28,6 +28,7 @@ type portForwarder struct {
 	ports     []string
 	acceptUDP bool
 	queue     chan LocalTCPConn
+	muxQueue  *muxLocalQueue
 	limits    *limiter
 	listeners *listenerSet
 	log       *logrus.Logger
@@ -39,11 +40,18 @@ type portForwarder struct {
 	// waiting in queue: the transport asks its client for a tunnel connection
 	// or a stream to carry it. Optional.
 	queued func()
+	// expireQueued is used by mux queues, which can have no consumer while
+	// the data pool is down.
+	expireQueued func(LocalTCPConn)
 }
 
 // run binds every mapping and returns; the listeners live until ctx ends.
 func (f portForwarder) run() {
-	go drainOnEnd(f.ctx, f.queue, f.limits)
+	if f.muxQueue != nil {
+		go f.muxQueue.drain(f.ctx, f.limits)
+	} else {
+		go drainOnEnd(f.ctx, f.queue, f.limits)
+	}
 	eachForward(f.ports, f.log, func(localAddr, target string) {
 		go f.listen(localAddr, target)
 	})
@@ -155,19 +163,15 @@ func (f portForwarder) accept(listener net.Listener, remoteAddr string) {
 		}
 		wrapped := f.limits.wrap(f.ctx, conn)
 
-		select {
-		case f.queue <- LocalTCPConn{conn: wrapped, remoteAddr: remoteAddr, timeCreated: time.Now().UnixMilli()}:
+		if f.offer(LocalTCPConn{conn: wrapped, remoteAddr: remoteAddr, timeCreated: nowMillis()}) {
 			f.log.Debugf("forwarded port: accepted a client from %s", tcpConn.RemoteAddr().String())
-			if f.queued != nil {
-				f.queued()
-			}
-		default:
+		} else {
 			// The queue is full: the tunnel is not keeping up, and holding the
 			// connection open longer only delays the user's retry.
 			f.log.Warnf("forwarded port %s: the queue is full, dropping a client from %s",
 				listener.Addr().String(), tcpConn.RemoteAddr().String())
 			f.limits.release()
-			conn.Close()
+			wrapped.Close()
 		}
 	}
 }
@@ -178,14 +182,29 @@ func (f portForwarder) admitUDP(conn net.Conn, target string) bool {
 	if !f.limits.acquire() {
 		return false
 	}
+	wrapped := f.limits.wrap(f.ctx, conn)
+	if f.offer(LocalTCPConn{conn: wrapped, remoteAddr: target, timeCreated: nowMillis()}) {
+		return true
+	}
+	f.limits.release()
+	wrapped.Close()
+	return false
+}
+
+func (f portForwarder) offer(local LocalTCPConn) bool {
+	if f.muxQueue != nil {
+		p := &queuedMuxPairing{}
+		local.pairing = p
+		p.expire = func() { f.expireQueued(local) }
+		return f.muxQueue.push(local, f.queued)
+	}
 	select {
-	case f.queue <- LocalTCPConn{conn: f.limits.wrap(f.ctx, conn), remoteAddr: target, timeCreated: time.Now().UnixMilli()}:
+	case f.queue <- local:
 		if f.queued != nil {
 			f.queued()
 		}
 		return true
 	default:
-		f.limits.release()
 		return false
 	}
 }

@@ -210,6 +210,10 @@ Two things worth knowing:
   engine rebuilds its session, connections already open are undisturbed, and
   while the tunnel is genuinely down new connections are refused rather than
   left hanging.
+- When `bandwidth_mbps` is set, client-to-backend UDP packets take turns by
+  source flow. The queue keeps packet order within each flow and drops new
+  packets at 16 pending packets per flow or 1,024 packets or 4 MiB of payload
+  across the forwarder.
 - **This is ordinary userspace forwarding.** For the highest possible
   throughput you can skip it and use kernel `iptables` DNAT over `bp0` instead
   — the interface is a normal one and nothing here prevents it.
@@ -302,6 +306,7 @@ tunnel no longer drops and reconnects every few seconds.
 | `sockbuf` | 4 MiB | Carrier socket buffers |
 | `fec_data` | `0` | Error correction: data packets per group. Both keys or neither — see [Error correction](#error-correction) |
 | `fec_parity` | `0` | Error correction: spare packets per group |
+| `fec_auth` | `false` | Authenticate every data and parity shard. Upgrade both peers before enabling. |
 | `paths` | `1` | Spread the `udp` carrier over this many sockets — see [Several sockets](#several-sockets) |
 | `sni_domain` | built-in | The domain the `sni` carrier announces. `sni` only |
 | `ports` | none | Forwarded port mappings — see above |
@@ -387,6 +392,11 @@ fec_parity = 3
 - It works over **every** carrier — `udp`, `quic`, `spoof`, `pck`, `sni`, `xdi` — because loss
   is a property of the path, not of the disguise.
 - Half a scheme is refused at startup: set both keys, or neither.
+- After upgrading both peers, set `fec_auth = true` in both `[l3]` tables
+  alongside the same data/parity pair. This uses the tunnel token to verify
+  each shard before it can enter the decoder and adds 16 bytes per shard.
+  Leave it off on both peers during a rolling upgrade. Authenticated mode
+  requires authenticated frames from the peer.
 - The recommended pair (10/3) is what the wizard's *Turn on error correction*
   and the panel's checkbox write. The exact numbers are a manual tuning; the
   Link Test can also size them to a measured loss.
@@ -725,4 +735,4 @@ obfuscated به `CAP_NET_RAW` هم نیاز دارند). **هیچ‌وقت حا�
 
 ---
 
-*Last verified against Backpack v1.20.1*
+*Last verified against Backpack v1.20.2*

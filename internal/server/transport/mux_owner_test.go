@@ -37,11 +37,11 @@ func TestDequeuedMuxSessionKeepsItsOwnerAcrossClientReplacement(t *testing.T) {
 			// The worker has dequeued the session, so draining the old pool
 			// cannot find it, but it has not built the session loop yet.
 			seat.sit(ctx, func() { drainTunnelConns(queue) }, func() {}, run)
-			local := make(chan LocalTCPConn, 1)
+			local := newMuxLocalQueue(1)
 			user, userPeer := net.Pipe()
 			defer user.Close()
 			defer userPeer.Close()
-			local <- LocalTCPConn{conn: user, timeCreated: nowMillis(), remoteAddr: "127.0.0.1:80"}
+			local.push(LocalTCPConn{conn: user, timeCreated: nowMillis(), remoteAddr: "127.0.0.1:80"}, nil)
 			log := logrus.New()
 			log.SetLevel(logrus.FatalLevel)
 			var loop muxSession
@@ -71,7 +71,7 @@ func TestDequeuedMuxSessionKeepsItsOwnerAcrossClientReplacement(t *testing.T) {
 			case <-time.After(time.Second):
 				t.Fatal("old session worker survived client replacement")
 			}
-			if len(local) != 1 || atomic.LoadInt32(sessions) != 0 {
+			if local.entries.Len() != 1 || atomic.LoadInt32(sessions) != 0 {
 				t.Fatal("retired session consumed a new user's connection or leaked its counter")
 			}
 			select {
@@ -102,5 +102,31 @@ func TestQueuedMuxSessionClosesWhenItsOwnerEnds(t *testing.T) {
 	case <-session.CloseChan():
 	case <-time.After(time.Second):
 		t.Fatal("queued session retained its socket after owner cancellation")
+	}
+}
+
+func TestQueuedMuxSessionRetiresAfterProtocolError(t *testing.T) {
+	conn, peer := net.Pipe()
+	defer peer.Close()
+	cfg := smux.DefaultConfig()
+	cfg.KeepAliveDisabled = true
+	session, err := smux.Client(conn, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+	queue := make(chan pooledMuxSession, 1)
+	if !enqueueMuxSession(queue, t.Context(), session) {
+		t.Fatal("live session was not admitted")
+	}
+	// A syntactically complete smux header with an impossible version.
+	peer.SetWriteDeadline(time.Now().Add(time.Second))
+	if _, err := peer.Write([]byte{255, 0, 0, 0, 0, 0, 0, 0}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-session.CloseChan():
+	case <-time.After(time.Second):
+		t.Fatal("the protocol error left an unusable session in the pool")
 	}
 }

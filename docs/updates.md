@@ -15,9 +15,11 @@ section in the main README.
 
 ## Safety net
 
-Before touching anything, Update saves a **restore point**. After installing it
-health-checks the result and **rolls back by itself** if anything fails to come
-back up. You can also roll back on demand from **Update → Restore points**.
+Update verifies the archive before replacing the executable and saves a
+**restore point**. After installation it checks the services and **rolls back
+automatically** if they fail to come back up. Use **Update → Restore points**
+to roll back on demand. On Linux, updates and rollbacks share a lock to keep
+simultaneous commands from modifying the installation together.
 
 ### Verify traffic after an update
 
@@ -122,4 +124,4 @@ endpoint سلامت HTTP روی پورت فورواردشدهٔ هر تونل ت
 
 ---
 
-*Last verified against Backpack v1.20.1*
+*Last verified against Backpack v1.20.2*

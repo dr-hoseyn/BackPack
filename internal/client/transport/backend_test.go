@@ -69,7 +69,13 @@ func TestEachStreamOnASessionReachesTheBackendItNames(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := utils.SendBinaryString(s, target); err != nil {
+		streamTarget := target
+		if i == 0 {
+			// The first backend has no listener. This same stream must
+			// reach the second backend without a reconnect by the peer.
+			streamTarget = "127.0.0.1:0|" + target
+		}
+		if err := utils.SendBinaryString(s, streamTarget); err != nil {
 			t.Fatal(err)
 		}
 		msg := []byte("hello")

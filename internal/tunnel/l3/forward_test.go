@@ -281,6 +281,116 @@ func TestForwarderCarriesUDP(t *testing.T) {
 	t.Fatal("no reply came back through the udp forwarder")
 }
 
+func TestForwarderPacesUDPAcrossFlowsWithoutBlockingSmallDatagrams(t *testing.T) {
+	backend, err := net.ListenPacket("udp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer backend.Close()
+	addr := fmt.Sprintf("127.0.0.1:%d", freePort(t))
+	f, err := NewForwarder(Config{
+		Ports: []string{addr + "=" + backend.LocalAddr().String()}, AcceptUDP: true,
+		PeerIP: "127.0.0.1", BandwidthMbps: 1,
+	}, quietLogger())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- f.Run(ctx) }()
+	select {
+	case <-f.Ready():
+	case <-time.After(5 * time.Second):
+		t.Fatal("listeners did not start")
+	}
+	dial := func() net.Conn {
+		c, err := net.Dial("udp4", addr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { c.Close() })
+		return c
+	}
+	bulk, light := dial(), dial()
+	write := func(c net.Conn, data []byte) {
+		if _, err := c.Write(data); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if delay := f.limiter.TryTakeBytes(125000); delay != 0 {
+		t.Fatal("could not drain the initial burst")
+	}
+	large := bytes.Repeat([]byte("x"), 60000)
+	write(bulk, large)
+	write(bulk, []byte("bulk tail"))
+	// A second source on the same listener must progress before the first
+	// source has accumulated roughly half a second of pacing credit.
+	start := time.Now()
+	write(light, []byte("light"))
+	_ = backend.SetReadDeadline(start.Add(2 * time.Second))
+	buf := make([]byte, udpBufferSize)
+	for i, want := range [][]byte{[]byte("light"), large, []byte("bulk tail")} {
+		n, _, err := backend.ReadFrom(buf)
+		if err != nil || !bytes.Equal(buf[:n], want) {
+			t.Fatalf("datagram %d: got %d bytes, want %d, err %v", i, n, len(want), err)
+		}
+		if i == 0 {
+			t.Logf("light datagram arrived in %s while the bulk flow was pacing", time.Since(start))
+		}
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("forwarder did not stop")
+	}
+	if active := f.Stats().Active; active != 0 {
+		t.Fatalf("forwarder returned with %d UDP flows still active", active)
+	}
+}
+
+func TestForwarderRoutesUDPRepliesAcrossAddressFamilies(t *testing.T) {
+	probe, err := net.ListenPacket("udp6", "[::1]:0")
+	if err != nil {
+		t.Skipf("IPv6 loopback unavailable: %v", err)
+	}
+	probe.Close()
+	backend := echoUDP(t, "reply:")
+	port := freePort(t)
+	startForwarder(t, []string{fmt.Sprintf("[::]:%d=%s", port, backend)}, true)
+
+	var clients []*net.UDPConn
+	payloads := [][]byte{nil, bytes.Repeat([]byte{'v'}, 2048)}
+	for i, host := range []string{"127.0.0.1", "::1"} {
+		addr, err := net.ResolveUDPAddr("udp", net.JoinHostPort(host, fmt.Sprint(port)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		conn, err := net.DialUDP("udp", nil, addr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer conn.Close()
+		conn.SetDeadline(time.Now().Add(3 * time.Second))
+		if _, err := conn.Write(payloads[i]); err != nil {
+			t.Fatal(err)
+		}
+		clients = append(clients, conn)
+	}
+	buf := make([]byte, 4096)
+	for i, conn := range clients {
+		n, err := conn.Read(buf)
+		want := append([]byte("reply:"), payloads[i]...)
+		if err != nil || !bytes.Equal(buf[:n], want) {
+			t.Fatalf("client %d received %d bytes, wanted %d: %v", i, n, len(want), err)
+		}
+	}
+}
+
 // Several datagrams from one client must all reach the same backend socket and
 // come back, which is what the flow table is for.
 func TestForwarderKeepsUDPFlows(t *testing.T) {
@@ -480,6 +590,7 @@ func TestForwarderReleasesPortsOnShutdown(t *testing.T) {
 
 	forwarder, err := NewForwarder(Config{
 		Ports: []string{fmt.Sprintf("%s=%s", addr, backend)}, PeerIP: "127.0.0.1",
+		MaxConnections: 1,
 	}, quietLogger())
 	if err != nil {
 		t.Fatalf("NewForwarder: %v", err)
@@ -489,9 +600,21 @@ func TestForwarderReleasesPortsOnShutdown(t *testing.T) {
 	wg.Add(1)
 	go func() { defer wg.Done(); _ = forwarder.Run(ctx) }()
 
-	dialUntilReady(t, addr).Close()
+	conn := dialUntilReady(t, addr)
+	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(3 * time.Second))
+	if _, err := conn.Write([]byte("ping")); err != nil {
+		t.Fatal(err)
+	}
+	var response [6]byte
+	if _, err := io.ReadFull(conn, response[:]); err != nil {
+		t.Fatal(err)
+	}
 	cancel()
 	wg.Wait()
+	if forwarder.Stats().Active != 0 || forwarder.limiter.Active() != 0 {
+		t.Fatal("forwarder returned before releasing the active TCP connection")
+	}
 
 	// The port has to be bindable again, or a restart would fail.
 	listener, err := net.Listen("tcp", addr)

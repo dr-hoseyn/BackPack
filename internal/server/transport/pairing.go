@@ -3,6 +3,7 @@ package transport
 import (
 	"context"
 	"io"
+	"sync"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -43,8 +44,61 @@ func pairingWait(createdMillis int64) time.Duration {
 // nowMillis is what every transport already measures connection age with.
 func nowMillis() int64 { return time.Now().UnixMilli() }
 
+// queuedMuxPairing owns a socket's deadline from queue admission through
+// stream opening. Only one of expiry, pairing or generation drain takes it.
+type queuedMuxPairing struct {
+	mu      sync.Mutex
+	timer   *time.Timer
+	expired bool
+	expire  func()
+	remove  func()
+}
+
+// arm is called under mu. The timer identity prevents an old callback from
+// expiring a connection that was claimed and then requeued.
+func (p *queuedMuxPairing) arm(created int64) {
+	var timer *time.Timer
+	timer = time.AfterFunc(pairingWait(created), func() {
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		if p.timer != timer {
+			return
+		}
+		p.timer = nil
+		p.expired = true
+		p.remove()
+		p.remove = nil
+		p.expire()
+	})
+	p.timer = timer
+}
+
+func (p *queuedMuxPairing) isExpired() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.expired
+}
+
+// claim stops expiry and gives the caller responsibility for the socket.
+func (p *queuedMuxPairing) claim() bool {
+	if p == nil {
+		return true
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.expired {
+		return false
+	}
+	if p.timer != nil {
+		p.timer.Stop()
+		p.timer = nil
+	}
+	p.remove = nil
+	return true
+}
+
 // requeueLocal puts a connection back on the local queue for another attempt,
-// or gives up on it when there is no room.
+// or gives up on it when the deadline passed or there is no room.
 //
 // The send must not block, and it was a bare `g.localChannel <- incomingConn`.
 // That send is made from inside the goroutine that drains this very channel: in
@@ -59,18 +113,20 @@ func nowMillis() int64 { return time.Now().UnixMilli() }
 // is exactly what the accept path already does when it finds the same channel
 // full. Dropping one client is the cost; the alternative is dropping all of
 // them until somebody restarts the service.
-func requeueLocal(ch chan LocalTCPConn, conn LocalTCPConn, lim *limiter, logger *logrus.Logger) bool {
-	select {
-	case ch <- conn:
-		return true
-	default:
-		if conn.conn != nil {
-			logger.Warnf("the local queue is full, dropping a client from %s", conn.conn.RemoteAddr())
-			conn.conn.Close()
-		}
-		lim.release()
+func requeueLocal(queue *muxLocalQueue, conn LocalTCPConn, lim *limiter, logger *logrus.Logger) bool {
+	if expired(conn) {
+		drop(conn, lim, logger)
 		return false
 	}
+	if queue.push(conn, nil) {
+		return true
+	}
+	if conn.conn != nil {
+		logger.Debugf("the local queue cannot accept a retry from %s", conn.conn.RemoteAddr())
+		conn.conn.Close()
+	}
+	lim.release()
+	return false
 }
 
 // drainOnEnd gives back everything still queued in a generation's local

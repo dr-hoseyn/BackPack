@@ -3,6 +3,7 @@ package l3
 import (
 	"bytes"
 	"fmt"
+	"math"
 	"net"
 	"sync"
 	"testing"
@@ -84,11 +85,11 @@ func TestFECRebuildsADroppedPacket(t *testing.T) {
 	send, recv := newLossyPair(nil)
 	send.drop = func(n int) bool { return n == 2 }
 
-	tx, err := newFECCarrier(send, FECConfig{Data: 4, Parity: 2})
+	tx, err := newFECCarrier(send, FECConfig{Data: 4, Parity: 2}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	rx, err := newFECCarrier(recv, FECConfig{Data: 4, Parity: 2})
+	rx, err := newFECCarrier(recv, FECConfig{Data: 4, Parity: 2}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,8 +139,8 @@ func TestFECRepairsUpToItsParityAndNoFurther(t *testing.T) {
 			send, recv := newLossyPair(nil)
 			send.drop = func(n int) bool { return tc.dropped[n] }
 
-			tx, _ := newFECCarrier(send, FECConfig{Data: 4, Parity: 2})
-			rx, _ := newFECCarrier(recv, FECConfig{Data: 4, Parity: 2})
+			tx, _ := newFECCarrier(send, FECConfig{Data: 4, Parity: 2}, nil)
+			rx, _ := newFECCarrier(recv, FECConfig{Data: 4, Parity: 2}, nil)
 			for i := 0; i < 4; i++ {
 				if _, err := tx.WriteTo([]byte(fmt.Sprintf("p%d", i)), recv.addr); err != nil {
 					t.Fatal(err)
@@ -156,8 +157,8 @@ func TestFECRepairsUpToItsParityAndNoFurther(t *testing.T) {
 // packet it also rebuilt, and must not hold anything back.
 func TestFECDeliversEachPacketOnceOnACleanPath(t *testing.T) {
 	send, recv := newLossyPair(nil)
-	tx, _ := newFECCarrier(send, FECConfig{Data: 4, Parity: 2})
-	rx, _ := newFECCarrier(recv, FECConfig{Data: 4, Parity: 2})
+	tx, _ := newFECCarrier(send, FECConfig{Data: 4, Parity: 2}, nil)
+	rx, _ := newFECCarrier(recv, FECConfig{Data: 4, Parity: 2}, nil)
 
 	const groups = 3
 	for i := 0; i < 4*groups; i++ {
@@ -180,11 +181,171 @@ func TestFECDeliversEachPacketOnceOnACleanPath(t *testing.T) {
 	}
 }
 
+func TestFECConflictingShardDoesNotSuppressOriginal(t *testing.T) {
+	for _, recovered := range []bool{false, true} {
+		t.Run(fmt.Sprintf("recovered=%t", recovered), func(t *testing.T) {
+			send, recv := newLossyPair(nil)
+			cfg := FECConfig{Data: 2, Parity: 1}
+			tx, _ := newFECCarrier(send, cfg, nil)
+			rx, _ := newFECCarrier(recv, cfg, nil)
+
+			// Either deliver a forged data shard directly or recover it from
+			// parity before the genuine datagram for that slot arrives.
+			send.drop = func(n int) bool { return recovered && n == 0 }
+			for _, msg := range []string{"fake", "other"} {
+				if _, err := tx.WriteTo([]byte(msg), recv.addr); err != nil {
+					t.Fatal(err)
+				}
+			}
+			group := tx.(*fecCarrier).sendGrp - 1
+			if got := drain(t, rx); len(got) != 2 {
+				t.Fatalf("setup delivered %q", got)
+			}
+
+			frame := make([]byte, fecOverhead+4)
+			putFECHeader(frame, fecKindData, group, 0)
+			copy(frame[fecHeaderLen:], []byte{0, 4, 'r', 'e', 'a', 'l'})
+			if _, err := send.WriteTo(frame, recv.addr); err != nil {
+				t.Fatal(err)
+			}
+			got := drain(t, rx)
+			if len(got) != 1 || string(got[0]) != "real" {
+				t.Fatalf("genuine datagram suppressed: got %q", got)
+			}
+		})
+	}
+}
+
+func TestFECRecoversAcrossReceiveWindowReuse(t *testing.T) {
+	send, recv := newLossyPair(nil)
+	cfg := FECConfig{Data: 4, Parity: 2}
+	send.drop = func(n int) bool {
+		group, shard := n/(cfg.Data+cfg.Parity), n%(cfg.Data+cfg.Parity)
+		return group >= fecWindow && group%2 == 0 && shard == 0
+	}
+	tx, _ := newFECCarrier(send, cfg, nil)
+	rx, _ := newFECCarrier(recv, cfg, nil)
+	for group := range 3 * fecWindow {
+		want := map[string]bool{}
+		for shard := range cfg.Data {
+			size := (group+shard)%4*300 + 100
+			msg := fmt.Sprintf("%d/%d:%s", group, shard, bytes.Repeat([]byte{'x'}, size))
+			want[msg] = true
+			if _, err := tx.WriteTo([]byte(msg), recv.addr); err != nil {
+				t.Fatal(err)
+			}
+		}
+		for _, got := range drain(t, rx) {
+			if !want[string(got)] {
+				t.Fatalf("group %d delivered duplicate or stale bytes: %q", group, got)
+			}
+			delete(want, string(got))
+		}
+		if len(want) != 0 {
+			t.Fatalf("group %d lost %d datagrams", group, len(want))
+		}
+	}
+}
+
+func BenchmarkFECReceiveCleanPath(b *testing.B) {
+	for _, size := range []int{128, 1200} {
+		b.Run(fmt.Sprint(size), func(b *testing.B) {
+			_, recv := newLossyPair(nil)
+			cfg := FECConfig{Data: 10, Parity: 3}
+			rx, err := newFECCarrier(recv, cfg, nil)
+			if err != nil {
+				b.Fatal(err)
+			}
+			carrier := rx.(*fecCarrier)
+			body := make([]byte, fecLenPrefix+size)
+			body[0], body[1] = byte(size>>8), byte(size)
+			b.SetBytes(int64(size * cfg.Data))
+			b.ReportAllocs()
+			b.ResetTimer()
+			for group := range b.N {
+				for i := range cfg.Data + cfg.Parity {
+					kind := byte(fecKindData)
+					if i >= cfg.Data {
+						kind = fecKindParity
+					}
+					carrier.absorb(kind, uint32(group), byte(i), body, recv.addr)
+				}
+			}
+		})
+	}
+}
+
+func TestFECDoesNotRedeliverAnIdenticalRecoveredShard(t *testing.T) {
+	send, recv := newLossyPair(nil)
+	cfg := FECConfig{Data: 2, Parity: 1}
+	tx, _ := newFECCarrier(send, cfg, nil)
+	rx, _ := newFECCarrier(recv, cfg, nil)
+	for _, msg := range []string{"short", "a longer packet"} {
+		if _, err := tx.WriteTo([]byte(msg), recv.addr); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Deliver the first packet after the parity has already recovered it.
+	recv.queue[0], recv.queue[2] = recv.queue[2], recv.queue[0]
+	got := drain(t, rx)
+	if len(got) != 2 || string(got[0]) != "a longer packet" || string(got[1]) != "short" {
+		t.Fatalf("unexpected delivery: %q", got)
+	}
+}
+
+func TestAuthenticatedFECRejectsForgedShardsBeforeReconstruction(t *testing.T) {
+	send, recv := newLossyPair(nil)
+	cfg := FECConfig{Data: 2, Parity: 1, Auth: true}
+	tx, err := newFECCarrier(send, cfg, deriveFECKeys("test secret", true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rx, err := newFECCarrier(recv, cfg, deriveFECKeys("test secret", false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, msg := range []string{"lost", "survivor"} {
+		if _, err := tx.WriteTo([]byte(msg), recv.addr); err != nil {
+			t.Fatal(err)
+		}
+	}
+	data, parity := recv.queue[1], recv.queue[2]
+	badData, badParity := bytes.Clone(data), bytes.Clone(parity)
+	badData[fecHeaderLen+fecLenPrefix] ^= 1
+	badParity[fecHeaderLen] ^= 1
+	unsigned := bytes.Clone(data[:len(data)-fecTagLen])
+	unsigned[0] = fecKindData
+	reflected := bytes.Clone(data)
+	wrongDirection := deriveFECKeys("test secret", false)
+	tag := fecMAC(&wrongDirection.send, reflected[:len(reflected)-fecTagLen])
+	copy(reflected[len(reflected)-fecTagLen:], tag[:fecTagLen])
+	recv.queue = [][]byte{badData, badParity, unsigned, reflected}
+	if got := drain(t, rx); len(got) != 0 || len(rx.(*fecCarrier).groups) != 0 {
+		t.Fatalf("forged frames reached FEC state: %q", got)
+	}
+	recv.queue = [][]byte{data, parity}
+	got := drain(t, rx)
+	if len(got) != 2 || string(got[0]) != "survivor" || string(got[1]) != "lost" {
+		t.Fatalf("valid parity failed after injected shards: %q", got)
+	}
+	if rx.Overhead() != recv.Overhead()+fecOverhead+fecTagLen {
+		t.Fatal("tag is missing from the MTU calculation")
+	}
+	legacy, err := newFECCarrier(recv, FECConfig{Data: 2, Parity: 1}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recv.queue = [][]byte{data, parity}
+	if got := drain(t, legacy); len(got) != 0 {
+		t.Fatalf("legacy FEC accepted tagged frames: %q", got)
+	}
+}
+
 // The MTU has to account for this layer, or the tunnel sends packets the path
 // cannot carry and stalls on the large ones.
 func TestFECAddsItsOverheadToTheCarrierBelow(t *testing.T) {
 	send, _ := newLossyPair(nil)
-	tx, _ := newFECCarrier(send, FECConfig{Data: 4, Parity: 2})
+	tx, _ := newFECCarrier(send, FECConfig{Data: 4, Parity: 2}, nil)
 	if got, want := tx.Overhead(), send.Overhead()+fecOverhead; got != want {
 		t.Errorf("overhead = %d, want %d (the carrier below plus this layer)", got, want)
 	}
@@ -207,6 +368,8 @@ func TestFECSchemeValidation(t *testing.T) {
 		{"data with no parity", FECConfig{Data: 10}, true},
 		{"more parity than payload", FECConfig{Data: 4, Parity: 4}, true},
 		{"too many shards", FECConfig{Data: 250, Parity: 20}, true},
+		{"shard count would overflow", FECConfig{Data: math.MaxInt, Parity: 1}, true},
+		{"authentication without shards", FECConfig{Auth: true}, true},
 	} {
 		err := tc.cfg.Validate()
 		if (err != nil) != tc.wantErr {
@@ -216,11 +379,14 @@ func TestFECSchemeValidation(t *testing.T) {
 	// And a disabled scheme leaves the carrier below untouched rather than
 	// wrapping it in a layer that does nothing.
 	send, _ := newLossyPair(nil)
-	got, err := newFECCarrier(send, FECConfig{})
+	got, err := newFECCarrier(send, FECConfig{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got != DatagramCarrier(send) {
 		t.Error("a disabled scheme still wrapped the carrier")
+	}
+	if _, err := newFECCarrier(send, FECConfig{Data: 4}, nil); err == nil {
+		t.Error("a half-configured scheme silently disabled FEC")
 	}
 }

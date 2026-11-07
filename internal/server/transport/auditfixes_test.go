@@ -2,13 +2,19 @@ package transport
 
 import (
 	"context"
+	"crypto/tls"
+	"errors"
 	"io"
 	"net"
+	"net/http"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/backpack/backpack/config"
 	"github.com/backpack/backpack/internal/utils"
+	"github.com/backpack/backpack/internal/utils/network"
+	"github.com/gorilla/websocket"
 )
 
 // Connections still waiting in a generation's queue when that generation ends
@@ -137,6 +143,83 @@ func TestAWSTunnelPortDropsAConnectionThatSendsNothing(t *testing.T) {
 		// The server reads the timeout while it starts; let it finish before
 		// the cleanup puts the old value back.
 		srv.Wait(context.Background())
+	}
+}
+
+func TestWSAcceptFailureRebindsTheTunnelAndReplacesItsControl(t *testing.T) {
+	for _, mode := range []config.TransportType{config.WS, config.WSS} {
+		t.Run(string(mode), func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			ln, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				cancel()
+				t.Fatal(err)
+			}
+			addr := ln.Addr().String()
+			s := NewWSServer(ctx, &WsConfig{BindAddr: addr, Token: "t", SimpleAuth: true,
+				ChannelSize: 8, Heartbeat: time.Second, KeepAlive: time.Second, Mode: mode}, silentLogger())
+			defer func() {
+				cancel()
+				ln.Close()
+				s.Wait(context.Background())
+			}()
+			gen := s.run.context()
+			installed := make(chan struct{})
+			upgrader := websocket.Upgrader{}
+			server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if conn, err := upgrader.Upgrade(w, r, nil); err == nil {
+					s.controlChannel.Set(conn)
+					close(installed)
+				}
+			})}
+			dialer := websocket.Dialer{HandshakeTimeout: time.Second}
+			if mode == config.WSS {
+				server.TLSConfig, err = network.ServerTLSConfig(s.tlsSettings(), s.logger.Warnf)
+				if err != nil {
+					t.Fatal(err)
+				}
+				dialer.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} // generated test certificate
+			}
+			s.listeners.hold()
+			go func() {
+				defer s.listeners.release()
+				s.serveWebSocketListener(gen, server, ln, mode, &s.controlChannel, s.startAfterRestart)
+			}()
+			url := string(mode) + "://" + addr + "/channel"
+			header := http.Header{"Authorization": {"Bearer t"}}
+			old, _, err := dialer.Dial(url, header)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer old.Close()
+			select {
+			case <-installed:
+			case <-time.After(time.Second):
+				t.Fatal("the original control connection was not installed")
+			}
+			ln.Close() // The accept loop exits while its generation is still active.
+			_ = old.SetReadDeadline(time.Now().Add(3 * time.Second))
+			var timeout net.Error
+			if _, _, err := old.ReadMessage(); err == nil || (errors.As(err, &timeout) && timeout.Timeout()) {
+				t.Fatalf("the old control connection was not closed after accept failure: %v", err)
+			}
+			eventually(t, 3*time.Second, func() bool { return gen.Err() != nil && s.run.context() != gen },
+				"the failed listener did not get a new generation")
+			var replacement *websocket.Conn
+			eventually(t, 3*time.Second, func() bool {
+				conn, resp, err := dialer.Dial(url, header)
+				if err != nil {
+					if resp != nil {
+						resp.Body.Close()
+					}
+					return false
+				}
+				replacement = conn
+				return true
+			}, "the replacement listener did not accept a control connection")
+			defer replacement.Close()
+			eventually(t, 3*time.Second, s.Running, "the new control connection did not bring the tunnel up")
+		})
 	}
 }
 

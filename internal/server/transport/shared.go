@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"context"
 	"crypto/subtle"
 	"fmt"
 	"net"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"github.com/backpack/backpack/config"
 	"github.com/backpack/backpack/internal/utils/network"
 )
 
@@ -45,6 +47,47 @@ const controlClaimTimeout = 15 * time.Second
 // deadline once the headers are in, so an upgraded tunnel is not affected.
 // A variable so a test can shorten it.
 var tunnelHeaderTimeout = 15 * time.Second
+
+// serveWebSocketListener supervises an already bound HTTP tunnel listener.
+// The caller holds a listener slot until this returns, so recovery waits for
+// cleanup before starting another generation on the same port.
+func (l *lifecycle) serveWebSocketListener(ctx context.Context, server *http.Server, ln net.Listener, mode config.TransportType, control *wsControl, next func(context.Context)) {
+	addr := ln.Addr()
+	ended := make(chan error, 1)
+	go func() {
+		l.logger.Infof("%s server starting, listening on %s", mode, addr)
+		if !control.IsSet() {
+			l.logger.Infof("waiting for %s control channel connection", mode)
+		}
+		if server.TLSConfig == nil {
+			ended <- server.Serve(ln)
+		} else {
+			// GetCertificate picks up renewed certificates per handshake.
+			ended <- server.ServeTLS(ln, "", "")
+		}
+	}()
+
+	var failed bool
+	select {
+	case err := <-ended:
+		if ctx.Err() == nil {
+			l.logger.Errorf("%s server on %s stopped: %v; recovering its listener", mode, addr, err)
+			failed = true
+		}
+	case <-ctx.Done():
+	}
+
+	// Close also drops incomplete HTTP/TLS requests. The hijacked control
+	// channel is owned by the tunnel and must be closed separately.
+	l.logger.Infof("shutting down the websocket server on %s", addr)
+	if err := server.Close(); err != nil {
+		l.logger.Errorf("failed to close the websocket listener: %v", err)
+	}
+	control.Close()
+	if failed {
+		go l.restartGeneration(control.Close, next, ctx)
+	}
+}
 
 // portListen is one listener a forwarding mapping expands into: the address to
 // bind, and the port on its own, which is the target for a mapping that named
@@ -203,6 +246,7 @@ type LocalTCPConn struct {
 	conn        net.Conn
 	remoteAddr  string
 	timeCreated int64
+	pairing     *queuedMuxPairing
 }
 
 type LocalUDPConn struct {

@@ -30,7 +30,7 @@ type wsMuxGen struct {
 	idleTraffic    muxIdleTraffic
 	ctx            context.Context
 	tunnelChannel  chan pooledMuxSession
-	localChannel   chan LocalTCPConn
+	localChannel   *muxLocalQueue
 	reqNewConnChan chan struct{}
 	usageMonitor   *traffic.Usage
 	// seat holds the client this generation serves, and serving starts what
@@ -143,10 +143,6 @@ func (s *WsMuxTransport) Restart() {
 	s.restart(s.controlChannel.Close, s.startAfterRestart)
 }
 
-func (s *WsMuxTransport) restartGeneration(expected context.Context) {
-	s.lifecycle.restartGeneration(s.controlChannel.Close, s.startAfterRestart, expected)
-}
-
 func (s *WsMuxTransport) startAfterRestart(ctx context.Context) {
 	s.controlChannel.Clear()
 	s.counterMutex.Lock()
@@ -161,7 +157,7 @@ func (s *WsMuxTransport) newGen(ctx context.Context) *wsMuxGen {
 	return &wsMuxGen{
 		ctx:            ctx,
 		tunnelChannel:  make(chan pooledMuxSession, s.config.ChannelSize),
-		localChannel:   make(chan LocalTCPConn, s.config.ChannelSize),
+		localChannel:   newMuxLocalQueue(s.config.ChannelSize),
 		reqNewConnChan: make(chan struct{}, s.config.ChannelSize),
 		usageMonitor:   s.usageMonitor(ctx),
 	}
@@ -300,7 +296,7 @@ func (s *WsMuxTransport) tunnelListener(g *wsMuxGen) {
 			} else if strings.HasPrefix(r.URL.Path, "/tunnel") {
 				cfg := *s.smuxConfig
 				cfg.Version = version
-				session, err := smux.Client(network.WSMuxStream(conn), &cfg)
+				session, err := network.NewWatchedMuxSession(network.WSMuxStream(conn), &cfg, smux.Client)
 				if err != nil {
 					s.logger.Errorf("failed to create MUX session for connection %s: %v", conn.RemoteAddr().String(), err)
 					conn.Close()
@@ -341,52 +337,7 @@ func (s *WsMuxTransport) tunnelListener(g *wsMuxGen) {
 		}
 		server.TLSConfig = tlsCfg
 	}
-	s.serveTunnelListener(g, server, ln)
-}
-
-// serveTunnelListener supervises the HTTP accept loop as well as generation
-// cancellation. A fatal accept failure used to log once and leave the tunnel
-// port permanently closed while this goroutine waited for a live context.
-func (s *WsMuxTransport) serveTunnelListener(g *wsMuxGen, server *http.Server, ln net.Listener) {
-	ended := make(chan error, 1)
-	go func() {
-		s.logger.Infof("%s server starting, listening on %s", s.config.Mode, ln.Addr())
-		if !s.controlChannel.IsSet() {
-			s.logger.Infof("waiting for %s control channel connection", s.config.Mode)
-		}
-		if s.config.Mode == config.WSMUX {
-			ended <- server.Serve(ln)
-		} else {
-			// GetCertificate still picks up renewed certificates per handshake.
-			ended <- server.ServeTLS(ln, "", "")
-		}
-	}()
-
-	failed := false
-	select {
-	case err := <-ended:
-		// Even ErrServerClosed is unexpected while this generation is live:
-		// the shutdown below is the only intentional Close of this server.
-		if g.ctx.Err() == nil {
-			s.logger.Errorf("%s server on %s stopped: %v; recovering its listener", s.config.Mode, ln.Addr(), err)
-			failed = true
-		}
-	case <-g.ctx.Done():
-	}
-
-	// Hijacked connections are not owned by http.Server. End the failed
-	// generation promptly so its control claim, sessions and forwarded ports
-	// cannot remain apparently healthy while new clients cannot reach it.
-	if failed {
-		go s.restartGeneration(g.ctx)
-	}
-	if s.controlChannel.IsSet() {
-		s.controlChannel.Close()
-	}
-	s.logger.Infof("shutting down the websocket server on %s", ln.Addr())
-	if err := server.Close(); err != nil {
-		s.logger.Errorf("failed to close the websocket listener: %v", err)
-	}
+	s.serveWebSocketListener(g.ctx, server, ln, s.config.Mode, &s.controlChannel, s.startAfterRestart)
 }
 
 func (s *WsMuxTransport) handleLoop(g *wsMuxGen) {
@@ -460,8 +411,9 @@ func (s *WsMuxTransport) session(g *wsMuxGen, owner context.Context) muxSession 
 // forwarder is this transport's forwarded ports for one generation.
 func (s *WsMuxTransport) forwarder(g *wsMuxGen) portForwarder {
 	return portForwarder{
-		ctx: g.ctx, ports: s.config.Ports, acceptUDP: s.config.AcceptUDP,
-		queue: g.localChannel, limits: s.limits, listeners: &s.listeners, log: s.logger,
+		expireQueued: s.session(g, g.ctx).dropLocal,
+		ctx:          g.ctx, ports: s.config.Ports, acceptUDP: s.config.AcceptUDP,
+		muxQueue: g.localChannel, limits: s.limits, listeners: &s.listeners, log: s.logger,
 		tune:   s.tuneUserConn,
 		queued: muxRequestForGeneration(g.ctx, &s.counterMutex, &s.streamCounter, &s.sessionCounter, s.config.MuxCon, g.reqNewConnChan, s.logger),
 	}

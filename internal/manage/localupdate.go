@@ -37,10 +37,8 @@ func localUpdateDirs() []string { return localUpdateDirsFn() }
 //
 // The working directory is not on it. It used to be, and `sudo backpack` keeps
 // the caller's working directory — so root opening the Update menu from /tmp
-// ran, as root, the binary inside any archive another account had left there.
-// The binary is run to read its version the moment the menu is drawn, before
-// anything is verified. See trustedUpdateDir for the rule every directory on
-// the list must also pass.
+// offered any archive another account had left there. See trustedUpdateDir
+// for the rule every directory on the list must also pass.
 var localUpdateDirsFn = func() []string {
 	return []string{"/root", app.InstallDir}
 }
@@ -74,9 +72,8 @@ type LocalUpdate struct {
 	Size int64
 	When time.Time
 
-	// Version is what the binary inside reports, or "" when it could not be
-	// asked — an archive from before the version flag existed, or one that is
-	// not a Backpack release at all.
+	// Optional version label supplied by the caller. Discovery never runs
+	// the executable inside an archive to obtain this label.
 	Version string
 
 	// Checksums is the SHA256SUMS file sitting beside it, when there is one.
@@ -103,7 +100,6 @@ func FindLocalUpdate() (LocalUpdate, bool) {
 		if sums := filepath.Join(dir, "SHA256SUMS"); fileExists(sums) {
 			u.Checksums = sums
 		}
-		u.Version = versionInArchive(path)
 		return u, true
 	}
 	return LocalUpdate{}, false
@@ -113,41 +109,6 @@ func FindLocalUpdate() (LocalUpdate, bool) {
 // when it found nothing. An operator who put the file somewhere else needs to
 // be told where it was expected, not that it is missing.
 func LocalUpdateSearchedIn() []string { return localUpdateDirs() }
-
-// versionInArchive asks the binary inside the archive what it is.
-//
-// It is extracted to a temporary file and run with -v, which is the only honest
-// way to know: nothing in the archive declares a version, and the alternative is
-// to install it and find out. A binary that cannot be asked — one from before
-// the flag, or a file that is not a release at all — returns "", and the caller
-// says so rather than inventing a number.
-func versionInArchive(archive string) string {
-	tmp, err := os.CreateTemp("", "backpack-check-*")
-	if err != nil {
-		return ""
-	}
-	path := tmp.Name()
-	tmp.Close()
-	defer os.Remove(path)
-
-	if err := extractBinaryTo(archive, path); err != nil {
-		return ""
-	}
-	if err := os.Chmod(path, 0755); err != nil {
-		return ""
-	}
-	// Bounded: this is an unknown binary, and one that hangs must not hang the
-	// menu that asked.
-	out, err := runBounded(path, 5*time.Second, "-v")
-	if err != nil {
-		return ""
-	}
-	v := versionLine(out)
-	if v == "" || len(v) > 32 {
-		return ""
-	}
-	return v
-}
 
 // runBounded runs a command with a deadline and returns its stdout.
 func runBounded(bin string, d time.Duration, args ...string) (string, error) {
@@ -208,6 +169,12 @@ func ApplyLocalUpdate(u LocalUpdate, logf func(string)) error {
 	} else {
 		logf("No SHA256SUMS beside the archive — installing it unverified.")
 	}
+
+	unlock, err := lockUpdate()
+	if err != nil {
+		return err
+	}
+	defer unlock()
 
 	healthPolicy, err := prepareUpdateHealth(logf)
 	if err != nil {
@@ -297,9 +264,7 @@ func installedVersion() string {
 }
 
 // versionLine is the version out of what the -v flag prints: its first line.
-// The lines after it are the source link, which the flag has printed since
-// the attribution was added — and reading the whole output as the version
-// refused it, so a local update always showed "Version unknown".
+// The lines after it contain the source link.
 func versionLine(out string) string {
 	first, _, _ := strings.Cut(strings.TrimSpace(out), "\n")
 	return strings.TrimSpace(first)

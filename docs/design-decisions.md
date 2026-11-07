@@ -271,4 +271,4 @@ roadmap است: چیزهایی که ساخته می‌شوند دیگر جالب
 
 ---
 
-*Last verified against Backpack v1.20.1*
+*Last verified against Backpack v1.20.2*

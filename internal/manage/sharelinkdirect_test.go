@@ -16,7 +16,7 @@ func TestTheKharejGetsEveryPairedSettingFromTheLink(t *testing.T) {
 		Kind: "direct", From: "iran", Name: "almani",
 		Tok: strings.Repeat("k", 64), Tr: "pck", Encap: "gre", Port: "5376",
 		LocalIP: "10.10.2.1/30", PeerIP: "10.10.2.2",
-		FECData: 12, FECParity: 5, MTU: 1380,
+		FECData: 12, FECParity: 5, FECAuth: true, MTU: 1380,
 		GREKey: 7, L3MSS: 1300, AutoMTU: &off,
 	}
 	enc, err := sent.Encode()
@@ -50,7 +50,7 @@ func TestTheKharejGetsEveryPairedSettingFromTheLink(t *testing.T) {
 			t.Fatalf("the kharej config is missing %q:\n%s", want, body)
 		}
 	}
-	if spec.FECData != 12 || spec.FECParity != 5 {
+	if spec.FECData != 12 || spec.FECParity != 5 || !spec.FECAuth {
 		t.Fatalf("FEC %d/%d, want the Iran server's 12/5", spec.FECData, spec.FECParity)
 	}
 	if spec.AutoMTU == nil || *spec.AutoMTU {

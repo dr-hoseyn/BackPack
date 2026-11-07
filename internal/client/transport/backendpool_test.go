@@ -2,6 +2,7 @@ package transport
 
 import (
 	"fmt"
+	"slices"
 	"testing"
 	"time"
 )
@@ -9,7 +10,7 @@ import (
 // A single backend is a passthrough: no pipe, no health-checking, unchanged.
 func TestBackendPoolSinglePassthrough(t *testing.T) {
 	p := &backendPool{groups: map[string]*backendGroup{}}
-	if got := p.pick("127.0.0.1:8443"); got != "127.0.0.1:8443" {
+	if got := p.candidates("127.0.0.1:8443"); !slices.Equal(got, []string{"127.0.0.1:8443"}) {
 		t.Fatalf("single backend = %q, want unchanged", got)
 	}
 	if len(p.groups) != 0 {
@@ -18,17 +19,21 @@ func TestBackendPoolSinglePassthrough(t *testing.T) {
 }
 
 // Round-robin spreads over the healthy backends and skips a dropped one.
-func TestBackendGroupPickSkipsUnhealthy(t *testing.T) {
+func TestBackendGroupPrefersHealthyBackends(t *testing.T) {
 	g := &backendGroup{
 		list:    []string{"a:1", "b:2", "c:3"},
 		healthy: []bool{true, false, true}, // b is down
 		fails:   make([]int, 3),
-		// Recent enough that pick() does not start a real probe pass.
+		// Recent enough that candidates() does not start a real probe pass.
 		lastCheck: time.Now(),
 	}
 	seen := map[string]int{}
 	for i := 0; i < 6; i++ {
-		seen[g.pick()]++
+		order := g.candidates()
+		if len(order) != 3 || order[2] != "b:2" || order[0] == order[1] {
+			t.Fatalf("dial order = %v, want both healthy backends before the unhealthy one", order)
+		}
+		seen[order[0]]++
 	}
 	if seen["b:2"] != 0 {
 		t.Fatalf("picked the unhealthy backend: %v", seen)
@@ -59,9 +64,9 @@ func TestBackendHealthCheckDropsAndRestores(t *testing.T) {
 	if !dropped {
 		t.Fatal("unhealthy backend was not dropped from rotation")
 	}
-	// pick must now only return the healthy one.
+	// The healthy one must now be first.
 	for i := 0; i < 4; i++ {
-		if got := g.pick(); got != "up:1" {
+		if got := g.candidates()[0]; got != "up:1" {
 			t.Fatalf("pick = %q, want only the healthy up:1", got)
 		}
 	}
@@ -82,10 +87,10 @@ func TestBackendHealthCheckDropsAndRestores(t *testing.T) {
 func TestBackendPoolSurvivesEmptyAndSingletonLists(t *testing.T) {
 	p := &backendPool{groups: map[string]*backendGroup{}}
 
-	if got := p.pick("||"); got != "||" {
+	if got := p.candidates("||"); !slices.Equal(got, []string{"||"}) {
 		t.Fatalf("empty backend list = %q, want the target unchanged", got)
 	}
-	if got := p.pick(" 127.0.0.1:8443 | "); got != "127.0.0.1:8443" {
+	if got := p.candidates(" 127.0.0.1:8443 | "); !slices.Equal(got, []string{"127.0.0.1:8443"}) {
 		t.Fatalf("one real backend = %q, want it trimmed and returned", got)
 	}
 	if len(p.groups) != 0 {
@@ -97,8 +102,8 @@ func TestBackendPoolSurvivesEmptyAndSingletonLists(t *testing.T) {
 // must share one group rather than each getting their own.
 func TestBackendPoolKeysOnTheParsedList(t *testing.T) {
 	p := &backendPool{groups: map[string]*backendGroup{}}
-	p.pick("a:1|b:2")
-	p.pick(" a:1 | b:2 |")
+	p.candidates("a:1|b:2")
+	p.candidates(" a:1 | b:2 |")
 	if len(p.groups) != 1 {
 		t.Fatalf("equivalent targets created %d groups, want 1", len(p.groups))
 	}
@@ -128,8 +133,8 @@ func TestBackendPoolBoundsMembersPerGroup(t *testing.T) {
 		}
 		target += fmt.Sprintf("host-%d:1", i)
 	}
-	if got := p.pick(target); got == "" {
-		t.Fatal("an over-long backend list produced no backend at all")
+	if got := p.candidates(target); len(got) != backendMaxMembers {
+		t.Fatalf("an over-long backend list produced %d candidates, want %d", len(got), backendMaxMembers)
 	}
 	if len(p.groups) != 1 {
 		t.Fatalf("group count = %d, want 1", len(p.groups))

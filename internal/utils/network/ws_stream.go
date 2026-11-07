@@ -30,7 +30,9 @@ func WSMuxStream(conn *websocket.Conn) net.Conn {
 
 type webSocketStream struct {
 	conn    *websocket.Conn
+	readMu  sync.Mutex
 	reader  io.Reader
+	readErr error
 	writeMu sync.Mutex
 }
 
@@ -38,14 +40,25 @@ func (c *webSocketStream) Read(p []byte) (int, error) {
 	if len(p) == 0 {
 		return 0, nil
 	}
+	c.readMu.Lock()
+	defer c.readMu.Unlock()
+	// WebSocket framing cannot resume after a read failure. Keep callers
+	// from skipping a rejected message or repeatedly entering NextReader.
+	if c.readErr != nil {
+		return 0, c.readErr
+	}
 	for {
 		if c.reader == nil {
 			kind, reader, err := c.conn.NextReader()
 			if err != nil {
+				c.readErr = err
+				c.conn.Close()
 				return 0, err
 			}
 			if kind != websocket.BinaryMessage {
-				return 0, &net.OpError{Op: "read", Net: "websocket", Err: errWSBinaryRequired}
+				c.readErr = &net.OpError{Op: "read", Net: "websocket", Err: errWSBinaryRequired}
+				c.conn.Close()
+				return 0, c.readErr
 			}
 			c.reader = reader
 		}
@@ -56,6 +69,11 @@ func (c *webSocketStream) Read(p []byte) (int, error) {
 				return n, nil
 			}
 			continue
+		}
+		if err != nil {
+			c.reader = nil
+			c.readErr = err
+			c.conn.Close()
 		}
 		return n, err
 	}
@@ -86,6 +104,7 @@ func (c *webSocketStream) WriteBuffers(v [][]byte) (int, error) {
 	defer c.writeMu.Unlock()
 	w, err := c.conn.NextWriter(websocket.BinaryMessage)
 	if err != nil {
+		c.conn.Close()
 		return 0, err
 	}
 	n := 0
@@ -93,11 +112,18 @@ func (c *webSocketStream) WriteBuffers(v [][]byte) (int, error) {
 		written, err := w.Write(p)
 		n += written
 		if err != nil {
+			c.conn.Close()
 			_ = w.Close()
 			return n, err
 		}
 	}
-	return n, w.Close()
+	err = w.Close()
+	if err != nil {
+		// A broken frame cannot resume. Close the socket to wake an
+		// otherwise idle reader and let the mux session retire.
+		c.conn.Close()
+	}
+	return n, err
 }
 
 func (c *webSocketStream) Close() error         { return c.conn.Close() }

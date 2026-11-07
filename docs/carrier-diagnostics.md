@@ -1,6 +1,6 @@
 # TUIC and Hysteria2 diagnostics
 
-*Last verified against Backpack v1.20.1, 2026-11-01.*
+*Last verified against Backpack v1.20.2, 2026-11-01.*
 
 <div dir="rtl">
 

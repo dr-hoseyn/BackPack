@@ -34,9 +34,9 @@ func WebSocketDialer(ctx context.Context, out *Outbound, addr string, edgeIP str
 			}
 			return tunnelWSConn, nil
 		}
-		// Retrying the same unauthenticated peer cannot repair a missing or
-		// invalid proof. Let the owning reconnect/failover loop decide next.
-		if errors.Is(err, errWSSServerUnproven) {
+		// Let the owning reconnect/failover loop handle a rejected proof or
+		// an oversized response instead of repeating it at this endpoint.
+		if errors.Is(err, errWSSServerUnproven) || errors.Is(err, errWSUpgradeHeadersTooLarge) {
 			return nil, err
 		}
 
@@ -181,10 +181,7 @@ func attemptDialWebSocket(ctx context.Context, out *Outbound, addr string, edgeI
 					return nil, err
 				}
 				own(conn)
-				if rawMux {
-					return muxUpgradeStream(conn), nil
-				}
-				return conn, nil
+				return muxUpgradeStream(conn), nil
 			},
 		}
 	case config.WSS, config.WSSMUX:
@@ -273,10 +270,7 @@ func attemptDialWebSocket(ctx context.Context, out *Outbound, addr string, edgeI
 			WriteBufferSize: wsWriteBufferSize,
 			WriteBufferPool: wsWriteBuffers,
 			NetDialTLSContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-				if rawMux {
-					return muxUpgradeStream(uconn), nil
-				}
-				return uconn, nil
+				return muxUpgradeStream(uconn), nil
 			},
 		}
 	}

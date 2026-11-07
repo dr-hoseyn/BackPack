@@ -283,8 +283,11 @@ func (e *Edge) handle(ctx context.Context, local net.Conn, m portmap.Mapping) {
 	defer e.limiter.Release()
 	local = e.limiter.Wrap(ctx, local)
 
-	stream, err := e.openFor(kindTCP, m)
+	stream, err := e.openFor(ctx, kindTCP, m)
 	if err != nil {
+		if ctx.Err() != nil {
+			return
+		}
 		e.stats.refused.Add(1)
 		e.log.Debugf("direct: refusing %s: %v", local.RemoteAddr(), err)
 		return
@@ -303,7 +306,14 @@ func (e *Edge) handle(ctx context.Context, local net.Conn, m portmap.Mapping) {
 // Each backend is tried in turn from a rotating start, so a target the origin
 // cannot reach falls through to the next rather than failing the connection,
 // and healthy ones share the load.
-func (e *Edge) openFor(kind byte, m portmap.Mapping) (net.Conn, error) {
+func (e *Edge) openFor(ctx context.Context, kind byte, m portmap.Mapping) (net.Conn, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if len(m.Targets) == 0 {
+		return nil, errors.New("direct: no backends configured")
+	}
+	remainingSessions := len(e.sessions.snapshot())
 	session := e.pickSession()
 	if session == nil {
 		return nil, errNoSession
@@ -311,16 +321,30 @@ func (e *Edge) openFor(kind byte, m portmap.Mapping) (net.Conn, error) {
 
 	var lastErr error
 	start := int((e.backendCursor.Add(1) - 1) % uint64(len(m.Targets)))
-	for i := range m.Targets {
+	for i := 0; i < len(m.Targets); {
 		target := m.Targets[(start+i)%len(m.Targets)]
-		stream, err := openStream(session, kind, target, e.cfg.DialTimeout)
+		stream, err := openStream(ctx, session, kind, target, e.cfg.DialTimeout)
 		if err == nil {
 			return stream, nil
 		}
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		lastErr = err
-	}
-	if lastErr == nil {
-		lastErr = errors.New("direct: no backends configured")
+		if session.Usable() {
+			i++
+			continue
+		}
+		// A dead session says nothing about this backend. Retry the same
+		// target on another session before moving on to the next backend.
+		remainingSessions--
+		if remainingSessions <= 0 {
+			break
+		}
+		session = e.pickSession()
+		if session == nil {
+			break
+		}
 	}
 	return nil, lastErr
 }
@@ -399,8 +423,11 @@ func (e *Edge) serveUDP(ctx context.Context, m portmap.Mapping) error {
 			return err
 		}
 
-		flow, err := e.udpFlowFor(&flows, &pumps, conn, client, m)
+		flow, err := e.udpFlowFor(ctx, &flows, &pumps, conn, client, m)
 		if err != nil {
+			if ctx.Err() != nil {
+				return nil
+			}
 			e.stats.refused.Add(1)
 			e.log.Debugf("direct: no udp backend for %s: %v", m.Listen, err)
 			continue
@@ -414,7 +441,7 @@ func (e *Edge) serveUDP(ctx context.Context, m portmap.Mapping) error {
 }
 
 // udpFlowFor returns the flow for a client, opening a stream on first sight.
-func (e *Edge) udpFlowFor(flows *sync.Map, pumps *sync.WaitGroup, local net.PacketConn, client net.Addr, m portmap.Mapping) (*udpFlow, error) {
+func (e *Edge) udpFlowFor(ctx context.Context, flows *sync.Map, pumps *sync.WaitGroup, local net.PacketConn, client net.Addr, m portmap.Mapping) (*udpFlow, error) {
 	key := client.String()
 	if existing, ok := flows.Load(key); ok {
 		return existing.(*udpFlow), nil
@@ -431,13 +458,13 @@ func (e *Edge) udpFlowFor(flows *sync.Map, pumps *sync.WaitGroup, local net.Pack
 		return nil, errFlowLimit
 	}
 
-	stream, err := e.openFor(kindUDP, m)
+	stream, err := e.openFor(ctx, kindUDP, m)
 	if err != nil {
 		e.limiter.Release()
 		return nil, err
 	}
 	// UDP streams share the same tunnel-wide bucket as forwarded TCP.
-	stream = e.limiter.Wrap(context.Background(), stream)
+	stream = e.limiter.Wrap(ctx, stream)
 	flow := &udpFlow{stream: stream}
 	flow.touch()
 

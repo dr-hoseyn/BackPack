@@ -185,6 +185,52 @@ func TestIPv6RawCarriersOnlySkipIPSpoofing(t *testing.T) {
 	}
 }
 
+func TestConnectionTestReportsPathLostAfterPreflight(t *testing.T) {
+	ctRequireIPv6(t)
+	previous, wait := connTestReverse, connTestPathCheckWait
+	connTestReverse, connTestPathCheckWait = nil, time.Second
+	defer func() { connTestReverse, connTestPathCheckWait = previous, wait }()
+	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+	defer cancel()
+	suite, raw, err := StartConnTestSuite(ConnTestOptions{skipKernel: true, Context: ctx}, []string{"127.0.0.1", "::1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer suite.Close()
+	link, err := parseConnTestLink(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	finished := make(chan []ConnTestPath, 1)
+	go func() { finished <- suite.Run(ctx, nil) }()
+	peer, err := runConnTestSuiteKharej(ctx, link.Routes, io.Discard, func(i int, p ConnTestPath) {
+		if i == 0 && p.State == "done" {
+			suite.tests[1].coord.close()
+		}
+	})
+	iran := <-finished
+	if err != nil || ctx.Err() != nil || peer[0].State != "done" || iran[0].State != "done" ||
+		peer[1].State != "unavailable" || iran[1].State != "unavailable" ||
+		len(iran[1].Rows) != 0 || !strings.Contains(iran[1].Error, "not measured") {
+		t.Fatalf("Iran %+v; Kharej %+v; error %v; context %v", iran, peer, err, ctx.Err())
+	}
+}
+
+func TestCancelledConnectionTestKeepsBothPathIdentities(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	routes := []connTestAddr{{Host: "127.0.0.1"}, {Host: "::1"}}
+	paths, err := runConnTestSuiteKharej(ctx, routes, io.Discard, nil)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected cancellation, got %v", err)
+	}
+	for i, p := range paths {
+		if p.Host != routes[i].Host || p.Family != ctFamily(p.Host) || p.State != "stopped" || len(p.Rows) != 0 {
+			t.Fatalf("path %d lost its identity or status: %+v", i, p)
+		}
+	}
+}
+
 func TestBothFamiliesCarryRealTrafficThroughOneLinkInSequence(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds the real tunnel engine")

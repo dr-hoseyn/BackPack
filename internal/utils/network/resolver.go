@@ -17,7 +17,7 @@ func ResolveRemoteAddr(remoteAddr string) (int, string, error) {
 	if strings.Contains(remoteAddr, "|") {
 		var resolved []string
 		var firstPort int
-		for i, part := range strings.Split(remoteAddr, "|") {
+		for _, part := range strings.Split(remoteAddr, "|") {
 			part = strings.TrimSpace(part)
 			if part == "" {
 				continue
@@ -26,10 +26,13 @@ func ResolveRemoteAddr(remoteAddr string) (int, string, error) {
 			if err != nil {
 				return 0, "", err
 			}
-			if i == 0 {
+			if len(resolved) == 0 {
 				firstPort = p
 			}
 			resolved = append(resolved, full)
+		}
+		if len(resolved) == 0 {
+			return 0, "", fmt.Errorf("backend list contains no addresses")
 		}
 		return firstPort, strings.Join(resolved, "|"), nil
 	}

@@ -121,3 +121,30 @@ func TestConnectionTestStartupKeepsUnrelatedFailuresAndUnavailablePaths(t *testi
 		t.Fatal("helper installation was suggested for an unrelated failure")
 	}
 }
+func TestConnectionTestPathSummaryFitsNarrowOutput(t *testing.T) {
+	paths := []ConnTestPath{
+		{Host: "198.51.100.1", Family: "IPv4", State: "done",
+			Best: ConnTestBest{Host: "198.51.100.1", Family: "IPv4", Transport: "reverse wssmux", Mbps: 85.50, UploadMbps: 31.25, RTTms: 42}},
+		{Host: "2001:db8:1234:5678:9abc:def0:1234:5678", Family: "IPv6", State: "unavailable",
+			Error: "The test coordinator did not answer over TCP or UDP. Tunnel protocols were not measured."},
+	}
+	for _, width := range []int{42, 80} {
+		var out strings.Builder
+		ctWriteSuiteSummary(&out, paths, width, false)
+		report := out.String()
+		for _, line := range strings.Split(report, "\n") {
+			if len([]rune(line)) > width {
+				t.Fatalf("line exceeds %d columns: %q", width, line)
+			}
+		}
+		for _, want := range []string{"1/2 paths completed", "[COMPLETE]", "[UNAVAILABLE]", paths[1].Host, "Download 85.50 Mb/s", "Upload 31.25 Mb/s"} {
+			if !strings.Contains(report, want) {
+				t.Fatalf("missing %q at width %d:\n%s", want, width, report)
+			}
+		}
+		if strings.Contains(report, "\x1b") {
+			t.Fatal("redirected report includes terminal escapes")
+		}
+		t.Logf("%d columns:\n%s", width, report)
+	}
+}

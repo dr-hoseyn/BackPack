@@ -155,11 +155,12 @@ A target may name more than one address, separated by `|`:
 ports = ["443=10.0.0.1:80|10.0.0.2:80"]
 ```
 
-Connections are spread round-robin over the backends that answer. A backend that
-fails three consecutive checks drops out of the rotation and returns the moment
-it answers again, so one dead service behind the tunnel no longer takes the
-tunnel down with it. The separator is `|` because `,` already separates whole
-mappings.
+Reverse TCP forwarding rotates the first dial across healthy backends. If that
+dial fails, the same connection tries another backend within the configured
+dial timeout, before sending application data. Three consecutive failed
+health checks remove a backend from the first-choice rotation. It remains
+available as a fallback and returns to the rotation when it answers a check.
+Commas separate whole mappings.
 
 A single backend is never health-checked, so ordinary tunnels behave exactly as
 before.
@@ -246,4 +247,4 @@ host روی تونل معکوس و مستقیم یعنی `127.0.0.1` خارج، 
 
 ---
 
-*Last verified against Backpack v1.20.1*
+*Last verified against Backpack v1.20.2*

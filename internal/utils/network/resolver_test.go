@@ -29,7 +29,7 @@ func TestResolveRemoteAddrSingle(t *testing.T) {
 // list is rebuilt for the pool to split, and the reported port is the first
 // backend's.
 func TestResolveRemoteAddrBackendList(t *testing.T) {
-	port, addr, err := ResolveRemoteAddr("8443|127.0.0.1:8444| 10.0.0.5:8445 ")
+	port, addr, err := ResolveRemoteAddr("| 8443|127.0.0.1:8444| 10.0.0.5:8445 |")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,5 +47,8 @@ func TestResolveRemoteAddrBackendList(t *testing.T) {
 func TestResolveRemoteAddrBackendListRejectsGarbage(t *testing.T) {
 	if _, _, err := ResolveRemoteAddr("8443|not-a-port"); err == nil {
 		t.Fatal("a malformed backend should be an error")
+	}
+	if _, _, err := ResolveRemoteAddr(" | | "); err == nil {
+		t.Fatal("a backend list with no addresses should be an error")
 	}
 }

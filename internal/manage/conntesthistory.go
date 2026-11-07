@@ -96,7 +96,21 @@ func ConnTestHistoryTable(runs []testhistory.Run, compare bool) string {
 		if s.SNI != "" {
 			fmt.Fprintf(&b, " SNI=%s", s.SNI)
 		}
-		fmt.Fprintf(&b, "\n  steady %d/%d runs; loss %.2f%% (%d/%d echoes); RTT %.2f ms", s.Steady, s.Runs, s.Loss, s.Received, s.Sent, s.RTTms)
+		fmt.Fprintf(&b, "\n  steady %d/%d runs", s.Steady, s.Runs)
+		if s.Sent > 0 {
+			fmt.Fprintf(&b, " · loss %.2f%% (%d/%d probes)", s.Loss, s.Received, s.Sent)
+		} else {
+			fmt.Fprint(&b, " · no probes sent")
+		}
+		if s.RTTEchoes > 0 {
+			if s.RTTms == 0 {
+				fmt.Fprint(&b, " · RTT <1 ms")
+			} else {
+				fmt.Fprintf(&b, " · RTT %.2f ms", s.RTTms)
+			}
+		} else {
+			fmt.Fprint(&b, " · RTT not measured")
+		}
 		if s.JitterSamples > 0 {
 			fmt.Fprintf(&b, "; jitter %.2f ms (%d samples)", s.JitterMs, s.JitterSamples)
 		} else {

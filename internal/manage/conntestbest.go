@@ -40,6 +40,7 @@ type ConnTestBest struct {
 	Mbps            float64                  `json:"mb,omitempty"`
 	UploadMbps      float64                  `json:"upload_mb,omitempty"`
 	RTTms           int                      `json:"rt,omitempty"`
+	RTTMeasured     bool                     `json:"rtt_measured,omitempty"`
 	JitterMs        int                      `json:"ji,omitempty"`
 	WorstMs         int                      `json:"wo,omitempty"`
 	LossPct         float64                  `json:"lo,omitempty"`
@@ -204,6 +205,7 @@ func ctComputeBest(results []ConnTestResult, cases []*connTestCase, pmtu int, lo
 		}
 		q = ctQuality(r, cases[best].rtts)
 		b.RTTms = int(q.Avg.Milliseconds())
+		b.RTTMeasured = len(cases[best].rtts) > 0
 		b.JitterMs = int(q.Jitter.Milliseconds())
 		b.WorstMs = int(q.Max.Milliseconds())
 		b.LossPct = math.Round(q.LossPercent()*10) / 10
@@ -314,6 +316,19 @@ func ctLastMatch(dir, name string) int {
 	return n
 }
 
+func (b ConnTestBest) hasRTT() bool { return b.RTTMeasured || b.RTTms > 0 }
+
+func (b ConnTestBest) rttLabel() string {
+	switch {
+	case !b.hasRTT():
+		return "RTT not measured"
+	case b.RTTms == 0:
+		return "RTT <1 ms"
+	default:
+		return fmt.Sprintf("RTT %d ms", b.RTTms)
+	}
+}
+
 // ConnTestBestTable renders the recommendation as the second table.
 func ConnTestBestTable(b ConnTestBest) string {
 	var s strings.Builder
@@ -329,12 +344,20 @@ func ConnTestBestTable(b ConnTestBest) string {
 	row("SETTING", "VALUE", "MEASURED")
 	s.WriteString("\n")
 
-	link := fmt.Sprintf("%d±%dms, %.1f%% loss", b.RTTms, b.JitterMs, b.LossPct)
 	if b.Transport != "" {
 		kind, tr, _ := strings.Cut(b.Transport, " ")
-		row("Transport", ctKind(kind)+" "+ctName(tr), fmt.Sprintf("%.1f Mbps, %s", b.Mbps, link))
-		if b.UploadMbps > 0 {
+		link := fmt.Sprintf("%s, %.1f%% loss", b.rttLabel(), b.LossPct)
+		if b.JitterMs > 0 {
+			link += fmt.Sprintf(", jitter %d ms", b.JitterMs)
+		}
+		if b.Mbps <= 0 && b.UploadMbps <= 0 {
+			link += ", speed not measured"
+		}
+		row("Transport", ctKind(kind)+" "+ctName(tr), link)
+		if b.Mbps > 0 {
 			row("Download", fmt.Sprintf("%.1f Mbps", b.Mbps), "4 streams; verified bytes")
+		}
+		if b.UploadMbps > 0 {
 			row("Upload", fmt.Sprintf("%.1f Mbps", b.UploadMbps), "4 streams; verified bytes")
 		}
 	} else {

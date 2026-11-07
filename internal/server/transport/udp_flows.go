@@ -73,7 +73,7 @@ func (s *UdpTransport) localListener(g *udpGen, localAddr, remoteAddr string) {
 			case <-g.ctx.Done():
 				return
 			default:
-				n, addr, err := listener.ReadFromUDP(buf)
+				n, from, err := listener.ReadFromUDPAddrPort(buf)
 				if err != nil {
 					if errors.Is(err, net.ErrClosed) {
 						return
@@ -84,7 +84,7 @@ func (s *UdpTransport) localListener(g *udpGen, localAddr, remoteAddr string) {
 				}
 
 				// Create a unique identifier for the connection based on IP and port
-				key := addr.String()
+				key := udpPeerKey(from)
 
 				mu.Lock()
 				// Check if the connection is already active
@@ -120,6 +120,8 @@ func (s *UdpTransport) localListener(g *udpGen, localAddr, remoteAddr string) {
 				// is offered, pairing or generation cleanup may close the channel.
 				payloadChan <- append([]byte(nil), buf[:n]...)
 
+				// The socket address is retained only for a new flow's replies.
+				addr := net.UDPAddrFromAddrPort(from)
 				// Build the UDP connection object
 				newUDPConn := LocalUDPConn{
 					timeCreated: time.Now().UnixMilli(), // Just for debugging
@@ -367,14 +369,10 @@ func (s *UdpTransport) dropTunnelConn(conn *TunnelUDPConn) {
 }
 
 func (s *UdpTransport) udpLocalCopy(g *udpGen, from *LocalUDPConn, to *TunnelUDPConn, started time.Time, activity *atomic.Int64) {
-	// One timer for the session, reset per packet.
-	//
-	// This was time.After inside the select, which allocates a fresh timer on
-	// every iteration and never stops it — so a loop that runs once per
-	// datagram left one live 60-second timer per packet sitting on the runtime's
-	// timer heap. At a thousand packets a second that is sixty thousand of them
-	// for one direction of one session. The semantics are unchanged: the timer
-	// is reset after every packet, so it still measures time since the last one.
+	// One timer per direction. Only rearm it when it fires: the shared activity
+	// timestamp already says whether either direction extended the idle budget.
+	// Stopping/resetting on every packet took the runtime timer lock twice per
+	// datagram, even though the same expiry check below handles active traffic.
 	idle := time.NewTimer(idleForward)
 	defer idle.Stop()
 
@@ -425,18 +423,12 @@ func (s *UdpTransport) udpLocalCopy(g *udpGen, from *LocalUDPConn, to *TunnelUDP
 			s.logger.Debugf("connection idle for %s, closing UDP connection for %s", idleForward, from.addr.String())
 			return
 		}
-
-		// Rearm for the next packet. Stop before Reset because the timer has
-		// not fired — reaching here means the payload case won the select — so
-		// its channel is empty and Reset is safe.
-		idle.Stop()
-		idle.Reset(idleForward)
 	}
 }
 
 func (s *UdpTransport) udpTunnelCopy(g *udpGen, from *TunnelUDPConn, to *LocalUDPConn, started time.Time, activity *atomic.Int64) {
-	// See udpLocalCopy for why this is one timer rather than a time.After per
-	// packet, and why the context is watched.
+	// As in udpLocalCopy, activity extends the budget without touching this
+	// timer until it fires. Cancellation still interrupts a quiet direction.
 	idle := time.NewTimer(idleForward)
 	defer idle.Stop()
 
@@ -479,12 +471,6 @@ func (s *UdpTransport) udpTunnelCopy(g *udpGen, from *TunnelUDPConn, to *LocalUD
 			s.logger.Debugf("connection idle for %s, closing UDP connection for %s", idleForward, from.addr.String())
 			return
 		}
-
-		// Rearm for the next packet. Stop before Reset because the timer has
-		// not fired — reaching here means the payload case won the select — so
-		// its channel is empty and Reset is safe.
-		idle.Stop()
-		idle.Reset(idleForward)
 	}
 }
 

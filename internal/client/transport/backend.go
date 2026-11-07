@@ -63,28 +63,51 @@ func isLoopback(addr string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-// dialBackend dials addr — after picking a healthy one when several backends
-// are configured — and returns the connection, or nil when the dial failed,
-// which has then already been reported.
+// dialBackend tries the configured backends before any user data is sent.
 func (l *lifecycle) dialBackend(addr string, o backendOpts) net.Conn {
-	addr = backends.pick(addr)
-	rcv, snd := o.rcvBuf, o.sndBuf
-	if isLoopback(addr) {
-		rcv, snd = loopbackBuffer, loopbackBuffer
-	}
 	ctx := o.context(l.state.Ctx())
-	conn, err := network.TcpDialer(ctx, addr, o.dialTimeout, o.keepAlive, true, 1, rcv, snd, o.mss)
-	if err != nil {
-		if ctx.Err() == nil {
-			localDial.Report(l.logger, addr, err)
-		}
+	if ctx.Err() != nil {
 		return nil
 	}
-	// The last hop worked, so any run of failures recorded for the panel ends
-	// here. See localdial.go.
-	ReportLocalDialOK()
-	l.logger.Debugf("connected to local address %s successfully", addr)
-	return conn
+	candidates := backends.candidates(addr)
+	dialCtx := ctx
+	if len(candidates) > 1 && o.dialTimeout > 0 {
+		var cancel context.CancelFunc
+		dialCtx, cancel = context.WithTimeout(ctx, o.dialTimeout)
+		defer cancel()
+	}
+	var lastAddr string
+	var lastErr error
+	for i, candidate := range candidates {
+		if dialCtx.Err() != nil {
+			break
+		}
+		timeout := o.dialTimeout
+		if deadline, ok := dialCtx.Deadline(); ok && len(candidates) > 1 {
+			// Give the remaining backends a chance even if one silently drops
+			// packets. An early refusal leaves its unused time to the rest.
+			timeout = time.Until(deadline) / time.Duration(len(candidates)-i)
+			if timeout <= 0 {
+				break
+			}
+		}
+		rcv, snd := o.rcvBuf, o.sndBuf
+		if isLoopback(candidate) {
+			rcv, snd = loopbackBuffer, loopbackBuffer
+		}
+		conn, err := network.TcpDialer(dialCtx, candidate, timeout, o.keepAlive, true, 1, rcv, snd, o.mss)
+		if err != nil {
+			lastAddr, lastErr = candidate, err
+			continue
+		}
+		ReportLocalDialOK()
+		l.logger.Debugf("connected to local address %s successfully", candidate)
+		return conn
+	}
+	if lastErr != nil && ctx.Err() == nil {
+		localDial.Report(l.logger, lastAddr, lastErr)
+	}
+	return nil
 }
 
 // relay dials the backend for one user already resolved to addr and port, and

@@ -30,11 +30,11 @@ func TestMuxIdleRetirementNeverClosesAnOpenStream(t *testing.T) {
 	var lifecycle lifecycle
 	var sessions int32 = 2
 	var streams int32 = 1
-	local := make(chan LocalTCPConn, 1)
+	local := newMuxLocalQueue(1)
 	user, app := net.Pipe()
 	defer app.Close()
 	defer user.Close()
-	local <- LocalTCPConn{conn: user, timeCreated: nowMillis(), remoteAddr: "127.0.0.1:80"}
+	local.push(LocalTCPConn{conn: user, timeCreated: nowMillis(), remoteAddr: "127.0.0.1:80"}, nil)
 	loop := muxSession{
 		ctx: ctx, local: local, muxCon: 1, log: quietLogger(),
 		sessions: &sessions, streams: &streams, idleTimeout: 30 * time.Millisecond,

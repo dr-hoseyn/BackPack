@@ -2,7 +2,6 @@ package manage
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -193,17 +192,49 @@ func TestTheOperatorIsToldWhereToPutTheFile(t *testing.T) {
 // the attribution was added. The archive's version was read as the whole of
 // that output, which is two lines, so it was refused and every local update
 // showed "Version unknown".
-func TestTheArchiveVersionIsTheFirstLineOfTheFlag(t *testing.T) {
+func TestTheInstalledVersionIsTheFirstLineOfTheFlag(t *testing.T) {
+	if got := versionLine("v9.9.9\nhttps://github.com/AminMGMT/BackPack\n"); got != "v9.9.9" {
+		t.Fatalf("version read from command output = %q", got)
+	}
+}
+
+func TestUpdatePreservesInstalledBinaryWhenArchiveIsInvalid(t *testing.T) {
 	dir := t.TempDir()
-	bin := filepath.Join(dir, "backpack")
-	if err := os.WriteFile(bin, []byte("#!/bin/sh\necho v9.9.9\necho https://github.com/AminMGMT/BackPack\n"), 0o755); err != nil {
+	target := filepath.Join(dir, "backpack")
+	if err := os.WriteFile(target, []byte("old binary"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	archive := filepath.Join(dir, "backpack_linux_amd64.tar.gz")
-	if out, err := exec.Command("tar", "czf", archive, "-C", dir, "backpack").CombinedOutput(); err != nil {
-		t.Skipf("tar unavailable: %v %s", err, out)
+	archive := filepath.Join(dir, LocalAssetName())
+	writeUpdateArchive(t, archive, nil)
+	if err := replaceBinary(archive, target); err == nil {
+		t.Fatal("empty executable was installed")
 	}
-	if got := versionInArchive(archive); got != "v9.9.9" {
-		t.Fatalf("version read from the archive = %q, want v9.9.9", got)
+	writeUpdateArchive(t, archive, []byte("new binary"))
+	valid, err := os.ReadFile(archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	broken := append([]byte(nil), valid...)
+	broken[len(broken)-8] ^= 0xff // damage the gzip checksum after the tar member
+	if err := os.WriteFile(archive, broken, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := replaceBinary(archive, target); err == nil {
+		t.Fatal("archive with a corrupted gzip trailer was installed")
+	}
+	if got, err := os.ReadFile(target); err != nil || string(got) != "old binary" {
+		t.Fatalf("failed update changed the binary: %q (%v)", got, err)
+	}
+	if err := os.WriteFile(archive, valid, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := replaceBinary(archive, target); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := os.ReadFile(target); err != nil || string(got) != "new binary" {
+		t.Fatalf("replacement binary = %q (%v)", got, err)
+	}
+	if leftovers, err := filepath.Glob(filepath.Join(dir, ".backpack-update-*")); err != nil || len(leftovers) != 0 {
+		t.Fatalf("staging files left after update: %v (%v)", leftovers, err)
 	}
 }

@@ -376,7 +376,7 @@ func l3SpecOf(t Tunnel, l config.L3Config) l3Spec {
 		Iface:   orDefault(l.Iface, "bp0"),
 		LocalIP: l.LocalIP, PeerIP: l.PeerIP, MTU: l.MTU,
 		SockBuf: l.SockBuf, MSSClamp: l.MSSClamp, AutoMTU: l.AutoMTU,
-		FECData: l.FECData, FECParity: l.FECParity,
+		FECData: l.FECData, FECParity: l.FECParity, FECAuth: l.FECAuth,
 		Paths:  l.Paths,
 		Preset: l.Preset, TxQueueLen: l.TxQueueLen, Qdisc: l.Qdisc,
 		Ports: l.Ports, AcceptUDP: l.AcceptUDP,

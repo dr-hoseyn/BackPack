@@ -322,7 +322,8 @@ func ConnTestSuiteBest(paths []ConnTestPath) ConnTestBest {
 			choice.Host, choice.Family = p.Host, p.Family
 			candidates = append(candidates, choice)
 		}
-		if best.Transport == "" || b.Mbps > best.Mbps || (b.Mbps == best.Mbps && b.RTTms < best.RTTms) {
+		betterRTT := b.hasRTT() && (!best.hasRTT() || b.RTTms < best.RTTms)
+		if best.Transport == "" || b.Mbps > best.Mbps || (b.Mbps == best.Mbps && betterRTT) {
 			best = b
 		}
 	}
@@ -330,18 +331,34 @@ func ConnTestSuiteBest(paths []ConnTestPath) ConnTestBest {
 	return best
 }
 
-func runConnTestSuiteKharej(ctx context.Context, routes []connTestAddr, out io.Writer, progress func(int, ConnTestPath)) ([]ConnTestPath, error) {
-	paths := make([]ConnTestPath, len(routes))
+func runConnTestSuiteKharej(ctx context.Context, routes []connTestAddr, out io.Writer, progress func(int, ConnTestPath)) (paths []ConnTestPath, runErr error) {
+	paths = make([]ConnTestPath, len(routes))
 	links := make([]ConnTestLink, len(routes))
 	report := func(i int) {
 		if progress != nil {
 			progress(i, paths[i])
 		}
 	}
+	for i, route := range routes {
+		paths[i] = ConnTestPath{Host: route.Host, Family: ctFamily(route.Host), State: "waiting"}
+	}
+	defer func() {
+		if ctx.Err() == nil && !errors.Is(runErr, errConnTestStopped) {
+			return
+		}
+		for i := range paths {
+			if paths[i].State == "waiting" || paths[i].State == "running" {
+				paths[i].State = "stopped"
+				report(i)
+			}
+		}
+	}()
 	// Check every route before joining the first one. If IPv4 is unreachable,
 	// use IPv6 to tell Iran to advance immediately, rather than waiting 15 min.
 	for i, route := range routes {
-		paths[i] = ConnTestPath{Host: route.Host, Family: ctFamily(route.Host), State: "waiting"}
+		if err := ctx.Err(); err != nil {
+			return paths, err
+		}
 		fmt.Fprintf(out, "Checking %s path %s...\n", paths[i].Family, route.Host)
 		var err error
 		if route.Error != "" {
@@ -365,11 +382,11 @@ func runConnTestSuiteKharej(ctx context.Context, routes []connTestAddr, out io.W
 			return paths, ctx.Err()
 		}
 	}
-	// Best effort, through all reachable coordinators. Requests are authenticated
-	// with that coordinator's secret and only accept an existing waiting path.
+	// Completed paths retain their coordinator for follow-up requests. Reuse
+	// it if the next path disappeared after its initial reachability check.
 	notify := func(index int) {
 		for j, route := range routes {
-			if links[j].Host == "" || j == index || paths[j].State == "done" {
+			if links[j].Host == "" || j == index {
 				continue
 			}
 			for attempt := 0; attempt < 2 && ctx.Err() == nil; attempt++ {

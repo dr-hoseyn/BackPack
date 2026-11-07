@@ -6,10 +6,50 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/sirupsen/logrus"
 )
+
+func TestMuxPoolRepairsAFloorLossBeforeTheNextTick(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		var open, pending, taken, attempts int32
+		lost := make(chan struct{}, 1)
+		log := logrus.New()
+		log.SetOutput(io.Discard)
+		go poolSizer{
+			ctx: ctx, log: log, size: 1, maxSize: 1, mux: true,
+			open: &open, taken: &taken, pending: &pending, sessionLost: lost,
+			spawn: func(fn func()) { fn() },
+			dial: func() {
+				atomic.AddInt32(&attempts, 1)
+				atomic.AddInt32(&open, 1)
+			},
+		}.maintain()
+		synctest.Wait()
+		fail := func() {
+			atomic.AddInt32(&open, -1)
+			lost <- struct{}{}
+			synctest.Wait()
+		}
+		fail()
+		if got := atomic.LoadInt32(&attempts); got != 2 {
+			t.Fatalf("lost session did not trigger an immediate repair: %d dials", got)
+		}
+		fail()
+		if got := atomic.LoadInt32(&attempts); got != 2 {
+			t.Fatalf("another loss triggered a second early repair: %d dials", got)
+		}
+		time.Sleep(time.Second)
+		synctest.Wait()
+		if got := atomic.LoadInt32(&attempts); got != 3 || atomic.LoadInt32(&open) != 1 {
+			t.Fatalf("regular tick did not restore the floor: %d dials", got)
+		}
+	})
+}
 
 func TestABurstGetsCapacityBeforeTheServerPairingDeadline(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -62,6 +102,48 @@ func TestBurstGrowthAndThroughputRespectTheResourceCeiling(t *testing.T) {
 				t.Fatalf("target = %d, want %d", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestPoolAdmissionKeepsTheSlotDuringConcurrentPromotion(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var l lifecycle
+	l.firstGeneration(ctx, logrus.New(), usageSpec{})
+	l.dialingConnections = 1
+	var exceeded atomic.Bool
+	var readers sync.WaitGroup
+	done := make(chan struct{})
+	for range 3 {
+		readers.Go(func() {
+			for {
+				select {
+				case <-done:
+					return
+				default:
+				}
+				if release, ok := l.beginPoolDial(1); ok {
+					exceeded.Store(true)
+					release()
+					return
+				}
+			}
+		})
+	}
+	for range 50000 {
+		// Promote a connected dial, then start its replacement under the
+		// admission lock. There is always at least one occupied slot.
+		atomic.AddInt32(&l.poolConnections, 1)
+		atomic.AddInt32(&l.dialingConnections, -1)
+		l.poolDialMutex.Lock()
+		atomic.AddInt32(&l.dialingConnections, 1)
+		atomic.AddInt32(&l.poolConnections, -1)
+		l.poolDialMutex.Unlock()
+	}
+	close(done)
+	readers.Wait()
+	if exceeded.Load() {
+		t.Fatal("a new dial was admitted while the only slot was being promoted")
 	}
 }
 

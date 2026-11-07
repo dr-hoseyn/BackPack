@@ -316,6 +316,7 @@ them both ends have to agree on. This says what exists.
 | `bandwidth_mbps` | `int` | BandwidthMbps caps total throughput across this tunnel, in megabits per second. 0 is unlimited. |
 | `carrier` | `string` | Carrier is the datagram transport underneath: "udp" (the default, and the right choice on a path that does not interfere), "pck" (raw TCP segments, so a capture sees an ordinary flow), "quic" (a real QUIC session), "masque" (RFC 9298 CONNECT-UDP over verified HTTP/3), "sni" (pck, plus a TLS ClientHello naming an allowed domain at the start of the flow), "xdi" (inside ICMP echo) or "spoof" (raw IP with a forged source). All but udp, quic and masque are Linux-only and need CAP_NET_RAW. |
 | `encap` | `string` | Encap is always GRE now: four bytes, or eight with gre_key. "ipip" is still accepted and read as GRE, so a file written when there was a choice keeps working. One tunnel carries both IPv4 and IPv6. |
+| `fec_auth` | `bool` | FECAuth authenticates data and parity shards with the tunnel token. Enable it on both peers after upgrading them. |
 | `fec_data` | `int` | FECData and FECParity add forward error correction to the carrier: for every FECData datagrams, FECParity extra ones are sent, and any FECParity of the group may be lost without losing anything. Both zero — the default — is no error correction. |
 | `fec_parity` | `int` | FECParity is how many parity packets accompany each group. Both ends must agree on this and on fec_data. |
 | `gre_key` | `uint32` | GREKey is the RFC 2890 key, letting more than one logical tunnel share a carrier. Zero omits the field. Ignored unless encap is "gre". |
@@ -579,4 +580,4 @@ them both ends have to agree on. This says what exists.
 
 ---
 
-*Generated from `config/` on 2026-11-01. Last verified against Backpack v1.20.1.*
+*Generated from `config/` on 2026-11-06. Last verified against Backpack v1.20.2.*

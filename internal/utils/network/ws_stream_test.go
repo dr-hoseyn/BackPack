@@ -18,21 +18,39 @@ import (
 )
 
 func TestWSMuxBinaryStreamAndLegacyCompatibility(t *testing.T) {
-	for _, framed := range []bool{true, false} {
-		t.Run(map[bool]string{true: "framed", false: "legacy"}[framed], func(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		mode   config.TransportType
+		framed bool
+	}{
+		{"framed WS", config.WSMUX, true},
+		{"legacy WS", config.WSMUX, false},
+		{"framed WSS", config.WSSMUX, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			const token = "test-token"
 			up := websocket.Upgrader{ReadBufferSize: wsReadBufferSize, WriteBufferSize: wsWriteBufferSize, WriteBufferPool: wsWriteBuffers}
-			if framed {
+			if tc.framed {
 				up.Subprotocols = []string{WSMuxBinaryProtocol}
 			}
 			serverDone := make(chan error, 1)
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				c, e := up.Upgrade(WSMuxResponse(w), r, nil)
+			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				headers := make(http.Header)
+				if tc.mode == config.WSSMUX {
+					proof, err := WSSServerAnswer(r.TLS, token)
+					if err != nil {
+						serverDone <- err
+						return
+					}
+					headers.Set(WSSServerProofHeader, proof)
+				}
+				c, e := up.Upgrade(WSMuxResponse(w), r, headers)
 				if e != nil {
 					serverDone <- e
 					return
 				}
 				defer c.Close()
-				s, e := smux.Server(WSMuxStream(c), nil)
+				s, e := NewWatchedMuxSession(WSMuxStream(c), nil, smux.Server)
 				if e != nil {
 					serverDone <- e
 					return
@@ -45,17 +63,25 @@ func TestWSMuxBinaryStreamAndLegacyCompatibility(t *testing.T) {
 				}
 				_, e = io.Copy(stream, stream)
 				serverDone <- e
-			}))
+			})
+			var srv *httptest.Server
+			var options []WSDialOption
+			if tc.mode == config.WSSMUX {
+				srv = httptest.NewTLSServer(handler)
+				options = append(options, trustTestWSS(t, srv))
+			} else {
+				srv = httptest.NewServer(handler)
+			}
 			defer srv.Close()
-			c, e := WebSocketDialer(context.Background(), nil, srv.Listener.Addr().String(), "", "/tunnel", 2*time.Second, time.Second, true, "test-token", config.WSMUX, false, 1, 0, 0, 0)
+			c, e := WebSocketDialer(context.Background(), nil, srv.Listener.Addr().String(), "", "/tunnel", 2*time.Second, time.Second, true, token, tc.mode, false, 1, 0, 0, 0, options...)
 			if e != nil {
 				t.Fatal(e)
 			}
 			defer c.Close()
-			if (c.Subprotocol() == WSMuxBinaryProtocol) != framed {
+			if (c.Subprotocol() == WSMuxBinaryProtocol) != tc.framed {
 				t.Fatal("framing disagreement")
 			}
-			s, e := smux.Client(WSMuxStream(c), nil)
+			s, e := NewWatchedMuxSession(WSMuxStream(c), nil, smux.Client)
 			if e != nil {
 				t.Fatal(e)
 			}
@@ -134,46 +160,128 @@ func TestWebSocketStreamHandlesMessageBoundariesAndPing(t *testing.T) {
 }
 
 func TestWSMuxStreamDeadlineInterruptsBlockedFrame(t *testing.T) {
-	release := make(chan struct{})
-	up := websocket.Upgrader{Subprotocols: []string{WSMuxBinaryProtocol}}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		c, e := up.Upgrade(WSMuxResponse(w), r, nil)
-		if e != nil {
-			return
+	for _, secure := range []bool{false, true} {
+		name := "WSMux"
+		mode := config.WSMUX
+		newServer := httptest.NewServer
+		if secure {
+			name, mode, newServer = "WSSMux", config.WSSMUX, httptest.NewTLSServer
 		}
-		defer c.Close()
-		<-release
-	}))
-	defer srv.Close()
-	defer close(release)
-	c, e := WebSocketDialer(context.Background(), nil, srv.Listener.Addr().String(), "", "/tunnel", time.Second, time.Second, true, "token", config.WSMUX, false, 1, 0, 0, 0)
-	if e != nil {
-		t.Fatal(e)
+		for _, writerSide := range []string{"client", "server"} {
+			t.Run(name+"/"+writerSide, func(t *testing.T) {
+				release := make(chan struct{})
+				upgraded := make(chan *websocket.Conn, 1)
+				up := websocket.Upgrader{Subprotocols: []string{WSMuxBinaryProtocol}}
+				srv := newServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					response := make(http.Header)
+					if r.TLS != nil {
+						proof, err := WSSServerAnswer(r.TLS, "token")
+						if err != nil {
+							t.Error(err)
+							return
+						}
+						response.Set(WSSServerProofHeader, proof)
+					}
+					c, e := up.Upgrade(WSMuxResponse(w), r, response)
+					if e != nil {
+						return
+					}
+					defer c.Close()
+					upgraded <- c
+					<-release
+				}))
+				defer srv.Close()
+				defer close(release)
+				c, e := WebSocketDialer(context.Background(), nil, srv.Listener.Addr().String(), "", "/tunnel", time.Second, time.Second, true, "token", mode, false, 1, 0, 0, 0)
+				if e != nil {
+					t.Fatal(e)
+				}
+				defer c.Close()
+				writer := c
+				server := <-upgraded
+				if writerSide == "server" {
+					writer = server
+				}
+				stream := WSMuxStream(writer)
+				readDone := make(chan error, 1)
+				go func() {
+					_, err := stream.Read(make([]byte, 8))
+					readDone <- err
+				}()
+				done := make(chan error, 1)
+				go func() {
+					buf := make([]byte, 64<<10)
+					for {
+						if _, e := stream.Write(buf); e != nil {
+							done <- e
+							return
+						}
+					}
+				}()
+				time.Sleep(20 * time.Millisecond)
+				if e = stream.SetWriteDeadline(time.Now().Add(50 * time.Millisecond)); e != nil {
+					t.Fatal(e)
+				}
+				select {
+				case e := <-done:
+					var ne net.Error
+					if !errors.As(e, &ne) || !ne.Timeout() {
+						t.Fatalf("blocked frame: %v", e)
+					}
+				case <-time.After(time.Second):
+					t.Fatal("framing reset the stream's write deadline")
+				}
+				select {
+				case err := <-readDone:
+					if err == nil {
+						t.Fatal("failed framed writer left an idle reader apparently healthy")
+					}
+				case <-time.After(time.Second):
+					t.Fatal("failed framed writer stranded the reader until keepalive expiry")
+				}
+			})
+		}
 	}
-	defer c.Close()
-	stream := WSMuxStream(c)
-	done := make(chan error, 1)
-	go func() {
-		buf := make([]byte, 64<<10)
-		for {
-			if _, e := stream.Write(buf); e != nil {
-				done <- e
-				return
+}
+
+func TestWebSocketStreamKeepsTheFirstTerminalReadError(t *testing.T) {
+	for _, badFrame := range []bool{true, false} {
+		name := "peer closed"
+		if badFrame {
+			name = "unexpected text followed by binary"
+		}
+		t.Run(name, func(t *testing.T) {
+			upgrader := websocket.Upgrader{}
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				conn, err := upgrader.Upgrade(w, r, nil)
+				if err != nil {
+					return
+				}
+				defer conn.Close()
+				if badFrame {
+					_ = conn.WriteMessage(websocket.TextMessage, []byte("wrong frame type"))
+					_ = conn.WriteMessage(websocket.BinaryMessage, []byte("must not reach the stream"))
+				}
+			}))
+			defer srv.Close()
+			conn, _, err := websocket.DefaultDialer.Dial("ws://"+srv.Listener.Addr().String(), nil)
+			if err != nil {
+				t.Fatal(err)
 			}
-		}
-	}()
-	time.Sleep(20 * time.Millisecond)
-	if e = stream.SetWriteDeadline(time.Now().Add(50 * time.Millisecond)); e != nil {
-		t.Fatal(e)
-	}
-	select {
-	case e := <-done:
-		var ne net.Error
-		if !errors.As(e, &ne) || !ne.Timeout() {
-			t.Fatalf("blocked frame: %v", e)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("framing reset the stream's write deadline")
+			stream := WebSocketStream(conn)
+			defer stream.Close()
+			stream.SetReadDeadline(time.Now().Add(2 * time.Second))
+			var p [32]byte
+			n, first := stream.Read(p[:])
+			if n != 0 || first == nil || (badFrame && !errors.Is(first, errWSBinaryRequired)) {
+				t.Fatalf("unexpected initial read: %d, %v", n, first)
+			}
+			for i := range 1100 {
+				if n, err := stream.Read(p[:]); n != 0 || err != first {
+					t.Fatalf("read %d after failure returned %d, %v; want original error %v", i, n, err, first)
+				}
+			}
+		})
 	}
 }
 

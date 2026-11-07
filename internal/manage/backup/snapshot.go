@@ -2,8 +2,8 @@ package backup
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
-	"github.com/backpack/backpack/internal/manage/core"
 	"io"
 	"os"
 	"path/filepath"
@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/backpack/backpack/internal/app"
+	"github.com/backpack/backpack/internal/manage/core"
 )
 
 // snapshotRetention is how many pre-update snapshots are kept on disk.
@@ -21,7 +22,7 @@ const snapshotRetention = 5
 type SnapshotMeta struct {
 	Stamp   string   `json:"stamp"`   // 20260714-2210
 	Version string   `json:"version"` // the version that was running when taken
-	Created string   `json:"created"` // RFC3339
+	Created string   `json:"created"` // RFC3339, optionally with fractional seconds
 	Reason  string   `json:"reason"`  // e.g. "pre-update"
 	Tunnels []string `json:"tunnels"` // tunnel names captured
 }
@@ -39,9 +40,13 @@ func Root() string { return app.InstallDir + "/snapshots" }
 // TakeSnapshot copies the running binary and the whole config directory into a
 // timestamped folder so a failed update or a bad config change can be undone.
 func TakeSnapshot(reason string) (Snapshot, error) {
-	stamp := time.Now().Format("20060102-150405")
-	dir := filepath.Join(Root(), reason+"-"+stamp)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	now := time.Now()
+	stamp := now.Format("20060102-150405")
+	if err := os.MkdirAll(Root(), 0755); err != nil {
+		return Snapshot{}, err
+	}
+	dir, err := os.MkdirTemp(Root(), reason+"-"+stamp+"-")
+	if err != nil {
 		return Snapshot{}, err
 	}
 
@@ -66,7 +71,7 @@ func TakeSnapshot(reason string) (Snapshot, error) {
 	meta := SnapshotMeta{
 		Stamp:   stamp,
 		Version: app.Version,
-		Created: time.Now().UTC().Format(time.RFC3339),
+		Created: now.UTC().Format(time.RFC3339Nano),
 		Reason:  reason,
 		Tunnels: names,
 	}
@@ -82,7 +87,11 @@ func TakeSnapshot(reason string) (Snapshot, error) {
 
 // ListSnapshots returns every snapshot, newest first.
 func ListSnapshots() []Snapshot {
-	entries, err := os.ReadDir(Root())
+	return listSnapshots(Root())
+}
+
+func listSnapshots(root string) []Snapshot {
+	entries, err := os.ReadDir(root)
 	if err != nil {
 		return nil
 	}
@@ -91,22 +100,23 @@ func ListSnapshots() []Snapshot {
 		if !e.IsDir() {
 			continue
 		}
-		dir := filepath.Join(Root(), e.Name())
+		dir := filepath.Join(root, e.Name())
 		s := Snapshot{Dir: dir}
-		if data, err := os.ReadFile(filepath.Join(dir, "meta.json")); err == nil {
-			json.Unmarshal(data, &s.Meta)
-		}
-		if s.Meta.Stamp == "" {
-			// Fall back to the directory name so hand-made folders still list.
-			if i := strings.LastIndex(e.Name(), "-"); i > 0 && len(e.Name()) > i+1 {
-				s.Meta.Stamp = e.Name()
-			} else {
-				s.Meta.Stamp = e.Name()
-			}
+		data, err := os.ReadFile(filepath.Join(dir, "meta.json"))
+		if err != nil || json.Unmarshal(data, &s.Meta) != nil || s.Meta.Stamp == "" {
+			// In-progress and interrupted copies are not restore points.
+			continue
 		}
 		out = append(out, s)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Dir > out[j].Dir })
+	sort.Slice(out, func(i, j int) bool {
+		a, _ := time.Parse(time.RFC3339Nano, out[i].Meta.Created)
+		b, _ := time.Parse(time.RFC3339Nano, out[j].Meta.Created)
+		if !a.Equal(b) {
+			return a.After(b)
+		}
+		return out[i].Dir > out[j].Dir
+	})
 	return out
 }
 
@@ -131,13 +141,8 @@ func RestoreSnapshot(s Snapshot, logf func(string)) error {
 	// 1) Binary.
 	if bin := filepath.Join(s.Dir, "backpack"); core.FileExists(bin) {
 		logf("Restoring the previous binary...")
-		tmp := app.BinPath + ".rollback"
-		if err := copyFile(bin, tmp, 0755); err != nil {
+		if err := copyFile(bin, app.BinPath, 0755); err != nil {
 			return fmt.Errorf("could not restore the binary: %w", err)
-		}
-		if err := os.Rename(tmp, app.BinPath); err != nil {
-			os.Remove(tmp)
-			return fmt.Errorf("could not replace the binary: %w", err)
 		}
 	}
 
@@ -151,10 +156,15 @@ func RestoreSnapshot(s Snapshot, logf func(string)) error {
 
 	// 3) Re-register and restart everything.
 	logf("Restarting services...")
+	var failures []error
 	for _, t := range core.List() {
-		_ = core.WriteUnit(t.Name)
+		if err := core.WriteUnit(t.Name); err != nil {
+			failures = append(failures, fmt.Errorf("restore service unit %s: %w", t.Name, err))
+		}
 	}
-	_ = core.DaemonReload()
+	if err := core.DaemonReload(); err != nil {
+		failures = append(failures, fmt.Errorf("reload restored service units: %w", err))
+	}
 	// The same order as the update itself, for the same reason: a rollback
 	// started from the panel runs inside the panel's unit. See
 	// core/restartorder.go.
@@ -163,12 +173,16 @@ func RestoreSnapshot(s Snapshot, logf func(string)) error {
 	if len(later) > 0 {
 		logf(strings.Join(later, ", ") + " restarts next — this connection drops for a moment.")
 	}
-	return nil
+	if failed > 0 {
+		failures = append(failures, fmt.Errorf("%d tunnel service(s) failed to restart after rollback", failed))
+	}
+	return errors.Join(failures...)
 }
 
 // --- small file helpers -----------------------------------------------------
 
-// copyFile copies src to dst with the given mode, replacing dst.
+// copyFile publishes a complete copy with the requested mode. Replacing the
+// destination inode also avoids following a destination symlink.
 func copyFile(src, dst string, mode os.FileMode) error {
 	in, err := os.Open(src)
 	if err != nil {
@@ -178,15 +192,22 @@ func copyFile(src, dst string, mode os.FileMode) error {
 	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
 		return err
 	}
-	out, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode)
+	out, err := os.CreateTemp(filepath.Dir(dst), ".snapshot-copy-*")
 	if err != nil {
 		return err
 	}
-	if _, err := io.Copy(out, in); err != nil {
-		out.Close()
+	defer os.Remove(out.Name())
+	_, err = io.Copy(out, in)
+	if err == nil {
+		err = out.Chmod(mode)
+	}
+	if closeErr := out.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
 		return err
 	}
-	return out.Close()
+	return os.Rename(out.Name(), dst)
 }
 
 // copyTree recursively copies a directory, preserving file permissions.
@@ -208,6 +229,11 @@ func copyTree(src, dst string) error {
 		}
 		target := filepath.Join(dst, rel)
 		if fi.IsDir() {
+			if existing, err := os.Lstat(target); err == nil && !existing.IsDir() {
+				return fmt.Errorf("snapshot directory would replace a non-directory: %s", target)
+			} else if err != nil && !os.IsNotExist(err) {
+				return err
+			}
 			return os.MkdirAll(target, 0755)
 		}
 		if !fi.Mode().IsRegular() {

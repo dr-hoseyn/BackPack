@@ -33,6 +33,8 @@ var (
 )
 
 const capacityHeader = "# Managed by backpack high-concurrency; restore with backpack tune restore\n"
+const capacityAutoPrefix = "# Backpack live-only TCP reservations: "
+const capacityReservedPrefix = "net.ipv4.ip_local_reserved_ports = "
 
 type capacityState struct {
 	Range    string `json:"range"`
@@ -157,36 +159,81 @@ func applyBusyPolling(s capacityState, restore bool) error {
 	return result
 }
 
-func capacityReservations(extra []int) (string, error) {
-	s, err := currentCapacity()
-	if err != nil {
-		return "", err
+type capacityPorts struct {
+	persisted string
+	automatic string
+	live      string
+}
+
+func capacityReservations(current string, previous []byte, extra []int) (capacityPorts, error) {
+	var result capacityPorts
+	var owned, stable []int
+	for _, row := range strings.Split(string(previous), "\n") {
+		if value, ok := strings.CutPrefix(row, capacityAutoPrefix); ok {
+			ports, err := ParseReservedPorts(value)
+			if err != nil {
+				return result, err
+			}
+			owned = append(owned, ports...)
+		}
+		if value, ok := strings.CutPrefix(row, capacityReservedPrefix); ok {
+			ports, err := ParseReservedPorts(value)
+			if err != nil {
+				return result, err
+			}
+			// Old files have no ownership markers. Keep all their ports
+			// because the operator may have reserved them explicitly.
+			stable = append(stable, ports...)
+		}
 	}
-	ports, err := ParseReservedPorts(s.Reserved)
+	ports, err := ParseReservedPorts(current)
 	if err != nil {
-		return "", err
+		return result, err
 	}
-	ports = append(ports, extra...)
+	seen := make(map[int]bool)
+	for _, p := range owned {
+		seen[p] = true
+	}
+	for _, p := range ports {
+		if !seen[p] {
+			stable = append(stable, p)
+		}
+	}
+	stable = append(stable, extra...)
+	clear(seen)
+	for _, p := range stable {
+		seen[p] = true
+	}
+	var automatic []int
 	for _, name := range []string{"tcp", "tcp6"} {
 		b, err := os.ReadFile(filepath.Join(procNetDir, name))
 		if name == "tcp6" && errors.Is(err, os.ErrNotExist) {
 			continue
 		}
 		if err != nil {
-			return "", fmt.Errorf("read listeners: %w", err)
+			return result, fmt.Errorf("read listeners: %w", err)
 		}
 		listeners, err := tcpListenPorts(string(b))
 		if err != nil {
-			return "", err
+			return result, err
 		}
-		ports = append(ports, listeners...)
+		for _, p := range listeners {
+			if !seen[p] {
+				automatic = append(automatic, p)
+			}
+		}
 	}
-	return reservedList(ports), nil
+	return capacityPorts{
+		persisted: reservedList(stable),
+		automatic: reservedList(automatic),
+		live:      reservedList(append(stable, automatic...)),
+	}, nil
 }
 
-func capacityConfig(reserved string, state capacityState) []byte {
+func capacityConfig(ports capacityPorts, state capacityState) []byte {
 	// Reservations must precede the wider range both at boot and live.
-	body := capacityHeader + "net.ipv4.ip_local_reserved_ports = " + reserved + "\nnet.ipv4.ip_local_port_range = " + HighConcurrencyRange + "\n"
+	body := capacityHeader + capacityAutoPrefix + ports.automatic + "\n" +
+		capacityReservedPrefix + ports.persisted + "\nnet.ipv4.ip_local_port_range = " + HighConcurrencyRange + "\n"
 	for _, row := range busyPollingRows(state, false) {
 		body += row[0] + " = " + row[1] + "\n"
 	}
@@ -205,12 +252,10 @@ func capacityTuningRows(reserve []int) (live, persisted [][2]string, err error) 
 		return rows, rows, nil
 	}
 	baseline, err := readCapacityBackup()
-	var merged string
 	if err == nil {
-		merged, err = capacityReservations(reserve)
-	}
-	if err == nil {
-		err = atomicCapacityWrite(capacityFile, capacityConfig(merged, baseline), 0644)
+		// The caller holds the kernel policy lock. Refresh live ports and
+		// ownership together, with the same rollback as explicit tuning.
+		_, err = enableHighConcurrency(reserve)
 	}
 	if err != nil {
 		// Leave both port sysctls alone if discovery or persistence fails.
@@ -222,15 +267,17 @@ func capacityTuningRows(reserve []int) (live, persisted [][2]string, err error) 
 		}
 		return safe, safe, err
 	}
-	live = append([][2]string{{"net.ipv4.ip_local_reserved_ports", merged}}, rows...)
 	persisted = append([][2]string{{"net.ipv4.ip_local_reserved_ports", baseline.Reserved}}, rows...)
-	for i := range live {
-		if live[i][0] == "net.ipv4.ip_local_port_range" {
-			live[i][1] = HighConcurrencyRange
+	for _, row := range rows {
+		if row[0] != "net.ipv4.ip_local_port_range" {
+			live = append(live, row)
+		}
+	}
+	for i := range persisted {
+		if persisted[i][0] == "net.ipv4.ip_local_port_range" {
 			persisted[i][1] = baseline.Range
 		}
 	}
-	live = append(live, busyPollingRows(baseline, false)...)
 	return live, persisted, nil
 }
 
@@ -287,16 +334,16 @@ func enableHighConcurrency(extra []int) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	reserved, err := capacityReservations(extra)
-	if err != nil {
-		return "", err
-	}
 	previous, readErr := os.ReadFile(capacityFile)
 	if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
 		return "", readErr
 	}
 	if readErr == nil && !strings.HasPrefix(string(previous), capacityHeader) {
 		return "", fmt.Errorf("refusing to overwrite unmanaged %s", capacityFile)
+	}
+	ports, err := capacityReservations(before.Reserved, previous, extra)
+	if err != nil {
+		return "", err
 	}
 	_, backupErr := os.Stat(capacityBackup)
 	first := errors.Is(backupErr, os.ErrNotExist)
@@ -351,7 +398,7 @@ func enableHighConcurrency(extra []int) (string, error) {
 		}
 		return "", errors.Join(cause, errRange, errReserved, errBusy, errFile)
 	}
-	if err := capacitySysctl("net.ipv4.ip_local_reserved_ports", reserved); err != nil {
+	if err := capacitySysctl("net.ipv4.ip_local_reserved_ports", ports.live); err != nil {
 		return rollback(err)
 	}
 	if err := capacitySysctl("net.ipv4.ip_local_port_range", HighConcurrencyRange); err != nil {
@@ -360,10 +407,10 @@ func enableHighConcurrency(extra []int) (string, error) {
 	if err := applyBusyPolling(before, false); err != nil {
 		return rollback(err)
 	}
-	if err := atomicCapacityWrite(capacityFile, capacityConfig(reserved, before), 0644); err != nil {
+	if err := atomicCapacityWrite(capacityFile, capacityConfig(ports, before), 0644); err != nil {
 		return rollback(err)
 	}
-	return reserved, nil
+	return ports.live, nil
 }
 
 func readCapacityBackup() (capacityState, error) {

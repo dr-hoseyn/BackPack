@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"net/netip"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -168,6 +169,11 @@ func (f *Forwarder) Run(ctx context.Context) error {
 	var wg sync.WaitGroup
 	var firstErr error
 	var errOnce sync.Once
+	var udpPacer *udpWriteQueue
+	if f.acceptUDP && f.limiter.HasBandwidthCap() {
+		udpPacer = newUDPWriteQueue()
+		wg.Go(func() { udpPacer.run(genCtx, f.limiter, f.log) })
+	}
 
 	// One count per listener, dropped as soon as that listener has finished
 	// trying to bind — whether it succeeded or not. Run cannot report
@@ -207,7 +213,7 @@ func (f *Forwarder) Run(ctx context.Context) error {
 			wg.Add(1)
 			go func(m portmap.Mapping) {
 				defer wg.Done()
-				if err := f.serveUDP(genCtx, m, binding.Done); err != nil && ctx.Err() == nil {
+				if err := f.serveUDP(genCtx, m, binding.Done, udpPacer); err != nil && ctx.Err() == nil {
 					f.log.Errorf("l3: udp forwarder for %s stopped: %v", m.Listen, err)
 					errOnce.Do(func() {
 						firstErr = err
@@ -239,6 +245,12 @@ func (f *Forwarder) serveTCP(ctx context.Context, m portmap.Mapping, bound func(
 	defer listener.Close()
 	stopClose := context.AfterFunc(ctx, func() { listener.Close() })
 	defer stopClose()
+	handlerCtx, cancelHandlers := context.WithCancel(ctx)
+	var handlers sync.WaitGroup
+	defer func() {
+		cancelHandlers()
+		handlers.Wait()
+	}()
 
 	f.log.Infof("l3: forwarding tcp %s", m)
 
@@ -251,7 +263,7 @@ func (f *Forwarder) serveTCP(ctx context.Context, m portmap.Mapping, bound func(
 			}
 			return err
 		}
-		go f.handleTCP(ctx, conn, m, pool)
+		handlers.Go(func() { f.handleTCP(handlerCtx, conn, m, pool) })
 	}
 }
 
@@ -271,6 +283,9 @@ func (f *Forwarder) handleTCP(ctx context.Context, local net.Conn, m portmap.Map
 
 	backend, member, err := pool.dial(ctx, "tcp")
 	if err != nil {
+		if ctx.Err() != nil {
+			return
+		}
 		f.stats.refused.Add(1)
 		f.noteBackend(m, err)
 		return
@@ -352,6 +367,9 @@ func (f *Forwarder) noteBackend(m portmap.Mapping, err error) {
 // so a flow is recognised by its source address and ends when it goes quiet.
 type udpFlow struct {
 	backend  net.Conn
+	socket   *net.UDPConn
+	ctx      context.Context
+	pacer    *udpWriteQueue
 	member   *backendMember     // counted against it while the flow lives
 	cancel   context.CancelFunc // releases pacing when this flow closes
 	lastSeen atomic.Int64       // unix nanoseconds
@@ -359,6 +377,9 @@ type udpFlow struct {
 
 func (f *udpFlow) close() {
 	f.cancel()
+	if f.pacer != nil {
+		f.pacer.discard(f)
+	}
 	_ = f.backend.Close()
 }
 
@@ -381,32 +402,37 @@ func (f *udpFlow) noteBackendReadError(ctx context.Context, err error) {
 	f.member.downUntil.Store(time.Now().Add(backendCooldown).UnixNano())
 }
 
-func (f *Forwarder) serveUDP(ctx context.Context, m portmap.Mapping, bound func()) error {
-	conn, err := net.ListenPacket("udp", m.Listen)
+func (f *Forwarder) serveUDP(ctx context.Context, m portmap.Mapping, bound func(), pacer *udpWriteQueue) error {
+	packetConn, err := net.ListenPacket("udp", m.Listen)
 	bound()
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
+	conn := packetConn.(*net.UDPConn) // ListenPacket with "udp" always returns a UDP socket.
 	stopClose := context.AfterFunc(ctx, func() { conn.Close() })
 	defer stopClose()
 
 	f.log.Infof("l3: forwarding udp %s", m)
 
-	var flows sync.Map // client address string -> *udpFlow
+	var flows sync.Map // netip.AddrPort -> *udpFlow
+	var workers sync.WaitGroup
+	flowCtx, cancelFlows := context.WithCancel(ctx)
 	defer func() {
+		cancelFlows()
+		conn.Close() // wake reply writers as well as the listener
 		flows.Range(func(_, v any) bool {
 			v.(*udpFlow).close()
 			return true
 		})
+		workers.Wait()
 	}()
 
-	go f.reapUDPFlows(ctx, &flows)
+	workers.Go(func() { f.reapUDPFlows(flowCtx, &flows) })
 
 	pool := newBackendPool(m.Targets)
 	buf := make([]byte, udpBufferSize)
 	for {
-		n, client, err := conn.ReadFrom(buf)
+		n, client, err := conn.ReadFromUDPAddrPort(buf)
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil
@@ -414,8 +440,11 @@ func (f *Forwarder) serveUDP(ctx context.Context, m portmap.Mapping, bound func(
 			return err
 		}
 
-		flow, err := f.udpFlowFor(ctx, &flows, conn, client, pool)
+		flow, err := f.udpFlowFor(flowCtx, &flows, conn, client, pool, pacer, &workers)
 		if err != nil {
+			if flowCtx.Err() != nil {
+				return nil
+			}
 			f.stats.refused.Add(1)
 			// Left at debug deliberately: this path also reports the
 			// connection limit, and a UDP dial is connectionless and
@@ -425,6 +454,10 @@ func (f *Forwarder) serveUDP(ctx context.Context, m portmap.Mapping, bound func(
 			continue
 		}
 		flow.touch()
+		if pacer != nil {
+			pacer.enqueue(flow, buf[:n])
+			continue
+		}
 		if _, err := flow.backend.Write(buf[:n]); err != nil {
 			f.log.Debugf("l3: forwarding udp to %s: %v", m.Targets, err)
 		}
@@ -435,12 +468,13 @@ func (f *Forwarder) serveUDP(ctx context.Context, m portmap.Mapping, bound func(
 func (f *Forwarder) udpFlowFor(
 	ctx context.Context,
 	flows *sync.Map,
-	local net.PacketConn,
-	client net.Addr,
+	local *net.UDPConn,
+	client netip.AddrPort,
 	pool *backendPool,
+	pacer *udpWriteQueue,
+	workers *sync.WaitGroup,
 ) (*udpFlow, error) {
-	key := client.String()
-	if existing, ok := flows.Load(key); ok {
+	if existing, ok := flows.Load(client); ok {
 		return existing.(*udpFlow), nil
 	}
 
@@ -465,13 +499,16 @@ func (f *Forwarder) udpFlowFor(
 	}
 
 	flowCtx, cancelFlow := context.WithCancel(ctx)
-	flow := &udpFlow{backend: f.limiter.Wrap(flowCtx, udpConn), member: member, cancel: cancelFlow}
+	flow := &udpFlow{
+		backend: f.limiter.Wrap(flowCtx, udpConn), socket: udpConn,
+		ctx: flowCtx, member: member, cancel: cancelFlow, pacer: pacer,
+	}
 	flow.touch()
 
 	// Two goroutines could reach here for the same client at once; only one
 	// flow may survive, or the loser's reply reader would write into a socket
 	// nobody is tracking.
-	if actual, loaded := flows.LoadOrStore(key, flow); loaded {
+	if actual, loaded := flows.LoadOrStore(client, flow); loaded {
 		flow.close()
 		member.done()
 		f.limiter.Release()
@@ -480,22 +517,20 @@ func (f *Forwarder) udpFlowFor(
 
 	f.stats.accepted.Add(1)
 	f.stats.active.Add(1)
-	go f.pumpUDPReplies(ctx, flows, key, flow, local, client)
+	workers.Go(func() { f.pumpUDPReplies(flows, flow, local, client) })
 	return flow, nil
 }
 
 // pumpUDPReplies carries what the backend sends back to the client it belongs
 // to, until the flow is closed or goes quiet.
 func (f *Forwarder) pumpUDPReplies(
-	ctx context.Context,
 	flows *sync.Map,
-	key string,
 	flow *udpFlow,
-	local net.PacketConn,
-	client net.Addr,
+	local *net.UDPConn,
+	client netip.AddrPort,
 ) {
 	defer func() {
-		flows.Delete(key)
+		flows.CompareAndDelete(client, flow)
 		flow.close()
 		flow.member.done()
 		f.stats.active.Add(-1)
@@ -512,18 +547,18 @@ func (f *Forwarder) pumpUDPReplies(
 		_ = flow.backend.SetReadDeadline(time.Now().Add(udpFlowIdle))
 		n, err := flow.backend.Read(buf)
 		if err != nil {
-			if ctx.Err() != nil {
+			if flow.ctx.Err() != nil {
 				return
 			}
 			var netErr net.Error
 			if errors.As(err, &netErr) && netErr.Timeout() && !flow.idle(time.Now(), udpFlowIdle) {
 				continue // the client is still sending; keep waiting for a reply
 			}
-			flow.noteBackendReadError(ctx, err)
+			flow.noteBackendReadError(flow.ctx, err)
 			return
 		}
 		flow.touch()
-		if _, err := local.WriteTo(buf[:n], client); err != nil {
+		if _, err := local.WriteToUDPAddrPort(buf[:n], client); err != nil {
 			return
 		}
 	}

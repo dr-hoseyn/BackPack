@@ -27,6 +27,10 @@ func TestTheRelayPoolStaysFree(t *testing.T) {
 		// alloc tests, which are unaffected by the detector.
 		t.Skip("wall-clock budgets are meaningless under the race detector")
 	}
+	// Coverage instrumentation changes the cost being measured. The ordinary
+	// suite still enforces the original timing ceilings; allocations remain
+	// gated in both modes.
+	checkTime := testing.CoverMode() == ""
 	for _, c := range []struct {
 		name    string
 		ceiling time.Duration
@@ -48,7 +52,7 @@ func TestTheRelayPoolStaysFree(t *testing.T) {
 					"connection costs none; an allocation here is one per connection "+
 					"across every transport.", c.name, res.AllocsPerOp())
 			}
-			if per > c.ceiling {
+			if checkTime && per > c.ceiling {
 				t.Errorf("%s costs %v, ceiling %v — more than ten times what it measured "+
 					"when the ceiling was set, so something is contending on the pool.",
 					c.name, per, c.ceiling)
