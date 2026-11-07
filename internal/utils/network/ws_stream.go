@@ -30,7 +30,9 @@ func WSMuxStream(conn *websocket.Conn) net.Conn {
 
 type webSocketStream struct {
 	conn    *websocket.Conn
+	readMu  sync.Mutex
 	reader  io.Reader
+	readErr error
 	writeMu sync.Mutex
 }
 
@@ -38,14 +40,23 @@ func (c *webSocketStream) Read(p []byte) (int, error) {
 	if len(p) == 0 {
 		return 0, nil
 	}
+	c.readMu.Lock()
+	defer c.readMu.Unlock()
+	// WebSocket framing cannot resume after a read failure. Keep callers
+	// from skipping a rejected message or repeatedly entering NextReader.
+	if c.readErr != nil {
+		return 0, c.readErr
+	}
 	for {
 		if c.reader == nil {
 			kind, reader, err := c.conn.NextReader()
 			if err != nil {
+				c.readErr = err
 				return 0, err
 			}
 			if kind != websocket.BinaryMessage {
-				return 0, &net.OpError{Op: "read", Net: "websocket", Err: errWSBinaryRequired}
+				c.readErr = &net.OpError{Op: "read", Net: "websocket", Err: errWSBinaryRequired}
+				return 0, c.readErr
 			}
 			c.reader = reader
 		}
@@ -56,6 +67,10 @@ func (c *webSocketStream) Read(p []byte) (int, error) {
 				return n, nil
 			}
 			continue
+		}
+		if err != nil {
+			c.reader = nil
+			c.readErr = err
 		}
 		return n, err
 	}

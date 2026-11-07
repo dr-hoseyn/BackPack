@@ -203,6 +203,47 @@ func TestWSMuxStreamDeadlineInterruptsBlockedFrame(t *testing.T) {
 	}
 }
 
+func TestWebSocketStreamKeepsTheFirstTerminalReadError(t *testing.T) {
+	for _, badFrame := range []bool{true, false} {
+		name := "peer closed"
+		if badFrame {
+			name = "unexpected text followed by binary"
+		}
+		t.Run(name, func(t *testing.T) {
+			upgrader := websocket.Upgrader{}
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				conn, err := upgrader.Upgrade(w, r, nil)
+				if err != nil {
+					return
+				}
+				defer conn.Close()
+				if badFrame {
+					_ = conn.WriteMessage(websocket.TextMessage, []byte("wrong frame type"))
+					_ = conn.WriteMessage(websocket.BinaryMessage, []byte("must not reach the stream"))
+				}
+			}))
+			defer srv.Close()
+			conn, _, err := websocket.DefaultDialer.Dial("ws://"+srv.Listener.Addr().String(), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			stream := WebSocketStream(conn)
+			defer stream.Close()
+			stream.SetReadDeadline(time.Now().Add(2 * time.Second))
+			var p [32]byte
+			n, first := stream.Read(p[:])
+			if n != 0 || first == nil || (badFrame && !errors.Is(first, errWSBinaryRequired)) {
+				t.Fatalf("unexpected initial read: %d, %v", n, first)
+			}
+			for i := range 1100 {
+				if n, err := stream.Read(p[:]); n != 0 || err != first {
+					t.Fatalf("read %d after failure returned %d, %v; want original error %v", i, n, err, first)
+				}
+			}
+		})
+	}
+}
+
 func TestWSMuxScatterGatherPreservesCallerBuffers(t *testing.T) {
 	header := []byte("12345678")
 	payload := bytes.Repeat([]byte("p"), 65535)
