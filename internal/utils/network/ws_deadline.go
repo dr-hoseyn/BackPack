@@ -2,6 +2,7 @@ package network
 
 import (
 	"bufio"
+	"io"
 	"net"
 	"net/http"
 	"sync"
@@ -13,24 +14,41 @@ import (
 // No concurrent access to Gorilla's writer/deadline fields is needed.
 type streamDeadlineConn struct {
 	net.Conn
-	mu            sync.Mutex
-	writeDeadline time.Time
+	mu             sync.Mutex
+	frameDeadline  time.Time
+	streamDeadline time.Time
 }
 
 func (c *streamDeadlineConn) SetWriteDeadline(t time.Time) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if !c.writeDeadline.IsZero() && (t.IsZero() || c.writeDeadline.Before(t)) {
-		t = c.writeDeadline
-	}
-	return c.Conn.SetWriteDeadline(t)
+	c.frameDeadline = t
+	return c.applyWriteDeadline()
 }
 
 func (c *streamDeadlineConn) setStreamWriteDeadline(t time.Time) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.writeDeadline = t
-	return c.Conn.SetWriteDeadline(t)
+	c.streamDeadline = t
+	return c.applyWriteDeadline()
+}
+
+// Both the WebSocket frame and the mux stream can limit a blocked write.
+// Updating one deadline must not extend a tighter deadline set by the other.
+func (c *streamDeadlineConn) applyWriteDeadline() error {
+	deadline := c.frameDeadline
+	if !c.streamDeadline.IsZero() && (deadline.IsZero() || c.streamDeadline.Before(deadline)) {
+		deadline = c.streamDeadline
+	}
+	return c.Conn.SetWriteDeadline(deadline)
+}
+
+func (c *streamDeadlineConn) Write(p []byte) (int, error) {
+	n, err := c.Conn.Write(p)
+	if err == nil && n != len(p) {
+		err = io.ErrShortWrite
+	}
+	return n, err
 }
 
 type wsStreamResponse struct{ http.ResponseWriter }
