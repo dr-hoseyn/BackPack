@@ -11,8 +11,8 @@
   the selected backend fails. Keep Direct stream setup tied to its listener
   and validate the resolved backend before connecting.
 - Reduce frame and UDP forwarding overhead. Harden WebSocket and gRPC
-  framing, improve fairness under L3 UDP load, and authenticate recovered FEC
-  packets before using them.
+  framing, improve fairness under L3 UDP load, and add optional authentication
+  of L3 FEC shards. Enable `fec_auth = true` on both peers after upgrading them.
 - Make Connection Test results easier to read in narrow terminals. Report
   unavailable measurements and paths lost during dual-stack tests separately
   from measured zero values.

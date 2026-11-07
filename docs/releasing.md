@@ -152,4 +152,4 @@ during the incident.
 
 ---
 
-*Last verified against Backpack v1.20.1*
+*Last verified against Backpack v1.20.2*

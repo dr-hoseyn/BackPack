@@ -53,4 +53,4 @@ longer observation. Only completed healthy measurements contribute to comparison
 
 </div>
 
-*Last verified against Backpack v1.20.1, 2026-11-01.*
+*Last verified against Backpack v1.20.2, 2026-11-01.*
