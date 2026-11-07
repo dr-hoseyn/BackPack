@@ -104,6 +104,7 @@ func (c *webSocketStream) WriteBuffers(v [][]byte) (int, error) {
 	defer c.writeMu.Unlock()
 	w, err := c.conn.NextWriter(websocket.BinaryMessage)
 	if err != nil {
+		c.conn.Close()
 		return 0, err
 	}
 	n := 0
@@ -111,11 +112,18 @@ func (c *webSocketStream) WriteBuffers(v [][]byte) (int, error) {
 		written, err := w.Write(p)
 		n += written
 		if err != nil {
+			c.conn.Close()
 			_ = w.Close()
 			return n, err
 		}
 	}
-	return n, w.Close()
+	err = w.Close()
+	if err != nil {
+		// A broken frame cannot resume. Close the socket to wake an
+		// otherwise idle reader and let the mux session retire.
+		c.conn.Close()
+	}
+	return n, err
 }
 
 func (c *webSocketStream) Close() error         { return c.conn.Close() }
