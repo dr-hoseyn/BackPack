@@ -13,6 +13,7 @@ import (
 	"github.com/backpack/backpack/internal/utils/network"
 	"github.com/gorilla/websocket"
 	"github.com/sirupsen/logrus"
+	"github.com/xtaci/smux"
 )
 
 func TestWSSMuxSpreadRecoversDataSessionOnControlRoute(t *testing.T) {
@@ -47,13 +48,14 @@ func TestWSSMuxSpreadRecoversDataSessionOnControlRoute(t *testing.T) {
 	endpoints := network.NewEndpoints(stalled.Addr().String(), controlAddr)
 	endpoints.SetSpread(true)
 	endpoints.Prefer(controlAddr)
-	client := &WsMuxTransport{config: &WsMuxConfig{
-		Endpoints: endpoints, Token: token, Mode: config.WSSMUX, DialTimeOut: 500 * time.Millisecond,
-	}}
-	client.logger = logrus.New()
-	mux := network.WSMuxOptions{PoolSize: 2}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
+	cfg := smux.DefaultConfig()
+	client := NewWSMuxClient(ctx, &WsMuxConfig{
+		Endpoints: endpoints, Token: token, Mode: config.WSSMUX, DialTimeOut: 500 * time.Millisecond,
+		MaxFrameSize: cfg.MaxFrameSize, MaxReceiveBuffer: cfg.MaxReceiveBuffer, MaxStreamBuffer: cfg.MaxStreamBuffer,
+	}, logrus.New())
+	mux := network.WSMuxOptions{PoolSize: 2}
 	start := time.Now()
 	conn, err := client.dialTunnel(ctx, &mux)
 	if err != nil {
@@ -67,6 +69,18 @@ func TestWSSMuxSpreadRecoversDataSessionOnControlRoute(t *testing.T) {
 	if endpoints.Current() != controlAddr || mux.NegotiatedVersion != 2 || !mux.Retirement ||
 		conn.Subprotocol() != network.WSMuxBinaryProtocol {
 		t.Fatalf("control preference or negotiated session options lost: %s, %+v", endpoints.Current(), mux)
+	}
+	// The fixture closes after upgrading. This exercises the actual session
+	// exit hook as well as the handshake, without a running pool reconciler.
+	client.poolConnections = 1
+	client.handleSession(conn, mux)
+	select {
+	case <-client.poolLost:
+		if client.poolConnections != 0 {
+			t.Fatal("repair was notified before returning the open slot")
+		}
+	default:
+		t.Fatal("closed data session did not notify the pool")
 	}
 }
 

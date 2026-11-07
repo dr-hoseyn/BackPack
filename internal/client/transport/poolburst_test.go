@@ -6,10 +6,50 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/sirupsen/logrus"
 )
+
+func TestMuxPoolRepairsAFloorLossBeforeTheNextTick(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		var open, pending, taken, attempts int32
+		lost := make(chan struct{}, 1)
+		log := logrus.New()
+		log.SetOutput(io.Discard)
+		go poolSizer{
+			ctx: ctx, log: log, size: 1, maxSize: 1, mux: true,
+			open: &open, taken: &taken, pending: &pending, sessionLost: lost,
+			spawn: func(fn func()) { fn() },
+			dial: func() {
+				atomic.AddInt32(&attempts, 1)
+				atomic.AddInt32(&open, 1)
+			},
+		}.maintain()
+		synctest.Wait()
+		fail := func() {
+			atomic.AddInt32(&open, -1)
+			lost <- struct{}{}
+			synctest.Wait()
+		}
+		fail()
+		if got := atomic.LoadInt32(&attempts); got != 2 {
+			t.Fatalf("lost session did not trigger an immediate repair: %d dials", got)
+		}
+		fail()
+		if got := atomic.LoadInt32(&attempts); got != 2 {
+			t.Fatalf("another loss triggered a second early repair: %d dials", got)
+		}
+		time.Sleep(time.Second)
+		synctest.Wait()
+		if got := atomic.LoadInt32(&attempts); got != 3 || atomic.LoadInt32(&open) != 1 {
+			t.Fatalf("regular tick did not restore the floor: %d dials", got)
+		}
+	})
+}
 
 func TestABurstGetsCapacityBeforeTheServerPairingDeadline(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())

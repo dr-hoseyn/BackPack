@@ -24,6 +24,7 @@ type WsMuxTransport struct {
 	config     *WsMuxConfig
 	smuxConfig *smux.Config
 	sessions   muxPoolSessions
+	poolLost   chan struct{}
 }
 type WsMuxConfig struct {
 	RemoteAddr string
@@ -70,7 +71,8 @@ func NewWSMuxClient(parentCtx context.Context, config *WsMuxConfig, logger *logr
 			MaxReceiveBuffer:  config.MaxReceiveBuffer,
 			MaxStreamBuffer:   config.MaxStreamBuffer,
 		},
-		config: config,
+		config:   config,
+		poolLost: make(chan struct{}, 1),
 	}
 
 	client.firstGeneration(parentCtx, logger, usageSpec{snifferLog: config.SnifferLog, sniffer: config.Sniffer})
@@ -88,7 +90,7 @@ func (c *WsMuxTransport) Start() {
 }
 
 func (c *WsMuxTransport) Restart() {
-	c.restart(nil, nil, c.Start)
+	c.restart(nil, func() { drain(c.poolLost) }, c.Start)
 }
 
 func (c *WsMuxTransport) channelDialer() {
@@ -160,19 +162,20 @@ func (c *WsMuxTransport) dialControl(ctx context.Context) (*websocket.Conn, erro
 // shared with every other client transport — see poolmaintain.go.
 func (c *WsMuxTransport) poolMaintainer() {
 	poolSizer{
-		mux:        true,
-		ctx:        c.state.Ctx(),
-		log:        c.logger,
-		size:       c.config.ConnPoolSize,
-		aggressive: c.config.AggressivePool,
-		open:       &c.poolConnections,
-		taken:      &c.loadConnections,
-		shrink:     c.controlFlow,
-		dial:       c.tunnelDialer,
-		spawn:      c.state.Go,
-		pending:    &c.dialingConnections,
-		maxSize:    c.poolLimit(),
-		sessions:   &c.sessions,
+		mux:         true,
+		ctx:         c.state.Ctx(),
+		log:         c.logger,
+		size:        c.config.ConnPoolSize,
+		aggressive:  c.config.AggressivePool,
+		open:        &c.poolConnections,
+		taken:       &c.loadConnections,
+		shrink:      c.controlFlow,
+		dial:        c.tunnelDialer,
+		spawn:       c.state.Go,
+		pending:     &c.dialingConnections,
+		maxSize:     c.poolLimit(),
+		sessions:    &c.sessions,
+		sessionLost: c.poolLost,
 	}.maintain()
 }
 
@@ -252,8 +255,15 @@ func (c *WsMuxTransport) dialTunnel(ctx context.Context, mux *network.WSMuxOptio
 }
 
 func (c *WsMuxTransport) handleSession(tunnelConn *websocket.Conn, mux network.WSMuxOptions) {
+	established := false
 	defer func() {
 		atomic.AddInt32(&c.poolConnections, -1)
+		if established && c.state.Ctx().Err() == nil {
+			select {
+			case c.poolLost <- struct{}{}:
+			default:
+			}
+		}
 	}()
 
 	// SMUX server
@@ -265,6 +275,7 @@ func (c *WsMuxTransport) handleSession(tunnelConn *websocket.Conn, mux network.W
 		return
 	}
 
+	established = true
 	defer c.sessions.add(session, mux.Retirement)()
 	c.serveSession(session, tunnelConn.RemoteAddr(), c.backend())
 }
