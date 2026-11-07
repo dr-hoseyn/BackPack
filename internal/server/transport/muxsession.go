@@ -213,11 +213,39 @@ func (m muxSession) run(session *smux.Session) {
 				continue
 			}
 
+			// smux's OpenStream may wait on its shared sender longer than a
+			// local connection's pairing budget. Expire just the local
+			// connection while waiting, leaving existing streams alone.
+			workers.Add(1)
+			timer := time.AfterFunc(pairingWait(incomingConn.timeCreated), func() {
+				defer workers.Done()
+				drop(incomingConn, m.limits, m.log)
+				m.add(m.streams, -1)
+			})
 			stream, err := session.OpenStream()
+			if !timer.Stop() {
+				// The timer owns the local connection and its slot now.
+				if err != nil {
+					retired = true
+					m.failed(nil, err)
+					return
+				}
+				<-counter
+				stream.Close()
+				continue
+			}
+			workers.Done()
 			if err != nil {
 				retired = true // failed returns the session's slot itself.
 				m.failed(&incomingConn, err)
 				return
+			}
+			if expired(incomingConn) {
+				drop(incomingConn, m.limits, m.log)
+				m.add(m.streams, -1)
+				<-counter
+				stream.Close()
+				continue
 			}
 
 			// Send the target port over the tunnel connection
@@ -266,8 +294,8 @@ func (m muxSession) run(session *smux.Session) {
 	}
 }
 
-// failed retires a session that can no longer open streams, puts the connection
-// it was holding back on the queue, and asks for a replacement.
+// failed retires a session that can no longer open streams and requests a
+// replacement. A local connection still owned by the worker can be requeued.
 func (m muxSession) failed(incomingConn *LocalTCPConn, err error) {
 	m.log.Tracef("failed to handle session: %v", err)
 
@@ -279,7 +307,7 @@ func (m muxSession) failed(incomingConn *LocalTCPConn, err error) {
 	// goroutine left to drain the channel it is sending into. See requeueLocal.
 	// A connection there was no room for is counted out, since nothing
 	// downstream will do it.
-	if !requeueLocal(m.local, *incomingConn, m.limits, m.log) {
+	if incomingConn != nil && !requeueLocal(m.local, *incomingConn, m.limits, m.log) {
 		m.add(m.streams, -1)
 	}
 
