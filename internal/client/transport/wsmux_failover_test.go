@@ -2,10 +2,12 @@ package transport
 
 import (
 	"context"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -22,6 +24,19 @@ func TestWSSMuxSpreadRecoversDataSessionOnControlRoute(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer stalled.Close()
+	var stalledAttempts atomic.Int32
+	go func() {
+		for {
+			conn, err := stalled.Accept()
+			if err != nil {
+				return
+			}
+			stalledAttempts.Add(1)
+			_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+			_, _ = io.Copy(io.Discard, conn)
+			_ = conn.Close()
+		}
+	}()
 	const token = "data-failover-test-token"
 	upgrader := websocket.Upgrader{Subprotocols: []string{network.WSMuxBinaryProtocol}}
 	healthy := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -81,6 +96,40 @@ func TestWSSMuxSpreadRecoversDataSessionOnControlRoute(t *testing.T) {
 		}
 	default:
 		t.Fatal("closed data session did not notify the pool")
+	}
+	// Round robin starts the third dial on the failed route again. It
+	// should go straight to the working route while the failure is fresh.
+	for range 2 {
+		replacement, err := client.dialTunnel(ctx, &mux)
+		if err != nil {
+			t.Fatal(err)
+		}
+		replacement.Close()
+	}
+	if got := stalledAttempts.Load(); got != 1 {
+		t.Fatalf("pool repair retried the recently failed route: %d attempts", got)
+	}
+	// Both routes now have a recent failure. The next round-robin route
+	// must still get a chance to reconnect.
+	client.dataRoutes.record(controlAddr, time.Now(), false)
+	replacement, err := client.dialTunnel(ctx, &mux)
+	if err != nil {
+		t.Fatalf("all routes cooling down prevented a recovery probe: %v", err)
+	}
+	replacement.Close()
+}
+
+func TestWSMuxRouteCooldownExpiresAndIgnoresAnOlderFailure(t *testing.T) {
+	var routes wsMuxDataRoutes
+	now := time.Now()
+	routes.record("peer", now, false)
+	if routes.available("peer", time.Now()) || !routes.available("peer", now.Add(3*wsMuxDataRetryDelay)) {
+		t.Fatal("failed route did not enter or leave cooldown")
+	}
+	routes.record("peer", now.Add(time.Millisecond), true)
+	routes.record("peer", now, false)
+	if !routes.available("peer", time.Now()) {
+		t.Fatal("an older attempt suppressed a route that already recovered")
 	}
 }
 

@@ -3,6 +3,7 @@ package transport
 import (
 	"context"
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -25,6 +26,7 @@ type WsMuxTransport struct {
 	smuxConfig *smux.Config
 	sessions   muxPoolSessions
 	poolLost   chan struct{}
+	dataRoutes wsMuxDataRoutes
 }
 type WsMuxConfig struct {
 	RemoteAddr string
@@ -90,7 +92,10 @@ func (c *WsMuxTransport) Start() {
 }
 
 func (c *WsMuxTransport) Restart() {
-	c.restart(nil, func() { drain(c.poolLost) }, c.Start)
+	c.restart(nil, func() {
+		drain(c.poolLost)
+		c.dataRoutes.reset()
+	}, c.Start)
 }
 
 func (c *WsMuxTransport) channelDialer() {
@@ -228,12 +233,26 @@ func (c *WsMuxTransport) dialTunnel(ctx context.Context, mux *network.WSMuxOptio
 	// control route and other candidates without holding a pool slot for
 	// three handshakes to the same address. Data dials never move the control
 	// preference.
-	conn, err := dial(first, 1)
-	if err == nil {
-		return conn, nil
+	var err error
+	attempts := 0
+	try := func(addr string) *websocket.Conn {
+		attempts++
+		start := time.Now()
+		conn, dialErr := dial(addr, 1)
+		err = dialErr
+		if ctx.Err() == nil {
+			c.dataRoutes.record(addr, start, dialErr == nil)
+		}
+		if dialErr != nil {
+			c.logger.Debugf("tunnel endpoint %s failed: %v", addr, dialErr)
+		}
+		return conn
 	}
-	c.logger.Debugf("tunnel endpoint %s failed: %v", first, err)
-	attempts := 1
+	if c.dataRoutes.available(first, time.Now()) {
+		if conn := try(first); conn != nil {
+			return conn, nil
+		}
+	}
 	for _, addr := range cfg.Endpoints.InPreferenceOrder() {
 		if attempts >= maxAttempts {
 			break
@@ -241,17 +260,60 @@ func (c *WsMuxTransport) dialTunnel(ctx context.Context, mux *network.WSMuxOptio
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		if addr == first {
+		if addr == first || !c.dataRoutes.available(addr, time.Now()) {
 			continue
 		}
-		attempts++
-		conn, err = dial(addr, 1)
-		if err == nil {
+		if conn := try(addr); conn != nil {
 			return conn, nil
 		}
-		c.logger.Debugf("tunnel endpoint %s failed: %v", addr, err)
+	}
+	// If every route is cooling down, probe one instead of waiting for the
+	// entire cooldown to end. Next() still rotates that probe across routes.
+	if attempts == 0 {
+		conn := try(first)
+		return conn, err
 	}
 	return nil, err
+}
+
+const wsMuxDataRetryDelay = 2 * time.Second
+
+type wsMuxDataRoute struct {
+	started time.Time
+	retryAt time.Time
+}
+
+type wsMuxDataRoutes struct {
+	mu     sync.Mutex
+	routes map[string]wsMuxDataRoute
+}
+
+func (r *wsMuxDataRoutes) available(addr string, now time.Time) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return !now.Before(r.routes[addr].retryAt)
+}
+
+func (r *wsMuxDataRoutes) record(addr string, started time.Time, success bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if started.Before(r.routes[addr].started) {
+		return // a newer attempt already reported this route
+	}
+	if r.routes == nil {
+		r.routes = make(map[string]wsMuxDataRoute)
+	}
+	state := wsMuxDataRoute{started: started}
+	if !success {
+		state.retryAt = time.Now().Add(wsMuxDataRetryDelay)
+	}
+	r.routes[addr] = state
+}
+
+func (r *wsMuxDataRoutes) reset() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	clear(r.routes)
 }
 
 func (c *WsMuxTransport) handleSession(tunnelConn *websocket.Conn, mux network.WSMuxOptions) {
