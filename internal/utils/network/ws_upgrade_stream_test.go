@@ -5,17 +5,53 @@ import (
 	"context"
 	"crypto/sha1"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/backpack/backpack/config"
 )
+
+func TestWSSMuxRejectsOversizedUpgradeHeaders(t *testing.T) {
+	for _, path := range []string{"/channel", "/tunnel"} {
+		t.Run(path, func(t *testing.T) {
+			var requests atomic.Int32
+			srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests.Add(1)
+				w.Header().Set("X-Test-Padding", strings.Repeat("x", maxWSUpgradeHeaderBytes))
+				w.WriteHeader(http.StatusBadRequest)
+			}))
+			defer srv.Close()
+			_, err := WebSocketDialer(t.Context(), nil, srv.Listener.Addr().String(), "", path,
+				2*time.Second, time.Second, true, "upgrade-limit-test-token", config.WSSMUX, true, 3, 0, 0, 0, trustTestWSS(t, srv))
+			if !errors.Is(err, errWSUpgradeHeadersTooLarge) {
+				t.Fatalf("oversized response returned %v", err)
+			}
+			if n := requests.Load(); n != 1 {
+				t.Fatalf("oversized response retried %d times", n-1)
+			}
+		})
+	}
+}
+
+func TestMuxUpgradeHeaderLimitExcludesCoalescedPayload(t *testing.T) {
+	header := append(bytes.Repeat([]byte{'x'}, maxWSUpgradeHeaderBytes-4), '\r', '\n', '\r', '\n')
+	payload := []byte("mux")
+	var raw upgradeBenchmarkConn
+	raw.input.Reset(append(header, payload...))
+	stream := muxUpgradeStream(&raw)
+	got := make([]byte, maxWSUpgradeHeaderBytes+len(payload))
+	if _, err := io.ReadFull(stream, got); err != nil || !bytes.Equal(got[maxWSUpgradeHeaderBytes:], payload) {
+		t.Fatalf("the header limit consumed the first mux bytes: %q, %v", got[maxWSUpgradeHeaderBytes:], err)
+	}
+}
 
 // The mux peer can open a waiting user's stream immediately after Upgrade.
 // Put its first raw bytes in the same write as the 101 response: dropping the
