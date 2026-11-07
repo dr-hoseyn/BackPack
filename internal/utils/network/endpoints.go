@@ -3,6 +3,7 @@ package network
 import (
 	"context"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -27,11 +28,9 @@ type Endpoints struct {
 	spreadIdx atomic.Int64
 	spread    atomic.Bool
 
-	// steer, when set, hands both Current() and Next() over to a health scorer
-	// (see healthscore.go): preferred holds the index of the endpoint currently
-	// scoring healthiest, so traffic concentrates on the best exit rather than
-	// following the dial order. It is mutually exclusive with spread — steering
-	// picks one exit on purpose, where spread deliberately uses all of them.
+	// preferred holds the route picked by health scoring. WebSocket carriers
+	// use it for new data dials and keep their control route in idx. Other
+	// carriers steer both. Steering and round-robin spreading are exclusive.
 	steer     atomic.Bool
 	preferred atomic.Int64
 
@@ -40,37 +39,34 @@ type Endpoints struct {
 	// takes a connection. See SetReachProbe.
 	reach atomic.Pointer[func(addr string) bool]
 
-	// healthSwitch reconnects the active transport after a scoring decision.
-	// Dial races and ordinary retries do not trigger it.
-	healthSwitch atomic.Pointer[func(from, to string)]
-	healthProbe  atomic.Pointer[func(context.Context, string, int) EndpointScore]
+	// Publish the probe and its routing policy together when carriers change.
+	healthMu sync.Mutex
+	health   atomic.Pointer[healthRouting]
 }
 
-// SetHealthProbe selects how the active transport measures its actual route.
-// A nil probe uses ICMP, as required by datagram carriers without a TCP port.
-func (e *Endpoints) SetHealthProbe(f func(context.Context, string, int) EndpointScore) {
-	if e == nil {
-		return
-	}
-	if f == nil {
-		e.healthProbe.Store(nil)
-		return
-	}
-	e.healthProbe.Store(&f)
+type healthRouting struct {
+	probe    func(context.Context, string, int) EndpointScore
+	onSwitch func(from, to string)
+	dataOnly bool
 }
 
-// SetHealthSwitch installs the action taken after health scoring changes the
-// preferred endpoint. The callback runs on the scoring goroutine, after the
-// new address is published. Passing nil removes it.
-func (e *Endpoints) SetHealthSwitch(f func(from, to string)) {
-	if e == nil {
-		return
+// SetHealthRouting installs the active carrier's probe and routing policy.
+// A nil probe suspends scoring. With dataOnly, scores affect new data dials
+// while control reconnects continue to use the normal fallback order.
+func (e *Endpoints) SetHealthRouting(probe func(context.Context, string, int) EndpointScore, onSwitch func(from, to string), dataOnly bool) {
+	e.healthMu.Lock()
+	defer e.healthMu.Unlock()
+	e.health.Store(&healthRouting{probe: probe, onSwitch: onSwitch, dataOnly: dataOnly})
+}
+
+// DataHealthSteering reports whether new data dials can use a different
+// preferred route from the control channel.
+func (e *Endpoints) DataHealthSteering() bool {
+	if e == nil || !e.steer.Load() {
+		return false
 	}
-	if f == nil {
-		e.healthSwitch.Store(nil)
-		return
-	}
-	e.healthSwitch.Store(&f)
+	policy := e.health.Load()
+	return policy != nil && policy.dataOnly
 }
 
 // SetReachProbe sets how steering checks the tunnel port behind an endpoint
@@ -120,11 +116,10 @@ func (e *Endpoints) Current() string {
 	if e == nil || len(e.list) == 0 {
 		return ""
 	}
-	if e.steer.Load() {
+	if e.steer.Load() && !e.DataHealthSteering() {
 		return e.list[e.clampIdx(e.preferred.Load())]
 	}
-	i := int(e.idx.Load()) % len(e.list)
-	return e.list[i]
+	return e.list[e.clampIdx(e.idx.Load())]
 }
 
 // clampIdx wraps a stored index into range, guarding against a negative wrap
@@ -146,8 +141,9 @@ func (e *Endpoints) Rotate() string {
 	// Under health steering a failed dial means the preferred exit is bad right
 	// now: step off it and let the next scoring cycle settle on a new best,
 	// which will avoid this one because it just failed to answer.
-	if e.steer.Load() {
-		e.preferred.Store(int64(e.clampIdx(e.preferred.Load() + 1)))
+	if e.steer.Load() && !e.DataHealthSteering() {
+		next := int64(e.clampIdx(e.preferred.Add(1)))
+		e.idx.Store(next)
 		return e.Current()
 	}
 	e.idx.Add(1)

@@ -197,10 +197,23 @@ func isTunnelRequest(r *http.Request, token string, simpleAuth bool) bool {
 	if !websocket.IsWebSocketUpgrade(r) {
 		return false
 	}
-	if r.URL.Path != "/channel" && !strings.HasPrefix(r.URL.Path, "/tunnel") {
+	if r.URL.Path != "/channel" && r.URL.Path != network.WSProbePath && !strings.HasPrefix(r.URL.Path, "/tunnel") {
 		return false
 	}
 	return authorizeWSRequest(r, token, simpleAuth)
+}
+
+// serveWSProbe answers an authenticated probe without touching the tunnel seat
+// or either connection pool.
+func serveWSProbe(w http.ResponseWriter, r *http.Request, upgrader *websocket.Upgrader, proof http.Header) {
+	if proof == nil {
+		proof = make(http.Header)
+	}
+	proof.Set(network.WSProbeAckHeader, "1")
+	conn, err := upgrader.Upgrade(w, r, proof)
+	if err == nil {
+		conn.Close()
+	}
 }
 
 // authorizeWSRequest checks the Authorization header on a websocket upgrade.

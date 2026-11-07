@@ -225,14 +225,13 @@ func (c *WsMuxTransport) dialTunnel(ctx context.Context, mux *network.WSMuxOptio
 		return network.WebSocketDialer(ctx, cfg.Outbound, addr, cfg.EdgeIP, "/tunnel", cfg.DialTimeOut, cfg.KeepAlive, cfg.Nodelay, cfg.Token, cfg.Mode, cfg.SimpleAuth, attempts, 2*1024*1024, 2*1024*1024, cfg.MSS, cfg.WSS, mux)
 	}
 	first := cfg.Endpoints.Next()
-	if !cfg.Endpoints.Spread() || cfg.Endpoints.Len() < 2 {
+	if cfg.Endpoints.Len() < 2 || (!cfg.Endpoints.Spread() && !cfg.Endpoints.DataHealthSteering()) {
 		return dial(first, maxAttempts)
 	}
 
-	// Spread the first attempts as usual. If a route is down, try the
-	// control route and other candidates without holding a pool slot for
-	// three handshakes to the same address. Data dials never move the control
-	// preference.
+	// Start with the spread or health preference. If that route is down,
+	// try the control route and other candidates within the same attempt
+	// count. Data dials never move the control preference.
 	var err error
 	attempts := 0
 	try := func(addr string) *websocket.Conn {

@@ -36,18 +36,27 @@ func scoreTCP(ctx context.Context, out *Outbound, addr string, samples int, time
 	if samples <= 0 {
 		samples = 5
 	}
+	return scoreAttempts(ctx, addr, samples, func() bool {
+		c, err := TcpDialerVia(ctx, out, addr, timeout, 30*time.Second, true, 1, 0, 0, 0)
+		if err != nil {
+			return false
+		}
+		c.Close()
+		return true
+	})
+}
+
+func scoreAttempts(ctx context.Context, addr string, samples int, probe func() bool) EndpointScore {
 	s := EndpointScore{Addr: addr, Score: 1e9, LossPct: 100}
 	var sum, squares float64
 	success, attempted := 0, 0
 	for i := 0; i < samples && ctx.Err() == nil; i++ {
 		started := time.Now()
-		c, err := TcpDialerVia(ctx, out, addr, timeout, 30*time.Second, true, 1, 0, 0, 0)
 		attempted++
-		if err != nil {
+		if !probe() {
 			continue
 		}
 		ms := float64(time.Since(started)) / float64(time.Millisecond)
-		c.Close()
 		sum += ms
 		squares += ms * ms
 		success++

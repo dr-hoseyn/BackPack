@@ -33,10 +33,12 @@ stutter is a lost frame, latency alone is not. A new exit only takes over when i
 is at least **15% better for three checks in a row**, so the choice does not flap.
 
 Turn it on at setup when a tunnel has backup addresses, or later from the menu.
-For an existing tunnel use **Edit → Automatic Address Failover**. A health-based
-switch reconnects the control channel and connection pool so active mux sessions
-also leave the degraded route. Existing connections are interrupted during the
-reconnect; sessions are not migrated between IP addresses.
+For an existing tunnel use **Edit → Automatic Address Failover**. On WS, WSS,
+WSMux and WSSMux, the preferred path is used when the client opens a new data
+connection. An existing stream or mux session keeps its original socket.
+The control channel stays on its current address until it fails, at which point
+the client reconnects using the configured addresses. On other supported TCP
+carriers, a health-based switch reconnects the control channel and pool.
 It is the multi-exit setup for gaming, and it **replaces** load balancing — one
 picks the single best exit, the other spreads across all of them, so only one can
 be on at a time.
@@ -44,9 +46,13 @@ be on at a time.
 **Manage → Exit Health** scores and ranks every address on demand, and offers to
 pin the healthiest as the primary — the manual version of the same thing.
 
-TCP-based control channels verify the tunnel port too. Direct routes use ping
-quality when available, and TCP connection timing when ICMP is blocked or ping
-is missing. Routes with a configured proxy or source/interface binding use TCP
+WebSocket probes time authenticated upgrades through the tunnel's normal route
+and TLS settings. They require v1.20.3 or later on both peers. Ordinary fallback
+works with older peers. If a reverse proxy filters WebSocket paths, it must pass
+the `/probe` upgrade to Backpack as well as the data and control paths.
+
+Other TCP-based control channels verify the tunnel port too. Direct routes use
+ping quality when available and TCP connection timing when ICMP is unavailable. Routes with a configured proxy or source/interface binding use TCP
 connection timing through that same route. For TCP measurements, loss means
 failed connection attempts rather than ICMP packet loss. Datagram-only carriers
 (KCP/QUIC/raw carriers) retain ordinary dial-failure fallback and do not enable
@@ -85,8 +91,8 @@ backup; quality scoring switches when the other path is at least 15% better
 for three consecutive checks, or immediately after a check finds the current
 path unreachable and the backup healthy. The same rules can switch it back to
 IPv4. This selects the healthiest path, so a healthy but consistently better
-IPv6 route can also take over. It measures ping latency, jitter and loss, not
-available bandwidth. Leave `health_failover` off for failure-only fallback.
+IPv6 route can also take over. The score measures latency, jitter and failed
+probes. Leave `health_failover` off for failure-only fallback.
 
 ## Load balancing
 
@@ -160,10 +166,12 @@ KCP و QUIC، فالبک هنگام شکست اتصال را حفظ می‌کن�
 **فالبک IPv4 به IPv6:** روی کلاینت، IPv4 را آدرس اصلی نگه دار و IPv6 همان سرور
 را به شکل `[2001:db8::10]:443` در `Edit → Backup Addresses` وارد کن. سپس
 `Edit → Automatic Address Failover` را فعال کن. سرور باید روی هر دو خانوادهٔ IP
-گوش بدهد و مسیر IPv6 و پورت تانل در دسترس باشد. هنگام تغییر مسیر، کانال کنترل و
-پول اتصال‌ها دوباره ساخته می‌شوند؛ اتصال‌های جاری ممکن است قطع شوند و مهاجرت
-بدون وقفهٔ سشن انجام نمی‌شود. بازگشت به IPv4 هم با همان معیار سلامت انجام می‌شود.
-این حالت تأخیر، جیتر و افت بسته را می‌سنجد، نه پهنای باند؛ برای فالبک فقط هنگام
+گوش بدهد و مسیر IPv6 و پورت تانل در دسترس باشد. در حالت‌های WebSocket،
+تغییر امتیاز فقط مسیر اتصال‌های دادهٔ جدید را عوض می‌کند. کانال کنترل تا
+زمان قطع واقعی روی مسیر فعلی می‌ماند. تست سلامت WebSocket احراز هویت می‌شود
+و به نسخهٔ v1.20.3 یا بالاتر در هر دو سمت نیاز دارد. اگر پراکسی معکوس مسیرها
+را فیلتر می‌کند، مسیر `/probe` را هم عبور بده. در سایر حامل‌های TCP پشتیبانی‌شده،
+تغییر مسیر کانال کنترل و pool را دوباره برقرار می‌کند. برای فالبک فقط هنگام
 قطعی، `health_failover` را خاموش نگه دار و فقط آدرس پشتیبان را ثبت کن.
 
 </div>
@@ -173,4 +181,4 @@ KCP و QUIC، فالبک هنگام شکست اتصال را حفظ می‌کن�
 
 ---
 
-*Last verified against Backpack v1.20.2*
+*Last verified against Backpack v1.20.3*

@@ -77,10 +77,8 @@ func (c *Client) Start() {
 		endpoints.SetSpread(true)
 		c.logger.Infof("load balancing enabled across %d endpoints", endpoints.Len())
 	}
-	// With automatic failover on, a scoring loop measures every endpoint and
-	// keeps traffic on the healthiest one — the multi-exit gaming behaviour.
-	// It overrides spread (it concentrates on one exit on purpose), so it is
-	// checked last and wins when both are set.
+	// Health scoring overrides round-robin spreading. The active carrier
+	// determines which dials should follow the preferred route.
 	if c.config.HealthFailover && endpoints.Len() > 1 {
 		stopHealth := startHealthSteering(c.ctx, c.config.Transport, endpoints, 5*time.Second, func(m string) { c.logger.Info(m) })
 		defer stopHealth()
@@ -216,24 +214,32 @@ func buildOutbound(cfg *config.ClientConfig) (*network.Outbound, error) {
 // ctx tears it down; nothing else here reaches for c.ctx, so a chain can run
 // several of these one after another in the same process.
 func (c *Client) startTransport(ctx context.Context, tr config.TransportType, endpoints *network.Endpoints, outbound *network.Outbound) runner {
-	// TCP-based carriers measure the same route their tunnel actually uses.
-	endpoints.SetReachProbe(nil)
-	if tcpPortTransport(tr) {
-		endpoints.SetHealthProbe(network.TCPHealthProbe(outbound, 2*time.Second))
-	} else {
-		// A TCP-primary carrier chain may already have a scorer running. A
-		// datagram fallback must suspend its decisions instead of reverting
-		// that scorer to ICMP-only evidence for a disruptive reconnect.
-		endpoints.SetHealthProbe(datagramHealthProbe)
+	var probe func(context.Context, string, int) network.EndpointScore
+	var dataOnly bool
+	wss := &network.WSSClientOptions{
+		CAFile: c.config.WSSCAFile, ServerName: c.config.WSSServerName,
+		AllowLegacyServer: c.config.WSSAllowLegacyServer, HTTP11Only: c.config.WSSHTTP11Only,
+	}
+	if c.config.HealthFailover && endpoints.Len() > 1 {
+		switch tr {
+		case config.WS, config.WSS, config.WSMUX, config.WSSMUX:
+			dataOnly = true
+			probe = network.WebSocketHealthProbe(outbound, c.config.EdgeIP, c.config.Token, tr, c.config.SimpleAuth, c.config.MSS, wss)
+		default:
+			if tcpPortTransport(tr) {
+				probe = network.TCPHealthProbe(outbound, 2*time.Second)
+			}
+		}
 	}
 	start := func(r interface {
 		runner
 		Start()
 	}) runner {
-		endpoints.SetHealthSwitch(nil)
-		if c.config.HealthFailover {
-			endpoints.SetHealthSwitch(healthReconnect(ctx, r))
+		var onSwitch func(string, string)
+		if probe != nil && !dataOnly {
+			onSwitch = healthReconnect(ctx, r)
 		}
+		endpoints.SetHealthRouting(probe, onSwitch, dataOnly)
 		go r.Start()
 		return r
 	}
@@ -356,22 +362,19 @@ func (c *Client) startTransport(ctx context.Context, tr config.TransportType, en
 
 	case config.WS, config.WSS:
 		WsConfig := &transport.WsConfig{
-			RemoteAddr:    c.config.RemoteAddr,
-			Endpoints:     endpoints,
-			Nodelay:       c.config.Nodelay,
-			KeepAlive:     time.Duration(c.config.Keepalive) * time.Second,
-			RetryInterval: time.Duration(c.config.RetryInterval) * time.Second,
-			DialTimeOut:   time.Duration(c.config.DialTimeout) * time.Second,
-			ConnPoolSize:  c.config.ConnectionPool,
-			Token:         c.config.Token,
-			Sniffer:       c.config.Sniffer,
-			SnifferLog:    c.config.SnifferLog,
-			Mode:          tr,
-			SimpleAuth:    c.config.SimpleAuth,
-			WSS: &network.WSSClientOptions{
-				CAFile: c.config.WSSCAFile, ServerName: c.config.WSSServerName,
-				AllowLegacyServer: c.config.WSSAllowLegacyServer, HTTP11Only: c.config.WSSHTTP11Only,
-			},
+			RemoteAddr:     c.config.RemoteAddr,
+			Endpoints:      endpoints,
+			Nodelay:        c.config.Nodelay,
+			KeepAlive:      time.Duration(c.config.Keepalive) * time.Second,
+			RetryInterval:  time.Duration(c.config.RetryInterval) * time.Second,
+			DialTimeOut:    time.Duration(c.config.DialTimeout) * time.Second,
+			ConnPoolSize:   c.config.ConnectionPool,
+			Token:          c.config.Token,
+			Sniffer:        c.config.Sniffer,
+			SnifferLog:     c.config.SnifferLog,
+			Mode:           tr,
+			SimpleAuth:     c.config.SimpleAuth,
+			WSS:            wss,
 			AggressivePool: c.config.AggressivePool,
 			EdgeIP:         c.config.EdgeIP,
 			MSS:            c.config.MSS,
@@ -398,15 +401,12 @@ func (c *Client) startTransport(ctx context.Context, tr config.TransportType, en
 			SnifferLog:       c.config.SnifferLog,
 			Mode:             tr,
 			SimpleAuth:       c.config.SimpleAuth,
-			WSS: &network.WSSClientOptions{
-				CAFile: c.config.WSSCAFile, ServerName: c.config.WSSServerName,
-				AllowLegacyServer: c.config.WSSAllowLegacyServer, HTTP11Only: c.config.WSSHTTP11Only,
-			},
-			MaxSessions:    c.config.WSMuxMaxSessions,
-			AggressivePool: c.config.AggressivePool,
-			EdgeIP:         c.config.EdgeIP,
-			MSS:            c.config.MSS,
-			Outbound:       outbound,
+			WSS:              wss,
+			MaxSessions:      c.config.WSMuxMaxSessions,
+			AggressivePool:   c.config.AggressivePool,
+			EdgeIP:           c.config.EdgeIP,
+			MSS:              c.config.MSS,
+			Outbound:         outbound,
 		}
 		wsMuxClient := transport.NewWSMuxClient(ctx, wsMuxConfig, c.logger)
 		return start(wsMuxClient)

@@ -72,7 +72,7 @@ func TestHealthProbesAreBoundedAndCancellationReleasesWorkers(t *testing.T) {
 	e := NewEndpoints("a", "b", "c", "d", "e", "f")
 	var active, peak atomic.Int64
 	entered := make(chan struct{}, 6)
-	e.SetHealthProbe(func(ctx context.Context, addr string, _ int) EndpointScore {
+	probe := func(ctx context.Context, addr string, _ int) EndpointScore {
 		n := active.Add(1)
 		defer active.Add(-1)
 		for p := peak.Load(); n > p && !peak.CompareAndSwap(p, n); p = peak.Load() {
@@ -80,11 +80,11 @@ func TestHealthProbesAreBoundedAndCancellationReleasesWorkers(t *testing.T) {
 		entered <- struct{}{}
 		<-ctx.Done()
 		return EndpointScore{Addr: addr}
-	})
+	}
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	done := make(chan struct{})
-	go func() { defer close(done); e.measureHealth(ctx, e.healthProbe.Load()) }()
+	go func() { defer close(done); e.measureHealth(ctx, probe) }()
 	for i := 0; i < 4; i++ {
 		select {
 		case <-entered:

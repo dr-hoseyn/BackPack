@@ -250,11 +250,15 @@ func (s *WsMuxTransport) tunnelListener(g *wsMuxGen) {
 				return
 			}
 
+			response := serverProof(r, s.config.Token, s.config.SimpleAuth)
+			if r.URL.Path == network.WSProbePath {
+				serveWSProbe(w, r, &upgrader, response)
+				return
+			}
 			var owner context.Context
 			if r.URL.Path != "/channel" {
 				owner = g.seat.client()
 			}
-			response := serverProof(r, s.config.Token, s.config.SimpleAuth)
 			version, floor := s.smuxConfig.Version, 0
 			if r.URL.Path != "/channel" {
 				var err error

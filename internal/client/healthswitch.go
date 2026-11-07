@@ -9,10 +9,6 @@ import (
 	"github.com/backpack/backpack/internal/utils/network"
 )
 
-func datagramHealthProbe(_ context.Context, addr string, _ int) network.EndpointScore {
-	return network.EndpointScore{Addr: addr, Reachable: false, Score: 1e9}
-}
-
 // ICMP proves host reachability, not that a datagram tunnel answers its port.
 // Keep a working KCP/QUIC/UDP control channel on its selected backup rather
 // than interrupting users to revisit a pingable, blackholed primary. Ordinary

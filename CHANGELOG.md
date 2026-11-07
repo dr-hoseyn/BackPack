@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+## v1.20.3 — 2026-11-07
+
+- Keep the WS, WSS, WSMux and WSSMux control channel and existing streams
+  on their live connections when route scores change. New data dials use
+  the better route. A failed control channel still reconnects through the
+  configured addresses.
+- Measure WebSocket routes with authenticated upgrades that take no control
+  or pool slots. WSS probes complete TLS, eliminating the repeated handshake
+  EOF messages caused by TCP-only health checks.
+- Upgrade both peers to enable WebSocket health scoring. Ordinary fallback
+  continues to work during a mixed-version upgrade.
+
+<div dir="rtl">
+
+در WS و WSS، از جمله حالت‌های Mux، تغییر امتیاز IPv4 و IPv6 فقط مسیر اتصال‌های
+دادهٔ جدید را عوض می‌کند. کانال کنترل و اتصال‌های فعال برقرار می‌مانند و اگر
+کانال کنترل واقعاً قطع شود، کلاینت آدرس‌های پشتیبان را امتحان می‌کند. تست سلامت
+WSS پس از تکمیل TLS احراز هویت می‌شود. برای امتیازدهی WebSocket هر دو سمت را
+به‌روز کنید.
+
+</div>
+
 ## v1.20.2 — 2026-11-07
 
 - Recover WS, WSS and WSSMux listeners after accept failures. Repair lost
