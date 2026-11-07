@@ -148,10 +148,19 @@ func (l *lifecycle) restart(teardown, reset, start func()) {
 func (l *lifecycle) beginPoolDial(limit int) (func(), bool) {
 	l.poolDialMutex.Lock()
 	defer l.poolDialMutex.Unlock()
-	if l.state.Ctx().Err() != nil || int(atomic.LoadInt32(&l.poolConnections)+atomic.LoadInt32(&l.dialingConnections)) >= max(limit, 1) {
+	// A successful dial adds to open before it removes its pending slot.
+	// Read pending first so a concurrent promotion can be counted twice
+	// briefly, but cannot disappear between the two reads and admit an
+	// extra session. New reservations cannot increase pending under this lock.
+	if l.state.Ctx().Err() != nil || poolOccupancy(&l.dialingConnections, &l.poolConnections) >= max(limit, 1) {
 		return nil, false
 	}
 	atomic.AddInt32(&l.dialingConnections, 1)
 	var once sync.Once
 	return func() { once.Do(func() { atomic.AddInt32(&l.dialingConnections, -1) }) }, true
+}
+
+func poolOccupancy(pending, open *int32) int {
+	inFlight := atomic.LoadInt32(pending)
+	return int(inFlight) + int(atomic.LoadInt32(open))
 }

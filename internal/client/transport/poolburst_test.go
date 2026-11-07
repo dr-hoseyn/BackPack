@@ -65,6 +65,48 @@ func TestBurstGrowthAndThroughputRespectTheResourceCeiling(t *testing.T) {
 	}
 }
 
+func TestPoolAdmissionKeepsTheSlotDuringConcurrentPromotion(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var l lifecycle
+	l.firstGeneration(ctx, logrus.New(), usageSpec{})
+	l.dialingConnections = 1
+	var exceeded atomic.Bool
+	var readers sync.WaitGroup
+	done := make(chan struct{})
+	for range 3 {
+		readers.Go(func() {
+			for {
+				select {
+				case <-done:
+					return
+				default:
+				}
+				if release, ok := l.beginPoolDial(1); ok {
+					exceeded.Store(true)
+					release()
+					return
+				}
+			}
+		})
+	}
+	for range 50000 {
+		// Promote a connected dial, then start its replacement under the
+		// admission lock. There is always at least one occupied slot.
+		atomic.AddInt32(&l.poolConnections, 1)
+		atomic.AddInt32(&l.dialingConnections, -1)
+		l.poolDialMutex.Lock()
+		atomic.AddInt32(&l.dialingConnections, 1)
+		atomic.AddInt32(&l.poolConnections, -1)
+		l.poolDialMutex.Unlock()
+	}
+	close(done)
+	readers.Wait()
+	if exceeded.Load() {
+		t.Fatal("a new dial was admitted while the only slot was being promoted")
+	}
+}
+
 func TestLargeReceiveWindowsDoNotDisableSessionGrowth(t *testing.T) {
 	if got := muxPoolLimit(8); got < 64 {
 		t.Fatalf("automatic capacity is still limited to a small receive-window budget: %d", got)

@@ -209,7 +209,7 @@ func (p poolSizer) maintain() {
 			// Repairs and growth use one reconciler, so a growth decision does
 			// not launch the same missing connections twice.
 			if p.pending != nil {
-				missing := newPoolSize - int(atomic.LoadInt32(p.open)+atomic.LoadInt32(p.pending))
+				missing := newPoolSize - poolOccupancy(p.pending, p.open)
 				for i := 0; i < missing && p.ctx.Err() == nil; i++ {
 					p.launch()
 				}
