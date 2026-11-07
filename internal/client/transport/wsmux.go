@@ -193,12 +193,8 @@ func (c *WsMuxTransport) tunnelDialer() {
 
 	c.logger.Debugf("initiating new %s tunnel connection to address %s", c.config.Mode, c.config.RemoteAddr)
 
-	// Dial to the tunnel server
-	// Next() rather than Current(): with load balancing enabled the pool
-	// spreads its connections over every configured endpoint, so one
-	// congested route only slows its own share of the traffic.
 	mux := network.WSMuxOptions{Version: c.config.MuxVersion, PoolSize: c.config.ConnPoolSize}
-	tunnelWSConn, err := network.WebSocketDialer(c.state.Ctx(), c.config.Outbound, c.config.Endpoints.Next(), c.config.EdgeIP, "/tunnel", c.config.DialTimeOut, c.config.KeepAlive, c.config.Nodelay, c.config.Token, c.config.Mode, c.config.SimpleAuth, 3, 2*1024*1024, 2*1024*1024, c.config.MSS, c.config.WSS, &mux)
+	tunnelWSConn, err := c.dialTunnel(c.state.Ctx(), &mux)
 	if err != nil {
 		c.logger.Errorf("tunnel server dialer: %v", err)
 
@@ -212,6 +208,47 @@ func (c *WsMuxTransport) tunnelDialer() {
 	ready()
 
 	c.handleSession(tunnelWSConn, mux)
+}
+
+func (c *WsMuxTransport) dialTunnel(ctx context.Context, mux *network.WSMuxOptions) (*websocket.Conn, error) {
+	const maxAttempts = 3
+	cfg := c.config
+	dial := func(addr string, attempts int) (*websocket.Conn, error) {
+		return network.WebSocketDialer(ctx, cfg.Outbound, addr, cfg.EdgeIP, "/tunnel", cfg.DialTimeOut, cfg.KeepAlive, cfg.Nodelay, cfg.Token, cfg.Mode, cfg.SimpleAuth, attempts, 2*1024*1024, 2*1024*1024, cfg.MSS, cfg.WSS, mux)
+	}
+	first := cfg.Endpoints.Next()
+	if !cfg.Endpoints.Spread() || cfg.Endpoints.Len() < 2 {
+		return dial(first, maxAttempts)
+	}
+
+	// Spread the first attempts as usual. If a route is down, try the
+	// control route and other candidates without holding a pool slot for
+	// three handshakes to the same address. Data dials never move the control
+	// preference.
+	conn, err := dial(first, 1)
+	if err == nil {
+		return conn, nil
+	}
+	c.logger.Debugf("tunnel endpoint %s failed: %v", first, err)
+	attempts := 1
+	for _, addr := range cfg.Endpoints.InPreferenceOrder() {
+		if attempts >= maxAttempts {
+			break
+		}
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		if addr == first {
+			continue
+		}
+		attempts++
+		conn, err = dial(addr, 1)
+		if err == nil {
+			return conn, nil
+		}
+		c.logger.Debugf("tunnel endpoint %s failed: %v", addr, err)
+	}
+	return nil, err
 }
 
 func (c *WsMuxTransport) handleSession(tunnelConn *websocket.Conn, mux network.WSMuxOptions) {

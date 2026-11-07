@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,6 +14,61 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/sirupsen/logrus"
 )
+
+func TestWSSMuxSpreadRecoversDataSessionOnControlRoute(t *testing.T) {
+	stalled, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stalled.Close()
+	const token = "data-failover-test-token"
+	upgrader := websocket.Upgrader{Subprotocols: []string{network.WSMuxBinaryProtocol}}
+	healthy := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.URL.Path, "/tunnel/") {
+			http.NotFound(w, r)
+			return
+		}
+		proof, err := network.WSSServerAnswer(r.TLS, token)
+		if err != nil {
+			http.Error(w, "proof unavailable", http.StatusInternalServerError)
+			return
+		}
+		headers := http.Header{}
+		headers.Set(network.WSSServerProofHeader, proof)
+		headers.Set(network.WSMuxVersionHeader, "2")
+		headers.Set(network.WSMuxPoolHeader, "2")
+		if conn, err := upgrader.Upgrade(w, r, headers); err == nil {
+			conn.Close()
+		}
+	}))
+	defer healthy.Close()
+
+	controlAddr := healthy.Listener.Addr().String()
+	endpoints := network.NewEndpoints(stalled.Addr().String(), controlAddr)
+	endpoints.SetSpread(true)
+	endpoints.Prefer(controlAddr)
+	client := &WsMuxTransport{config: &WsMuxConfig{
+		Endpoints: endpoints, Token: token, Mode: config.WSSMUX, DialTimeOut: 500 * time.Millisecond,
+	}}
+	client.logger = logrus.New()
+	mux := network.WSMuxOptions{PoolSize: 2}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	start := time.Now()
+	conn, err := client.dialTunnel(ctx, &mux)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	t.Logf("authenticated data session established in %v", time.Since(start))
+	if got := conn.RemoteAddr().String(); got != controlAddr {
+		t.Fatalf("data session connected to %s, want %s", got, controlAddr)
+	}
+	if endpoints.Current() != controlAddr || mux.NegotiatedVersion != 2 || !mux.Retirement ||
+		conn.Subprotocol() != network.WSMuxBinaryProtocol {
+		t.Fatalf("control preference or negotiated session options lost: %s, %+v", endpoints.Current(), mux)
+	}
+}
 
 func TestWSSMuxControlFallsBackAfterOneStalledHandshake(t *testing.T) {
 	// TCP connects but the primary never replies to the TLS ClientHello.
