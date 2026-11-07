@@ -2,6 +2,7 @@ package network
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"net"
 	"testing"
@@ -9,6 +10,36 @@ import (
 
 	"github.com/xtaci/smux"
 )
+
+type shortMuxVectorConn struct{ net.Conn }
+
+func (c shortMuxVectorConn) WriteBuffers(parts [][]byte) (int, error) {
+	// Simulate a carrier that reports a truncated header as successful.
+	return len(parts[0]) - 1, nil
+}
+
+func TestWatchedMuxRetiresAfterAShortVectorWrite(t *testing.T) {
+	local, peer := net.Pipe()
+	defer local.Close()
+	defer peer.Close()
+	cfg := smux.DefaultConfig()
+	cfg.KeepAliveDisabled = true
+	session, err := NewWatchedMuxSession(shortMuxVectorConn{local}, cfg, smux.Client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+	// The sender's write error and session retirement can race to wake
+	// OpenStream. Either way, it must not publish a stream.
+	if _, err := session.OpenStream(); !errors.Is(err, io.ErrShortWrite) && !errors.Is(err, io.ErrClosedPipe) {
+		t.Fatalf("open with a truncated mux header returned %v", err)
+	}
+	select {
+	case <-session.CloseChan():
+	case <-time.After(time.Second):
+		t.Fatal("short vector write left the session in the pool")
+	}
+}
 
 func muxTCPPair(t testing.TB) (*net.TCPConn, net.Conn) {
 	t.Helper()

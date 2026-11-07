@@ -84,7 +84,11 @@ func (c *muxSocket) Write(p []byte) (int, error) {
 		return c.result(0, err)
 	}
 	n, err := c.Conn.Write(p)
-	if err == nil && n != len(p) {
+	return c.writeResult(n, len(p), err)
+}
+
+func (c *muxSocket) writeResult(n, want int, err error) (int, error) {
+	if err == nil && n != want {
 		err = io.ErrShortWrite
 	}
 	return c.result(n, err)
@@ -92,6 +96,14 @@ func (c *muxSocket) Write(p []byte) (int, error) {
 
 type muxVectorWriter interface {
 	WriteBuffers([][]byte) (int, error)
+}
+
+func muxVectorBytes(parts [][]byte) int {
+	n := 0
+	for _, part := range parts {
+		n += len(part)
+	}
+	return n
 }
 
 type muxVectorSocket struct {
@@ -103,7 +115,9 @@ func (c *muxVectorSocket) WriteBuffers(p [][]byte) (int, error) {
 	if err := c.prepareWrite(); err != nil {
 		return c.result(0, err)
 	}
-	return c.result(c.writer.WriteBuffers(p))
+	want := muxVectorBytes(p)
+	n, err := c.writer.WriteBuffers(p)
+	return c.writeResult(n, want, err)
 }
 
 // Only a concrete TCP socket takes this path. Passing TLS or WebSocket
@@ -123,8 +137,9 @@ func (c *muxTCPSocket) WriteBuffers(p [][]byte) (int, error) {
 	// caller's descriptors, and reuse their storage across frames.
 	c.buffers = append(c.buffers[:0], p...)
 	saved := c.buffers
+	want := muxVectorBytes(p)
 	n, err := c.buffers.WriteTo(c.tcp)
 	clear(saved)
 	c.buffers = saved[:0]
-	return c.result(int(n), err)
+	return c.writeResult(int(n), want, err)
 }
