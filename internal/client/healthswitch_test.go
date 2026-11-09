@@ -12,7 +12,7 @@ func TestHealthSteeringWaitsForAProbeCapableFallback(t *testing.T) {
 	e := network.NewEndpoints("primary:443", "backup:443")
 	e.SetSpread(true)
 	e.Rotate() // the primary failed the datagram tunnel handshake
-	e.SetHealthRouting(nil, nil, false)
+	e.SetHealthRouting(t.Context(), nil, nil, false)
 	stop := startHealthSteering(t.Context(), e, time.Millisecond, nil)
 	t.Cleanup(stop)
 
@@ -24,7 +24,7 @@ func TestHealthSteeringWaitsForAProbeCapableFallback(t *testing.T) {
 	}
 
 	measured := make(chan struct{}, 1)
-	e.SetHealthRouting(func(context.Context, string, int) network.EndpointScore {
+	e.SetHealthRouting(t.Context(), func(context.Context, string, int) network.EndpointScore {
 		select {
 		case measured <- struct{}{}:
 		default:

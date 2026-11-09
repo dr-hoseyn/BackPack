@@ -239,7 +239,7 @@ func (c *Client) startTransport(ctx context.Context, tr config.TransportType, en
 		if probe != nil && !dataOnly {
 			onSwitch = healthReconnect(ctx, r)
 		}
-		endpoints.SetHealthRouting(probe, onSwitch, dataOnly)
+		endpoints.SetHealthRouting(ctx, probe, onSwitch, dataOnly)
 		go r.Start()
 		return r
 	}

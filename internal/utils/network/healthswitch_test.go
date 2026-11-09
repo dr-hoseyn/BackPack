@@ -3,6 +3,7 @@ package network
 import (
 	"context"
 	"testing"
+	"time"
 )
 
 func TestHealthSteeringSwitchesIPv4ToIPv6AndBack(t *testing.T) {
@@ -11,7 +12,7 @@ func TestHealthSteeringSwitchesIPv4ToIPv6AndBack(t *testing.T) {
 	e.steer.Store(true)
 	choice := &healthChoice{candidate: -1, incumbent: -1}
 	var moves [][2]string
-	e.SetHealthRouting(nil, func(from, to string) {
+	e.SetHealthRouting(t.Context(), nil, func(from, to string) {
 		if e.Current() != to || e.Next() != to {
 			t.Fatal("transport was asked to reconnect before the new address was published")
 		}
@@ -75,7 +76,7 @@ func TestHealthSteeringRequiresConsecutiveEvidence(t *testing.T) {
 func TestHealthSteeringChangesWebSocketDataWithoutMovingControl(t *testing.T) {
 	v4, v6 := "192.0.2.1:443", "[2001:db8::1]:443"
 	e := NewEndpoints(v4, v6)
-	e.SetHealthRouting(nil, nil, true)
+	e.SetHealthRouting(t.Context(), nil, nil, true)
 	e.steer.Store(true)
 	policy := e.health.Load()
 	scores := []EndpointScore{{Reachable: true, Score: 200}, {Reachable: true, Score: 100}}
@@ -102,29 +103,68 @@ func TestHealthFallbackCarrierStartsFromControlRoute(t *testing.T) {
 	control, data := "192.0.2.1:443", "[2001:db8::1]:443"
 	e := NewEndpoints(control, data)
 	e.steer.Store(true)
-	e.SetHealthRouting(nil, nil, true)
+	e.SetHealthRouting(t.Context(), nil, nil, true)
 	old := e.health.Load()
 	e.applyHealthScores(t.Context(), &healthChoice{}, []EndpointScore{{}, {Reachable: true, Score: 1}}, old, nil)
 	if e.Current() != control || e.Next() != data {
 		t.Fatal("test did not establish distinct WebSocket control and data routes")
 	}
 
-	e.SetHealthRouting(nil, nil, false)
+	e.SetHealthRouting(t.Context(), nil, nil, false)
 	e.applyHealthScores(t.Context(), &healthChoice{}, []EndpointScore{{Reachable: true, Score: 1}, {}}, old, nil)
 	if e.Current() != control || e.Next() != control {
 		t.Fatalf("fallback inherited the old data route: control %s, data %s", e.Current(), e.Next())
 	}
 
-	e.SetHealthRouting(nil, nil, true)
+	e.SetHealthRouting(t.Context(), nil, nil, true)
 	if e.Next() != control {
 		t.Fatalf("new WebSocket carrier inherited the old data route: %s", e.Next())
+	}
+}
+
+func TestHealthProbesStopWhenTheirCarrierRetires(t *testing.T) {
+	e := NewEndpoints("primary:443", "backup:443")
+	carrier, retire := context.WithCancel(t.Context())
+	defer retire()
+	started, finished := make(chan struct{}, 2), make(chan struct{}, 2)
+	e.SetHealthRouting(carrier, func(ctx context.Context, addr string, _ int) EndpointScore {
+		started <- struct{}{}
+		<-ctx.Done()
+		finished <- struct{}{}
+		return EndpointScore{Addr: addr, Reachable: addr == "backup:443", Score: 1}
+	}, func(_, _ string) { t.Error("retired carrier triggered a reconnect") }, false)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	stopped := e.EnableHealthSteering(ctx, time.Millisecond, nil)
+	defer func() { cancel(); <-stopped }()
+	wait := func(ch <-chan struct{}, what string) {
+		t.Helper()
+		select {
+		case <-ch:
+		case <-time.After(time.Second):
+			t.Fatalf("timed out waiting for %s", what)
+		}
+	}
+	for range 2 {
+		wait(started, "probe start")
+	}
+	retire()
+	for range 2 {
+		wait(finished, "probe cancellation")
+	}
+
+	// A batch that completed concurrently with retirement must also be dropped,
+	// even while the next carrier has yet to install its policy.
+	e.applyHealthScores(t.Context(), &healthChoice{}, []EndpointScore{{}, {Reachable: true, Score: 1}}, e.health.Load(), nil)
+	if e.Current() != "primary:443" {
+		t.Fatal("retired carrier's scores changed the shared route")
 	}
 }
 
 func TestHealthSwitchStopsWithContext(t *testing.T) {
 	e := NewEndpoints("v4:443", "v6:443")
 	e.steer.Store(true)
-	e.SetHealthRouting(nil, func(_, _ string) { t.Fatal("switch callback ran after cancellation") }, false)
+	e.SetHealthRouting(t.Context(), nil, func(_, _ string) { t.Fatal("switch callback ran after cancellation") }, false)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	e.applyHealthScores(ctx, &healthChoice{}, []EndpointScore{{}, {Reachable: true, Score: 1}}, e.health.Load(), nil)

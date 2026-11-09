@@ -44,15 +44,17 @@ type Endpoints struct {
 }
 
 type healthRouting struct {
+	ctx      context.Context
 	probe    func(context.Context, string, int) EndpointScore
 	onSwitch func(from, to string)
 	dataOnly bool
 }
 
 // SetHealthRouting installs the active carrier's probe and routing policy.
-// A nil probe suspends scoring. With dataOnly, scores affect new data dials
-// while control reconnects continue to use the normal fallback order.
-func (e *Endpoints) SetHealthRouting(probe func(context.Context, string, int) EndpointScore, onSwitch func(from, to string), dataOnly bool) {
+// A nil probe suspends scoring. Cancelling ctx retires this carrier's probes.
+// With dataOnly, scores affect new data dials while control reconnects
+// continue to use the normal fallback order.
+func (e *Endpoints) SetHealthRouting(ctx context.Context, probe func(context.Context, string, int) EndpointScore, onSwitch func(from, to string), dataOnly bool) {
 	e.healthMu.Lock()
 	defer e.healthMu.Unlock()
 	if dataOnly {
@@ -60,7 +62,7 @@ func (e *Endpoints) SetHealthRouting(probe func(context.Context, string, int) En
 		// an earlier carrier may describe a different reachable tunnel port.
 		e.preferred.Store(e.idx.Load())
 	}
-	e.health.Store(&healthRouting{probe: probe, onSwitch: onSwitch, dataOnly: dataOnly})
+	e.health.Store(&healthRouting{ctx: ctx, probe: probe, onSwitch: onSwitch, dataOnly: dataOnly})
 }
 
 // DataHealthSteering reports whether new data dials can use a different
