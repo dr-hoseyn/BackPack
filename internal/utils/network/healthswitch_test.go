@@ -98,6 +98,29 @@ func TestHealthSteeringChangesWebSocketDataWithoutMovingControl(t *testing.T) {
 	}
 }
 
+func TestHealthFallbackCarrierStartsFromControlRoute(t *testing.T) {
+	control, data := "192.0.2.1:443", "[2001:db8::1]:443"
+	e := NewEndpoints(control, data)
+	e.steer.Store(true)
+	e.SetHealthRouting(nil, nil, true)
+	old := e.health.Load()
+	e.applyHealthScores(t.Context(), &healthChoice{}, []EndpointScore{{}, {Reachable: true, Score: 1}}, old, nil)
+	if e.Current() != control || e.Next() != data {
+		t.Fatal("test did not establish distinct WebSocket control and data routes")
+	}
+
+	e.SetHealthRouting(nil, nil, false)
+	e.applyHealthScores(t.Context(), &healthChoice{}, []EndpointScore{{Reachable: true, Score: 1}, {}}, old, nil)
+	if e.Current() != control || e.Next() != control {
+		t.Fatalf("fallback inherited the old data route: control %s, data %s", e.Current(), e.Next())
+	}
+
+	e.SetHealthRouting(nil, nil, true)
+	if e.Next() != control {
+		t.Fatalf("new WebSocket carrier inherited the old data route: %s", e.Next())
+	}
+}
+
 func TestHealthSwitchStopsWithContext(t *testing.T) {
 	e := NewEndpoints("v4:443", "v6:443")
 	e.steer.Store(true)

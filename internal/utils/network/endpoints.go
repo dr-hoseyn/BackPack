@@ -28,9 +28,8 @@ type Endpoints struct {
 	spreadIdx atomic.Int64
 	spread    atomic.Bool
 
-	// preferred holds the route picked by health scoring. WebSocket carriers
-	// use it for new data dials and keep their control route in idx. Other
-	// carriers steer both. Steering and round-robin spreading are exclusive.
+	// preferred is the separate route for new WebSocket data connections.
+	// Control and transports with a shared route always use idx.
 	steer     atomic.Bool
 	preferred atomic.Int64
 
@@ -56,6 +55,11 @@ type healthRouting struct {
 func (e *Endpoints) SetHealthRouting(probe func(context.Context, string, int) EndpointScore, onSwitch func(from, to string), dataOnly bool) {
 	e.healthMu.Lock()
 	defer e.healthMu.Unlock()
+	if dataOnly {
+		// The new carrier starts from the current control route. Scores from
+		// an earlier carrier may describe a different reachable tunnel port.
+		e.preferred.Store(e.idx.Load())
+	}
 	e.health.Store(&healthRouting{probe: probe, onSwitch: onSwitch, dataOnly: dataOnly})
 }
 
@@ -116,9 +120,6 @@ func (e *Endpoints) Current() string {
 	if e == nil || len(e.list) == 0 {
 		return ""
 	}
-	if e.steer.Load() && !e.DataHealthSteering() {
-		return e.list[e.clampIdx(e.preferred.Load())]
-	}
 	return e.list[e.clampIdx(e.idx.Load())]
 }
 
@@ -136,14 +137,6 @@ func (e *Endpoints) clampIdx(v int64) int {
 // it is a no-op, so simple setups never change behaviour.
 func (e *Endpoints) Rotate() string {
 	if e == nil || len(e.list) <= 1 {
-		return e.Current()
-	}
-	// Under health steering a failed dial means the preferred exit is bad right
-	// now: step off it and let the next scoring cycle settle on a new best,
-	// which will avoid this one because it just failed to answer.
-	if e.steer.Load() && !e.DataHealthSteering() {
-		next := int64(e.clampIdx(e.preferred.Add(1)))
-		e.idx.Store(next)
 		return e.Current()
 	}
 	e.idx.Add(1)
@@ -168,9 +161,7 @@ func (e *Endpoints) Next() string {
 	if e == nil || len(e.list) == 0 {
 		return ""
 	}
-	// Steering wins over spread: when it is on, every new data connection also
-	// rides the endpoint currently scoring healthiest.
-	if e.steer.Load() {
+	if e.DataHealthSteering() {
 		return e.list[e.clampIdx(e.preferred.Load())]
 	}
 	if !e.spread.Load() || len(e.list) == 1 {
@@ -278,20 +269,16 @@ func (e *Endpoints) Prefer(addr string) {
 	if e == nil || addr == "" || len(e.list) < 2 {
 		return
 	}
-	if e.steer.Load() {
-		for i, a := range e.list {
-			if a == addr {
-				e.preferred.Store(int64(i))
-				e.idx.Store(int64(i))
-				return
-			}
-		}
-		return
-	}
 	for i, a := range e.list {
-		if a == addr {
-			e.idx.Store(int64(i))
-			return
+		if a != addr {
+			continue
 		}
+		e.healthMu.Lock()
+		e.idx.Store(int64(i))
+		if e.DataHealthSteering() {
+			e.preferred.Store(int64(i))
+		}
+		e.healthMu.Unlock()
+		return
 	}
 }

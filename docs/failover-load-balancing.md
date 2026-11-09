@@ -58,7 +58,9 @@ failed connection attempts rather than ICMP packet loss. Datagram-only carriers
 (KCP/QUIC/raw carriers) retain ordinary dial-failure fallback and do not enable
 disruptive health-scored switching: a host can answer ping while its tunnel
 port is closed. Existing `health_failover = true` configs on those carriers
-also keep their working backup until a real dial fails. Raw UDP forwarding is
+also keep their working backup until a real dial fails. When a fallback chain
+switches carriers, scoring follows the active carrier and resumes when it has
+a supported probe. The next carrier starts from the control route. Raw UDP forwarding is
 different: its TCP control port supports health-scored switching. The manual
 **Exit Health** view still uses ICMP for diagnostics. A successful TCP connect
 does not prove the tunnel's authentication handshake or payload works. A fixed
@@ -158,7 +160,9 @@ for the full picture.
 پینگ بسته یا نصب نباشد، از زمان اتصال TCP استفاده می‌کنند. بررسی پراکسی و
 تنظیمات خروجی از همان مسیر واقعی عبور می‌کند. حامل‌های بدون کانال کنترل TCP، مثل
 KCP و QUIC، فالبک هنگام شکست اتصال را حفظ می‌کنند؛ پاسخ ping به‌تنهایی باعث قطع
-مسیر پشتیبان سالم نمی‌شود. در نمای دستی `Exit Health` همچنان از ICMP استفاده
+مسیر پشتیبان سالم نمی‌شود. در زنجیرهٔ فالبک، امتیازدهی با حامل فعال تغییر
+می‌کند و با رسیدن به حامل دارای آزمون سلامت دوباره شروع می‌شود. حامل بعدی
+از مسیر کانال کنترل شروع می‌کند. در نمای دستی `Exit Health` همچنان از ICMP استفاده
 می‌شود. UDP خام کانال کنترل TCP دارد و از امتیازدهی پورت پشتیبانی می‌کند. موفقیت اتصال TCP
 به‌تنهایی صحت احراز هویت و انتقال دادهٔ تانل را ثابت نمی‌کند. تنظیم ثابت
 `edge_ip` نیز مقصد CDN را ثابت نگه می‌دارد و با تغییر آدرس پشتیبان عوض نمی‌شود.

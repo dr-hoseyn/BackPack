@@ -127,7 +127,6 @@ func (e *Endpoints) EnableHealthSteering(ctx context.Context, interval time.Dura
 		return stopped
 	}
 	e.spread.Store(false)
-	e.preferred.Store(e.idx.Load())
 	e.steer.Store(true)
 	go func() {
 		defer close(stopped)
@@ -236,7 +235,13 @@ func (h *healthChoice) choose(scores []EndpointScore, cur int) (int, bool) {
 }
 
 func (e *Endpoints) applyHealthScores(ctx context.Context, choice *healthChoice, scores []EndpointScore, policy *healthRouting, log func(string)) {
-	previous := e.preferred.Load()
+	route := &e.idx
+	action := "failover: steering"
+	if policy != nil && policy.dataOnly {
+		route = &e.preferred
+		action = "failover: steering new WebSocket data connections"
+	}
+	previous := route.Load()
 	cur := e.clampIdx(previous)
 	best, change := choice.choose(scores, cur)
 	if !change {
@@ -245,15 +250,9 @@ func (e *Endpoints) applyHealthScores(ctx context.Context, choice *healthChoice,
 	// A retired carrier's measurements cannot publish a route for the next
 	// carrier. Do not overwrite a concurrent dial's new preference either.
 	e.healthMu.Lock()
-	if ctx.Err() != nil || policy != e.health.Load() || !e.preferred.CompareAndSwap(previous, int64(best)) {
+	if ctx.Err() != nil || policy != e.health.Load() || !route.CompareAndSwap(previous, int64(best)) {
 		e.healthMu.Unlock()
 		return
-	}
-	action := "failover: steering"
-	if policy != nil && policy.dataOnly {
-		action = "failover: steering new WebSocket data connections"
-	} else {
-		e.idx.Store(int64(best))
 	}
 	e.healthMu.Unlock()
 	if log != nil {
