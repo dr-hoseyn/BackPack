@@ -14,7 +14,6 @@ const defaultProbeTimeoutForTest = time.Second
 // primary, which answered ping and had its tunnel port closed.
 func TestTheRacesWinnerSteersThePool(t *testing.T) {
 	e := NewEndpoints("primary:443", "backup:443")
-	e.preferred.Store(0)
 	e.steer.Store(true)
 	e.Prefer("backup:443")
 	if e.Next() != "backup:443" || e.Current() != "backup:443" {
