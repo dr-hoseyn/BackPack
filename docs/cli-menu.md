@@ -398,7 +398,7 @@ silently overwrite your answers.
 |---|---|
 | **TCP MSS clamp (bytes, 0 = automatic)** | The largest TCP payload the tunnel puts in one packet. **Keep it at 0** unless Health Check reports the path cannot carry full-sized packets; it prints the number, and both ends need the same one. Deliberately not part of any preset. [More](mss-clamp.md) |
 
-### Mux transports (tcpmux, wsmux, wssmux)
+### Mux transports (tcpmux, tcpfwd-xmpp, wsmux, wssmux)
 
 | Setting | What it is |
 |---|---|
@@ -407,6 +407,9 @@ silently overwrite your answers.
 | **Mux frame size** | The largest chunk written per frame. |
 | **Mux receive buffer** | Per-session receive window — the ceiling on in-flight data for the session. |
 | **Mux stream buffer** | Per-stream window, which is what stops one heavy stream consuming the session. |
+
+**TCP Forward (XMPP)** uses a shared receive budget. Its advanced settings
+offer **Mux connections**, **Mux frame size** and **Mux receive buffer**.
 
 ### KCP transports (kcp, xdi, spoof, pck)
 
@@ -519,7 +522,7 @@ FEC؛ و zero-copy (فقط روی tcp ساده).
 
 ---
 
-*Last verified against Backpack v1.21.0*
+*Last verified against Backpack v1.22.0*
 
 
 Connection Test also provides [saved history and repeated-run comparison](connection-test-history.md)

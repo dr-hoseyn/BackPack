@@ -572,4 +572,4 @@ UDP را می‌بندد ولی ICMP را نه) و *IP Spoofing* که مبدأ �
 
 ---
 
-*Last verified against Backpack v1.21.0*
+*Last verified against Backpack v1.22.0*

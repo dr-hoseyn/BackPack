@@ -47,4 +47,4 @@ TLS و قدرت توکن.
 
 ---
 
-*Last verified against Backpack v1.21.0*
+*Last verified against Backpack v1.22.0*

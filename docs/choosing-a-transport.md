@@ -28,6 +28,8 @@ TCP-based transport instead.
 
 - **TCP** — reliable stream. `TCP Mux` runs many streams over one connection;
   `TCP + Stealth` wraps it in a Noise layer with no fingerprint.
+- **TCP Forward (XMPP)** — NUM3-style opening, encrypted data and reusable
+  TCP sessions. Use it on both updated Backpack peers.
 - **UDP** — datagrams. `UDP + KCP + FEC` is a low-latency gaming tunnel: reliable delivery with always-on FEC.
 - **WebSocket** — looks like web traffic. `WSS` / `WSS Mux` add TLS with a
   browser fingerprint and bind the credential to the TLS session.
@@ -63,4 +65,4 @@ Change a tunnel's transport any time from **Edit → Change transport**.
 
 ---
 
-*Last verified against Backpack v1.21.0*
+*Last verified against Backpack v1.22.0*
