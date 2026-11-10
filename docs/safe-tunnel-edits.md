@@ -80,4 +80,4 @@ endpoints require write authentication, like the settings editor and history.
 
 </div>
 
-*Last verified against Backpack v1.20.3*
+*Last verified against Backpack v1.21.0*

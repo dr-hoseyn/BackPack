@@ -255,6 +255,7 @@ given at the bottom of this page.
 | Transport | Family | Encrypted handshake | PROXY protocol | Needs | Setup guide |
 |-----------|--------|:--:|:--:|-------|---|
 | TCP | TCP | — | ✅ | — | [→](../tutorial/tcp.md) |
+| TCP Forward | TCP | ✅ (Noise AES-256-GCM) | ✅ | — | [→](#tcp-forward-tcpfwd) |
 | TCP Mux | TCP | — | ✅ | — | [→](../tutorial/tcp-mux.md) |
 | **TCP + Stealth** | TCP | ✅ (Noise) | ✅ | — | [→](../tutorial/tcp-stealth.md) |
 | **TCP + PCK** | TCP | ✅ (token key) | ✅ | Linux, root | [→](../tutorial/tcp-pck.md) |
@@ -319,6 +320,41 @@ output. These files are removed when the test closes.
 A plain, reliable TCP stream. The simplest transport and a fine default on a
 clean link. Fast, low overhead, no encryption of its own — anything sensitive
 inside it should already be encrypted (VPN or TLS traffic usually is).
+
+### TCP Forward (`tcpfwd`)
+
+This built-in mode reproduces the observed PenguTunnel behavior using
+Backpack's own wire format. Both peers run Backpack with `transport = "tcpfwd"`
+and the same randomly generated token. In the CLI, select
+**TCP → TCP Forward**.
+
+The kharej client dials the Iran server over TCP. The carrier starts with
+`PGprotocol-NUM3` and a Backpack connection-type byte. Noise with AES-256-GCM
+protects the control channel, pool authentication and destination selection.
+Once a data connection is set up, Backpack relays the application bytes
+without additional encryption. The warm pool starts at 2 connections by default,
+with an adaptive target capped at 256. The default heartbeat interval
+is 10 seconds and the control idle timeout is 25 seconds.
+
+Iran server
+
+```toml
+[server]
+bind_addr = "0.0.0.0:3443"
+transport = "tcpfwd"
+token = "<same-long-random-token>"
+ports = ["443=127.0.0.1:443"]
+```
+
+Kharej client
+
+```toml
+[client]
+remote_addr = "iran.example.com:3443"
+transport = "tcpfwd"
+token = "<same-long-random-token>"
+connection_pool = 2
+```
 
 ### TCP Mux
 The same TCP stream, but many logical connections are **multiplexed** over a
@@ -519,4 +555,4 @@ UDP را می‌بندد ولی ICMP را نه) و *IP Spoofing* که مبدأ �
 
 ---
 
-*Last verified against Backpack v1.20.3*
+*Last verified against Backpack v1.21.0*

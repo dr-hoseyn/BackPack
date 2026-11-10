@@ -28,7 +28,7 @@ func Dwell(seconds int) time.Duration {
 // chain that silently skips a candidate it does not recognise.
 var fallbackCapable = map[TransportType]bool{
 	TLS: true, GRPC: true, SSH: true, DNS: true,
-	TCP: true, TCPMUX: true, STEALTH: true,
+	TCP: true, TCPFWD: true, TCPMUX: true, STEALTH: true,
 	WS: true, WSS: true, WSMUX: true, WSSMUX: true,
 	KCP: true, QUIC: true, UDP: true, XDI: true, PCK: true,
 }
@@ -37,7 +37,7 @@ var fallbackCapable = map[TransportType]bool{
 // one: it is refused by name elsewhere, with what to build instead.
 var reverseTransports = map[TransportType]bool{
 	TLS: true, GRPC: true, SSH: true, DNS: true,
-	TCP: true, TCPMUX: true, STEALTH: true,
+	TCP: true, TCPFWD: true, TCPMUX: true, STEALTH: true,
 	WS: true, WSS: true, WSMUX: true, WSSMUX: true,
 	KCP: true, QUIC: true, UDP: true, XDI: true, PCK: true,
 }

@@ -1,5 +1,7 @@
 package tunnelspec
 
+import "github.com/backpack/backpack/config"
+
 // Presets expand into concrete configuration once, at creation or when the
 // operator reapplies one. Updating the binary preserves existing manual tuning.
 const (
@@ -43,7 +45,7 @@ func PresetSuitsTransport(preset, transport string) bool {
 		return true
 	}
 	switch transport {
-	case "tcp", "tcpmux", "stealth", "ws", "wss", "wsmux", "wssmux", "kcp", "xdi", "pck", "udp", "quic":
+	case "tcp", "tcpfwd", "tcpmux", "stealth", "ws", "wss", "wsmux", "wssmux", "kcp", "xdi", "pck", "udp", "quic":
 		return true
 	}
 	return false
@@ -125,6 +127,10 @@ func ApplyPreset(s *Spec, preset string) {
 		s.SoRcvBuf, s.SoSndBuf = 32<<20, 32<<20
 		s.MuxFrameSize = 65535
 		s.MuxRecvBuffer, s.MuxStreamBuffer = 32<<20, 32<<20
+	}
+	if s.Transport == string(config.TCPFWD) {
+		s.ConnectionPool = config.TCPFWDDefaultPool
+		s.Heartbeat = config.TCPFWDDefaultHeartbeat
 	}
 	ApplyKCPPreset(s, preset)
 }

@@ -580,4 +580,4 @@ them both ends have to agree on. This says what exists.
 
 ---
 
-*Generated from `config/` on 2026-11-07. Last verified against Backpack v1.20.3.*
+*Generated from `config/` on 2026-11-10. Last verified against Backpack v1.21.0.*

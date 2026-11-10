@@ -131,4 +131,4 @@ amd64 و `aarch64` یعنی arm64. بهترین راه این است که `insta
 
 ---
 
-*Last verified against Backpack v1.20.3*
+*Last verified against Backpack v1.21.0*

@@ -275,7 +275,7 @@ func TestPaddedRecordNeverExceedsTheNoiseCeiling(t *testing.T) {
 // negotiation was designed so an old peer's silence reads as version 0, and the
 // only way to know that holds is to be silent in the same way.
 func legacyInitiator(raw net.Conn, token string) (net.Conn, error) {
-	psk, err := noisePSK(token)
+	psk, err := noisePSK(token, stealthNoise.salt)
 	if err != nil {
 		return nil, err
 	}

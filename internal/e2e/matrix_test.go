@@ -31,6 +31,7 @@ import (
 // with that can run without elevated privileges.
 var allReverseTransports = []string{
 	"tcp",     // plain
+	"tcpfwd",  // protected setup and plaintext forwarding
 	"tcpmux",  // smux over tcp
 	"stealth", // tcp with a Noise record layer
 	"ws",      // an HTTP upgrade

@@ -6,6 +6,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/backpack/backpack/config"
 	"github.com/backpack/backpack/internal/carrier"
 	"github.com/backpack/backpack/internal/controlwire"
 	"github.com/backpack/backpack/internal/metrics"
@@ -55,21 +56,26 @@ type TcpConfig struct {
 	// Outbound says how the connections that reach the tunnel server leave
 	// this machine: through a proxy, from a chosen source address or
 	// interface, under a routing mark. Nil dials directly. None of it is ever
-	// applied to the dial to the local backend — see network/outbound.go.
+	// applied to the dial to the local backend â€” see network/outbound.go.
 	Outbound *network.Outbound
 	// Stealth wraps every tunnel-carrying connection in the Noise record layer,
 	// so the stream has no fingerprint for deep packet inspection to match.
 	Stealth bool
+	TCPFWD  bool
 	// ManagedHelper carries directional EOF as records through an outer proxy.
 	ManagedHelper bool
 	Carrier       *carrier.Config
 }
 
-// wrapStealth upgrades a freshly dialled tunnel connection to the Noise record
-// layer when this tunnel runs in stealth mode, and returns it unchanged
-// otherwise. Only tunnel-carrying connections are wrapped; the dial to the
-// local backend stays plain, since that traffic never leaves the machine.
-func (c *TcpTransport) wrapStealth(conn net.Conn) (net.Conn, error) {
+// wrapTunnel applies the configured setup to connections between the two peers.
+func (c *TcpTransport) wrapTunnel(conn net.Conn, control bool) (net.Conn, error) {
+	if c.config.TCPFWD {
+		secure, err := network.TCPFWDClientConn(conn, c.config.Token, control, c.config.DialTimeOut)
+		if err != nil {
+			return nil, err
+		}
+		return secure, nil
+	}
 	if c.config.ManagedHelper {
 		return naive.WrapDuplex(conn), nil
 	}
@@ -114,6 +120,7 @@ func (c *TcpTransport) Restart() {
 
 func (c *TcpTransport) channelDialer() {
 	c.logger.Info("attempting to establish a new control channel connection...")
+	ctx := c.state.Ctx()
 
 	// One backoff for this reconnect loop: retries start at the configured
 	// interval and stretch as the outage persists, instead of a fixed drumbeat.
@@ -122,7 +129,7 @@ func (c *TcpTransport) channelDialer() {
 
 	for {
 		select {
-		case <-c.state.Ctx().Done():
+		case <-ctx.Done():
 			return
 		default:
 			// Raced across the endpoint list rather than tried one at a time.
@@ -131,11 +138,11 @@ func (c *TcpTransport) channelDialer() {
 			// so walking the list sequentially costs a whole dial timeout per
 			// dead address on every reconnect. The race gives the preferred
 			// address a head start and only opens a second connection if that
-			// head start expires — so a working first address is never raced.
+			// head start expires â€” so a working first address is never raced.
 			// See network.Race.
 			//
 			//set default behaviour of control channel to nodelay, also using default buffer parameters
-			rawConn, won, err := network.Race(c.state.Ctx(),
+			rawConn, won, err := network.Race(ctx,
 				controlCandidates(c.config.Endpoints, &failedHandshakes), network.RaceStagger,
 				func(ctx context.Context, addr string) (net.Conn, error) {
 					return c.dialCarrier(ctx, addr, true)
@@ -148,7 +155,7 @@ func (c *TcpTransport) channelDialer() {
 				if next := c.config.Endpoints.Rotate(); c.config.Endpoints.Len() > 1 {
 					c.logger.Infof("trying next server endpoint: %s", next)
 				}
-				bo.Wait(c.state.Ctx())
+				bo.Wait(ctx)
 				continue
 			}
 			// Stay on whichever address won, so the data connections that
@@ -158,12 +165,20 @@ func (c *TcpTransport) channelDialer() {
 			// In stealth mode the Noise handshake runs first, so the token and
 			// everything after it cross an already-encrypted, unfingerprintable
 			// channel. A wrong token fails here, before any tunnel bytes.
-			tunnelTCPConn, err := c.wrapStealth(rawConn)
+			stop := func() bool { return true }
+			if c.config.TCPFWD {
+				stop = context.AfterFunc(ctx, func() { _ = rawConn.Close() })
+			}
+			closeAttempt := func(conn net.Conn) {
+				stop()
+				_ = conn.Close()
+			}
+			tunnelTCPConn, err := c.wrapTunnel(rawConn, true)
 			if err != nil {
-				c.logger.Errorf("channel dialer: stealth handshake failed: %v", err)
-				rawConn.Close()
+				c.logger.Errorf("channel dialer: tunnel handshake failed: %v", err)
+				closeAttempt(rawConn)
 				rejectControlCandidate(&failedHandshakes, won)
-				bo.Wait(c.state.Ctx())
+				bo.Wait(ctx)
 				continue
 			}
 
@@ -174,18 +189,18 @@ func (c *TcpTransport) channelDialer() {
 			err = utils.SendBinaryTransportStringWithin(tunnelTCPConn, c.config.Token, signal, 10*time.Second)
 			if err != nil {
 				c.logger.Errorf("failed to send security token: %v", err)
-				tunnelTCPConn.Close()
+				closeAttempt(tunnelTCPConn)
 				rejectControlCandidate(&failedHandshakes, won)
-				bo.Wait(c.state.Ctx())
+				bo.Wait(ctx)
 				continue
 			}
 
 			// Set a read deadline for the token response
 			if err := tunnelTCPConn.SetReadDeadline(time.Now().Add(controlAckTimeout)); err != nil {
 				c.logger.Errorf("failed to set read deadline: %v", err)
-				tunnelTCPConn.Close()
+				closeAttempt(tunnelTCPConn)
 				rejectControlCandidate(&failedHandshakes, won)
-				bo.Wait(c.state.Ctx())
+				bo.Wait(ctx)
 				continue
 			}
 
@@ -196,11 +211,13 @@ func (c *TcpTransport) channelDialer() {
 					c.logger.Warn("timeout while waiting for control channel response")
 				} else {
 					c.logger.Errorf("failed to receive control channel response: %v", err)
-					c.legacyServer.miss(c.logger, signal)
+					if !c.config.TCPFWD {
+						c.legacyServer.miss(c.logger, signal)
+					}
 				}
-				tunnelTCPConn.Close() // Close connection on error or timeout
+				closeAttempt(tunnelTCPConn) // Close connection on error or timeout
 				rejectControlCandidate(&failedHandshakes, won)
-				bo.Wait(c.state.Ctx())
+				bo.Wait(ctx)
 				continue
 			}
 			// Resetting the deadline (removes any existing deadline)
@@ -212,17 +229,24 @@ func (c *TcpTransport) channelDialer() {
 			// silence it replaces. It is not a reason to fall back: the server
 			// understood the handshake perfectly and declined it.
 			if why, refused := refusalReason(message, ackSignal); refused {
-				c.logger.Error("the tunnel was refused — " + why)
+				c.logger.Error("the tunnel was refused â€” " + why)
 				c.legacyServer.ack(ackSignal)
-				tunnelTCPConn.Close()
-				bo.Wait(c.state.Ctx())
+				closeAttempt(tunnelTCPConn)
+				bo.Wait(ctx)
 				continue
 			}
 			token, nonce, _ := decodeControlAck(message, ackSignal)
+			if c.config.TCPFWD && (ackSignal != utils.SG_ChanV2 || nonce == "") {
+				c.logger.Warn("tcpfwd requires an authenticated pool nonce")
+				closeAttempt(tunnelTCPConn)
+				rejectControlCandidate(&failedHandshakes, won)
+				bo.Wait(ctx)
+				continue
+			}
 
 			if token == c.config.Token {
 				// The server answered, so whatever it answered with is what it
-				// speaks — proof that outranks any later closed connection.
+				// speaks â€” proof that outranks any later closed connection.
 				c.legacyServer.ack(ackSignal)
 				// Before the control channel is published, so the pool
 				// connections poolMaintainer starts below already have it.
@@ -230,8 +254,12 @@ func (c *TcpTransport) channelDialer() {
 				// The engine knows it holds a control channel; the watchdog reads that
 				// rather than the socket table, which shows a socket long after the
 				// tunnel behind it has stopped working. See metrics.Snapshot.Connected.
+				if !c.state.SetConn(tunnelTCPConn) {
+					stop()
+					return
+				}
+				stop()
 				metrics.ReportPeer(tunnelTCPConn.RemoteAddr().String())
-				c.state.SetConn(tunnelTCPConn)
 				c.logger.Info("control channel established successfully")
 
 				c.status.set("Connected (TCP)")
@@ -243,8 +271,8 @@ func (c *TcpTransport) channelDialer() {
 
 			} else {
 				c.logger.Errorf("invalid token received (does not match the server's token). Retrying...")
-				tunnelTCPConn.Close() // Close connection if the token is invalid
-				bo.Wait(c.state.Ctx())
+				closeAttempt(tunnelTCPConn) // Close connection if the token is invalid
+				bo.Wait(ctx)
 				continue
 			}
 		}
@@ -252,7 +280,7 @@ func (c *TcpTransport) channelDialer() {
 }
 
 // poolMaintainer keeps the pool the right size. The policy is poolSizer's,
-// shared with every other client transport — see poolmaintain.go.
+// shared with every other client transport â€” see poolmaintain.go.
 func (c *TcpTransport) poolMaintainer() {
 	poolSizer{
 		ctx:        c.state.Ctx(),
@@ -273,12 +301,20 @@ func (c *TcpTransport) poolLimit() int {
 	if c.config.FixedPool {
 		return c.config.ConnPoolSize
 	}
+	if c.config.TCPFWD {
+		return config.TCPFWDMaxPool
+	}
 	return c.config.ConnPoolSize * poolGrowthLimit
 }
 
 // control is this generation's control loop. See controlLoop.
 func (c *TcpTransport) control() controlLoop {
-	return c.lifecycle.control(controlwire.Net(c.state.Conn()), c.config.KeepAlive, c.tunnelDialer, c.Restart)
+	loop := c.lifecycle.control(controlwire.Net(c.state.Conn()), c.config.KeepAlive, c.tunnelDialer, c.Restart)
+	if c.config.TCPFWD {
+		loop.idleTimeout = network.TCPFWDIdleTimeout
+		loop.echoBeats = true
+	}
+	return loop
 }
 
 // Dialing to the tunnel server, chained functions, without retry
@@ -307,9 +343,9 @@ func (c *TcpTransport) tunnelDialer() {
 
 	// Same stealth upgrade as the control channel: the data connection carries
 	// its bytes through the Noise record layer when the tunnel is in that mode.
-	tcpConn, err := c.wrapStealth(rawConn)
+	tcpConn, err := c.wrapTunnel(rawConn, false)
 	if err != nil {
-		c.logger.Debugf("tunnel dialer: stealth handshake failed: %v", err)
+		c.logger.Debugf("tunnel dialer: tunnel handshake failed: %v", err)
 		rawConn.Close()
 		return
 	}
@@ -352,6 +388,12 @@ func (c *TcpTransport) tunnelDialer() {
 			tcpConn.Close()
 			return
 		}
+	}
+
+	if c.config.TCPFWD {
+		// The pool announcement and destination were authenticated. Only
+		// the forwarded payload uses the plaintext stream.
+		tcpConn = rawConn
 	}
 
 	// A forwarded UDP flow says so in the target address, on this transport as

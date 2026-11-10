@@ -400,12 +400,16 @@ func baseServerConfig(transport string, tunnelPort, entryPort int, backendAddr, 
 }
 
 func baseClientConfig(transport, remote, token string, fallbacks []string) *config.ClientConfig {
+	pool := 4
+	if transport == string(config.TCPFWD) {
+		pool = config.TCPFWDDefaultPool
+	}
 	return &config.ClientConfig{
 		RemoteAddr:     remote,
 		FallbackAddrs:  fallbacks,
 		Transport:      config.TransportType(transport),
 		Token:          token,
-		ConnectionPool: 4,
+		ConnectionPool: pool,
 		RetryInterval:  1,
 		Nodelay:        true,
 		// Deliberately short: on KCP this doubles as how long the client waits

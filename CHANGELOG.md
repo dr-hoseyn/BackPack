@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+## v1.21.0 — 2026-11-10
+
+- Add the built-in TCP Forward (`tcpfwd`) transport, inspired by PenguTunnel.
+  It uses a TCP preface, AES-256-GCM for the control and destination messages,
+  and plain TCP for application bytes. Both peers run this Backpack version.
+- Start with two warm TCP connections by default and adapt the spare pool up
+  to 256. Send a heartbeat every 10 seconds by default and reconnect after
+  25 seconds of control-channel inactivity.
+
+<div dir="rtl">
+
+حالت بومی TCP Forward به منوی تانل معکوس اضافه شد. هر دو سمت همین نسخهٔ
+BackPack را اجرا می‌کنند. کنترل و تعیین مقصد با AES-256-GCM محافظت می‌شوند.
+دادهٔ کاربر روی TCP عبور می‌کند و استخر اتصال از دو اتصال شروع می‌شود.
+
+</div>
+
 ## v1.20.3 — 2026-11-07
 
 - Keep the WS, WSS, WSMux and WSSMux control channel and existing streams

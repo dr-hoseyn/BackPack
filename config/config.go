@@ -9,6 +9,7 @@ const (
 	SSH    TransportType = "ssh"
 	DNS    TransportType = "dns"
 	TCP    TransportType = "tcp"
+	TCPFWD TransportType = "tcpfwd"
 	TCPMUX TransportType = "tcpmux"
 	WS     TransportType = "ws"
 	WSS    TransportType = "wss"
@@ -53,6 +54,12 @@ const (
 	// to the machinery doing it. KCP above supplies the reliability the absent
 	// stack would have. Linux only, and needs root or CAP_NET_RAW.
 	PCK TransportType = "pck"
+)
+
+const (
+	TCPFWDDefaultPool      = 2
+	TCPFWDMaxPool          = 256
+	TCPFWDDefaultHeartbeat = 10
 )
 
 // KCPConfig holds the tuning of the KCP transport: a reliable, retransmitting

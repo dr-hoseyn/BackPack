@@ -26,11 +26,12 @@ import (
 // whether to measure the round trip, and how long its goodbye needs
 // (farewellFlush).
 type controlLoop struct {
-	ctx      context.Context
-	link     controlwire.Link
-	beat     time.Duration
-	requests <-chan struct{}
-	log      *logrus.Logger
+	ctx         context.Context
+	link        controlwire.Link
+	beat        time.Duration
+	idleTimeout time.Duration
+	requests    <-chan struct{}
+	log         *logrus.Logger
 	// restart ends this generation and starts the next; called in its own
 	// goroutine, since it waits for this one to finish.
 	restart func()
@@ -59,8 +60,16 @@ func (c controlLoop) run() {
 	done := make(chan struct{})
 	defer close(done)
 
-	ticker := newLivenessTicker(c.beat)
-	defer ticker.Stop()
+	var beats <-chan time.Time
+	if c.idleTimeout > 0 {
+		ticker := time.NewTicker(livenessBeat(c.beat))
+		defer ticker.Stop()
+		beats = ticker.C
+	} else {
+		ticker := newLivenessTicker(c.beat)
+		defer ticker.Stop()
+		beats = ticker.C
+	}
 
 	signals := make(chan byte, 1)
 	go c.read(signals, done)
@@ -88,7 +97,7 @@ func (c controlLoop) run() {
 				return
 			}
 
-		case <-ticker.C:
+		case <-beats:
 			if err := c.link.Send(utils.SG_HB); err != nil {
 				c.log.Errorf("failed to send the heartbeat: %v", err)
 				go c.restart()
@@ -138,7 +147,14 @@ func (c controlLoop) farewell() {
 // fails or the loop has returned.
 func (c controlLoop) read(signals chan<- byte, done <-chan struct{}) {
 	for {
-		signal, err := c.link.Receive()
+		var signal byte
+		var err error
+		if c.idleTimeout > 0 {
+			err = c.link.SetReadDeadline(time.Now().Add(c.idleTimeout))
+		}
+		if err == nil {
+			signal, err = c.link.Receive()
+		}
 		if errors.Is(err, controlwire.ErrNoSignal) {
 			c.log.Warnf("ignoring a malformed control frame: %v", err)
 			continue

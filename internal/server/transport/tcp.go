@@ -80,6 +80,7 @@ type TcpConfig struct {
 	// Stealth wraps every accepted tunnel connection in the Noise record layer,
 	// so the stream has no fingerprint for deep packet inspection to match.
 	Stealth bool
+	TCPFWD  bool
 	// ManagedHelper requires explicit directional-EOF framing from the peer.
 	ManagedHelper bool
 	Carrier       *carrier.Config
@@ -221,7 +222,7 @@ func (s *TcpTransport) channelHandshake(g *tcpGen) (controlCandidate, bool) {
 // control is this generation's control loop, bound to the control channel
 // the generation was started with. See controlLoop.
 func (s *TcpTransport) control(g *tcpGen, ctx context.Context, lost func()) controlLoop {
-	return controlLoop{
+	loop := controlLoop{
 		ctx:      ctx,
 		link:     controlwire.Net(s.controlChannel.Get()),
 		beat:     s.config.Heartbeat,
@@ -230,6 +231,10 @@ func (s *TcpTransport) control(g *tcpGen, ctx context.Context, lost func()) cont
 		restart:  lost,
 		probeRTT: true,
 	}
+	if s.config.TCPFWD {
+		loop.idleTimeout = network.TCPFWDIdleTimeout
+	}
+	return loop
 }
 
 // tunnelPort is this generation's tunnel port; see tcpTunnelPort.
@@ -255,6 +260,22 @@ func (s *TcpTransport) tunnelPort(g *tcpGen) tcpTunnelPort {
 // connection.
 func (s *TcpTransport) admitTunnelConn(g *tcpGen, raw net.Conn) {
 	conn := raw
+	var expectedSignal byte
+	if s.config.TCPFWD {
+		stop := context.AfterFunc(g.ctx, func() { raw.Close() })
+		defer stop()
+		wrapped, control, err := network.TCPFWDServerConn(raw, s.config.Token, announceTimeout)
+		if err != nil {
+			s.logger.Debugf("tcpfwd handshake failed from %s: %v", raw.RemoteAddr(), err)
+			raw.Close()
+			return
+		}
+		conn = wrapped
+		expectedSignal = utils.SG_Pool
+		if control {
+			expectedSignal = utils.SG_ChanV2
+		}
+	}
 	if s.config.ManagedHelper {
 		conn = naive.WrapDuplex(conn)
 	}
@@ -297,7 +318,7 @@ func (s *TcpTransport) admitTunnelConn(g *tcpGen, raw net.Conn) {
 	// so this branch stays exactly as it was, and is reachable only once a
 	// legacy control channel has been established (which is what leaves the
 	// nonce empty).
-	if s.controlChannel.IsSet() && s.poolNonce.Get() == "" && !s.config.PathProbe {
+	if !s.config.TCPFWD && s.controlChannel.IsSet() && s.poolNonce.Get() == "" && !s.config.PathProbe {
 		// Read the peer address once: checking "is it set" and then asking for
 		// the address separately leaves a window where the control channel is
 		// cleared in between and the address comes back nil. Comparing through
@@ -318,6 +339,10 @@ func (s *TcpTransport) admitTunnelConn(g *tcpGen, raw net.Conn) {
 		return
 	}
 
+	if s.config.TCPFWD && ann.signal != expectedSignal {
+		conn.Close()
+		return
+	}
 	switch {
 	case ann.signal == utils.SG_PathProbe && (s.config.PathProbe || s.config.DiagnosticProbe):
 		if err := pathprobe.Serve(conn, s.config.Token, ann.payload); err != nil {
@@ -480,6 +505,9 @@ func (s *TcpTransport) handleLoop(g *tcpGen) {
 				request: requestAlways(g.reqNewConnChan, s.logger),
 				discard: func(c net.Conn) { c.Close() },
 				relay: func(c net.Conn, local LocalTCPConn) {
+					if setup, ok := c.(*network.TCPFWDConn); ok {
+						c = setup.DataConn()
+					}
 					go func() {
 						// Free the connection slot once the transfer ends, or
 						// the limit would fill up permanently.

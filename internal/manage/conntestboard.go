@@ -32,7 +32,7 @@ var ctTransportNames = map[string]string{
 	"tls": "TLS", "grpc": "gRPC", "ssh": "SSH", "dns": "DNS",
 	"xhttp-reality": "XHTTP REALITY", "trusttunnel": "TrustTunnel", "webtransport": "WebTransport", "tailcat": "Tailcat",
 	"awg": "AmneziaWG",
-	"tcp": "TCP", "tcpmux": "TCP MUX", "stealth": "Stealth", "pck": "PCK",
+	"tcp": "TCP", "tcpfwd": "TCP Forward", "tcpmux": "TCP MUX", "stealth": "Stealth", "pck": "PCK",
 	"ws": "WS", "wss": "WSS", "wsmux": "WS MUX", "wssmux": "WSS MUX",
 	"kcp": "KCP FEC", "quic": "QUIC", "udp": "UDP", "xdi": "xDi", "sni": "SNI",
 	"hysteria2": "Hy2", "anytls": "AnyTLS", "shadowtls": "ShadowTLS", "tuic": "TUIC",

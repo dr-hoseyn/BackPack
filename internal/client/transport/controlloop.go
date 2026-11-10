@@ -3,6 +3,7 @@ package transport
 import (
 	"context"
 	"errors"
+	"net"
 	"sync/atomic"
 	"time"
 
@@ -13,8 +14,8 @@ import (
 
 // controlLoop serves one generation's control channel on the client side: it
 // dials a pool connection whenever the server asks for one, answers the
-// server's probes, notices a server that has gone quiet, and says goodbye —
-// and closes the channel — when the generation ends.
+// server's probes, notices a server that has gone quiet, and says goodbye â€”
+// and closes the channel â€” when the generation ends.
 //
 // All seven transports had their own copy, and the copies had drifted: only
 // the KCP one had been taught not to blame the path for a timeout that the
@@ -30,8 +31,9 @@ type controlLoop struct {
 	// keepAlive is how long the channel may stay silent before the server is
 	// presumed gone, until the beat clock has learned the server's rhythm.
 	// See beatClock.
-	keepAlive time.Duration
-	log       *logrus.Logger
+	keepAlive   time.Duration
+	idleTimeout time.Duration
+	log         *logrus.Logger
 	// restart ends this generation and starts the next; called in its own
 	// goroutine, since it waits for this one to finish.
 	restart func()
@@ -85,8 +87,8 @@ func (c controlLoop) run() {
 		case <-c.ctx.Done():
 			// The goodbye, then the channel itself: it belongs to the
 			// generation that just ended. Left open, it outlived its
-			// generation whenever the tunnel was ended without a restart — a
-			// reload, a fallback chain moving on — and over a datagram
+			// generation whenever the tunnel was ended without a restart â€” a
+			// reload, a fallback chain moving on â€” and over a datagram
 			// carrier nothing else ever closes it.
 			if c.link.Send(utils.SG_Closed) == nil && c.farewellFlush > 0 {
 				time.Sleep(c.farewellFlush)
@@ -133,15 +135,19 @@ func (c controlLoop) run() {
 // read hands every signal the server sends to the loop, bounding each read by
 // what the beat clock expects, until the channel fails or the loop returns.
 //
-// A datagram carrier gives no signal when the peer disappears — there is no
-// connection for the operating system to tear down — so without the bound a
+// A datagram carrier gives no signal when the peer disappears â€” there is no
+// connection for the operating system to tear down â€” so without the bound a
 // read on a dead tunnel would block forever and the client would never
 // reconnect. Over TCP the kernel ends the read eventually, eleven minutes later
 // on the shipped keepalive.
 func (c controlLoop) read(signals chan<- byte, done <-chan struct{}) {
 	beats := newBeatClock(time.Now())
 	for {
-		if err := c.link.SetReadDeadline(time.Now().Add(beats.deadline(c.keepAlive))); err != nil {
+		timeout := c.idleTimeout
+		if timeout == 0 {
+			timeout = beats.deadline(c.keepAlive)
+		}
+		if err := c.link.SetReadDeadline(time.Now().Add(timeout)); err != nil {
 			if c.live(done) {
 				c.log.Errorf("failed to set control channel deadline: %v", err)
 				go c.restart()
@@ -159,7 +165,10 @@ func (c controlLoop) read(signals chan<- byte, done <-chan struct{}) {
 				// server that stopped heartbeating from one whose heartbeat
 				// never reached this client in time. A line that blamed the
 				// path for it sent people looking at the wrong thing (#45).
-				if hint := beats.explain(err, c.keepAlive); hint != "" {
+				var timeoutErr net.Error
+				if c.idleTimeout > 0 && errors.As(err, &timeoutErr) && timeoutErr.Timeout() {
+					c.log.Warnf("no control message received for %s; reconnecting", c.idleTimeout)
+				} else if hint := beats.explain(err, c.keepAlive); hint != "" {
 					c.log.Warn(hint)
 				} else {
 					c.log.Errorf("failed to read from control channel: %v", err)

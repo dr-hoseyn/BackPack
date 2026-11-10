@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"slices"
 	"strings"
 
 	"github.com/backpack/backpack/config"
@@ -117,6 +118,9 @@ func applyDefaults(cfg *config.Config) {
 	// Connection pool
 	if cfg.Client.ConnectionPool <= 0 {
 		cfg.Client.ConnectionPool = defaultConnectionPool
+		if cfg.Client.Transport == config.TCPFWD {
+			cfg.Client.ConnectionPool = config.TCPFWDDefaultPool
+		}
 	}
 
 	// Mux Session
@@ -178,6 +182,9 @@ func applyDefaults(cfg *config.Config) {
 	// Heartbeat
 	if cfg.Server.Heartbeat < 1 { // Minimum accepted interval is 1 second
 		cfg.Server.Heartbeat = defaultHeartbeat
+		if cfg.Server.Transport == config.TCPFWD {
+			cfg.Server.Heartbeat = config.TCPFWDDefaultHeartbeat
+		}
 	}
 
 	// Timeout
@@ -245,6 +252,7 @@ func validateConfig(cfg *config.Config) error {
 		checkFallbackChain,
 		// Last: the specific checks above explain a refusal better than the
 		// engine's own validation of the same field would.
+		checkTCPFWD,
 		checkEngine,
 	} {
 		if err := check(cfg); err != nil {
@@ -707,6 +715,28 @@ func checkCarriers(cfg *config.Config) error {
 		if err != nil || ip == nil || !ip.IsLoopback() {
 			return fmt.Errorf("SSH tunnel relay must bind to a loopback address")
 		}
+	}
+	return nil
+}
+
+func checkTCPFWD(cfg *config.Config) error {
+	for _, side := range []struct {
+		transport config.TransportType
+		fallback  []config.TransportType
+		token     string
+	}{
+		{cfg.Server.Transport, cfg.Server.FallbackTransports, cfg.Server.Token},
+		{cfg.Client.Transport, cfg.Client.FallbackTransports, cfg.Client.Token},
+	} {
+		if side.transport == config.TCPFWD || slices.Contains(side.fallback, config.TCPFWD) {
+			if strings.TrimSpace(side.token) == "" || side.token == defaultToken {
+				return fmt.Errorf("tcpfwd requires an explicit shared token")
+			}
+		}
+	}
+	if (cfg.Client.Transport == config.TCPFWD || slices.Contains(cfg.Client.FallbackTransports, config.TCPFWD)) &&
+		cfg.Client.ConnectionPool > config.TCPFWDMaxPool {
+		return fmt.Errorf("tcpfwd connection_pool must be at most %d", config.TCPFWDMaxPool)
 	}
 	return nil
 }

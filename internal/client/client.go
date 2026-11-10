@@ -244,7 +244,7 @@ func (c *Client) startTransport(ctx context.Context, tr config.TransportType, en
 		return r
 	}
 	switch tr {
-	case config.TCP, config.STEALTH, config.TLS, config.GRPC, config.SSH:
+	case config.TCP, config.TCPFWD, config.STEALTH, config.TLS, config.GRPC, config.SSH:
 		fixedPool := c.config.Short.Enabled()
 		for _, path := range c.config.Paths {
 			fixedPool = fixedPool || path.Short.Enabled()
@@ -269,6 +269,7 @@ func (c *Client) startTransport(ctx context.Context, tr config.TransportType, en
 			// Stealth is the TCP transport with a Noise record layer over every
 			// tunnel connection; everything else about it is identical.
 			Stealth:       tr == config.STEALTH,
+			TCPFWD:        tr == config.TCPFWD,
 			ManagedHelper: c.config.Managed(),
 		}
 		if tr == config.TLS || tr == config.GRPC || tr == config.SSH {

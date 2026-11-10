@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/backpack/backpack/config"
 	"github.com/sirupsen/logrus"
 )
 
@@ -70,5 +71,27 @@ func TestCheckConfigFileKeepsItsLogOffStdout(t *testing.T) {
 	}
 	if logger.Out != &stdout {
 		t.Fatal("the check did not put the engine's log output back")
+	}
+}
+
+func TestTCPFWDConfigDefaultsAndValidation(t *testing.T) {
+	cfg := &config.Config{Client: config.ClientConfig{
+		RemoteAddr: "127.0.0.1:3443",
+		Transport:  config.TCPFWD,
+	}}
+	applyDefaults(cfg)
+	if cfg.Client.ConnectionPool != config.TCPFWDDefaultPool {
+		t.Fatalf("pool = %d, want %d", cfg.Client.ConnectionPool, config.TCPFWDDefaultPool)
+	}
+	if err := validateConfig(cfg); err == nil || !strings.Contains(err.Error(), "explicit shared token") {
+		t.Fatalf("the built-in token was not rejected: %v", err)
+	}
+	cfg.Client.Token = "random-shared-token-for-test"
+	if err := validateConfig(cfg); err != nil {
+		t.Fatalf("valid tcpfwd configuration was refused: %v", err)
+	}
+	cfg.Client.ConnectionPool = config.TCPFWDMaxPool + 1
+	if err := validateConfig(cfg); err == nil || !strings.Contains(err.Error(), "connection_pool") {
+		t.Fatalf("pool above the limit was not rejected: %v", err)
 	}
 }

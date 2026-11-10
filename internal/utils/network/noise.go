@@ -100,9 +100,9 @@ const (
 var noiseSuite = noise.NewCipherSuite(noise.DH25519, noise.CipherChaChaPoly, noise.HashBLAKE2s)
 
 // noisePSK turns the tunnel token into the 32-byte pre-shared key.
-func noisePSK(token string) ([]byte, error) {
+func noisePSK(token, salt string) ([]byte, error) {
 	psk := make([]byte, 32)
-	r := hkdf.New(sha256.New, []byte(token), []byte("backpack-stealth-psk-v1"), nil)
+	r := hkdf.New(sha256.New, []byte(token), []byte(salt), nil)
 	if _, err := io.ReadFull(r, psk); err != nil {
 		return nil, err
 	}
@@ -113,24 +113,32 @@ func noisePSK(token string) ([]byte, error) {
 // success, returns a net.Conn that transparently encrypts everything written to
 // it and decrypts everything read from it.
 func NoiseClientConn(raw net.Conn, token string, timeout time.Duration) (net.Conn, error) {
-	return noiseHandshake(raw, token, true, timeout)
+	return noiseHandshake(raw, token, true, timeout, stealthNoise)
 }
 
 // NoiseServerConn is the responder side of NoiseClientConn.
 func NoiseServerConn(raw net.Conn, token string, timeout time.Duration) (net.Conn, error) {
-	return noiseHandshake(raw, token, false, timeout)
+	return noiseHandshake(raw, token, false, timeout, stealthNoise)
 }
 
-func noiseHandshake(raw net.Conn, token string, initiator bool, timeout time.Duration) (net.Conn, error) {
-	psk, err := noisePSK(token)
+type noiseProfile struct {
+	suite    noise.CipherSuite
+	prologue string
+	salt     string
+}
+
+var stealthNoise = noiseProfile{noiseSuite, noisePrologue, "backpack-stealth-psk-v1"}
+
+func noiseHandshake(raw net.Conn, token string, initiator bool, timeout time.Duration, profile noiseProfile) (net.Conn, error) {
+	psk, err := noisePSK(token, profile.salt)
 	if err != nil {
 		return nil, err
 	}
 	hs, err := noise.NewHandshakeState(noise.Config{
-		CipherSuite:           noiseSuite,
+		CipherSuite:           profile.suite,
 		Pattern:               noise.HandshakeNN,
 		Initiator:             initiator,
-		Prologue:              []byte(noisePrologue),
+		Prologue:              []byte(profile.prologue),
 		PresharedKey:          psk,
 		PresharedKeyPlacement: 0,
 	})

@@ -1,8 +1,6 @@
 # dr-hoseyn fork
 
-**v1.20.3** keeps live WebSocket tunnels connected when route scores change
-and replaces TCP-only WSS health checks with authenticated upgrades.
-Update both peers to enable WebSocket health scoring.
+**v1.21.0** adds the built-in [TCP Forward transport](docs/transports.md#tcp-forward-tcpfwd) for paired Backpack servers.
 
 **v1.20.2** improves WSSMux and TCPMux recovery, tries alternative TCP
 backends within the connection timeout, clarifies Connection Test results,
@@ -54,7 +52,7 @@ behavior. See [resource behavior and verification](docs/wssmux-resources.md).
 
 **v1.15.0:** CLI-only management. The web dashboard and per-tunnel monitor pages are removed. Connection Test defaults to Quick; see the current timing above. Full remains available. Upgrading retires the legacy web service.
 
-This fork combines upstream BackPack v1.9.0 with PRs [#104](https://github.com/AminMGMT/BackPack/pull/104), [#98](https://github.com/AminMGMT/BackPack/pull/98), and [#108](https://github.com/AminMGMT/BackPack/pull/108). Fork release **v1.20.3** installs and updates from `dr-hoseyn/BackPack`. Managed Short HTTPS is available for Reverse TCP. The source also includes [advanced XHTTP settings](docs/xhttp-advanced.md) and [managed AmneziaWG setup](docs/amneziawg.md).
+This fork combines upstream BackPack v1.9.0 with PRs [#104](https://github.com/AminMGMT/BackPack/pull/104), [#98](https://github.com/AminMGMT/BackPack/pull/98), and [#108](https://github.com/AminMGMT/BackPack/pull/108). Fork release **v1.21.0** installs and updates from `dr-hoseyn/BackPack`. Managed Short HTTPS is available for Reverse TCP. The source also includes [advanced XHTTP settings](docs/xhttp-advanced.md) and [managed AmneziaWG setup](docs/amneziawg.md).
 
 
 **v1.14.2:** restores Reverse → ICMP → xDi in the CLI, includes

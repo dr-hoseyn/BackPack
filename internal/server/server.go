@@ -189,7 +189,7 @@ type runner interface {
 // the same ports.
 func (s *Server) startTransport(ctx context.Context, tr config.TransportType) runner {
 	switch tr {
-	case config.TCP, config.STEALTH, config.TLS, config.GRPC, config.SSH:
+	case config.TCP, config.TCPFWD, config.STEALTH, config.TLS, config.GRPC, config.SSH:
 		tcpConfig := &transport.TcpConfig{
 			PathProbe:       len(s.config.Paths) != 0,
 			DiagnosticProbe: s.config.Managed(),
@@ -213,6 +213,7 @@ func (s *Server) startTransport(ctx context.Context, tr config.TransportType) ru
 			// Stealth is the TCP transport with a Noise record layer over every
 			// tunnel connection; everything else about it is identical.
 			Stealth:       tr == config.STEALTH,
+			TCPFWD:        tr == config.TCPFWD,
 			ManagedHelper: s.config.Managed(),
 		}
 
