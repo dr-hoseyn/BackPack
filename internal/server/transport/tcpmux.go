@@ -227,11 +227,15 @@ func (s *TcpMuxTransport) Restart() {
 
 // newGen builds one generation's channels and usage monitor.
 func (s *TcpMuxTransport) newGen(ctx context.Context) *tcpMuxGen {
+	localQueue := newMuxLocalQueue(s.config.ChannelSize)
+	if s.config.TCPFWD {
+		localQueue.waiters = make(map[*muxQueueWaiter]struct{})
+	}
 	return &tcpMuxGen{
 		ctx:              ctx,
 		tunnelChannel:    make(chan pooledMuxSession, s.config.ChannelSize),
 		handshakeChannel: make(chan controlCandidate, 1),
-		localChannel:     newMuxLocalQueue(s.config.ChannelSize),
+		localChannel:     localQueue,
 		reqNewConnChan:   make(chan struct{}, s.config.ChannelSize),
 		usageMonitor:     s.usageMonitor(ctx),
 	}

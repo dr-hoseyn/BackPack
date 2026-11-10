@@ -156,6 +156,11 @@ func (m muxSession) run(session *smux.Session) {
 			m.add(m.sessions, -1)
 		}
 	}()
+	var waiter *muxQueueWaiter
+	if m.local.waiters != nil {
+		waiter = &muxQueueWaiter{ready: make(chan struct{}, 1), slots: counter}
+		defer m.local.leave(waiter)
+	}
 
 	for {
 		// A worker can start after its owner was replaced. Do not take a new
@@ -172,6 +177,7 @@ func (m muxSession) run(session *smux.Session) {
 			return
 		}
 
+		ready := m.local.wait(waiter)
 		select {
 		case <-m.ctx.Done():
 			return
@@ -184,6 +190,7 @@ func (m muxSession) run(session *smux.Session) {
 			return
 
 		case now := <-idleTick:
+			m.local.leave(waiter)
 			// This loop is the only stream opener. Release its speculative
 			// slot and retire only when no worker or stream remains; checking
 			// NumStreams from a concurrent client-side timer cannot do that.
@@ -202,8 +209,8 @@ func (m muxSession) run(session *smux.Session) {
 			}
 			continue
 
-		case <-m.local.ready:
-			incomingConn, ok := m.local.pop()
+		case <-ready:
+			incomingConn, ok := m.local.popFor(waiter)
 			if !ok {
 				<-counter
 				continue

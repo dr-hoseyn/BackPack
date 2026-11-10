@@ -370,7 +370,8 @@ A warm pool of TCP sessions carries multiple forwarded streams. Session
 authentication, control, stream setup and application data use AES-256-GCM.
 Data frames expose their four-byte length word, type and stream ID.
 The carrier enables TCP_NODELAY and starts with two warm sessions by default.
-This mode uses a shared mux receive budget.
+It reuses a pair of TCP sessions for light traffic and uses spare sessions
+as concurrency builds. This mode uses a shared mux receive budget.
 
 ### TCP Mux
 The same TCP stream, but many logical connections are **multiplexed** over a

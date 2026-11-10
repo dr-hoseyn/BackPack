@@ -11,6 +11,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"slices"
 	"sync"
 	"time"
 )
@@ -52,6 +53,10 @@ type num3Records struct {
 	aead              cipher.AEAD
 	dataAEAD          cipher.AEAD
 	readAAD, writeAAD *[9]byte
+	readHeader        [4]byte
+	readDataAAD       [14]byte
+	writeDataAAD      [14]byte
+	writeBuffer       []byte
 }
 
 func num3AEAD(key []byte) (cipher.AEAD, error) {
@@ -83,46 +88,53 @@ func (r *num3Records) write(body []byte) error {
 // Data exposes its type and stream ID in the raw envelope. The payload has
 // its own key and carries a nonce and tag even when the envelope is raw.
 func (r *num3Records) writeData(id uint32, payload []byte) error {
-	size := 5 + len(payload) + r.dataAEAD.Overhead()
-	frame := make([]byte, 4, 4+size)
+	size := num3StreamHeaderSize + len(payload) + r.dataAEAD.Overhead()
+	frame := slices.Grow(r.writeBuffer[:0], 4+size)[:4]
 	binary.BigEndian.PutUint32(frame, num3RawFlag|uint32(size))
 	frame = appendNUM3StreamFrame(frame, num3Data, id, nil)
-	aad := num3DataAAD(r.writeAAD, frame[4:])
-	frame = r.dataAEAD.Seal(frame, nil, payload, aad[:])
+	aad := num3DataAAD(&r.writeDataAAD, r.writeAAD, frame[4:])
+	frame = r.dataAEAD.Seal(frame, nil, payload, aad)
+	r.writeBuffer = frame
 	return writeNUM3Bytes(r.conn, frame)
 }
 
 func (r *num3Records) openData(header, ciphertext []byte) ([]byte, error) {
-	aad := num3DataAAD(r.readAAD, header)
-	return r.dataAEAD.Open(ciphertext[:0], nil, ciphertext, aad[:])
+	aad := num3DataAAD(&r.readDataAAD, r.readAAD, header)
+	return r.dataAEAD.Open(ciphertext[:0], nil, ciphertext, aad)
 }
 
-func num3DataAAD(sequence *[9]byte, header []byte) [14]byte {
-	var aad [14]byte
+func num3DataAAD(aad *[14]byte, sequence *[9]byte, header []byte) []byte {
 	copy(aad[:9], nextNUM3AAD(sequence))
 	copy(aad[9:], header)
-	return aad
+	return aad[:]
 }
 
-func (r *num3Records) read() (body []byte, raw bool, err error) {
-	var header [4]byte
-	if _, err := io.ReadFull(r.conn, header[:]); err != nil {
+func (r *num3Records) read() ([]byte, bool, error) {
+	return r.readInto(nil)
+}
+
+// readInto appends a record to storage, preserving any header space the
+// caller left at its beginning.
+func (r *num3Records) readInto(storage []byte) (record []byte, raw bool, err error) {
+	if _, err := io.ReadFull(r.conn, r.readHeader[:]); err != nil {
 		return nil, false, err
 	}
-	word := binary.BigEndian.Uint32(header[:])
+	word := binary.BigEndian.Uint32(r.readHeader[:])
 	raw = word&num3RawFlag != 0
 	length := int(word &^ num3RawFlag)
 	if length <= 0 || length > num3MaxRecord || (!raw && length <= r.aead.Overhead()) {
 		return nil, false, errors.New("invalid NUM3 record length")
 	}
-	body = make([]byte, length)
+	prefix := len(storage)
+	record = slices.Grow(storage, length)[:prefix+length]
+	body := record[prefix:]
 	if _, err := io.ReadFull(r.conn, body); err != nil {
 		return nil, false, err
 	}
 	if !raw {
 		body, err = r.aead.Open(body[:0], nil, body, nextNUM3AAD(r.readAAD))
 	}
-	return body, raw, err
+	return record[:prefix+len(body)], raw, err
 }
 
 // Sequence protected records independently by direction, so a captured control

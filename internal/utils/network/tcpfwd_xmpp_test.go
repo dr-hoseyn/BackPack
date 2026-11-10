@@ -83,15 +83,18 @@ func TestTCPFWDNUM3StreamFrames(t *testing.T) {
 
 	const addr = "127.0.0.1:8123"
 	const app = "application bytes"
+	const next = "next"
 	target := append([]byte{0, byte(len(addr))}, addr...)
 	for _, frame := range [][]byte{
 		appendSMUXFrame(nil, smuxSYN, 3, nil),
 		appendSMUXFrame(nil, smuxPSH, 3, target[:1]),
 		appendSMUXFrame(nil, smuxPSH, 3, append(bytes.Clone(target[1:]), app...)),
+		appendSMUXFrame(nil, smuxPSH, 3, []byte(next)),
 		appendSMUXFrame(nil, smuxFIN, 3, nil),
 		appendSMUXFrame(nil, smuxNOP, 0, nil),
 	} {
-		if n, err := sender.Write(frame); n != len(frame) || err != nil {
+		parts := [][]byte{frame[:smuxHeaderSize], frame[smuxHeaderSize:]}
+		if n, err := sender.WriteBuffers(parts); n != len(frame) || err != nil {
 			t.Fatalf("writing frame %x: %d, %v", frame, n, err)
 		}
 	}
@@ -111,6 +114,7 @@ func TestTCPFWDNUM3StreamFrames(t *testing.T) {
 	}{
 		{open, false},
 		{append([]byte{2, 0, 0, 0, 1}, app...), true},
+		{append([]byte{2, 0, 0, 0, 1}, next...), true},
 		{[]byte{3, 0, 0, 0, 1}, false},
 		{[]byte{6, 0, 0, 0, 0}, false},
 	} {
@@ -138,6 +142,7 @@ func TestTCPFWDNUM3StreamFrames(t *testing.T) {
 	expected := appendSMUXFrame(nil, smuxSYN, 3, nil)
 	expected = appendSMUXFrame(expected, smuxPSH, 3, target)
 	expected = appendSMUXFrame(expected, smuxPSH, 3, []byte(app))
+	expected = appendSMUXFrame(expected, smuxPSH, 3, []byte(next))
 	expected = appendSMUXFrame(expected, smuxFIN, 3, nil)
 	expected = appendSMUXFrame(expected, smuxNOP, 0, nil)
 	actual := make([]byte, len(expected))

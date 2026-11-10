@@ -8,9 +8,11 @@ import (
 )
 
 const (
-	num3Open byte = 1
-	num3Data byte = 2
-	num3FIN  byte = 3
+	num3Open             byte = 1
+	num3Data             byte = 2
+	num3FIN              byte = 3
+	num3StreamHeaderSize      = 5
+	smuxHeaderSize            = 8
 
 	smuxSYN byte = 0
 	smuxFIN byte = 1
@@ -24,14 +26,15 @@ const (
 // type and stream ID and encloses an encrypted payload.
 type num3MuxConn struct {
 	net.Conn
-	codec   *num3Records
-	edge    bool
-	opening map[uint32][]byte // only touched by the session's single writer
-	pending []byte            // only touched by the session's single reader
+	codec      *num3Records
+	edge       bool
+	opening    map[uint32][]byte // only touched by the session's single writer
+	pending    []byte            // only touched by the session's single reader
+	readBuffer []byte
 }
 
 func appendSMUXFrame(dst []byte, kind byte, id uint32, body []byte) []byte {
-	var header [8]byte
+	var header [smuxHeaderSize]byte
 	header[0], header[1] = 1, kind
 	binary.LittleEndian.PutUint16(header[2:4], uint16(len(body)))
 	binary.LittleEndian.PutUint32(header[4:8], id)
@@ -40,7 +43,7 @@ func appendSMUXFrame(dst []byte, kind byte, id uint32, body []byte) []byte {
 }
 
 func appendNUM3StreamFrame(dst []byte, kind byte, id uint32, body []byte) []byte {
-	var header [5]byte
+	var header [num3StreamHeaderSize]byte
 	header[0] = kind
 	binary.BigEndian.PutUint32(header[1:], id)
 	dst = append(dst, header[:]...)
@@ -48,23 +51,37 @@ func appendNUM3StreamFrame(dst []byte, kind byte, id uint32, body []byte) []byte
 }
 
 func (c *num3MuxConn) Write(p []byte) (int, error) {
-	// The pinned smux send loop uses one contiguous Write per frame when the
-	// connection does not implement WriteBuffers.
-	if len(p) < 8 || p[0] != 1 || int(binary.LittleEndian.Uint16(p[2:4])) != len(p)-8 {
+	if len(p) < smuxHeaderSize {
 		return 0, errors.New("invalid internal NUM3 mux frame")
 	}
-	kind := p[1]
+	return c.writeSMUX(p[:smuxHeaderSize], p[smuxHeaderSize:])
+}
+
+// The smux sender supplies its header and payload separately. Encrypt the
+// payload directly from that slice instead of packing an intermediate frame.
+func (c *num3MuxConn) WriteBuffers(parts [][]byte) (int, error) {
+	if len(parts) != 2 {
+		return 0, errors.New("invalid internal NUM3 mux write")
+	}
+	return c.writeSMUX(parts[0], parts[1])
+}
+
+func (c *num3MuxConn) writeSMUX(header, body []byte) (int, error) {
+	if len(header) != smuxHeaderSize || header[0] != 1 || int(binary.LittleEndian.Uint16(header[2:4])) != len(body) {
+		return 0, errors.New("invalid internal NUM3 mux frame")
+	}
+	written := len(header) + len(body)
+	kind := header[1]
 	if kind == smuxNOP {
 		if err := c.codec.write(num3Control); err != nil {
 			return 0, err
 		}
-		return len(p), nil
+		return written, nil
 	}
-	id := binary.LittleEndian.Uint32(p[4:8])
+	id := binary.LittleEndian.Uint32(header[4:8])
 	if id < 3 || id%2 != 1 {
 		return 0, errors.New("invalid NUM3 mux stream ID")
 	}
-	body := p[8:]
 	wireID := id - 2
 	switch kind {
 	case smuxSYN:
@@ -97,7 +114,7 @@ func (c *num3MuxConn) Write(p []byte) (int, error) {
 	default:
 		return 0, errors.New("unsupported NUM3 mux command")
 	}
-	return len(p), nil
+	return written, nil
 }
 
 func (c *num3MuxConn) writeOpen(id uint32, payload []byte) ([]byte, error) {
@@ -128,18 +145,26 @@ func (c *num3MuxConn) Read(p []byte) (int, error) {
 	if len(p) == 0 {
 		return 0, nil
 	}
+	// Leave enough room to write the larger smux header immediately before
+	// the decrypted payload. Keep the record alive until all of it is read.
+	const padding = smuxHeaderSize - num3StreamHeaderSize
+	if c.readBuffer == nil {
+		c.readBuffer = make([]byte, padding)
+	}
 	for len(c.pending) == 0 {
-		body, raw, err := c.codec.read()
+		record, raw, err := c.codec.readInto(c.readBuffer[:padding])
 		if err != nil {
 			return 0, err
 		}
-		if len(body) < 5 {
+		c.readBuffer = record
+		body := record[padding:]
+		if len(body) < num3StreamHeaderSize {
 			return 0, errors.New("short NUM3 stream frame")
 		}
-		header := body[:5]
+		header := body[:num3StreamHeaderSize]
 		kind := header[0]
 		id := binary.BigEndian.Uint32(header[1:])
-		body = body[5:]
+		body = body[num3StreamHeaderSize:]
 		if kind == num3Control[0] && id == 0 && !raw && len(body) == 0 {
 			c.pending = appendSMUXFrame(nil, smuxNOP, 0, nil)
 			continue
@@ -170,7 +195,7 @@ func (c *num3MuxConn) Read(p []byte) (int, error) {
 			if len(body) == 0 || len(body) > math.MaxUint16 {
 				return 0, errors.New("invalid NUM3 data length")
 			}
-			c.pending = appendSMUXFrame(nil, smuxPSH, id+2, body)
+			c.pending = appendSMUXFrame(record[:0], smuxPSH, id+2, body)
 		case num3FIN:
 			if len(body) != 0 {
 				return 0, errors.New("invalid NUM3 close frame")
