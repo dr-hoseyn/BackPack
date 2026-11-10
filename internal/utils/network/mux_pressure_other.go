@@ -2,9 +2,8 @@
 
 package network
 
-import (
-	"net"
-	"time"
-)
+import "net"
 
-func tcpMuxDelay(net.Conn) time.Duration { return 0 }
+func tcpMuxSocketPressure(net.Conn) (int, bool) { return 0, false }
+
+func limitTCPMuxBacklog(net.Conn) {}

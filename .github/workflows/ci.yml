@@ -255,7 +255,13 @@ jobs:
         if: matrix.mode == 'test'
         # The e2e tests bind loopback ports and wait on real handshakes, so
         # they need more than the default 10 minute budget on a shared runner.
-        run: go test ./... -timeout 20m
+        run: go test ./... -skip '^TestThePacketPathStaysWithinBudget$' -timeout 20m
+
+      - name: Measure packet-path budgets without competing test packages
+        if: matrix.mode == 'test'
+        # Keep the original timing and allocation ceilings. Concurrent e2e
+        # packages on the same runner otherwise distort the wall-clock sample.
+        run: go test ./internal/tunnel/l3 -run '^TestThePacketPathStaysWithinBudget$' -count=1 -v -timeout 2m
 
       - name: Test with the race detector
         if: matrix.mode == 'race'
