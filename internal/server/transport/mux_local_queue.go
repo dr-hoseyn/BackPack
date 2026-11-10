@@ -4,6 +4,7 @@ import (
 	"container/list"
 	"context"
 	"sync"
+	"time"
 )
 
 // muxLocalQueue has the same capacity and FIFO order as the local channel,
@@ -15,10 +16,12 @@ type muxLocalQueue struct {
 	closed  bool
 	ready   chan struct{}
 	// TCP Forward keeps a small group of carriers active before using spares.
-	waiters  map[*muxQueueWaiter]struct{}
-	selected *muxQueueWaiter
-	lastUse  uint64
-	warm     int
+	waiters    map[*muxQueueWaiter]struct{}
+	selected   *muxQueueWaiter
+	lastUse    uint64
+	warm       [num3WarmCarriers]*muxQueueWaiter
+	warmTimer  *time.Timer
+	warmWaited bool
 }
 
 type muxQueueWaiter struct {
@@ -30,7 +33,9 @@ type muxQueueWaiter struct {
 
 const (
 	num3WarmCarriers = 2
-	num3SpareLoad    = 4
+	num3SpareLoad    = 16
+	num3SpareReuse   = 2
+	num3WarmWait     = 2 * time.Millisecond
 )
 
 func newMuxLocalQueue(limit int) *muxLocalQueue {
@@ -59,6 +64,9 @@ func (q *muxLocalQueue) push(local LocalTCPConn, queued func()) bool {
 		p.remove = func() {
 			q.mu.Lock()
 			q.entries.Remove(entry)
+			if q.waiters != nil && q.entries.Len() == 0 {
+				q.clearWarmWait()
+			}
 			q.mu.Unlock()
 		}
 		p.arm(local.timeCreated)
@@ -74,6 +82,7 @@ func (q *muxLocalQueue) notify() {
 			return
 		}
 		var bestLoad int
+		var next *muxQueueWaiter
 		for waiter := range q.waiters {
 			q.warmCarrier(waiter)
 			// The reserved slot is present on every eligible worker.
@@ -82,14 +91,20 @@ func (q *muxLocalQueue) notify() {
 			load := len(waiter.slots) - 1
 			if !waiter.warm {
 				load += num3SpareLoad
+				if waiter.lastUse != 0 {
+					// Reuse spares that already carried work before
+					// spreading a burst onto more fresh TCP sockets.
+					load -= num3SpareReuse
+				}
 			}
-			if q.selected == nil || load < bestLoad ||
-				(load == bestLoad && waiter.lastUse < q.selected.lastUse) {
-				q.selected, bestLoad = waiter, load
+			if next == nil || load < bestLoad ||
+				(load == bestLoad && waiter.lastUse < next.lastUse) {
+				next, bestLoad = waiter, load
 			}
 		}
-		if q.selected != nil {
-			q.selected.ready <- struct{}{}
+		if next != nil && (next.warm || !q.waitForWarm(bestLoad)) {
+			q.selected = next
+			next.ready <- struct{}{}
 		}
 		return
 	}
@@ -100,10 +115,56 @@ func (q *muxLocalQueue) notify() {
 }
 
 func (q *muxLocalQueue) warmCarrier(waiter *muxQueueWaiter) {
-	if !waiter.warm && q.warm < num3WarmCarriers {
-		waiter.warm = true
-		q.warm++
+	if waiter.warm {
+		return
 	}
+	for i, warm := range q.warm {
+		if warm == nil {
+			q.warm[i] = waiter
+			waiter.warm = true
+			return
+		}
+	}
+}
+
+// Opening a stream briefly takes its carrier out of the waiting set. Let
+// a warm carrier with room return before using a spare. A busy queue gets
+// at most one grace period, even if the opener is stuck.
+func (q *muxLocalQueue) waitForWarm(spareLoad int) bool {
+	if q.warmWaited && q.warmTimer == nil {
+		return false
+	}
+	for _, warm := range q.warm {
+		if warm == nil || len(warm.slots) >= min(cap(warm.slots), spareLoad) {
+			continue
+		}
+		if _, waiting := q.waiters[warm]; waiting {
+			continue
+		}
+		if q.warmTimer == nil {
+			q.warmWaited = true
+			var timer *time.Timer
+			timer = time.AfterFunc(num3WarmWait, func() {
+				q.mu.Lock()
+				defer q.mu.Unlock()
+				if q.warmTimer == timer {
+					q.warmTimer = nil
+					q.notify()
+				}
+			})
+			q.warmTimer = timer
+		}
+		return true
+	}
+	return false
+}
+
+func (q *muxLocalQueue) clearWarmWait() {
+	if q.warmTimer != nil {
+		q.warmTimer.Stop()
+		q.warmTimer = nil
+	}
+	q.warmWaited = false
 }
 
 func (q *muxLocalQueue) wait(waiter *muxQueueWaiter) <-chan struct{} {
@@ -134,7 +195,12 @@ func (q *muxLocalQueue) leave(waiter *muxQueueWaiter) {
 		q.mu.Lock()
 		q.removeWaiter(waiter)
 		if waiter.warm {
-			q.warm--
+			for i, warm := range q.warm {
+				if warm == waiter {
+					q.warm[i] = nil
+					break
+				}
+			}
 			waiter.warm = false
 		}
 		q.notify()
@@ -163,6 +229,8 @@ func (q *muxLocalQueue) popFor(waiter *muxQueueWaiter) (LocalTCPConn, bool) {
 	}
 	if q.entries.Len() != 0 {
 		q.notify()
+	} else if q.waiters != nil {
+		q.clearWarmWait()
 	}
 	return local, true
 }
@@ -171,6 +239,7 @@ func (q *muxLocalQueue) drain(ctx context.Context, limits *limiter) {
 	<-ctx.Done()
 	q.mu.Lock()
 	q.closed = true
+	q.clearWarmWait()
 	q.mu.Unlock()
 	for {
 		local, ok := q.pop()

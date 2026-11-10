@@ -1,6 +1,9 @@
 package transport
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestMuxQueueReusesWarmCarriersAndSpreadsOverlappingStreams(t *testing.T) {
 	q := newMuxLocalQueue(2)
@@ -60,4 +63,101 @@ func TestMuxQueueReusesWarmCarriersAndSpreadsOverlappingStreams(t *testing.T) {
 	if !spare.warm {
 		t.Fatal("a spare did not replace the removed warm carrier")
 	}
+}
+
+func TestMuxQueueWaitsForAnOpeningWarmCarrier(t *testing.T) {
+	q, warm, spare := muxQueueWithWarmOpeners()
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	defer q.clearWarmWait()
+
+	q.entries.PushBack(LocalTCPConn{timeCreated: 1})
+	q.notify()
+	if q.selected != nil || q.warmTimer == nil {
+		t.Fatal("did not wait for the warm carrier")
+	}
+	q.waiters[warm] = struct{}{}
+	q.notify()
+	if q.selected != warm {
+		t.Fatal("the warm carrier did not get the queued connection on return")
+	}
+	select {
+	case <-spare.ready:
+		t.Fatal("woke a spare while the warm carrier was returning")
+	default:
+	}
+}
+
+func TestMuxQueueFallsBackOnceWarmWaitExpires(t *testing.T) {
+	q, _, spare := muxQueueWithWarmOpeners()
+	t.Cleanup(func() { q.leave(spare) })
+
+	if !q.push(LocalTCPConn{timeCreated: 1}, nil) || !q.push(LocalTCPConn{timeCreated: 2}, nil) {
+		t.Fatal("failed to queue both connections")
+	}
+	select {
+	case <-spare.ready:
+	case <-time.After(time.Second):
+		t.Fatal("an unavailable warm carrier stalled the spare")
+	}
+	if local, ok := q.popFor(spare); !ok || local.timeCreated != 1 {
+		t.Fatal("lost the first queued connection")
+	}
+	q.wait(spare)
+	select {
+	case <-spare.ready:
+		if local, ok := q.popFor(spare); !ok || local.timeCreated != 2 {
+			t.Fatal("lost the second queued connection")
+		}
+	default:
+		t.Fatal("a single burst waited for warm carriers twice")
+	}
+}
+
+func TestMuxQueueReusesSpareUntilItHasOverlappingWork(t *testing.T) {
+	q, _, used := muxQueueWithWarmOpeners()
+	for _, warm := range q.warm {
+		for len(warm.slots) < cap(warm.slots) {
+			warm.slots <- struct{}{}
+		}
+	}
+	used.lastUse = 1
+	q.lastUse = 1
+	fresh := &muxQueueWaiter{ready: make(chan struct{}, 1), slots: make(chan struct{}, 1)}
+	fresh.slots <- struct{}{}
+	q.wait(fresh)
+
+	q.push(LocalTCPConn{timeCreated: 1}, nil)
+	select {
+	case <-used.ready:
+		q.popFor(used)
+	default:
+		t.Fatal("did not reuse the spare")
+	}
+	for range num3SpareReuse + 1 {
+		used.slots <- struct{}{}
+	}
+	q.wait(used)
+	q.push(LocalTCPConn{timeCreated: 2}, nil)
+	select {
+	case <-fresh.ready:
+		q.popFor(fresh)
+	default:
+		t.Fatal("busy spare prevented an available carrier from taking work")
+	}
+}
+
+func muxQueueWithWarmOpeners() (*muxLocalQueue, *muxQueueWaiter, *muxQueueWaiter) {
+	q := newMuxLocalQueue(2)
+	q.waiters = make(map[*muxQueueWaiter]struct{})
+	warm := &muxQueueWaiter{ready: make(chan struct{}, 1), slots: make(chan struct{}, 4)}
+	other := &muxQueueWaiter{ready: make(chan struct{}, 1), slots: make(chan struct{}, 4)}
+	spare := &muxQueueWaiter{ready: make(chan struct{}, 1), slots: make(chan struct{}, 4)}
+	warm.slots <- struct{}{} // both warm workers are opening streams
+	other.slots <- struct{}{}
+	spare.slots <- struct{}{} // the spare has reserved a slot and is waiting
+	q.warmCarrier(warm)
+	q.warmCarrier(other)
+	q.waiters[spare] = struct{}{}
+	return q, warm, spare
 }
