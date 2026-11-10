@@ -373,6 +373,13 @@ The carrier enables TCP_NODELAY and starts with two warm sessions by default.
 It reuses a pair of TCP sessions for light traffic and uses spare sessions
 as concurrency builds. This mode uses a shared mux receive budget.
 
+On Linux, carrier selection also accounts for the current TCP send queue and
+acknowledgement delay. This reduces the chance that a fresh stream waits behind
+a bulk transfer. Updated peers negotiate retirement of excess idle sessions
+while preserving the configured pool floor and any open streams. A lost data
+session can trigger early repair of that floor. Mixed-version peers use the
+pool behavior supported by both ends.
+
 ### TCP Mux
 The same TCP stream, but many logical connections are **multiplexed** over a
 small pool of real connections (via smux). This cuts the cost of opening a fresh

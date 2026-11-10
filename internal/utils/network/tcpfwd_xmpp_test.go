@@ -3,8 +3,10 @@ package network
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"io"
 	"net"
+	"strings"
 	"testing"
 	"time"
 )
@@ -18,11 +20,18 @@ func TestTCPFWDXMPPBootstrap(t *testing.T) {
 	const token = "shared-test-token-for-xmpp"
 	finished := make(chan error, 1)
 	go func() {
-		_, err := TCPFWDXMPPServerConn(serverWire, token, time.Second)
+		conn, err := TCPFWDXMPPServerConn(serverWire, token, time.Second)
+		if err == nil && !conn.AdaptivePool {
+			err = errors.New("server did not confirm adaptive pooling")
+		}
 		finished <- err
 	}()
-	if _, err := TCPFWDXMPPClientConn(clientWire, token, time.Second); err != nil {
+	conn, err := TCPFWDXMPPClientConn(clientWire, token, time.Second)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if !conn.AdaptivePool {
+		t.Fatal("client did not confirm adaptive pooling")
 	}
 	if err := <-finished; err != nil {
 		t.Fatal(err)
@@ -47,6 +56,25 @@ func TestTCPFWDXMPPBootstrap(t *testing.T) {
 		}
 		if len(wire) > 0 {
 			t.Fatalf("unexpected bootstrap bytes: %x", wire)
+		}
+	}
+}
+
+func TestTCPFWDNUM3PoolFloorIsBoundedAndKeepsTheNonce(t *testing.T) {
+	nonce := strings.Repeat("a", poolNonceHexLen)
+	for _, floor := range []int{1, 32, 256} {
+		payload, err := EncodeNUM3Pool(nonce, floor)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, size, err := DecodeNUM3Pool(payload)
+		if err != nil || got != nonce || size != floor {
+			t.Fatalf("pool announcement = %q, %d, %v", got, size, err)
+		}
+	}
+	for _, payload := range []string{nonce, nonce + "\x00\x00", nonce + "\x01\x01", nonce + "\x00\x02trailing"} {
+		if _, _, err := DecodeNUM3Pool(payload); err == nil {
+			t.Fatal("accepted an invalid pool announcement")
 		}
 	}
 }

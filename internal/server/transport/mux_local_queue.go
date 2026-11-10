@@ -25,10 +25,11 @@ type muxLocalQueue struct {
 }
 
 type muxQueueWaiter struct {
-	ready   chan struct{}
-	slots   chan struct{}
-	lastUse uint64
-	warm    bool
+	ready    chan struct{}
+	slots    chan struct{}
+	lastUse  uint64
+	warm     bool
+	pressure func() int
 }
 
 const (
@@ -89,6 +90,9 @@ func (q *muxLocalQueue) notify() {
 			// Give the warm pair the first few streams, then use the
 			// rest of the pool as concurrent load builds.
 			load := len(waiter.slots) - 1
+			if waiter.pressure != nil {
+				load += waiter.pressure()
+			}
 			if !waiter.warm {
 				load += num3SpareLoad
 				if waiter.lastUse != 0 {
@@ -136,6 +140,9 @@ func (q *muxLocalQueue) waitForWarm(spareLoad int) bool {
 	}
 	for _, warm := range q.warm {
 		if warm == nil || len(warm.slots) >= min(cap(warm.slots), spareLoad) {
+			continue
+		}
+		if warm.pressure != nil && len(warm.slots)+warm.pressure() >= spareLoad {
 			continue
 		}
 		if _, waiting := q.waiters[warm]; waiting {
@@ -203,6 +210,16 @@ func (q *muxLocalQueue) leave(waiter *muxQueueWaiter) {
 			}
 			waiter.warm = false
 		}
+		q.notify()
+		q.mu.Unlock()
+	}
+}
+
+// Pause a wait for an idle check while retaining the carrier's warm slot.
+func (q *muxLocalQueue) unwait(waiter *muxQueueWaiter) {
+	if waiter != nil {
+		q.mu.Lock()
+		q.removeWaiter(waiter)
 		q.notify()
 		q.mu.Unlock()
 	}

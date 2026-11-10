@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Choose NUM3 data carriers using their TCP send backlog and acknowledgement
+  delay alongside active stream counts.
+- Negotiate idle pool retirement between updated NUM3 peers and repair lost
+  minimum pool capacity before the next sizing tick.
+
 ## v1.22.0 — 2026-11-10
 
 - Add **TCP Forward (XMPP)** (`tcpfwd-xmpp`) with the XMPP-shaped opening

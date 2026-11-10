@@ -27,6 +27,7 @@ type tcpMuxGen struct {
 	localChannel     *muxLocalQueue
 	reqNewConnChan   chan struct{}
 	usageMonitor     *traffic.Usage
+	idleTraffic      muxIdleTraffic
 	// seat holds the client this generation serves; see clientSeat.
 	seat clientSeat
 }
@@ -343,6 +344,15 @@ func (s *TcpMuxTransport) admitTunnelConn(g *tcpMuxGen, raw net.Conn) {
 		s.admitControlChannel(g, conn, ann)
 
 	case ann.signal == utils.SG_Pool:
+		floor := 0
+		if setup, ok := conn.(*network.TCPFWDXMPPConn); ok && setup.AdaptivePool {
+			var err error
+			ann.payload, floor, err = network.DecodeNUM3Pool(ann.payload)
+			if err != nil {
+				conn.Close()
+				return
+			}
+		}
 		// The nonce is this run's, so a connection carrying a previous run's —
 		// or none at all — is refused here rather than joining the pool.
 		if !s.poolNonce.Verify(ann.payload) {
@@ -351,7 +361,7 @@ func (s *TcpMuxTransport) admitTunnelConn(g *tcpMuxGen, raw net.Conn) {
 			return
 		}
 		s.preauth.Prove(conn.RemoteAddr())
-		s.deliverTunnelConn(g, conn, ann.payload)
+		s.deliverTunnelConn(g, conn, ann.payload, floor)
 
 	default:
 		s.logger.Warnf("unexpected announcement %d from %s, discarding", ann.signal, conn.RemoteAddr())
@@ -410,7 +420,7 @@ func (s *TcpMuxTransport) admitControlChannel(g *tcpMuxGen, conn net.Conn, ann a
 
 // deliverTunnelConn wraps an admitted connection in a mux session and hands it
 // to the pool, dropping it if the pool is full.
-func (s *TcpMuxTransport) deliverTunnelConn(g *tcpMuxGen, conn net.Conn, nonce string) {
+func (s *TcpMuxTransport) deliverTunnelConn(g *tcpMuxGen, conn net.Conn, nonce string, floor ...int) {
 	accepted := g.seat.admit(g.ctx, func(ctx context.Context) bool {
 		if nonce != "" {
 			if !s.controlChannel.IsSet() || !s.poolNonce.Verify(nonce) {
@@ -423,15 +433,21 @@ func (s *TcpMuxTransport) deliverTunnelConn(g *tcpMuxGen, conn net.Conn, nonce s
 			}
 		}
 		dataConn := conn
+		var pressure func() int
 		if setup, ok := conn.(*network.TCPFWDXMPPConn); ok {
 			dataConn = setup.DataConn()
+			pressure = network.TCPMuxPressure(setup.Conn)
 		}
 		session, err := network.NewWatchedMuxSession(dataConn, s.smuxCfg(), smux.Client)
 		if err != nil {
 			s.logger.Errorf("failed to create MUX session: %v", err)
 			return false
 		}
-		return enqueueMuxSession(g.tunnelChannel, ctx, session)
+		entry := pooledMuxSession{Session: session, owner: ctx, pressure: pressure}
+		if len(floor) > 0 {
+			entry.idleFloor = floor[0]
+		}
+		return enqueueMuxEntry(g.tunnelChannel, entry)
 	})
 	if !accepted {
 		conn.Close()
@@ -451,7 +467,19 @@ func (s *TcpMuxTransport) handleLoop(g *tcpMuxGen) {
 				continue
 			}
 
-			go s.session(g, session.owner).run(session.Session)
+			loop := s.session(g, session.owner)
+			loop.pressure = session.pressure
+			if session.idleFloor > 0 {
+				loop.idleTimeout = 60 * time.Second
+				loop.idleRetire = func() bool {
+					in, out := metrics.Traffic()
+					if !g.idleTraffic.quiet(time.Now(), in, out) {
+						return false
+					}
+					return s.retireIdleSession(g.ctx, session.owner, &s.sessionCounter, session.idleFloor)
+				}
+			}
+			go loop.run(session.Session)
 		}
 	}
 }

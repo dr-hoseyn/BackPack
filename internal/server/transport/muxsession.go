@@ -21,21 +21,27 @@ type pooledMuxSession struct {
 	*smux.Session
 	owner     context.Context
 	idleFloor int
+	pressure  func() int
 }
 
 // enqueueMuxSession is called while the seat's admission lock is held.
 // Cancellation also closes queued sessions that a worker has not picked up.
 func enqueueMuxSession(queue chan pooledMuxSession, owner context.Context, session *smux.Session, idleFloor ...int) bool {
-	if owner.Err() != nil {
-		session.Close()
-		return false
-	}
 	floor := 0
 	if len(idleFloor) > 0 {
 		floor = idleFloor[0]
 	}
+	return enqueueMuxEntry(queue, pooledMuxSession{Session: session, owner: owner, idleFloor: floor})
+}
+
+func enqueueMuxEntry(queue chan pooledMuxSession, entry pooledMuxSession) bool {
+	owner, session := entry.owner, entry.Session
+	if owner.Err() != nil {
+		session.Close()
+		return false
+	}
 	select {
-	case queue <- pooledMuxSession{Session: session, owner: owner, idleFloor: floor}:
+	case queue <- entry:
 		stop := context.AfterFunc(owner, func() { session.Close() })
 		go func() {
 			defer stop()
@@ -107,7 +113,8 @@ type muxSession struct {
 	streams  *int32
 	sessions *int32
 	count    func(*int32, int32)
-	// Only negotiated websocket-mux peers enable retirement. The callback
+	pressure func() int
+	// Only peers that negotiated support enable retirement. The callback
 	// atomically reserves one excess session's removal above the pool floor.
 	idleRetire  func() bool
 	idleTimeout time.Duration
@@ -158,7 +165,7 @@ func (m muxSession) run(session *smux.Session) {
 	}()
 	var waiter *muxQueueWaiter
 	if m.local.waiters != nil {
-		waiter = &muxQueueWaiter{ready: make(chan struct{}, 1), slots: counter}
+		waiter = &muxQueueWaiter{ready: make(chan struct{}, 1), slots: counter, pressure: m.pressure}
 		defer m.local.leave(waiter)
 	}
 
@@ -190,7 +197,7 @@ func (m muxSession) run(session *smux.Session) {
 			return
 
 		case now := <-idleTick:
-			m.local.leave(waiter)
+			m.local.unwait(waiter)
 			// This loop is the only stream opener. Release its speculative
 			// slot and retire only when no worker or stream remains; checking
 			// NumStreams from a concurrent client-side timer cannot do that.

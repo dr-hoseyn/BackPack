@@ -18,10 +18,11 @@ import (
 
 // The two openings and bootstrap record shapes were measured against NUM3.
 const (
-	tcpfwdXMPPClient = "<?xml version='1.0'?><stream:stream to='example.com' xmlns='jabber:client' version='1.0'>\r\n"
-	tcpfwdXMPPServer = "<stream:stream xmlns='jabber:client' xmlns:stream='http://etherx.jabber.org/streams' version='1.0'>\r\n"
-	num3RawFlag      = uint32(1 << 31)
-	num3MaxRecord    = (1<<16 - 1) + 11 + 28 // destination, open fields, nonce and tag
+	tcpfwdXMPPClient  = "<?xml version='1.0'?><stream:stream to='example.com' xmlns='jabber:client' version='1.0'>\r\n"
+	tcpfwdXMPPServer  = "<stream:stream xmlns='jabber:client' xmlns:stream='http://etherx.jabber.org/streams' version='1.0'>\r\n"
+	num3RawFlag       = uint32(1 << 31)
+	num3MaxRecord     = (1<<16 - 1) + 11 + 28 // destination, open fields, nonce and tag
+	num3AdaptiveOffer = "BPPOOL01"
 
 	// TCPFWDNUM3KeepAlive is the interval observed between idle pool frames.
 	TCPFWDNUM3KeepAlive = time.Second
@@ -41,11 +42,13 @@ var (
 // connections switch to the NUM3 stream adapter after their admission message.
 type TCPFWDXMPPConn struct {
 	net.Conn
-	codec   *num3Records
-	pending []byte
-	edge    bool
-	readMu  sync.Mutex
-	writeMu sync.Mutex
+	// AdaptivePool is confirmed by both authenticated bootstrap hellos.
+	AdaptivePool bool
+	codec        *num3Records
+	pending      []byte
+	edge         bool
+	readMu       sync.Mutex
+	writeMu      sync.Mutex
 }
 
 type num3Records struct {
@@ -205,6 +208,7 @@ func tcpfwdNUM3Handshake(raw net.Conn, token string, edge bool) (*TCPFWDXMPPConn
 	}
 	bootstrap := num3Records{conn: raw, aead: aead}
 	var salt [28]byte
+	adaptive := false
 	if edge {
 		hello, plain, err := bootstrap.read()
 		if err != nil {
@@ -215,7 +219,12 @@ func tcpfwdNUM3Handshake(raw net.Conn, token string, edge bool) (*TCPFWDXMPPConn
 			return nil, errors.New("invalid NUM3 exit hello")
 		}
 		copy(salt[:16], hello[10:26])
-		reply, err := bootstrap.encode(num3ServerHello[:])
+		adaptive = string(hello[10:18]) == num3AdaptiveOffer
+		answer := num3ServerHello
+		if adaptive {
+			answer[9] = 2
+		}
+		reply, err := bootstrap.encode(answer[:])
 		if err != nil {
 			return nil, err
 		}
@@ -228,6 +237,9 @@ func tcpfwdNUM3Handshake(raw net.Conn, token string, edge bool) (*TCPFWDXMPPConn
 		if _, err := rand.Read(hello[10:26]); err != nil {
 			return nil, err
 		}
+		// Keep 64 random bits in the offer, alongside the responder's
+		// independent 96-bit nonce used by the session key.
+		copy(hello[10:18], num3AdaptiveOffer)
 		copy(salt[:16], hello[10:26])
 		if err := bootstrap.write(hello[:]); err != nil {
 			return nil, err
@@ -244,6 +256,10 @@ func tcpfwdNUM3Handshake(raw net.Conn, token string, edge bool) (*TCPFWDXMPPConn
 			return nil, err
 		}
 		answer, err := aead.Open(nil, nil, reply[4:], nil)
+		if err == nil && len(answer) == len(num3ServerHello) && answer[9] == 2 {
+			adaptive = true
+			answer[9] = num3ServerHello[9]
+		}
 		if err != nil || !bytes.Equal(answer, num3ServerHello[:]) {
 			return nil, errors.New("invalid NUM3 edge hello")
 		}
@@ -277,7 +293,27 @@ func tcpfwdNUM3Handshake(raw net.Conn, token string, edge bool) (*TCPFWDXMPPConn
 	if err := raw.SetDeadline(time.Time{}); err != nil {
 		return nil, err
 	}
-	return &TCPFWDXMPPConn{Conn: raw, codec: codec, edge: edge}, nil
+	return &TCPFWDXMPPConn{Conn: raw, codec: codec, edge: edge, AdaptivePool: adaptive}, nil
+}
+
+// EncodeNUM3Pool includes the configured pool floor only when the bootstrap
+// confirmed support. The nonce retains its full original authentication.
+func EncodeNUM3Pool(nonce string, floor int) (string, error) {
+	if len(nonce) != poolNonceHexLen || floor < 1 || floor > 256 {
+		return "", errors.New("invalid NUM3 pool announcement")
+	}
+	return nonce + string([]byte{byte(floor >> 8), byte(floor)}), nil
+}
+
+func DecodeNUM3Pool(payload string) (nonce string, floor int, err error) {
+	if len(payload) != poolNonceHexLen+2 {
+		return "", 0, errors.New("invalid NUM3 pool announcement")
+	}
+	floor = int(binary.BigEndian.Uint16([]byte(payload[poolNonceHexLen:])))
+	if floor < 1 || floor > 256 {
+		return "", 0, errors.New("invalid NUM3 pool floor")
+	}
+	return payload[:poolNonceHexLen], floor, nil
 }
 
 func (r *num3Records) exchangeMarkers(edge bool) error {
