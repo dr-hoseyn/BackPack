@@ -356,6 +356,21 @@ token = "<same-long-random-token>"
 connection_pool = 2
 ```
 
+#### XMPP-style opening and reusable connections (`tcpfwd-xmpp`)
+
+On both peers, select **TCP → TCP Forward (XMPP)** or use
+`transport = "tcpfwd-xmpp"` with the same long random token. The first payload
+in each direction is the XMPP-shaped opening captured from the PenguTunnel
+NUM3 configuration. A Backpack-specific authenticated exchange follows.
+The two modes each require a matching transport on the other end.
+
+A warm pool of TCP sessions carries multiple forwarded streams. Session
+authentication, the control channel and each stream's destination use
+AES-256-GCM. After setup, application bytes travel in plaintext mux frames.
+The carrier enables TCP_NODELAY and starts with two warm sessions by default.
+The server defaults to mux version 1 with a shared receive budget. Set
+`mux_version = 2` on the server to give each stream an independent window.
+
 ### TCP Mux
 The same TCP stream, but many logical connections are **multiplexed** over a
 small pool of real connections (via smux). This cuts the cost of opening a fresh

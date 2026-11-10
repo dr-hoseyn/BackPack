@@ -49,7 +49,7 @@ func TestFailoverToBackupAddress(t *testing.T) {
 // disappears and comes back — a reboot, a crash, an update — the client must
 // reconnect on its own, without anyone touching it.
 func TestServerRestartRecovery(t *testing.T) {
-	for _, transport := range []string{"tcp", "tcpmux", "kcp", "quic"} {
+	for _, transport := range []string{"tcp", "tcpfwd-xmpp", "tcpmux", "kcp", "quic"} {
 		t.Run(transport, func(t *testing.T) {
 			t.Parallel()
 			backend := startEchoBackend(t)

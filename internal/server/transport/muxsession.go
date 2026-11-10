@@ -13,6 +13,7 @@ import (
 	"github.com/backpack/backpack/internal/traffic"
 	"github.com/backpack/backpack/internal/utils"
 	"github.com/backpack/backpack/internal/utils/handlers"
+	"github.com/backpack/backpack/internal/utils/network"
 )
 
 // The owner travels through the queue with the session. Looking up the seat
@@ -21,21 +22,27 @@ type pooledMuxSession struct {
 	*smux.Session
 	owner     context.Context
 	idleFloor int
+	targets   *network.TCPFWDTargets
 }
 
 // enqueueMuxSession is called while the seat's admission lock is held.
 // Cancellation also closes queued sessions that a worker has not picked up.
 func enqueueMuxSession(queue chan pooledMuxSession, owner context.Context, session *smux.Session, idleFloor ...int) bool {
+	entry := pooledMuxSession{Session: session, owner: owner}
+	if len(idleFloor) > 0 {
+		entry.idleFloor = idleFloor[0]
+	}
+	return enqueueMuxEntry(queue, entry)
+}
+
+func enqueueMuxEntry(queue chan pooledMuxSession, entry pooledMuxSession) bool {
+	owner, session := entry.owner, entry.Session
 	if owner.Err() != nil {
 		session.Close()
 		return false
 	}
-	floor := 0
-	if len(idleFloor) > 0 {
-		floor = idleFloor[0]
-	}
 	select {
-	case queue <- pooledMuxSession{Session: session, owner: owner, idleFloor: floor}:
+	case queue <- entry:
 		stop := context.AfterFunc(owner, func() { session.Close() })
 		go func() {
 			defer stop()
@@ -94,6 +101,7 @@ type muxSession struct {
 	local      *muxLocalQueue
 	usage      *traffic.Usage
 	reqNewConn chan struct{}
+	targets    *network.TCPFWDTargets
 
 	// muxCon is how many streams one session may carry at once.
 	muxCon int
@@ -265,7 +273,11 @@ func (m muxSession) run(session *smux.Session) {
 
 			// Send the target port over the tunnel connection
 			_ = stream.SetWriteDeadline(time.Now().Add(pairingWait(incomingConn.timeCreated)))
-			if err := utils.SendBinaryString(stream, incomingConn.remoteAddr); err != nil {
+			target := incomingConn.remoteAddr
+			if m.targets != nil {
+				target = m.targets.Seal(stream.ID(), target)
+			}
+			if err := utils.SendBinaryString(stream, target); err != nil {
 				m.log.Tracef("failed to send address over stream: %v", err)
 				// Give back the mux slot this attempt took. It was not given
 				// back, so a session that failed this way MuxCon times stopped

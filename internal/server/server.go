@@ -298,12 +298,13 @@ func (s *Server) startTransport(ctx context.Context, tr config.TransportType) ru
 		go quicServer.Start()
 		return quicServer
 
-	case config.TCPMUX:
+	case config.TCPMUX, config.TCPFWDXMPP:
 		tcpMuxConfig := &transport.TcpMuxConfig{
 			MPTCP:            s.config.MPTCP,
 			AcceptUDP:        s.config.ForwardsUDP(),
 			BindAddr:         s.config.BindAddr,
-			Nodelay:          s.config.Nodelay,
+			Nodelay:          s.config.Nodelay || tr == config.TCPFWDXMPP,
+			TCPFWD:           tr == config.TCPFWDXMPP,
 			KeepAlive:        time.Duration(s.config.Keepalive) * time.Second,
 			Heartbeat:        time.Duration(s.config.Heartbeat) * time.Second,
 			Token:            s.config.Token,

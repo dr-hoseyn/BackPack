@@ -27,6 +27,7 @@ type backendOpts struct {
 	// owner narrows a mux backend's lifetime to its physical session. The
 	// control channel and sibling sessions may remain healthy when one fails.
 	owner       context.Context
+	targets     *network.TCPFWDTargets
 	dialTimeout time.Duration
 	keepAlive   time.Duration
 	// rcvBuf and sndBuf are the socket buffers for a backend on another
@@ -167,6 +168,9 @@ func (l *lifecycle) serveSession(session *smux.Session, from net.Addr, o backend
 		l.state.Go(func() {
 			_ = stream.SetReadDeadline(time.Now().Add(controlAckTimeout))
 			target, err := utils.ReceiveBinaryString(stream)
+			if err == nil && o.targets != nil {
+				target, err = o.targets.Open(stream.ID(), target)
+			}
 			if err != nil {
 				l.logger.Errorf("unable to get port from stream connection %s: %v", from, err)
 				stream.Close()

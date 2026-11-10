@@ -44,6 +44,7 @@ var transportGroups = []transportGroup{
 		{"TCP over SSH", "existing sshd; loopback relay and pinned SSH host key", "ssh"},
 		{"TCP Mux", "many streams over few connections — multiplexed", "tcpmux"},
 		{"TCP Forward", "PenguTunnel-inspired TCP forwarding with authenticated control", "tcpfwd"},
+		{"TCP Forward (XMPP)", "XMPP-style opening and reusable TCP sessions", "tcpfwd-xmpp"},
 		{"TCP + Stealth", "encrypted with no fingerprint — hardest to detect, for heavy filtering", "stealth"},
 		{"TCP + PCK", "builds its own TCP packets, below the kernel — for a path where a normal TCP flow is reset or throttled; Linux, needs root", "pck"},
 	}},

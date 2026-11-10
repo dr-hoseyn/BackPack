@@ -54,6 +54,8 @@ const (
 	// to the machinery doing it. KCP above supplies the reliability the absent
 	// stack would have. Linux only, and needs root or CAP_NET_RAW.
 	PCK TransportType = "pck"
+
+	TCPFWDXMPP TransportType = "tcpfwd-xmpp"
 )
 
 const (
@@ -61,6 +63,9 @@ const (
 	TCPFWDMaxPool          = 256
 	TCPFWDDefaultHeartbeat = 10
 )
+
+// IsTCPForward reports whether t uses TCP Forward authentication and defaults.
+func IsTCPForward(t TransportType) bool { return t == TCPFWD || t == TCPFWDXMPP }
 
 // KCPConfig holds the tuning of the KCP transport: a reliable, retransmitting
 // protocol carried inside UDP datagrams. Every field is filled from the chosen

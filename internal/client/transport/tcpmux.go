@@ -6,6 +6,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/backpack/backpack/config"
 	"github.com/backpack/backpack/internal/controlwire"
 	"github.com/backpack/backpack/internal/metrics"
 	"github.com/backpack/backpack/internal/utils"
@@ -38,6 +39,7 @@ type TcpMuxTransport struct {
 }
 
 type TcpMuxConfig struct {
+	TCPFWD     bool
 	RemoteAddr string
 	// Endpoints rotates through the server addresses (primary + fallbacks)
 	// so a filtered IP or blocked port does not stop the tunnel.
@@ -109,13 +111,14 @@ func (c *TcpMuxTransport) channelDialer() {
 	// retries become exponential, so a sustained outage is probed a few times a
 	// minute rather than every second.
 	bo := newBackoff(c.config.RetryInterval)
+	ctx := c.state.Ctx()
 
 	for {
 		select {
-		case <-c.state.Ctx().Done():
+		case <-ctx.Done():
 			return
 		default:
-			tunnelConn, err := network.TcpDialerVia(c.state.Ctx(), c.config.Outbound, c.config.Endpoints.Current(), c.config.DialTimeOut, c.config.KeepAlive, true, 3, 0, 0, 0)
+			raw, err := network.TcpDialerVia(ctx, c.config.Outbound, c.config.Endpoints.Current(), c.config.DialTimeOut, c.config.KeepAlive, true, 3, 0, 0, 0)
 			if err != nil {
 				c.logger.Errorf("channel dialer: %v", err)
 				// The current endpoint did not answer — move to the next one so a
@@ -123,8 +126,28 @@ func (c *TcpMuxTransport) channelDialer() {
 				if next := c.config.Endpoints.Rotate(); c.config.Endpoints.Len() > 1 {
 					c.logger.Infof("trying next server endpoint: %s", next)
 				}
-				bo.Wait(c.state.Ctx())
+				bo.Wait(ctx)
 				continue
+			}
+
+			var tunnelConn net.Conn = raw
+			stop := func() bool { return true }
+			if c.config.TCPFWD {
+				stop = context.AfterFunc(ctx, func() { raw.Close() })
+				setup, err := network.TCPFWDXMPPClientConn(raw, c.config.Token, c.config.DialTimeOut)
+				if err != nil {
+					stop()
+					raw.Close()
+					c.logger.Errorf("tcpfwd XMPP control handshake: %v", err)
+					c.config.Endpoints.Rotate()
+					bo.Wait(ctx)
+					continue
+				}
+				tunnelConn = setup
+			}
+			closeAttempt := func() {
+				stop()
+				tunnelConn.Close()
 			}
 
 			// Sending security token. The nonce-carrying handshake is asked
@@ -134,16 +157,16 @@ func (c *TcpMuxTransport) channelDialer() {
 			err = utils.SendBinaryTransportStringWithin(tunnelConn, c.config.Token, signal, 10*time.Second)
 			if err != nil {
 				c.logger.Errorf("failed to send security token: %v", err)
-				tunnelConn.Close()
-				bo.Wait(c.state.Ctx())
+				closeAttempt()
+				bo.Wait(ctx)
 				continue
 			}
 
 			// Set a read deadline for the token response
 			if err := tunnelConn.SetReadDeadline(time.Now().Add(controlAckTimeout)); err != nil {
 				c.logger.Errorf("failed to set read deadline: %v", err)
-				tunnelConn.Close()
-				bo.Wait(c.state.Ctx())
+				closeAttempt()
+				bo.Wait(ctx)
 				continue
 			}
 			// Receive response
@@ -153,10 +176,12 @@ func (c *TcpMuxTransport) channelDialer() {
 					c.logger.Warn("timeout while waiting for control channel response")
 				} else {
 					c.logger.Errorf("failed to receive control channel response: %v", err)
-					c.legacyServer.miss(c.logger, signal)
+					if !c.config.TCPFWD {
+						c.legacyServer.miss(c.logger, signal)
+					}
 				}
-				tunnelConn.Close() // Close connection on error or timeout
-				bo.Wait(c.state.Ctx())
+				closeAttempt() // Close connection on error or timeout
+				bo.Wait(ctx)
 				continue
 			}
 			// Resetting the deadline (removes any existing deadline)
@@ -168,11 +193,17 @@ func (c *TcpMuxTransport) channelDialer() {
 			if why, refused := refusalReason(message, ackSignal); refused {
 				c.logger.Error("the tunnel was refused — " + why)
 				c.legacyServer.ack(ackSignal)
-				tunnelConn.Close()
-				bo.Wait(c.state.Ctx())
+				closeAttempt()
+				bo.Wait(ctx)
 				continue
 			}
 			token, nonce, muxVersion := decodeControlAck(message, ackSignal)
+			if c.config.TCPFWD && (ackSignal != utils.SG_ChanV2 || nonce == "") {
+				c.logger.Warn("tcpfwd XMPP requires an authenticated pool nonce")
+				closeAttempt()
+				bo.Wait(ctx)
+				continue
+			}
 
 			if token == c.config.Token {
 				// The server answered, so whatever it answered with is what it
@@ -187,8 +218,12 @@ func (c *TcpMuxTransport) channelDialer() {
 				// The engine knows it holds a control channel; the watchdog reads that
 				// rather than the socket table, which shows a socket long after the
 				// tunnel behind it has stopped working. See metrics.Snapshot.Connected.
+				if !c.state.SetConn(tunnelConn) {
+					stop()
+					return
+				}
+				stop()
 				metrics.ReportPeer(tunnelConn.RemoteAddr().String())
-				c.state.SetConn(tunnelConn)
 				c.logger.Infof("control channel established successfully (mux version %d)", c.muxVersion.Load())
 
 				c.status.set("Connected (TCPMux)")
@@ -200,8 +235,8 @@ func (c *TcpMuxTransport) channelDialer() {
 				return
 			} else {
 				c.logger.Errorf("invalid token received (does not match the server's token). Retrying...")
-				tunnelConn.Close() // Close connection if the token is invalid
-				bo.Wait(c.state.Ctx())
+				closeAttempt() // Close connection if the token is invalid
+				bo.Wait(ctx)
 				continue
 			}
 		}
@@ -224,17 +259,29 @@ func (c *TcpMuxTransport) poolMaintainer() {
 		dial:       c.tunnelDialer,
 		spawn:      c.state.Go,
 		pending:    &c.dialingConnections,
-		maxSize:    muxPoolLimit(c.config.ConnPoolSize),
+		maxSize:    c.poolLimit(),
 	}.maintain()
+}
+
+func (c *TcpMuxTransport) poolLimit() int {
+	if c.config.TCPFWD {
+		return config.TCPFWDMaxPool
+	}
+	return muxPoolLimit(c.config.ConnPoolSize)
 }
 
 // control is this generation's control loop. See controlLoop.
 func (c *TcpMuxTransport) control() controlLoop {
-	return c.lifecycle.control(controlwire.Net(c.state.Conn()), c.config.KeepAlive, c.tunnelDialer, c.Restart)
+	loop := c.lifecycle.control(controlwire.Net(c.state.Conn()), c.config.KeepAlive, c.tunnelDialer, c.Restart)
+	if c.config.TCPFWD {
+		loop.idleTimeout = network.TCPFWDIdleTimeout
+		loop.echoBeats = true
+	}
+	return loop
 }
 
 func (c *TcpMuxTransport) tunnelDialer() {
-	ready, ok := c.beginPoolDial(muxPoolLimit(c.config.ConnPoolSize))
+	ready, ok := c.beginPoolDial(c.poolLimit())
 	if !ok {
 		return
 	}
@@ -255,22 +302,42 @@ func (c *TcpMuxTransport) tunnelDialer() {
 
 	defer c.state.Own(tunnelConn)()
 
+	var setup *network.TCPFWDConn
+	var announcement net.Conn = tunnelConn
+	if c.config.TCPFWD {
+		setup, err = network.TCPFWDXMPPClientConn(tunnelConn, c.config.Token, c.config.DialTimeOut)
+		if err != nil {
+			c.logger.Debugf("tcpfwd XMPP data handshake: %v", err)
+			return
+		}
+		announcement = setup
+	}
+
 	// Say what this connection is, so the server admits it on the nonce rather
 	// than on the address it happened to dial out from.
-	if err := announcePoolConn(tunnelConn, c.poolNonce.Get()); err != nil {
+	if err := announcePoolConn(announcement, c.poolNonce.Get()); err != nil {
 		c.logger.Debugf("tunnel dialer: failed to announce the pool connection: %v", err)
 		tunnelConn.Close()
 		return
+	}
+
+	var targets *network.TCPFWDTargets
+	if setup != nil {
+		targets, err = setup.TargetReader()
+		if err != nil {
+			c.logger.Errorf("failed to initialize tcpfwd targets: %v", err)
+			return
+		}
 	}
 
 	// Increment active connections counter
 	atomic.AddInt32(&c.poolConnections, 1)
 	ready()
 
-	c.handleSession(tunnelConn)
+	c.handleSession(tunnelConn, targets)
 }
 
-func (c *TcpMuxTransport) handleSession(tunnelConn net.Conn) {
+func (c *TcpMuxTransport) handleSession(tunnelConn net.Conn, targets *network.TCPFWDTargets) {
 	defer func() {
 		atomic.AddInt32(&c.poolConnections, -1)
 	}()
@@ -282,7 +349,9 @@ func (c *TcpMuxTransport) handleSession(tunnelConn net.Conn) {
 		return
 	}
 
-	c.serveSession(session, tunnelConn.RemoteAddr(), c.backend())
+	backend := c.backend()
+	backend.targets = targets
+	c.serveSession(session, tunnelConn.RemoteAddr(), backend)
 }
 
 // setMuxVersion adopts the version the server settled on. A legacy server sends

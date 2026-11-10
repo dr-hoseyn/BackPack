@@ -14,7 +14,7 @@ import "strings"
 // IsMux reports whether a transport multiplexes several streams over one
 // connection.
 func IsMux(t string) bool {
-	return t == "tcpmux" || t == "wsmux" || t == "wssmux" || t == "dns" || t == "kcp" || t == "xdi" || t == "pck"
+	return t == "tcpmux" || t == "tcpfwd-xmpp" || t == "wsmux" || t == "wssmux" || t == "dns" || t == "kcp" || t == "xdi" || t == "pck"
 }
 
 // IsKCP reports whether a transport is carried by KCP, and so takes the KCP
@@ -54,7 +54,7 @@ func IsDatagram(t string) bool {
 // protocol header that tells the service behind the tunnel the real client IP.
 func SupportsProxyProtocol(t string) bool {
 	switch t {
-	case "tls", "grpc", "ssh", "dns", "tcp", "tcpfwd", "tcpmux", "kcp", "wsmux", "wssmux", "stealth", "quic", "pck":
+	case "tls", "grpc", "ssh", "dns", "tcp", "tcpfwd", "tcpfwd-xmpp", "tcpmux", "kcp", "wsmux", "wssmux", "stealth", "quic", "pck":
 		return true
 	}
 	return false
@@ -75,7 +75,7 @@ func NeedsTLS(t string) bool {
 // carriers.
 func ValidTransport(t string) bool {
 	switch t {
-	case "tls", "grpc", "ssh", "dns", "tcp", "tcpfwd", "tcpmux", "udp", "kcp", "ws", "wss", "wsmux", "wssmux", "stealth", "xdi", "quic", "pck":
+	case "tls", "grpc", "ssh", "dns", "tcp", "tcpfwd", "tcpfwd-xmpp", "tcpmux", "udp", "kcp", "ws", "wss", "wsmux", "wssmux", "stealth", "xdi", "quic", "pck":
 		return true
 	}
 	return false

@@ -375,6 +375,10 @@ func randomPayload(t *testing.T, n int) []byte {
 // baseServerConfig builds a server config equivalent to what the CLI writes for
 // the Turbo preset, with the KCP knobs filled so the KCP transport is valid.
 func baseServerConfig(transport string, tunnelPort, entryPort int, backendAddr, token string) *config.ServerConfig {
+	muxVersion := 2
+	if transport == string(config.TCPFWDXMPP) {
+		muxVersion = 0
+	}
 	return &config.ServerConfig{
 		BindAddr:         fmt.Sprintf("127.0.0.1:%d", tunnelPort),
 		Transport:        config.TransportType(transport),
@@ -387,7 +391,7 @@ func baseServerConfig(transport string, tunnelPort, entryPort int, backendAddr, 
 		Heartbeat:        20,
 		MuxCon:           8,
 		MuxSession:       8,
-		MuxVersion:       2,
+		MuxVersion:       muxVersion,
 		MaxFrameSize:     32768,
 		MaxReceiveBuffer: 4194304,
 		MaxStreamBuffer:  65536,
@@ -401,7 +405,7 @@ func baseServerConfig(transport string, tunnelPort, entryPort int, backendAddr, 
 
 func baseClientConfig(transport, remote, token string, fallbacks []string) *config.ClientConfig {
 	pool := 4
-	if transport == string(config.TCPFWD) {
+	if config.IsTCPForward(config.TransportType(transport)) {
 		pool = config.TCPFWDDefaultPool
 	}
 	return &config.ClientConfig{

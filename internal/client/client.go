@@ -278,11 +278,12 @@ func (c *Client) startTransport(ctx context.Context, tr config.TransportType, en
 		tcpClient := transport.NewTCPClient(ctx, tcpConfig, c.logger)
 		return start(tcpClient)
 
-	case config.TCPMUX:
+	case config.TCPMUX, config.TCPFWDXMPP:
 		tcpMuxConfig := &transport.TcpMuxConfig{
 			RemoteAddr:       c.config.RemoteAddr,
 			Endpoints:        endpoints,
-			Nodelay:          c.config.Nodelay,
+			Nodelay:          c.config.Nodelay || tr == config.TCPFWDXMPP,
+			TCPFWD:           tr == config.TCPFWDXMPP,
 			KeepAlive:        time.Duration(c.config.Keepalive) * time.Second,
 			RetryInterval:    time.Duration(c.config.RetryInterval) * time.Second,
 			DialTimeOut:      time.Duration(c.config.DialTimeout) * time.Second,

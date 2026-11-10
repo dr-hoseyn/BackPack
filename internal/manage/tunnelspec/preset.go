@@ -45,7 +45,7 @@ func PresetSuitsTransport(preset, transport string) bool {
 		return true
 	}
 	switch transport {
-	case "tcp", "tcpfwd", "tcpmux", "stealth", "ws", "wss", "wsmux", "wssmux", "kcp", "xdi", "pck", "udp", "quic":
+	case "tcp", "tcpfwd", "tcpfwd-xmpp", "tcpmux", "stealth", "ws", "wss", "wsmux", "wssmux", "kcp", "xdi", "pck", "udp", "quic":
 		return true
 	}
 	return false
@@ -128,9 +128,12 @@ func ApplyPreset(s *Spec, preset string) {
 		s.MuxFrameSize = 65535
 		s.MuxRecvBuffer, s.MuxStreamBuffer = 32<<20, 32<<20
 	}
-	if s.Transport == string(config.TCPFWD) {
+	if config.IsTCPForward(config.TransportType(s.Transport)) {
 		s.ConnectionPool = config.TCPFWDDefaultPool
 		s.Heartbeat = config.TCPFWDDefaultHeartbeat
+	}
+	if s.Transport == string(config.TCPFWDXMPP) {
+		s.MuxVersion = 0 // use the XMPP profile's negotiated default
 	}
 	ApplyKCPPreset(s, preset)
 }

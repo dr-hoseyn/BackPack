@@ -54,6 +54,7 @@ type TcpMuxTransport struct {
 }
 
 type TcpMuxConfig struct {
+	TCPFWD           bool
 	MPTCP            bool
 	BindAddr         string
 	SnifferLog       string
@@ -249,7 +250,7 @@ func (s *TcpMuxTransport) channelHandshake(g *tcpMuxGen) (controlCandidate, bool
 // control is this generation's control loop, bound to the control channel
 // the generation was started with. See controlLoop.
 func (s *TcpMuxTransport) control(g *tcpMuxGen, ctx context.Context, lost func()) controlLoop {
-	return controlLoop{
+	loop := controlLoop{
 		ctx:      ctx,
 		link:     controlwire.Net(s.controlChannel.Get()),
 		beat:     s.config.Heartbeat,
@@ -257,6 +258,10 @@ func (s *TcpMuxTransport) control(g *tcpMuxGen, ctx context.Context, lost func()
 		log:      s.logger,
 		restart:  lost,
 	}
+	if s.config.TCPFWD {
+		loop.idleTimeout = network.TCPFWDIdleTimeout
+	}
+	return loop
 }
 
 // tunnelPort is this generation's tunnel port; see tcpTunnelPort.
@@ -280,7 +285,19 @@ func (s *TcpMuxTransport) tunnelPort(g *tcpMuxGen) tcpTunnelPort {
 // admitTunnelConn takes one accepted connection through whatever it has to pass
 // before it can be used, and files it as a control channel or a mux session for
 // the pool.
-func (s *TcpMuxTransport) admitTunnelConn(g *tcpMuxGen, conn net.Conn) {
+func (s *TcpMuxTransport) admitTunnelConn(g *tcpMuxGen, raw net.Conn) {
+	conn := raw
+	if s.config.TCPFWD {
+		stop := context.AfterFunc(g.ctx, func() { raw.Close() })
+		defer stop()
+		setup, err := network.TCPFWDXMPPServerConn(raw, s.config.Token, announceTimeout)
+		if err != nil {
+			s.logger.Debugf("tcpfwd XMPP handshake failed from %s: %v", raw.RemoteAddr(), err)
+			raw.Close()
+			return
+		}
+		conn = setup
+	}
 	// A legacy client says nothing on a pool connection — it dials and opens
 	// mux streams when the server asks — so there is no announcement to read
 	// and the only thing separating it from a stranger's connection is the
@@ -288,7 +305,7 @@ func (s *TcpMuxTransport) admitTunnelConn(g *tcpMuxGen, conn net.Conn) {
 	// this branch stays exactly as it was, and is reachable only once a legacy
 	// control channel has been established (which is what leaves the nonce
 	// empty).
-	if s.controlChannel.IsSet() && s.poolNonce.Get() == "" {
+	if !s.config.TCPFWD && s.controlChannel.IsSet() && s.poolNonce.Get() == "" {
 		// Read the peer address once: checking "is it set" and then asking for
 		// the address separately leaves a window where the control channel is
 		// cleared in between and the address comes back nil. Comparing through
@@ -309,6 +326,10 @@ func (s *TcpMuxTransport) admitTunnelConn(g *tcpMuxGen, conn net.Conn) {
 		return
 	}
 
+	if s.config.TCPFWD && ann.signal != utils.SG_ChanV2 && ann.signal != utils.SG_Pool {
+		conn.Close()
+		return
+	}
 	switch {
 	case isControlSignal(ann.signal):
 		s.admitControlChannel(g, conn, ann)
@@ -344,7 +365,13 @@ func (s *TcpMuxTransport) admitControlChannel(g *tcpMuxGen, conn net.Conn, ann a
 		return
 	}
 
-	ack, nonce, muxVersion, err := controlAck(ann.signal, s.config.Token, network.ResolveMuxVersion(s.config.MuxVersion))
+	version := s.config.MuxVersion
+	if s.config.TCPFWD && version == network.MuxVersionAuto {
+		// Version 1 uses the session receive budget. It avoids waiting for
+		// each new stream's initial 256 KiB window to be replenished.
+		version = 1
+	}
+	ack, nonce, muxVersion, err := controlAck(ann.signal, s.config.Token, network.ResolveMuxVersion(version))
 	if err != nil {
 		s.logger.Errorf("could not answer the control handshake: %v", err)
 		conn.Close()
@@ -388,12 +415,23 @@ func (s *TcpMuxTransport) deliverTunnelConn(g *tcpMuxGen, conn net.Conn, nonce s
 				return false
 			}
 		}
-		session, err := network.NewWatchedMuxSession(conn, s.smuxCfg(), smux.Client)
+		var targets *network.TCPFWDTargets
+		dataConn := conn
+		if setup, ok := conn.(*network.TCPFWDConn); ok {
+			var err error
+			targets, err = setup.TargetWriter()
+			if err != nil {
+				s.logger.Errorf("failed to initialize tcpfwd targets: %v", err)
+				return false
+			}
+			dataConn = setup.DataConn()
+		}
+		session, err := network.NewWatchedMuxSession(dataConn, s.smuxCfg(), smux.Client)
 		if err != nil {
 			s.logger.Errorf("failed to create MUX session: %v", err)
 			return false
 		}
-		return enqueueMuxSession(g.tunnelChannel, ctx, session)
+		return enqueueMuxEntry(g.tunnelChannel, pooledMuxSession{Session: session, owner: ctx, targets: targets})
 	})
 	if !accepted {
 		conn.Close()
@@ -414,6 +452,7 @@ func (s *TcpMuxTransport) handleLoop(g *tcpMuxGen) {
 			}
 
 			loop := s.session(g, session.owner)
+			loop.targets = session.targets
 			go loop.run(session.Session)
 		}
 	}

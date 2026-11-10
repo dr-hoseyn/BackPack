@@ -118,7 +118,7 @@ func applyDefaults(cfg *config.Config) {
 	// Connection pool
 	if cfg.Client.ConnectionPool <= 0 {
 		cfg.Client.ConnectionPool = defaultConnectionPool
-		if cfg.Client.Transport == config.TCPFWD {
+		if config.IsTCPForward(cfg.Client.Transport) {
 			cfg.Client.ConnectionPool = config.TCPFWDDefaultPool
 		}
 	}
@@ -168,9 +168,15 @@ func applyDefaults(cfg *config.Config) {
 	// MaxStreamBuffer
 	if cfg.Server.MaxStreamBuffer <= 0 {
 		cfg.Server.MaxStreamBuffer = defaultMaxStreamBuffer
+		if cfg.Server.Transport == config.TCPFWDXMPP {
+			cfg.Server.MaxStreamBuffer = min(2<<20, cfg.Server.MaxReceiveBuffer)
+		}
 	}
 	if cfg.Client.MaxStreamBuffer <= 0 {
 		cfg.Client.MaxStreamBuffer = defaultMaxStreamBuffer
+		if cfg.Client.Transport == config.TCPFWDXMPP {
+			cfg.Client.MaxStreamBuffer = min(2<<20, cfg.Client.MaxReceiveBuffer)
+		}
 	}
 	// SnifferLog
 	if cfg.Server.SnifferLog == "" {
@@ -182,7 +188,7 @@ func applyDefaults(cfg *config.Config) {
 	// Heartbeat
 	if cfg.Server.Heartbeat < 1 { // Minimum accepted interval is 1 second
 		cfg.Server.Heartbeat = defaultHeartbeat
-		if cfg.Server.Transport == config.TCPFWD {
+		if config.IsTCPForward(cfg.Server.Transport) {
 			cfg.Server.Heartbeat = config.TCPFWDDefaultHeartbeat
 		}
 	}
@@ -728,13 +734,13 @@ func checkTCPFWD(cfg *config.Config) error {
 		{cfg.Server.Transport, cfg.Server.FallbackTransports, cfg.Server.Token},
 		{cfg.Client.Transport, cfg.Client.FallbackTransports, cfg.Client.Token},
 	} {
-		if side.transport == config.TCPFWD || slices.Contains(side.fallback, config.TCPFWD) {
+		if config.IsTCPForward(side.transport) || slices.ContainsFunc(side.fallback, config.IsTCPForward) {
 			if strings.TrimSpace(side.token) == "" || side.token == defaultToken {
 				return fmt.Errorf("tcpfwd requires an explicit shared token")
 			}
 		}
 	}
-	if (cfg.Client.Transport == config.TCPFWD || slices.Contains(cfg.Client.FallbackTransports, config.TCPFWD)) &&
+	if (config.IsTCPForward(cfg.Client.Transport) || slices.ContainsFunc(cfg.Client.FallbackTransports, config.IsTCPForward)) &&
 		cfg.Client.ConnectionPool > config.TCPFWDMaxPool {
 		return fmt.Errorf("tcpfwd connection_pool must be at most %d", config.TCPFWDMaxPool)
 	}
