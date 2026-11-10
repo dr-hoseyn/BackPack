@@ -378,7 +378,7 @@ acknowledgement delay and outstanding retransmission timeouts. Persistent
 backlogs can redirect new streams to spare capacity. The scheduler confirms
 backlog over consecutive samples and scales its penalty with path RTT to
 preserve warm TCP capacity through short bursts and delayed ACKs.
-Each NUM3 data socket also uses a 128 KiB TCP unsent-queue threshold on
+Each NUM3 data socket also uses a 512 KiB TCP unsent-queue threshold on
 supporting Linux kernels. This applies backpressure before bulk traffic fills
 the local send queue; the congestion window and socket buffers can still grow.
 Updated peers negotiate retirement of excess idle sessions

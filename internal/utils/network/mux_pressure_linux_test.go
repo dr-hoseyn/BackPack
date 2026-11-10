@@ -50,7 +50,7 @@ func TestTCPFWDNUM3QueueLimitPreservesTheSocketSendBuffer(t *testing.T) {
 	if errors.Is(optionErr, unix.ENOPROTOOPT) || errors.Is(optionErr, unix.EOPNOTSUPP) {
 		t.Skip("kernel does not support TCP_NOTSENT_LOWAT")
 	}
-	if optionErr != nil || limit != 128<<10 {
+	if optionErr != nil || limit != 512<<10 {
 		t.Fatalf("unsent queue limit = %d, %v", limit, optionErr)
 	}
 	if after < before {

@@ -17,7 +17,7 @@ func limitTCPMuxBacklog(conn net.Conn) {
 	if socket, ok := conn.(syscall.Conn); ok {
 		if raw, err := socket.SyscallConn(); err == nil {
 			_ = raw.Control(func(fd uintptr) {
-				_ = unix.SetsockoptInt(int(fd), unix.IPPROTO_TCP, unix.TCP_NOTSENT_LOWAT, 128<<10)
+				_ = unix.SetsockoptInt(int(fd), unix.IPPROTO_TCP, unix.TCP_NOTSENT_LOWAT, 512<<10)
 			})
 		}
 	}
