@@ -31,6 +31,7 @@ type num3MuxConn struct {
 	opening    map[uint32][]byte // only touched by the session's single writer
 	pending    []byte            // only touched by the session's single reader
 	readBuffer []byte
+	queueTune  func() // the smux writer calls this only on an existing heartbeat
 }
 
 func appendSMUXFrame(dst []byte, kind byte, id uint32, body []byte) []byte {
@@ -73,6 +74,9 @@ func (c *num3MuxConn) writeSMUX(header, body []byte) (int, error) {
 	written := len(header) + len(body)
 	kind := header[1]
 	if kind == smuxNOP {
+		if c.queueTune != nil {
+			c.queueTune()
+		}
 		if err := c.codec.write(num3Control); err != nil {
 			return 0, err
 		}

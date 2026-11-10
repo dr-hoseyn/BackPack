@@ -13,14 +13,54 @@ import (
 // Bound bytes waiting to enter TCP, while leaving the congestion window and
 // socket-buffer autotuning available to fill a high-bandwidth, high-RTT path.
 // https://kernel.org/doc/html/latest/networking/ip-sysctl.html#tcp-notsent-lowat
-func limitTCPMuxBacklog(conn net.Conn) {
-	if socket, ok := conn.(syscall.Conn); ok {
-		if raw, err := socket.SyscallConn(); err == nil {
-			_ = raw.Control(func(fd uintptr) {
-				_ = unix.SetsockoptInt(int(fd), unix.IPPROTO_TCP, unix.TCP_NOTSENT_LOWAT, 512<<10)
-			})
-		}
+// The returned tuner is called only by the session's single heartbeat writer.
+func limitTCPMuxBacklog(conn net.Conn) func() {
+	socket, ok := conn.(syscall.Conn)
+	if !ok {
+		return nil
 	}
+	raw, err := socket.SyscallConn()
+	if err != nil {
+		return nil
+	}
+	current := 512 << 10
+	var optionErr error
+	if err := raw.Control(func(fd uintptr) {
+		optionErr = unix.SetsockoptInt(int(fd), unix.IPPROTO_TCP, unix.TCP_NOTSENT_LOWAT, current)
+	}); err != nil || optionErr != nil {
+		return nil
+	}
+	return func() {
+		_ = raw.Control(func(fd uintptr) {
+			info, err := unix.GetsockoptTCPInfo(int(fd), unix.IPPROTO_TCP, unix.TCP_INFO)
+			if err != nil {
+				return
+			}
+			next := tcpMuxQueueReserve(info)
+			// Ignore small pacing fluctuations rather than changing the
+			// socket's wake-up threshold on every heartbeat.
+			if next >= current+current/4 || next <= current-current/4 {
+				if unix.SetsockoptInt(int(fd), unix.IPPROTO_TCP, unix.TCP_NOTSENT_LOWAT, next) == nil {
+					current = next
+				}
+			}
+		})
+	}
+}
+
+func tcpMuxQueueReserve(info *unix.TCPInfo) int {
+	const floor, ceiling, step = 512 << 10, 2 << 20, 128 << 10
+	rate, rtt := info.Pacing_rate, uint64(info.Min_rtt)
+	if rate == 0 || rate == ^uint64(0) || rtt == 0 || info.Min_rtt == ^uint32(0) {
+		return floor
+	}
+	// Keep one eighth of the paced bandwidth-delay product ready to send.
+	// Check the cap before multiplying, including for large kernel counters.
+	if rate >= uint64(ceiling)*8_000_000/rtt {
+		return ceiling
+	}
+	reserve := int(rate * rtt / 8_000_000)
+	return max(floor, (reserve+step-1)/step*step)
 }
 
 func tcpMuxSocketPressure(conn net.Conn) (int, bool) {

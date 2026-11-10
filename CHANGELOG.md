@@ -5,8 +5,8 @@
 - Choose NUM3 data carriers using their TCP send backlog and acknowledgement
   delay alongside active stream counts. Confirm transient queue samples and
   account for path RTT, receiver windows and stalled retransmissions.
-- Bound the TCP unsent queue on NUM3 data sockets to reduce bulk-transfer
-  queueing while preserving the socket send buffer and congestion window.
+- Bound and adapt the TCP unsent queue on NUM3 data sockets to reduce bulk
+  queueing while preserving throughput, the send buffer and congestion window.
 - Negotiate idle pool retirement between updated NUM3 peers and repair lost
   minimum pool capacity before the next sizing tick.
 

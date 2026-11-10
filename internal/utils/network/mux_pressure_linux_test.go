@@ -90,6 +90,28 @@ func TestTCPMuxPressureAccountsForQueuedDataAndRTTInflation(t *testing.T) {
 	}
 }
 
+func TestTCPMuxPressureQueueReserveScalesWithinBounds(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		info unix.TCPInfo
+		want int
+	}{
+		{"unknown path", unix.TCPInfo{}, 512 << 10},
+		{"low bandwidth", unix.TCPInfo{Pacing_rate: 1_000_000, Min_rtt: 100_000}, 512 << 10},
+		{"wide high RTT pipe", unix.TCPInfo{Pacing_rate: 80_000_000, Min_rtt: 100_000}, 1 << 20},
+		{"bounded fast path", unix.TCPInfo{Pacing_rate: 1_000_000_000, Min_rtt: 100_000}, 2 << 20},
+		{"unavailable pacing rate", unix.TCPInfo{Pacing_rate: ^uint64(0), Min_rtt: 100_000}, 512 << 10},
+		{"unavailable minimum RTT", unix.TCPInfo{Pacing_rate: 80_000_000, Min_rtt: ^uint32(0)}, 512 << 10},
+		{"large counters", unix.TCPInfo{Pacing_rate: ^uint64(0) - 1, Min_rtt: ^uint32(0) - 1}, 2 << 20},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tcpMuxQueueReserve(&tc.info); got != tc.want {
+				t.Fatalf("queue reserve = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestTCPMuxPressureKeepsWarmCapacityThroughOrdinaryRTTJitter(t *testing.T) {
 	info := unix.TCPInfo{Rtt: 100_000, Min_rtt: 100_000, Delivery_rate: 1_000_000}
 	info.Notsent_bytes = 50_000

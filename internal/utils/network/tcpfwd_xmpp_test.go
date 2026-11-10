@@ -106,7 +106,8 @@ func TestTCPFWDNUM3StreamFrames(t *testing.T) {
 		t.Fatal(err)
 	}
 	codec := &num3Records{conn: &wire, aead: aead, dataAEAD: aead}
-	sender := &num3MuxConn{codec: codec, edge: true, opening: make(map[uint32][]byte)}
+	tunes := 0
+	sender := &num3MuxConn{codec: codec, edge: true, opening: make(map[uint32][]byte), queueTune: func() { tunes++ }}
 	receiver := &num3MuxConn{codec: codec}
 
 	const addr = "127.0.0.1:8123"
@@ -125,6 +126,9 @@ func TestTCPFWDNUM3StreamFrames(t *testing.T) {
 		if n, err := sender.WriteBuffers(parts); n != len(frame) || err != nil {
 			t.Fatalf("writing frame %x: %d, %v", frame, n, err)
 		}
+	}
+	if tunes != 1 {
+		t.Fatalf("socket tuning ran %d times instead of once on the heartbeat", tunes)
 	}
 
 	captured := bytes.Clone(wire.Bytes())

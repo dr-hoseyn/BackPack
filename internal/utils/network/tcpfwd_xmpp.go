@@ -393,6 +393,5 @@ func (c *TCPFWDXMPPConn) Write(p []byte) (int, error) {
 }
 
 func (c *TCPFWDXMPPConn) DataConn() net.Conn {
-	limitTCPMuxBacklog(c.Conn)
-	return &num3MuxConn{Conn: c.Conn, codec: c.codec, edge: c.edge, opening: make(map[uint32][]byte)}
+	return &num3MuxConn{Conn: c.Conn, codec: c.codec, edge: c.edge, opening: make(map[uint32][]byte), queueTune: limitTCPMuxBacklog(c.Conn)}
 }
