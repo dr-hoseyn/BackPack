@@ -79,6 +79,9 @@ func NewMuxClient(parentCtx context.Context, config *TcpMuxConfig, logger *logru
 		muxV2:  network.SmuxConfig(2, muxSettings),
 		config: config,
 	}
+	if config.TCPFWD {
+		client.muxV1.KeepAliveInterval = network.TCPFWDNUM3KeepAlive
+	}
 
 	client.firstGeneration(parentCtx, logger, usageSpec{snifferLog: config.SnifferLog, sniffer: config.Sniffer})
 	return client
@@ -302,7 +305,7 @@ func (c *TcpMuxTransport) tunnelDialer() {
 
 	defer c.state.Own(tunnelConn)()
 
-	var setup *network.TCPFWDConn
+	var setup *network.TCPFWDXMPPConn
 	var announcement net.Conn = tunnelConn
 	if c.config.TCPFWD {
 		setup, err = network.TCPFWDXMPPClientConn(tunnelConn, c.config.Token, c.config.DialTimeOut)
@@ -321,23 +324,19 @@ func (c *TcpMuxTransport) tunnelDialer() {
 		return
 	}
 
-	var targets *network.TCPFWDTargets
+	var dataConn net.Conn = tunnelConn
 	if setup != nil {
-		targets, err = setup.TargetReader()
-		if err != nil {
-			c.logger.Errorf("failed to initialize tcpfwd targets: %v", err)
-			return
-		}
+		dataConn = setup.DataConn()
 	}
 
 	// Increment active connections counter
 	atomic.AddInt32(&c.poolConnections, 1)
 	ready()
 
-	c.handleSession(tunnelConn, targets)
+	c.handleSession(dataConn)
 }
 
-func (c *TcpMuxTransport) handleSession(tunnelConn net.Conn, targets *network.TCPFWDTargets) {
+func (c *TcpMuxTransport) handleSession(tunnelConn net.Conn) {
 	defer func() {
 		atomic.AddInt32(&c.poolConnections, -1)
 	}()
@@ -349,9 +348,7 @@ func (c *TcpMuxTransport) handleSession(tunnelConn net.Conn, targets *network.TC
 		return
 	}
 
-	backend := c.backend()
-	backend.targets = targets
-	c.serveSession(session, tunnelConn.RemoteAddr(), backend)
+	c.serveSession(session, tunnelConn.RemoteAddr(), c.backend())
 }
 
 // setMuxVersion adopts the version the server settled on. A legacy server sends

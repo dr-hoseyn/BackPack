@@ -581,10 +581,14 @@ func applyManualTuning(s *TunnelSpec) {
 	}
 	if isMux(s.Transport) {
 		s.MuxCon = tui.PromptInt("Mux Connections", s.MuxCon)
-		s.MuxVersion = tui.PromptInt("Mux Version (1 Or 2)", s.MuxVersion)
+		if s.Transport != string(config.TCPFWDXMPP) {
+			s.MuxVersion = tui.PromptInt("Mux Version (1 Or 2)", s.MuxVersion)
+		}
 		s.MuxFrameSize = tui.PromptInt("Mux Frame Size", s.MuxFrameSize)
 		s.MuxRecvBuffer = tui.PromptInt("Mux Receive Buffer", s.MuxRecvBuffer)
-		s.MuxStreamBuffer = tui.PromptInt("Mux Stream Buffer", s.MuxStreamBuffer)
+		if s.Transport != string(config.TCPFWDXMPP) {
+			s.MuxStreamBuffer = tui.PromptInt("Mux Stream Buffer", s.MuxStreamBuffer)
+		}
 	}
 	if isKCP(s.Transport) {
 		s.KCPMTU = tui.PromptInt("KCP MTU (Bytes, Below The Path MTU)", s.KCPMTU)

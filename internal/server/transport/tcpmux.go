@@ -125,6 +125,10 @@ func NewTcpMuxServer(parentCtx context.Context, config *TcpMuxConfig, logger *lo
 		limits:         newLimiter(Limits{MaxConnections: config.MaxConnections, BandwidthMbps: config.BandwidthMbps}),
 	}
 
+	if config.TCPFWD {
+		server.muxV1.KeepAliveInterval = network.TCPFWDNUM3KeepAlive
+	}
+
 	// The first run is installed the same way every later one is, so there is
 	// only one path that ever writes it.
 	server.firstGeneration()
@@ -366,9 +370,8 @@ func (s *TcpMuxTransport) admitControlChannel(g *tcpMuxGen, conn net.Conn, ann a
 	}
 
 	version := s.config.MuxVersion
-	if s.config.TCPFWD && version == network.MuxVersionAuto {
-		// Version 1 uses the session receive budget. It avoids waiting for
-		// each new stream's initial 256 KiB window to be replenished.
+	if s.config.TCPFWD {
+		// NUM3's stream adapter uses a shared receive budget.
 		version = 1
 	}
 	ack, nonce, muxVersion, err := controlAck(ann.signal, s.config.Token, network.ResolveMuxVersion(version))
@@ -415,15 +418,8 @@ func (s *TcpMuxTransport) deliverTunnelConn(g *tcpMuxGen, conn net.Conn, nonce s
 				return false
 			}
 		}
-		var targets *network.TCPFWDTargets
 		dataConn := conn
-		if setup, ok := conn.(*network.TCPFWDConn); ok {
-			var err error
-			targets, err = setup.TargetWriter()
-			if err != nil {
-				s.logger.Errorf("failed to initialize tcpfwd targets: %v", err)
-				return false
-			}
+		if setup, ok := conn.(*network.TCPFWDXMPPConn); ok {
 			dataConn = setup.DataConn()
 		}
 		session, err := network.NewWatchedMuxSession(dataConn, s.smuxCfg(), smux.Client)
@@ -431,7 +427,7 @@ func (s *TcpMuxTransport) deliverTunnelConn(g *tcpMuxGen, conn net.Conn, nonce s
 			s.logger.Errorf("failed to create MUX session: %v", err)
 			return false
 		}
-		return enqueueMuxEntry(g.tunnelChannel, pooledMuxSession{Session: session, owner: ctx, targets: targets})
+		return enqueueMuxSession(g.tunnelChannel, ctx, session)
 	})
 	if !accepted {
 		conn.Close()
@@ -451,9 +447,7 @@ func (s *TcpMuxTransport) handleLoop(g *tcpMuxGen) {
 				continue
 			}
 
-			loop := s.session(g, session.owner)
-			loop.targets = session.targets
-			go loop.run(session.Session)
+			go s.session(g, session.owner).run(session.Session)
 		}
 	}
 }

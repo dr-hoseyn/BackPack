@@ -356,20 +356,21 @@ token = "<same-long-random-token>"
 connection_pool = 2
 ```
 
-#### XMPP-style opening and reusable connections (`tcpfwd-xmpp`)
+#### NUM3-style opening and reusable connections (`tcpfwd-xmpp`)
 
 On both peers, select **TCP → TCP Forward (XMPP)** or use
 `transport = "tcpfwd-xmpp"` with the same long random token. The first payload
-in each direction is the XMPP-shaped opening captured from the PenguTunnel
-NUM3 configuration. A Backpack-specific authenticated exchange follows.
-The two modes each require a matching transport on the other end.
+in each direction is the XMPP-shaped opening measured on PenguTunnel NUM3.
+The Iran listener sends its opening first and the kharej client responds.
+The bootstrap uses the NUM3 hello layout and shared-token key derivation,
+then Backpack peers establish their own authenticated session. Both endpoints
+must use this Backpack mode.
 
 A warm pool of TCP sessions carries multiple forwarded streams. Session
-authentication, the control channel and each stream's destination use
-AES-256-GCM. After setup, application bytes travel in plaintext mux frames.
+authentication, control, stream setup and application data use AES-256-GCM.
+Data frames expose their four-byte length word, type and stream ID.
 The carrier enables TCP_NODELAY and starts with two warm sessions by default.
-The server defaults to mux version 1 with a shared receive budget. Set
-`mux_version = 2` on the server to give each stream an independent window.
+This mode uses a shared mux receive budget.
 
 ### TCP Mux
 The same TCP stream, but many logical connections are **multiplexed** over a

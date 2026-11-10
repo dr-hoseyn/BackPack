@@ -2,75 +2,191 @@ package network
 
 import (
 	"bytes"
+	"encoding/binary"
 	"io"
 	"net"
 	"testing"
 	"time"
 )
 
-func TestTCPFWDXMPPOpeningsAndProtectedTarget(t *testing.T) {
+func TestTCPFWDXMPPBootstrap(t *testing.T) {
 	client, server := net.Pipe()
 	defer client.Close()
 	defer server.Close()
 	clientWire := &recordingTCPFWDConn{Conn: client}
 	serverWire := &recordingTCPFWDConn{Conn: server}
 	const token = "shared-test-token-for-xmpp"
-	const target = "127.0.0.1:8123"
-	const app = "application bytes on the mux data connection"
-	type reply struct {
-		conn *TCPFWDConn
-		err  error
-	}
-	finished := make(chan reply, 1)
+	finished := make(chan error, 1)
 	go func() {
-		conn, err := TCPFWDXMPPServerConn(serverWire, token, 2*time.Second)
-		finished <- reply{conn, err}
+		_, err := TCPFWDXMPPServerConn(serverWire, token, time.Second)
+		finished <- err
 	}()
-	exit, err := TCPFWDXMPPClientConn(clientWire, token, 2*time.Second)
-	if err != nil {
+	if _, err := TCPFWDXMPPClientConn(clientWire, token, time.Second); err != nil {
 		t.Fatal(err)
 	}
-	edge := <-finished
-	if edge.err != nil {
-		t.Fatal(edge.err)
-	}
-	if !bytes.HasPrefix(clientWire.wire.Bytes(), []byte(tcpfwdXMPPClient)) ||
-		!bytes.HasPrefix(serverWire.wire.Bytes(), []byte(tcpfwdXMPPServer)) {
-		t.Fatal("the first payloads did not contain the complete XML openings")
-	}
-	writer, err := edge.conn.TargetWriter()
-	if err != nil {
+	if err := <-finished; err != nil {
 		t.Fatal(err)
 	}
-	reader, err := exit.TargetReader()
-	if err != nil {
-		t.Fatal(err)
+	for _, tc := range []struct {
+		wire  []byte
+		xml   string
+		hello uint32
+	}{
+		{clientWire.wire.Bytes(), tcpfwdXMPPClient, 62},
+		{serverWire.wire.Bytes(), tcpfwdXMPPServer, 46},
+	} {
+		if !bytes.HasPrefix(tc.wire, []byte(tc.xml)) {
+			t.Fatalf("missing XML opening %q", tc.xml)
+		}
+		wire := tc.wire[len(tc.xml):]
+		for _, size := range []uint32{tc.hello, 37, 37} {
+			if len(wire) < 4+int(size) || binary.BigEndian.Uint32(wire[:4]) != size {
+				t.Fatalf("expected record size %d, got %x", size, wire)
+			}
+			wire = wire[4+int(size):]
+		}
+		if len(wire) > 0 {
+			t.Fatalf("unexpected bootstrap bytes: %x", wire)
+		}
 	}
-	record := writer.Seal(3, target)
-	if bytes.Contains([]byte(record), []byte(target)) {
-		t.Fatal("destination appeared in plaintext")
-	}
-	if got, err := reader.Open(3, record); err != nil || got != target {
-		t.Fatalf("decoded target %q, %v", got, err)
-	}
-	if _, err := reader.Open(5, record); err == nil {
-		t.Fatal("accepted a target record replayed on another stream")
-	}
-	result := make(chan error, 1)
+}
+
+func TestTCPFWDXMPPEdgeSendsOpeningFirst(t *testing.T) {
+	exit, edge := net.Pipe()
+	defer exit.Close()
+	defer edge.Close()
+
+	stopped := make(chan struct{})
 	go func() {
-		_ = edge.conn.DataConn().SetWriteDeadline(time.Now().Add(time.Second))
-		_, err := io.WriteString(edge.conn.DataConn(), app)
-		result <- err
+		defer close(stopped)
+		_, _ = TCPFWDXMPPServerConn(edge, "shared-test-token-for-xmpp", time.Second)
 	}()
-	body := make([]byte, len(app))
-	_ = exit.DataConn().SetReadDeadline(time.Now().Add(time.Second))
-	if _, err := io.ReadFull(exit.DataConn(), body); err != nil || string(body) != app {
-		t.Fatalf("raw data %q, %v", body, err)
-	}
-	if err := <-result; err != nil {
+	if err := exit.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.HasSuffix(serverWire.wire.Bytes(), []byte(app)) {
-		t.Fatal("data bytes were changed on the underlying connection")
+	if err := readNUM3Opening(exit, tcpfwdXMPPServer); err != nil {
+		t.Fatalf("edge did not send its opener first: %v", err)
+	}
+	_ = exit.Close()
+	<-stopped
+}
+
+func TestTCPFWDNUM3StreamFrames(t *testing.T) {
+	var wire bytes.Buffer
+	aead, err := num3AEAD(make([]byte, 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	codec := &num3Records{conn: &wire, aead: aead, dataAEAD: aead}
+	sender := &num3MuxConn{codec: codec, edge: true, opening: make(map[uint32][]byte)}
+	receiver := &num3MuxConn{codec: codec}
+
+	const addr = "127.0.0.1:8123"
+	const app = "application bytes"
+	target := append([]byte{0, byte(len(addr))}, addr...)
+	for _, frame := range [][]byte{
+		appendSMUXFrame(nil, smuxSYN, 3, nil),
+		appendSMUXFrame(nil, smuxPSH, 3, target[:1]),
+		appendSMUXFrame(nil, smuxPSH, 3, append(bytes.Clone(target[1:]), app...)),
+		appendSMUXFrame(nil, smuxFIN, 3, nil),
+		appendSMUXFrame(nil, smuxNOP, 0, nil),
+	} {
+		if n, err := sender.Write(frame); n != len(frame) || err != nil {
+			t.Fatalf("writing frame %x: %d, %v", frame, n, err)
+		}
+	}
+
+	captured := bytes.Clone(wire.Bytes())
+	if bytes.Contains(captured, []byte(addr)) {
+		t.Fatal("destination was visible on the wire")
+	}
+	if bytes.Contains(captured, []byte(app)) {
+		t.Fatal("application data was visible on the wire")
+	}
+	open := append([]byte{1, 0, 0, 0, 1, 1, 0}, target...)
+	open = append(open, 0, 0)
+	for _, want := range []struct {
+		body []byte
+		raw  bool
+	}{
+		{open, false},
+		{append([]byte{2, 0, 0, 0, 1}, app...), true},
+		{[]byte{3, 0, 0, 0, 1}, false},
+		{[]byte{6, 0, 0, 0, 0}, false},
+	} {
+		got, raw, err := codec.read()
+		if err == nil && raw {
+			if len(got) != len(want.body)+aead.Overhead() {
+				t.Fatalf("unexpected data record length %d", len(got))
+			}
+			if _, err := codec.openData([]byte{2, 0, 0, 0, 3}, bytes.Clone(got[5:])); err == nil {
+				t.Fatal("accepted a data record on the wrong stream")
+			}
+			var data []byte
+			data, err = codec.openData(got[:5], got[5:])
+			got = append(got[:5], data...)
+		}
+		if err != nil || raw != want.raw || !bytes.Equal(got, want.body) {
+			t.Fatalf("wire record %x, raw=%t, %v; want %x, raw=%t", got, raw, err, want.body, want.raw)
+		}
+	}
+	if wire.Len() != 0 {
+		t.Fatalf("unexpected remaining bytes: %x", wire.Bytes())
+	}
+
+	wire.Write(captured)
+	expected := appendSMUXFrame(nil, smuxSYN, 3, nil)
+	expected = appendSMUXFrame(expected, smuxPSH, 3, target)
+	expected = appendSMUXFrame(expected, smuxPSH, 3, []byte(app))
+	expected = appendSMUXFrame(expected, smuxFIN, 3, nil)
+	expected = appendSMUXFrame(expected, smuxNOP, 0, nil)
+	actual := make([]byte, len(expected))
+	if _, err := io.ReadFull(receiver, actual); err != nil || !bytes.Equal(actual, expected) {
+		t.Fatalf("restored stream %x, %v; want %x", actual, err, expected)
+	}
+}
+
+func TestTCPFWDNUM3MaxDestination(t *testing.T) {
+	var wire bytes.Buffer
+	aead, err := num3AEAD(make([]byte, 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	codec := &num3Records{conn: &wire, aead: aead}
+	sender := &num3MuxConn{codec: codec, edge: true, opening: make(map[uint32][]byte)}
+	receiver := &num3MuxConn{codec: codec}
+	target := append([]byte{0xff, 0xff}, bytes.Repeat([]byte{'x'}, 65535)...)
+	syn := appendSMUXFrame(nil, smuxSYN, 3, nil)
+	frames := [][]byte{syn, appendSMUXFrame(nil, smuxPSH, 3, target[:65535]), appendSMUXFrame(nil, smuxPSH, 3, target[65535:])}
+	for _, frame := range frames {
+		if _, err := sender.Write(frame); err != nil {
+			t.Fatal(err)
+		}
+	}
+	expected := bytes.Join(frames, nil)
+	actual := make([]byte, len(expected))
+	if _, err := io.ReadFull(receiver, actual); err != nil || !bytes.Equal(actual, expected) {
+		t.Fatalf("large destination round trip: %v", err)
+	}
+}
+
+func TestTCPFWDNUM3RejectsReplayedControl(t *testing.T) {
+	var wire bytes.Buffer
+	aead, err := num3AEAD(make([]byte, 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	codec := &num3Records{conn: &wire, aead: aead, readAAD: &[9]byte{1}, writeAAD: &[9]byte{1}}
+	frame, err := codec.encode(num3Control)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wire.Write(frame)
+	wire.Write(frame)
+	if _, _, err := codec.read(); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := codec.read(); err == nil {
+		t.Fatal("accepted a replayed control frame")
 	}
 }

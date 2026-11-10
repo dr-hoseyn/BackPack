@@ -168,15 +168,9 @@ func applyDefaults(cfg *config.Config) {
 	// MaxStreamBuffer
 	if cfg.Server.MaxStreamBuffer <= 0 {
 		cfg.Server.MaxStreamBuffer = defaultMaxStreamBuffer
-		if cfg.Server.Transport == config.TCPFWDXMPP {
-			cfg.Server.MaxStreamBuffer = min(2<<20, cfg.Server.MaxReceiveBuffer)
-		}
 	}
 	if cfg.Client.MaxStreamBuffer <= 0 {
 		cfg.Client.MaxStreamBuffer = defaultMaxStreamBuffer
-		if cfg.Client.Transport == config.TCPFWDXMPP {
-			cfg.Client.MaxStreamBuffer = min(2<<20, cfg.Client.MaxReceiveBuffer)
-		}
 	}
 	// SnifferLog
 	if cfg.Server.SnifferLog == "" {
