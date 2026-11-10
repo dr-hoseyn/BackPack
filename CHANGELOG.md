@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+## v1.22.0 — 2026-11-10
+
+- Add **TCP Forward (XMPP)** (`tcpfwd-xmpp`) with the XMPP-shaped opening
+  observed in PenguTunnel NUM3. This built-in Backpack transport protects
+  control messages, destinations and application data with AES-256-GCM.
+- Reuse warm TCP sessions for concurrent forwarding and prefer them during
+  short bursts. Reuse encryption and framing buffers across data records.
+- Select `tcpfwd-xmpp` on both Backpack peers with the same token. The
+  existing **TCP Forward** (`tcpfwd`) mode uses authenticated setup and
+  forwards application bytes as plain TCP.
+
+<div dir="rtl">
+
+حالت **TCP Forward (XMPP)** با پیام آغازین NUM3، دادهٔ رمزگذاری‌شده و استفادهٔ
+مجدد از اتصال‌های TCP اضافه شد. برای استفاده، هر دو سرور BackPack را به‌روز
+کنید و `tcpfwd-xmpp` را با توکن مشترک انتخاب کنید. حالت `tcpfwd` بعد از
+احراز هویت و تعیین مقصد، داده را روی TCP عبور می‌دهد.
+
+</div>
+
 ## v1.21.0 — 2026-11-10
 
 - Add the built-in TCP Forward (`tcpfwd`) transport, inspired by PenguTunnel.

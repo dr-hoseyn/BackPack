@@ -30,17 +30,18 @@ import (
 // allReverseTransports is every transport the reverse tunnel can be configured
 // with that can run without elevated privileges.
 var allReverseTransports = []string{
-	"tcp",     // plain
-	"tcpfwd",  // protected setup and plaintext forwarding
-	"tcpmux",  // smux over tcp
-	"stealth", // tcp with a Noise record layer
-	"ws",      // an HTTP upgrade
-	"wss",     // the same, with TLS
-	"wsmux",   // smux over ws
-	"wssmux",  // smux over wss
-	"kcp",     // reliable, over udp
-	"quic",    // quic streams
-	"udp",     // datagrams
+	"tcp",         // plain
+	"tcpfwd",      // protected setup and plaintext forwarding
+	"tcpfwd-xmpp", // NUM3-style opening and encrypted multiplexed data
+	"tcpmux",      // smux over tcp
+	"stealth",     // tcp with a Noise record layer
+	"ws",          // an HTTP upgrade
+	"wss",         // the same, with TLS
+	"wsmux",       // smux over ws
+	"wssmux",      // smux over wss
+	"kcp",         // reliable, over udp
+	"quic",        // quic streams
+	"udp",         // datagrams
 }
 
 // Every transport: the tunnel comes up and a payload survives it byte for byte.

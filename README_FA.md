@@ -1,5 +1,9 @@
 # فورک dr-hoseyn
 
+**نسخهٔ v1.22.0** حالت [TCP Forward (XMPP)](docs/transports.md#num3-style-opening-and-reusable-connections-tcpfwd-xmpp)
+را با آغاز NUM3، دادهٔ رمزگذاری‌شده و استفادهٔ مجدد از اتصال‌های TCP اضافه
+می‌کند. این حالت را در هر دو سرور به‌روزشده انتخاب کنید.
+
 **نسخهٔ v1.21.0** حالت بومی [TCP Forward](docs/transports.md#tcp-forward-tcpfwd) را برای دو سرور BackPack اضافه می‌کند.
 
 **نسخهٔ v1.20.2** بازیابی WSSMux و TCPMux را بهبود می‌دهد. در پورت‌های

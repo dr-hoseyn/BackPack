@@ -67,6 +67,7 @@ func TestThePreviousReleaseStillTalksToThisOne(t *testing.T) {
 		t.Fatalf("cannot read the previous binary version from %q: %v", version, err)
 	}
 	prevHasTCPFWD := major > 1 || (major == 1 && minor >= 21)
+	prevHasTCPFWDXMPP := major > 1 || (major == 1 && minor >= 22)
 
 	// Both directions, because a wire change can break either end's reading of
 	// the other. An old server with a new client is the shape an operator gets
@@ -89,6 +90,9 @@ func TestThePreviousReleaseStillTalksToThisOne(t *testing.T) {
 			t.Run(tc.name+"/"+transport, func(t *testing.T) {
 				if transport == "tcpfwd" && !prevHasTCPFWD {
 					t.Skip("tcpfwd was introduced in v1.21.0")
+				}
+				if transport == "tcpfwd-xmpp" && !prevHasTCPFWDXMPP {
+					t.Skip("tcpfwd-xmpp was introduced in v1.22.0")
 				}
 				t.Parallel()
 				runCrossVersionPair(t, tc.server, tc.client, transport)

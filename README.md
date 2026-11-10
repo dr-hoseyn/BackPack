@@ -1,5 +1,9 @@
 # dr-hoseyn fork
 
+**v1.22.0** adds [TCP Forward (XMPP)](docs/transports.md#num3-style-opening-and-reusable-connections-tcpfwd-xmpp)
+with a NUM3-style opening, encrypted payloads and reusable TCP sessions.
+Select `tcpfwd-xmpp` on both updated Backpack peers.
+
 **v1.21.0** adds the built-in [TCP Forward transport](docs/transports.md#tcp-forward-tcpfwd) for paired Backpack servers.
 
 **v1.20.2** improves WSSMux and TCPMux recovery, tries alternative TCP
