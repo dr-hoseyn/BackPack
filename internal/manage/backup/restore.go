@@ -49,6 +49,7 @@ type restoreContents struct {
 	TelegramConfig   bool
 	SawTunnelConfig  bool
 	AutoRefreshHours int
+	HasAutoRefresh   bool
 
 	// Warnings are things the restore carried on past and the operator should
 	// know about. A restore that half-worked and said so is recoverable; one
@@ -106,8 +107,12 @@ func stageRestore(r io.Reader, configDir, stage string) (restoreContents, error)
 						"the backup's settings sidecar is damaged (%v), so out-of-tree "+
 							"settings such as the automatic refresh interval were not "+
 							"restored — check them", err))
-				} else {
-					contents.AutoRefreshHours = m.AutoRefreshHours
+				} else if m.AutoRefreshHours != nil {
+					contents.AutoRefreshHours = *m.AutoRefreshHours
+					// Older archives used zero both for disabled and for an
+					// unreadable crontab. Only a verified zero can disable it.
+					contents.HasAutoRefresh = *m.AutoRefreshHours > 0 ||
+						m.AutoRefreshKnown && *m.AutoRefreshHours == 0
 				}
 			}
 			continue

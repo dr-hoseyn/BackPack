@@ -456,3 +456,28 @@ func TestEveryOtherRestoredFileKeepsItsMode(t *testing.T) {
 		}
 	}
 }
+
+func TestRestoreUsesZeroOnlyWhenTheArchiveVerifiedAutoRefreshWasDisabled(t *testing.T) {
+	for _, tc := range []struct {
+		name, metadata string
+		wantHours      int
+		wantSet        bool
+	}{
+		{name: "missing interval", metadata: `{"auto_refresh_known":true}`},
+		{name: "legacy zero", metadata: `{"auto_refresh_hours":0}`},
+		{name: "legacy enabled", metadata: `{"auto_refresh_hours":48}`, wantHours: 48, wantSet: true},
+		{name: "verified disabled", metadata: `{"auto_refresh_hours":0,"auto_refresh_known":true}`, wantSet: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			data := archiveOf(t, entry{name: backupMetaName, body: tc.metadata})
+			got, err := stageRestore(bytes.NewReader(data), t.TempDir(), t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.AutoRefreshHours != tc.wantHours || got.HasAutoRefresh != tc.wantSet {
+				t.Fatalf("schedule = %d hours, apply=%t, want %d hours, apply=%t",
+					got.AutoRefreshHours, got.HasAutoRefresh, tc.wantHours, tc.wantSet)
+			}
+		})
+	}
+}

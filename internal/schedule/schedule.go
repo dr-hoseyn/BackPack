@@ -150,18 +150,29 @@ var dailyIntervalRe = regexp.MustCompile(`^0 0 \*/(\d+) \* \*`)
 // GetIntervalHours returns the configured interval (in hours) for a marker, or
 // 0 if it is not scheduled.
 func GetIntervalHours(marker string) int {
-	// A crontab that cannot be read is reported as "not scheduled", which is
-	// what it has always said and is the only answer a function returning one
-	// int can give. Nothing is written on this path, so the failure above
-	// cannot happen here.
-	current, _ := readCrontab()
-	for _, l := range current {
-		if !hasCronMarker(l, marker) {
-			continue
-		}
-		return intervalFromLine(strings.TrimSpace(l))
+	hours, _ := readIntervalHours(marker)
+	return hours
+}
+
+func readIntervalHours(marker string) (int, error) {
+	current, err := readCrontab()
+	if err != nil {
+		return 0, err
 	}
-	return 0
+	return markedIntervalHours(current, marker)
+}
+
+func markedIntervalHours(lines []string, marker string) (int, error) {
+	for _, line := range lines {
+		if hasCronMarker(line, marker) {
+			hours := intervalFromLine(strings.TrimSpace(line))
+			if hours <= 0 {
+				return 0, fmt.Errorf("unrecognized schedule for %s", marker)
+			}
+			return hours, nil
+		}
+	}
+	return 0, nil
 }
 
 // intervalFromLine reads the interval out of one crontab line, or 0 for a line
@@ -199,6 +210,12 @@ func SetAutoRefresh(hours int) error {
 // AutoRefreshHours returns the current auto-refresh interval (0 = disabled).
 func AutoRefreshHours() int {
 	return GetIntervalHours(app.AutoRefreshMarker)
+}
+
+// ReadAutoRefreshHours distinguishes a disabled schedule from an unreadable
+// crontab or a schedule that cannot be represented by an hourly interval.
+func ReadAutoRefreshHours() (int, error) {
+	return readIntervalHours(app.AutoRefreshMarker)
 }
 
 // NextRun is when a job scheduled every hours (as HourlySpec writes it) next

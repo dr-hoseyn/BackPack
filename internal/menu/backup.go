@@ -179,6 +179,8 @@ func restoreBackup() {
 	}
 	if res.AutoRefreshHours > 0 {
 		tui.Info(fmt.Sprintf("Auto Refresh: Every %d Hour(s).", res.AutoRefreshHours))
+	} else if res.AutoRefreshSet {
+		tui.Info("Auto Refresh: Disabled.")
 	}
 	for _, warning := range res.Warnings {
 		tui.Warn(warning)

@@ -48,7 +48,9 @@ Restore stages the configuration before replacing the live directory. It then
 registers and restarts the tunnels and displays any errors from systemd or
 auto-refresh scheduling. If the directory swap and its rollback both fail,
 the error gives the path to the saved configuration.
-Traffic totals resume from the backup.
+Traffic totals resume from the backup. A backup that explicitly records
+auto-refresh as disabled removes the schedule during restore. A zero interval
+from an older archive leaves the destination schedule in place.
 
 ## Where you can do it
 

@@ -29,7 +29,8 @@ const fleetKeyName = "node.key"
 type backupMeta struct {
 	Version          string `json:"version"`
 	Created          string `json:"created"`
-	AutoRefreshHours int    `json:"auto_refresh_hours"`
+	AutoRefreshHours *int   `json:"auto_refresh_hours,omitempty"`
+	AutoRefreshKnown bool   `json:"auto_refresh_known,omitempty"`
 }
 
 // RestoreResult summarises what a restore put back in place.
@@ -40,6 +41,7 @@ type RestoreResult struct {
 	Failed           int      // tunnels that could not be registered or restarted
 	TelegramConfig   bool     // telegram.json was present in the archive
 	AutoRefreshHours int      // auto-refresh interval restored from the archive
+	AutoRefreshSet   bool     // the schedule was applied, including explicit disable
 
 	// Warnings are the things the restore carried on past. A restore that half
 	// worked and said so is recoverable; one that half worked quietly is
@@ -93,10 +95,14 @@ func writeBackupTree(w io.Writer, root string) error {
 // writeBackupEntries puts the sidecar and the whole config tree into tw.
 func writeBackupEntries(tw *tar.Writer, root string) error {
 	// Sidecar metadata for settings that don't live under ConfigDir.
+	hours, scheduleErr := schedule.ReadAutoRefreshHours()
 	meta := backupMeta{
-		Version:          app.Version,
-		Created:          time.Now().UTC().Format(time.RFC3339),
-		AutoRefreshHours: schedule.AutoRefreshHours(),
+		Version: app.Version,
+		Created: time.Now().UTC().Format(time.RFC3339),
+	}
+	if scheduleErr == nil {
+		meta.AutoRefreshHours = &hours
+		meta.AutoRefreshKnown = true
 	}
 	metaJSON, err := json.MarshalIndent(meta, "", "  ")
 	if err != nil {
@@ -255,7 +261,6 @@ func Restore(r io.Reader) (RestoreResult, error) {
 
 	res.Files = contents.Files
 	res.TelegramConfig = contents.TelegramConfig
-	res.AutoRefreshHours = contents.AutoRefreshHours
 	res.Warnings = append(res.Warnings, contents.Warnings...)
 
 	if contents.SawTunnelConfig {
@@ -288,10 +293,12 @@ func Restore(r io.Reader) (RestoreResult, error) {
 		}
 	}
 
-	if res.AutoRefreshHours > 0 {
-		if err := schedule.SetAutoRefresh(res.AutoRefreshHours); err != nil {
+	if contents.HasAutoRefresh {
+		if err := schedule.SetAutoRefresh(contents.AutoRefreshHours); err != nil {
 			res.Warnings = append(res.Warnings, fmt.Sprintf("restore auto-refresh schedule: %v", err))
-			res.AutoRefreshHours = 0
+		} else {
+			res.AutoRefreshHours = contents.AutoRefreshHours
+			res.AutoRefreshSet = true
 		}
 	}
 

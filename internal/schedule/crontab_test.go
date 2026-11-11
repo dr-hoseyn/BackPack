@@ -63,3 +63,16 @@ func TestCronMarkerMatchesOnlyTheTrailingTagOnAJob(t *testing.T) {
 		}
 	}
 }
+
+func TestMarkedIntervalDistinguishesDisabledFromAnUnrecognizedSchedule(t *testing.T) {
+	const marker = "backpack-auto-refresh"
+	if hours, err := markedIntervalHours(nil, marker); hours != 0 || err != nil {
+		t.Fatalf("missing schedule = %d, %v", hours, err)
+	}
+	if _, err := markedIntervalHours([]string{"@daily backpack --restart-all # " + marker}, marker); err == nil {
+		t.Fatal("an unrecognized schedule was treated as disabled")
+	}
+	if hours, err := markedIntervalHours([]string{"  0 0 */2 * * backpack --restart-all # " + marker}, marker); hours != 48 || err != nil {
+		t.Fatalf("48-hour schedule = %d, %v", hours, err)
+	}
+}
