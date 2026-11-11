@@ -147,6 +147,38 @@ func TestMuxQueueReusesSpareUntilItHasOverlappingWork(t *testing.T) {
 	}
 }
 
+func TestMuxQueueAvoidsACarrierWithASendBacklog(t *testing.T) {
+	q, congested, spare := muxQueueWithWarmOpeners()
+	congested.pressure = func() int { return 64 }
+	q.wait(congested)
+	other := q.warm[1]
+	for len(other.slots) < cap(other.slots) {
+		other.slots <- struct{}{}
+	}
+	if !q.push(LocalTCPConn{timeCreated: 1}, nil) {
+		t.Fatal("failed to queue the request")
+	}
+	select {
+	case <-spare.ready:
+		q.popFor(spare)
+	default:
+		t.Fatal("a warm carrier's queued data blocked an available spare")
+	}
+}
+
+func TestMuxIdleCheckKeepsTheWarmCarrier(t *testing.T) {
+	q, warm, _ := muxQueueWithWarmOpeners()
+	q.wait(warm)
+	q.unwait(warm)
+	if !warm.warm || q.warm[0] != warm {
+		t.Fatal("an idle check discarded the warm carrier")
+	}
+	q.leave(warm)
+	if warm.warm || q.warm[0] != nil {
+		t.Fatal("a departed carrier retained its warm position")
+	}
+}
+
 func muxQueueWithWarmOpeners() (*muxLocalQueue, *muxQueueWaiter, *muxQueueWaiter) {
 	q := newMuxLocalQueue(2)
 	q.waiters = make(map[*muxQueueWaiter]struct{})

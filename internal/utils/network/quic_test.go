@@ -22,12 +22,13 @@ const maxPayloadOn1280Path = 1280 - 20 - 8
 // does. It is the only way to reproduce the failure in a unit test, because the
 // loopback interface has an MTU of 65536 and lets every packet size through.
 type narrowPath struct {
-	addr     *net.UDPAddr
-	dropped  int
-	mu       sync.Mutex
-	conn     *net.UDPConn
-	upstream *net.UDPConn
-	done     chan struct{}
+	addr             *net.UDPAddr
+	dropped          int
+	handshakeDropped int
+	mu               sync.Mutex
+	conn             *net.UDPConn
+	upstream         *net.UDPConn
+	done             chan struct{}
 }
 
 // newNarrowPath starts a relay in front of server that drops any datagram whose
@@ -67,7 +68,7 @@ func newNarrowPath(t *testing.T, server *net.UDPAddr, maxPayload int) *narrowPat
 			clientMu.Lock()
 			clientAddr = from
 			clientMu.Unlock()
-			if !p.admit(n, maxPayload) {
+			if !p.admit(buf[:n], maxPayload) {
 				continue
 			}
 			_, _ = upstream.WriteToUDP(buf[:n], server)
@@ -85,7 +86,7 @@ func newNarrowPath(t *testing.T, server *net.UDPAddr, maxPayload int) *narrowPat
 			clientMu.Lock()
 			to := clientAddr
 			clientMu.Unlock()
-			if to == nil || !p.admit(n, maxPayload) {
+			if to == nil || !p.admit(buf[:n], maxPayload) {
 				continue
 			}
 			_, _ = conn.WriteToUDP(buf[:n], to)
@@ -98,14 +99,23 @@ func newNarrowPath(t *testing.T, server *net.UDPAddr, maxPayload int) *narrowPat
 // admit reports whether a datagram of n bytes fits, counting the ones that do
 // not so a test can tell "the path was never narrow" from "the path was narrow
 // and we coped".
-func (p *narrowPath) admit(n, maxPayload int) bool {
-	if n <= maxPayload {
+func (p *narrowPath) admit(packet []byte, maxPayload int) bool {
+	if len(packet) <= maxPayload {
 		return true
 	}
 	p.mu.Lock()
 	p.dropped++
+	if packet[0]&0x80 != 0 {
+		p.handshakeDropped++
+	}
 	p.mu.Unlock()
 	return false
+}
+
+func (p *narrowPath) handshakeDropCount() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.handshakeDropped
 }
 
 func (p *narrowPath) dropCount() int {
@@ -206,10 +216,30 @@ func TestQUICCrossesA1280BytePath(t *testing.T) {
 		t.Fatalf("server side: %v", err)
 	}
 
-	// Nothing should have been dropped: the whole point of the fix is that
-	// every packet now fits. A drop here means something still oversteps.
+	// Initial and Handshake packets must fit before discovery is available.
+	// Later short-header PMTU probes may intentionally exceed the path MTU;
+	// discovery remains enabled in production and must be allowed here too.
+	if n := path.handshakeDropCount(); n != 0 {
+		t.Fatalf("%d handshake datagrams were too big for a 1280-byte path", n)
+	}
 	if n := path.dropCount(); n != 0 {
-		t.Fatalf("%d datagrams were too big for a 1280-byte path", n)
+		t.Logf("narrow path discarded %d oversized short-header datagrams", n)
+	}
+}
+
+func TestNarrowPathDistinguishesHandshakeFromDiscovery(t *testing.T) {
+	var path narrowPath
+	packet := make([]byte, maxPayloadOn1280Path+1)
+	packet[0] = 0x40 // Short-header discovery probe.
+	if path.admit(packet, maxPayloadOn1280Path) {
+		t.Fatal("oversized discovery probe crossed the narrow path")
+	}
+	packet[0] = 0xc0 // Long-header handshake packet.
+	if path.admit(packet, maxPayloadOn1280Path) {
+		t.Fatal("oversized handshake crossed the narrow path")
+	}
+	if path.dropCount() != 2 || path.handshakeDropCount() != 1 {
+		t.Fatal("handshake size regression was hidden among discovery probes")
 	}
 }
 

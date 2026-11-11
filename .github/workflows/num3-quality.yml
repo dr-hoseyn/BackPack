@@ -1,0 +1,94 @@
+name: NUM3 lossy-path quality
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - 'go.mod'
+      - 'internal/client/transport/tcpmux.go'
+      - 'internal/client/transport/pool*.go'
+      - 'internal/server/transport/tcpmux.go'
+      - 'internal/server/transport/mux*.go'
+      - 'internal/utils/network/tcpfwd*.go'
+      - 'internal/utils/network/mux_pressure*.go'
+      - 'internal/e2e/wssmux_resources_test.go'
+      - '.github/scripts/compare-wssmux-resources.py'
+      - '.github/workflows/num3-quality.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: num3-quality-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      BASE_REF: ${{ github.event.pull_request.base.sha || 'v1.22.0' }}
+      GOMAXPROCS: '2'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Build both revisions with the identical NUM3 workload
+        run: |
+          set -euo pipefail
+          git worktree add --detach -- "$RUNNER_TEMP/num3-base" "$BASE_REF"
+          cp internal/e2e/wssmux_resources_test.go "$RUNNER_TEMP/num3-base/internal/e2e/"
+          go test -c -o "$RUNNER_TEMP/num3-candidate" ./internal/e2e
+          (cd "$RUNNER_TEMP/num3-base" && go test -c -o "$RUNNER_TEMP/num3-baseline" ./internal/e2e)
+          echo "BP_RESOURCE_BASELINE_REF=$BASE_REF" >> "$GITHUB_ENV"
+          echo "BP_RESOURCE_BASELINE_SHA=$(git -C "$RUNNER_TEMP/num3-base" rev-parse HEAD)" >> "$GITHUB_ENV"
+      - name: Compare resources and fresh-user latency with 1000 idle streams
+        env:
+          BP_RESOURCE_TRANSPORT: tcpfwd-xmpp
+          BP_RESOURCE_BENCHMARK: '1'
+          BP_RESOURCE_ROUNDS: '8'
+        run: |
+          set -euo pipefail
+          ulimit -n 16384
+          for sample in 1 2 3 4 5; do
+            order="baseline candidate"
+            if [ $((sample % 2)) -eq 0 ]; then order="candidate baseline"; fi
+            for kind in $order; do
+              "$RUNNER_TEMP/num3-$kind" -test.run '^TestWSMuxResourceProfile$' -test.v -test.timeout 2m \
+                | tee "$RUNNER_TEMP/num3-resource-$kind-$sample.txt"
+            done
+          done
+          python3 .github/scripts/compare-wssmux-resources.py "$RUNNER_TEMP" num3-resource \
+            | tee "$RUNNER_TEMP/num3-resource-comparison.json"
+          cat "$RUNNER_TEMP/num3-resource-comparison.json" >> "$GITHUB_STEP_SUMMARY"
+      - name: Install isolated path emulation
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq iproute2 ethtool
+          sudo modprobe ifb
+      - name: Alternate baseline and candidate under delay and packet loss
+        run: |
+          set -euo pipefail
+          for sample in 1 2 3; do
+            order="baseline candidate"
+            if [ $((sample % 2)) -eq 0 ]; then order="candidate baseline"; fi
+            for kind in $order; do
+              sudo env GOMAXPROCS=2 BP_RESOURCE_TRANSPORT=tcpfwd-xmpp \
+                BP_RESOURCE_BENCHMARK=1 BP_RESOURCE_IDLE_CONNECTIONS=16 \
+                BP_RESOURCE_ROUNDS=2 BP_RESOURCE_NETEM=1 BIN="$RUNNER_TEMP/num3-$kind" \
+                unshare --net -- bash -eu -c 'ip link set lo up; ulimit -n 16384; exec "$BIN" -test.run "^TestWSMuxResourceProfile$" -test.v -test.timeout 2m' \
+                | tee "$RUNNER_TEMP/delayed-num3-$kind-$sample.txt"
+            done
+          done
+          python3 .github/scripts/compare-wssmux-resources.py "$RUNNER_TEMP" delayed-num3 \
+            | tee "$RUNNER_TEMP/delayed-num3-comparison.json"
+          cat "$RUNNER_TEMP/delayed-num3-comparison.json" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: num3-lossy-path-quality
+          path: |
+            ${{ runner.temp }}/delayed-num3-*
+            ${{ runner.temp }}/num3-resource-*

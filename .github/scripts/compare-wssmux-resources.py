@@ -9,7 +9,8 @@ import sys
 root = pathlib.Path(sys.argv[1])
 mode = sys.argv[2] if len(sys.argv) > 2 else "resource"
 delayed = mode.startswith("delayed")
-prefix, count = (mode, 3) if delayed else ("resource", 5)
+native = mode in {"num3-resource", "delayed-num3"}
+prefix, count = (mode, 3) if delayed else (mode if native else "resource", 5)
 reports = {}
 for kind in ("baseline", "candidate"):
     samples = []
@@ -39,8 +40,12 @@ checks = {
     "probe_p99_within_runner_tolerance": candidate["probe_p99_ms"] <= base["probe_p99_ms"] * 1.5 + 2,
 }
 if not delayed:
-    checks["idle_heap_improves_at_least_15_percent"] = candidate["heap_delta_bytes"] <= base["heap_delta_bytes"] * .85
+    if native:
+        checks["idle_heap_within_10_percent"] = candidate["heap_delta_bytes"] <= base["heap_delta_bytes"] * 1.10
+    else:
+        checks["idle_heap_improves_at_least_15_percent"] = candidate["heap_delta_bytes"] <= base["heap_delta_bytes"] * .85
 result = {"scope": "combined client/server process; 1000 idle streams plus eight verified bulk transfers and fresh-user probes on loopback",
+          "transport": "tcpfwd-xmpp" if native else "wssmux",
           "baseline": os.environ.get("BP_RESOURCE_BASELINE_REF", "v1.16.0"),
           "baseline_sha": os.environ.get("BP_RESOURCE_BASELINE_SHA"),
           "candidate_sha": os.environ.get("GITHUB_SHA"),

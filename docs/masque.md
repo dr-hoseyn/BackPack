@@ -148,4 +148,4 @@ Xray ارائه نمی‌شود. گواهی TLS معتبر یا CA خصوصی د
 
 ---
 
-*Last verified against Backpack v1.22.0*
+*Last verified against Backpack v1.23.0*

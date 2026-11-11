@@ -80,6 +80,14 @@ jobs:
           set -o pipefail
           "$RUNNER_TEMP/resource-candidate" -test.run '^TestWSMuxPoolRetiresAfterLoadWithoutDisconnectingQuietUser$' \
             -test.v -test.timeout 3m | tee "$RUNNER_TEMP/resource-retirement.txt"
+      - name: Preserve silent NUM3 users while retiring spare capacity
+        env:
+          BP_RESOURCE_TRANSPORT: tcpfwd-xmpp
+          BP_RESOURCE_RETIREMENT: '1'
+        run: |
+          set -o pipefail
+          "$RUNNER_TEMP/resource-candidate" -test.run '^TestWSMuxPoolRetiresAfterLoadWithoutDisconnectingQuietUser$' \
+            -test.v -test.timeout 3m | tee "$RUNNER_TEMP/resource-num3-retirement.txt"
       - name: Compare quality with delay, loss and a fixed link rate
         run: |
           set -euo pipefail

@@ -31,14 +31,18 @@ func resourceTunnel(t *testing.T) (*tunnel, int) {
 	backend := startEchoBackend(t)
 	tunnelPort, entryPort := freePort(t), freePort(t)
 	const token = "resource-profile-token-0123456789"
-	srv := baseServerConfig("wssmux", tunnelPort, entryPort, backend.addr, token)
-	cli := baseClientConfig("wssmux", fmt.Sprintf("127.0.0.1:%d", tunnelPort), token, nil)
+	transport := "wssmux"
+	if os.Getenv("BP_RESOURCE_TRANSPORT") == "tcpfwd-xmpp" {
+		transport = "tcpfwd-xmpp"
+	}
+	srv := baseServerConfig(transport, tunnelPort, entryPort, backend.addr, token)
+	cli := baseClientConfig(transport, fmt.Sprintf("127.0.0.1:%d", tunnelPort), token, nil)
 	srv.MuxCon, cli.ConnectionPool = 32, 4
 	srv.ChannelSize = 4096
 	// Presets already pin version 2. Keep the same protocol on both revisions
 	// so this comparison isolates resource policy from protocol negotiation.
 	srv.MuxVersion, cli.MuxVersion = 2, 2
-	if os.Getenv("BP_RESOURCE_MUX_AUTO") != "" {
+	if os.Getenv("BP_RESOURCE_MUX_AUTO") != "" || transport == "tcpfwd-xmpp" {
 		srv.MuxVersion, cli.MuxVersion = 0, 0
 	}
 	srv.MaxReceiveBuffer, cli.MaxReceiveBuffer = 16<<20, 16<<20

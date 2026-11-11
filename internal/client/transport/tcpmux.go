@@ -36,6 +36,8 @@ type TcpMuxTransport struct {
 	// fallback is a guess drawn from a closed connection, and a closed
 	// connection is far more often a dead path than an old server.
 	legacyServer legacyProbe
+	sessions     muxPoolSessions
+	poolLost     chan struct{}
 }
 
 type TcpMuxConfig struct {
@@ -75,9 +77,10 @@ func NewMuxClient(parentCtx context.Context, config *TcpMuxConfig, logger *logru
 		MaxStreamBuffer:  config.MaxStreamBuffer,
 	}
 	client := &TcpMuxTransport{
-		muxV1:  network.SmuxConfig(1, muxSettings),
-		muxV2:  network.SmuxConfig(2, muxSettings),
-		config: config,
+		muxV1:    network.SmuxConfig(1, muxSettings),
+		muxV2:    network.SmuxConfig(2, muxSettings),
+		config:   config,
+		poolLost: make(chan struct{}, 1),
 	}
 	if config.TCPFWD {
 		client.muxV1.KeepAliveInterval = network.TCPFWDNUM3KeepAlive
@@ -104,6 +107,7 @@ func (c *TcpMuxTransport) Restart() {
 		c.poolNonce.Clear()
 		c.legacyServer.reset()
 		c.muxVersion.Store(0)
+		drain(c.poolLost)
 	}, c.Start)
 }
 
@@ -250,19 +254,25 @@ func (c *TcpMuxTransport) channelDialer() {
 // poolMaintainer keeps the pool the right size. The policy is poolSizer's,
 // shared with every other client transport — see poolmaintain.go.
 func (c *TcpMuxTransport) poolMaintainer() {
+	var sessions *muxPoolSessions
+	if c.config.TCPFWD {
+		sessions = &c.sessions
+	}
 	poolSizer{
-		mux:        true,
-		ctx:        c.state.Ctx(),
-		log:        c.logger,
-		size:       c.config.ConnPoolSize,
-		aggressive: c.config.AggressivePool,
-		open:       &c.poolConnections,
-		taken:      &c.loadConnections,
-		shrink:     c.controlFlow,
-		dial:       c.tunnelDialer,
-		spawn:      c.state.Go,
-		pending:    &c.dialingConnections,
-		maxSize:    c.poolLimit(),
+		mux:         true,
+		ctx:         c.state.Ctx(),
+		log:         c.logger,
+		size:        c.config.ConnPoolSize,
+		aggressive:  c.config.AggressivePool,
+		open:        &c.poolConnections,
+		taken:       &c.loadConnections,
+		shrink:      c.controlFlow,
+		dial:        c.tunnelDialer,
+		spawn:       c.state.Go,
+		pending:     &c.dialingConnections,
+		maxSize:     c.poolLimit(),
+		sessions:    sessions,
+		sessionLost: c.poolLost,
 	}.maintain()
 }
 
@@ -318,7 +328,16 @@ func (c *TcpMuxTransport) tunnelDialer() {
 
 	// Say what this connection is, so the server admits it on the nonce rather
 	// than on the address it happened to dial out from.
-	if err := announcePoolConn(announcement, c.poolNonce.Get()); err != nil {
+	nonce := c.poolNonce.Get()
+	retirement := setup != nil && setup.AdaptivePool
+	if retirement {
+		nonce, err = network.EncodeNUM3Pool(nonce, c.config.ConnPoolSize)
+		if err != nil {
+			c.logger.Errorf("invalid tcpfwd pool settings: %v", err)
+			return
+		}
+	}
+	if err := announcePoolConn(announcement, nonce); err != nil {
 		c.logger.Debugf("tunnel dialer: failed to announce the pool connection: %v", err)
 		tunnelConn.Close()
 		return
@@ -333,12 +352,20 @@ func (c *TcpMuxTransport) tunnelDialer() {
 	atomic.AddInt32(&c.poolConnections, 1)
 	ready()
 
-	c.handleSession(dataConn)
+	c.handleSession(dataConn, retirement)
 }
 
-func (c *TcpMuxTransport) handleSession(tunnelConn net.Conn) {
+func (c *TcpMuxTransport) handleSession(tunnelConn net.Conn, retirement bool) {
+	ctx := c.state.Ctx()
+	established := false
 	defer func() {
 		atomic.AddInt32(&c.poolConnections, -1)
+		if established && ctx.Err() == nil {
+			select {
+			case c.poolLost <- struct{}{}:
+			default:
+			}
+		}
 	}()
 
 	// SMUX server
@@ -348,6 +375,10 @@ func (c *TcpMuxTransport) handleSession(tunnelConn net.Conn) {
 		return
 	}
 
+	established = true
+	if c.config.TCPFWD {
+		defer c.sessions.add(session, retirement)()
+	}
 	c.serveSession(session, tunnelConn.RemoteAddr(), c.backend())
 }
 
