@@ -86,6 +86,16 @@ a draft. The older artifact uses successful-only latency and a different
 quantile definition, so its latency samples must not be pooled with these.
 The follow-up does not measure the separate shared-channel fix in PR #68.
 
+The test host exposes one vCPU and no AES, PCLMULQDQ, SSSE3, SSE4.1, AVX2
+or BMI2 feature flags. A separate [CPU profile](benchmarks/wssmux-cpu-profile-2026-11-12.json)
+of PR #69's existing resource fixture recorded generic ChaCha20 hot paths
+and syscall overhead while carrying a fixed 200 Mbit/s offered load. This
+profile combines both engines, the echo backend and the load generator; it
+does not compare this scheduler. Its CPU and latency measurements cannot be
+generalized to an eight-core host with crypto acceleration. The owner's
+four-vCPU host exposes these features, but its profile upload was interrupted
+before execution, so no comparable profile is claimed for that machine.
+
 ## خلاصهٔ فارسی
 
 <div dir="rtl">
@@ -100,6 +110,10 @@ The follow-up does not measure the separate shared-channel fix in PR #68.
 استریم باز روی همان مسیر قبلی می‌ماند؛ این روش مشکل صف TCP یک استریم موجود را
 از بین نمی‌برد. TCP Forward و KCP سیاست قبلی خود را نگه می‌دارند. برای سنجش
 کیفیت، خطا و صحت داده را همراه با سرعت و تأخیر اتصال‌های تازه مقایسه کنید.
+
+سرور اندازه‌گیری فعلی فقط یک هستهٔ مجازی دارد و قابلیت‌های شتاب‌دهی رمزنگاری
+به آن ارائه نشده‌اند. نتیجهٔ سرعت و تأخیر این سرور را نمی‌توان به سرور هشت‌هسته‌ای
+تعمیم داد. پروفایل ثبت‌شده، مجموع دو سمت تونل و ابزار تولید بار را اندازه می‌گیرد.
 
 </div>
 
