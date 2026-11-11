@@ -41,6 +41,12 @@ func Rename(oldName, newName string) error {
 	}
 
 	oldService, newService := app.ServiceName(oldName), app.ServiceName(newName)
+	newUnit := filepath.Join(app.ServiceDir, newService)
+	if _, err := os.Lstat(newUnit); err == nil {
+		return fmt.Errorf("systemd unit %s already exists", newService)
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("check systemd unit %s: %w", newService, err)
+	}
 	active, enabled := IsActive(oldService), IsEnabled(oldService)
 	hours, minute := ScheduledRestart(oldName)
 
@@ -52,8 +58,7 @@ func Rename(oldName, newName string) error {
 		}
 	}
 	restoreOld := func(why error) error {
-		err := WriteUnit(oldName)
-		err = errors.Join(err, DaemonReload())
+		err := DaemonReload()
 		if hours > 0 {
 			err = errors.Join(err, SetScheduledRestart(oldName, hours, minute))
 		}
@@ -63,31 +68,30 @@ func Rename(oldName, newName string) error {
 	if err := removeScheduledRestart(oldName); err != nil {
 		return restoreOld(fmt.Errorf("remove old restart schedule: %w", err))
 	}
-	removeUnit(oldName)
 
-	if err := os.Rename(app.ConfigPath(oldName), app.ConfigPath(newName)); err != nil {
-		return restoreOld(fmt.Errorf("could not rename the config: %w", err))
+	if err := moveRenameFiles(app.ConfigDir, oldName, newName, func() error {
+		if err := app.WriteFileAtomic(newUnit, []byte(UnitFor(newName)), 0644); err != nil {
+			return fmt.Errorf("write new systemd unit: %w", err)
+		}
+		if err := DaemonReload(); err != nil {
+			removeErr := os.Remove(newUnit)
+			return errors.Join(fmt.Errorf("load new systemd unit: %w", err), removeErr)
+		}
+		return nil
+	}); err != nil {
+		return restoreOld(err)
 	}
-	if err := quota.Rename(app.ConfigDir, oldName, newName); err != nil {
-		rollback := os.Rename(app.ConfigPath(newName), app.ConfigPath(oldName))
-		return restoreOld(errors.Join(fmt.Errorf("could not rename traffic quota: %w", err), rollback))
+
+	var cleanupErr error
+	if err := os.Remove(filepath.Join(app.ServiceDir, oldService)); err != nil && !os.IsNotExist(err) {
+		cleanupErr = fmt.Errorf("renamed, but could not remove the previous systemd unit: %w", err)
 	}
-	if err := os.Rename(metrics.Path(app.ConfigDir, oldName), metrics.Path(app.ConfigDir, newName)); err != nil && !errors.Is(err, os.ErrNotExist) {
-		quotaErr := quota.Rename(app.ConfigDir, newName, oldName)
-		configErr := os.Rename(app.ConfigPath(newName), app.ConfigPath(oldName))
-		return restoreOld(errors.Join(fmt.Errorf("could not rename traffic counters: %w", err), quotaErr, configErr))
-	}
+	cleanupErr = errors.Join(cleanupErr, DaemonReload())
 	renameTunnelMeta(oldName, newName)
 	for _, f := range onRename {
 		f(oldName, newName)
 	}
 
-	if err := WriteUnit(newName); err != nil {
-		return err
-	}
-	if err := DaemonReload(); err != nil {
-		return err
-	}
 	var scheduleErr error
 	if hours > 0 {
 		if err := SetScheduledRestart(newName, hours, minute); err != nil {
@@ -95,9 +99,50 @@ func Rename(oldName, newName string) error {
 		}
 	}
 	if err := restoreRenameService(newService, active, enabled, Systemctl); err != nil {
-		return errors.Join(scheduleErr, fmt.Errorf("renamed, but could not restore %s service state: %w", newService, err))
+		return errors.Join(cleanupErr, scheduleErr, fmt.Errorf("renamed, but could not restore %s service state: %w", newService, err))
 	}
-	return scheduleErr
+	return errors.Join(cleanupErr, scheduleErr)
+}
+
+// moveRenameFiles restores the files it moved if a later move or systemd
+// preparation fails. Optional counters and quota may be absent.
+func moveRenameFiles(dir, oldName, newName string, prepareUnit func() error) (err error) {
+	type move struct {
+		from, to string
+		optional bool
+	}
+	files := []move{
+		{filepath.Join(dir, oldName+".toml"), filepath.Join(dir, newName+".toml"), false},
+		{quota.Path(dir, oldName), quota.Path(dir, newName), true},
+		{metrics.Path(dir, oldName), metrics.Path(dir, newName), true},
+	}
+	var moved []move
+	defer func() {
+		if err == nil {
+			return
+		}
+		for i := len(moved) - 1; i >= 0; i-- {
+			f := moved[i]
+			if restoreErr := os.Rename(f.to, f.from); restoreErr != nil {
+				err = errors.Join(err, fmt.Errorf("restore %s: %w", f.from, restoreErr))
+			}
+		}
+	}()
+	for _, f := range files {
+		if _, statErr := os.Lstat(f.to); statErr == nil {
+			return fmt.Errorf("destination %s already exists", f.to)
+		} else if !os.IsNotExist(statErr) {
+			return statErr
+		}
+		if moveErr := os.Rename(f.from, f.to); moveErr != nil {
+			if f.optional && os.IsNotExist(moveErr) {
+				continue
+			}
+			return moveErr
+		}
+		moved = append(moved, f)
+	}
+	return prepareUnit()
 }
 
 func checkRenameFiles(dir, oldName, newName string) error {
