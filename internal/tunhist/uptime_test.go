@@ -122,3 +122,22 @@ func TestAnEmptyBucketIsNotDowntime(t *testing.T) {
 			"in it was treated as an hour of downtime", pct, checks, ok)
 	}
 }
+
+func TestUptimeCountsRecentChecksInThePartialFirstHour(t *testing.T) {
+	now := time.Date(2026, 11, 11, 10, 30, 0, 0, time.UTC)
+	f := File{Tunnels: map[string]*History{}}
+	for _, sample := range []struct {
+		minutes int
+		up      bool
+	}{
+		{-80, false}, // 09:10, outside the requested hour
+		{-50, true},  // 09:40, inside the partial first hour
+		{-25, true},  // 10:05, represented by the current hourly bucket
+	} {
+		f.Record("t1", 0, 0, sample.up, now.Add(time.Duration(sample.minutes)*time.Minute))
+	}
+	pct, checks, ok := f.Tunnels["t1"].Uptime(now, time.Hour)
+	if !ok || checks != 2 || pct != 100 {
+		t.Fatalf("uptime = %v over %d checks, measured=%t; want 100 over 2 checks", pct, checks, ok)
+	}
+}

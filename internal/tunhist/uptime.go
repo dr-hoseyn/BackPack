@@ -29,24 +29,29 @@ import "time"
 // five minutes, a healthy tunnel has about 8,640. ok is false when there are
 // none, which means not measured rather than down.
 func (h *History) Uptime(now time.Time, window time.Duration) (pct float64, checks int, ok bool) {
-	if h == nil {
+	if h == nil || window <= 0 {
 		return 0, 0, false
 	}
 	cutoff := now.Add(-window).Unix()
 
 	var up, total int
+	countedHours := make(map[int64]bool, len(h.Hourly))
 	for _, b := range h.Hourly {
-		if b.T < cutoff || b.N == 0 {
+		if b.T < cutoff || b.T > now.Unix() || b.N <= 0 || b.UpN < 0 || b.UpN > b.N {
+			continue
+		}
+		if countedHours[b.T] {
 			continue
 		}
 		up += b.UpN
 		total += b.N
+		countedHours[b.T] = true
 	}
-	// The recent five-minute samples cover the window the hourly buckets have
-	// not been rolled up into yet — the last hour or so. Without them a tunnel
-	// that has just gone down looks perfect until the hour turns over.
+	// A bucket starting before cutoff was excluded above. Its recent checks
+	// inside the window still count, as do checks from an hour without a bucket.
 	for _, s := range h.Recent {
-		if s.T < cutoff || s.T < lastHourStart(h) {
+		hour := time.Unix(s.T, 0).Truncate(time.Hour).Unix()
+		if s.T < cutoff || s.T > now.Unix() || countedHours[hour] {
 			continue
 		}
 		total++
@@ -59,22 +64,6 @@ func (h *History) Uptime(now time.Time, window time.Duration) (pct float64, chec
 		return 0, 0, false
 	}
 	return float64(up) * 100 / float64(total), total, true
-}
-
-// lastHourStart is the start of the hour after the newest rolled-up bucket, so
-// the recent samples are counted exactly once: those older than it are already
-// inside an Hour.
-func lastHourStart(h *History) int64 {
-	if len(h.Hourly) == 0 {
-		return 0
-	}
-	newest := h.Hourly[len(h.Hourly)-1].T
-	for _, b := range h.Hourly {
-		if b.T > newest {
-			newest = b.T
-		}
-	}
-	return newest + 3600
 }
 
 // UptimeOf is the same answer for a named tunnel, read from the store.

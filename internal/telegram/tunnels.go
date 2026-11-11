@@ -238,35 +238,8 @@ func peerDescription(lang string, t manage.Tunnel, h manage.Health) string {
 // nothing has been sampled yet, so a fresh install shows no line rather than a
 // confident 0%.
 func uptime24h(name string) (float64, bool) {
-	h := tunhist.Load().Tunnels[name]
-	if h == nil {
-		return 0, false
-	}
-	cutoff := time.Now().Add(-24 * time.Hour).Unix()
-	var up, total int
-	for _, b := range h.Hourly {
-		if b.T < cutoff {
-			continue
-		}
-		up += b.UpN
-		total += b.N
-	}
-	if total == 0 {
-		// Less than an hour of history: the five-minute samples are all there is.
-		for _, s := range h.Recent {
-			if s.T < cutoff {
-				continue
-			}
-			total++
-			if s.Up {
-				up++
-			}
-		}
-	}
-	if total == 0 {
-		return 0, false
-	}
-	return float64(up) / float64(total) * 100, true
+	pct, _, ok := tunhist.UptimeOf(name, 24*time.Hour)
+	return pct, ok
 }
 
 // --- logs -------------------------------------------------------------------
