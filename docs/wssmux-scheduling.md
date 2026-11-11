@@ -14,6 +14,16 @@ deadline wrapper are unwrapped only to identify the observed TCP socket. All
 traffic still passes through the original TLS/WebSocket connection.
 Idle sessions are not polled. TCP Forward retains its existing 200 ms cache.
 
+Admission first checks the least occupied, least recently used carrier.
+If its pressure is zero, no other carrier can improve that nonnegative score
+or win the occupancy/recency tie-break. Only that carrier needs observation
+on this path. If it has pressure, the scheduler falls back to the full scan.
+This retains the selection ordering for fixed carrier observations while
+avoiding unnecessary TCP_INFO reads on healthy admissions. An exhaustive
+regression compares the shortcut against the full ordering across 4096
+six-carrier pressure combinations. Live slot counts and TCP state can still
+change between observations, as with the original scan.
+
 Other platforms, unavailable kernel counters and unsupported wrappers fall
 back to occupancy-based selection. No carrier is discarded just for having a
 high score. A recovered carrier becomes eligible again at the next sample.
@@ -117,6 +127,8 @@ Median per-run p99 was 12.609 versus 7.800 ms, but median p50 increased from
 1.727 to 1.926 ms and p95 from 2.552 to 2.866 ms. Those typical-latency
 regressions matter even with a better p99: the scheduler remains a draft.
 Both comparisons measure code 9a2e747 and are separate from the CPU profiles.
+They predate the admission-sampling shortcut above and are not measurements
+of that follow-up change.
 
 ## خلاصهٔ فارسی
 
@@ -127,6 +139,10 @@ Both comparisons measure code 9a2e747 and are separate from the CPU profiles.
 می‌کنند. اطلاعات گرفتگی فقط هنگام نیاز به پذیرش اتصال، حداکثر هر ۵۰ میلی‌ثانیه
 برای هر مسیر به‌روز می‌شود. نشست بیکار مرتباً پایش نمی‌شود و به مسیر کپی داده
 کار اضافه نشده است.
+
+در مسیر سالم، ابتدا کم‌بارترین نشست بررسی می‌شود؛ اگر فشار آن صفر باشد، خواندن
+آمار TCP نشست‌های دیگر نمی‌تواند انتخاب بهتری ایجاد کند. در صورت وجود فشار،
+جست‌وجوی کامل انجام می‌شود. اندازه‌گیری‌های ثبت‌شده پیش از این اصلاح اخیر هستند.
 
 رمزنگاری، قالب پیام، اندازهٔ پنجره‌ها، سقف اتصال و مهلت جفت‌شدن تغییر نکرده‌اند.
 استریم باز روی همان مسیر قبلی می‌ماند؛ این روش مشکل صف TCP یک استریم موجود را

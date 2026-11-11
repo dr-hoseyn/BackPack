@@ -108,6 +108,13 @@ func (q *muxLocalQueue) notify() {
 		if q.selected != nil || q.closed || q.entries.Len() == 0 {
 			return
 		}
+		if q.balanced {
+			if next := q.uncongestedLeastBusy(); next != nil {
+				q.selected = next
+				next.ready <- struct{}{}
+				return
+			}
+		}
 		var bestLoad, bestPressure int
 		var next *muxQueueWaiter
 		for waiter := range q.waiters {
@@ -155,6 +162,29 @@ func (q *muxLocalQueue) notify() {
 	case q.ready <- struct{}{}:
 	default:
 	}
+}
+
+// Pressure is nonnegative. If the least occupied, least recently used carrier
+// has zero pressure, no other carrier can beat it. Sample that candidate first
+// instead of reading every TCP socket on the healthy admission path. A busy
+// candidate falls back to the full congestion-first search in notify.
+// The queue mutex protects waiter membership and recency, as in the full scan.
+func (q *muxLocalQueue) uncongestedLeastBusy() *muxQueueWaiter {
+	var next *muxQueueWaiter
+	var bestLoad int
+	for waiter := range q.waiters {
+		if waiter.isClosed() {
+			continue
+		}
+		load := len(waiter.slots) - 1
+		if next == nil || load < bestLoad || (load == bestLoad && waiter.lastUse < next.lastUse) {
+			next, bestLoad = waiter, load
+		}
+	}
+	if next != nil && (next.pressure == nil || next.pressure() == 0) {
+		return next
+	}
+	return nil
 }
 
 func (q *muxLocalQueue) warmCarrier(waiter *muxQueueWaiter) {

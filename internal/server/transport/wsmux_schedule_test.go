@@ -5,6 +5,39 @@ import (
 	"testing"
 )
 
+func TestWSMuxHealthyShortcutMatchesFullCongestionOrdering(t *testing.T) {
+	// Exhaust all combinations of six carriers at four congestion levels.
+	// Occupancy and recency vary independently of pressure. The reference
+	// evaluates every carrier, including healthy candidates with many users.
+	levels := [...]int{0, 1, 8, 64}
+	for state := range 4096 {
+		q := newBalancedMuxLocalQueue(1)
+		var expected, leastBusy *muxQueueWaiter
+		bestPressure, bestLoad, leastLoad, leastPressure, queries := 0, 0, 0, 0, 0
+		for i := range 6 {
+			pressure := levels[(state>>(2*i))&3]
+			load := (state + 7*i) % 16
+			w := wsMuxWaiter(load, func() int { queries++; return pressure })
+			w.lastUse = uint64(i + 1)
+			q.wait(w)
+			if leastBusy == nil || load < leastLoad || (load == leastLoad && w.lastUse < leastBusy.lastUse) {
+				leastBusy, leastLoad, leastPressure = w, load, pressure
+			}
+			if expected == nil || pressure < bestPressure || (pressure == bestPressure &&
+				(load < bestLoad || (load == bestLoad && w.lastUse < expected.lastUse))) {
+				expected, bestPressure, bestLoad = w, pressure, load
+			}
+		}
+		q.push(LocalTCPConn{timeCreated: 1}, nil)
+		if q.selected != expected {
+			t.Fatalf("state %d changed the full-scan carrier choice", state)
+		}
+		if leastPressure == 0 && queries != 1 {
+			t.Fatalf("state %d sampled %d carriers when the best candidate was healthy", state, queries)
+		}
+	}
+}
+
 func wsMuxWaiter(load int, pressure func() int) *muxQueueWaiter {
 	w := &muxQueueWaiter{ready: make(chan struct{}, 1), slots: make(chan struct{}, 128), pressure: pressure}
 	for range load + 1 { // active relays plus the opener's reserved slot
