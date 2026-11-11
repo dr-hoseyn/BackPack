@@ -76,4 +76,4 @@ clamp می‌کند.
 
 ---
 
-*Last verified against Backpack v1.23.0*
+*Last verified against Backpack v1.24.0*

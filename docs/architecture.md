@@ -145,10 +145,11 @@ This is the piece worth knowing before changing anything.
                                         └──►  the watchdog
 ```
 
-Nothing reaches into a running tunnel. The engine writes a JSON snapshot every
-thirty seconds — traffic, peer, pool state, whether the control channel is up,
-and what the process is holding (goroutines, descriptors, heap) — and every
-other process reads that file.
+The engine writes a JSON health snapshot every thirty seconds: peer, pool
+state, control-channel readiness and process resources (goroutines, descriptors,
+heap). The panel, Telegram and CLI read this file. Stall detection obtains live
+in-memory progress counters through the engine control socket; consumption
+totals are not stored. Uptime history retains connection observations only.
 
 It is why the watchdog asks the engine rather than the kernel: a socket outlives
 the tunnel it belongs to by a long way, and every failure the watchdog used to
@@ -284,4 +285,4 @@ context)، پورت‌های فوروارد (`forward.go`)، حلقهٔ کانا
 
 ---
 
-*Last verified against Backpack v1.23.0*
+*Last verified against Backpack v1.24.0*
