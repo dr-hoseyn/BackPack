@@ -306,7 +306,7 @@ func (s *WsMuxTransport) tunnelListener(g *wsMuxGen) {
 				accepted := g.seat.admitFor(g.ctx, owner, func(ctx context.Context) bool {
 					return enqueueMuxEntry(g.tunnelChannel, pooledMuxSession{
 						Session: session, owner: ctx, idleFloor: floor,
-						pressure: network.TCPMuxPressure(conn.NetConn()),
+						pressure: network.WSMuxPressure(conn.NetConn()),
 					})
 				})
 				if !accepted {

@@ -10,8 +10,19 @@ import (
 // scheduler samples each carrier at most five times a second, without adding
 // work to each application read or write.
 func TCPMuxPressure(conn net.Conn) func() int {
+	return muxPressure(conn, 200*time.Millisecond)
+}
+
+// WSMuxPressure observes a congestion change before another short-connection
+// burst can reuse a stale healthy sample. Only admission requests sample it;
+// this does not poll idle carriers or add work to application copies.
+func WSMuxPressure(conn net.Conn) func() int {
+	return muxPressure(conn, 50*time.Millisecond)
+}
+
+func muxPressure(conn net.Conn, interval time.Duration) func() int {
 	conn = tcpMuxPressureConn(conn)
-	return tcpMuxPressureSampler(func() (int, bool) { return tcpMuxSocketPressure(conn) })
+	return muxPressureSampler(func() (int, bool) { return tcpMuxSocketPressure(conn) }, interval)
 }
 
 func tcpMuxPressureConn(conn net.Conn) net.Conn {
@@ -32,6 +43,10 @@ func tcpMuxPressureConn(conn net.Conn) net.Conn {
 }
 
 func tcpMuxPressureSampler(sample func() (int, bool)) func() int {
+	return muxPressureSampler(sample, 200*time.Millisecond)
+}
+
+func muxPressureSampler(sample func() (int, bool), interval time.Duration) func() int {
 	var mu sync.Mutex
 	var sampled time.Time
 	var penalty int
@@ -40,7 +55,7 @@ func tcpMuxPressureSampler(sample func() (int, bool)) func() int {
 		mu.Lock()
 		defer mu.Unlock()
 		now := time.Now()
-		if sampled.IsZero() || now.Sub(sampled) >= 200*time.Millisecond {
+		if sampled.IsZero() || now.Sub(sampled) >= interval {
 			sampled = now
 			next, queued := sample()
 			// The last rate sample may come from an idle heartbeat. Confirm

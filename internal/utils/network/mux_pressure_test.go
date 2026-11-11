@@ -61,3 +61,31 @@ func TestTCPMuxPressureConfirmsBacklogAndCachesKernelSamples(t *testing.T) {
 		}
 	})
 }
+
+func TestWSMuxPressureDoesNotReuseAHealthySampleAcrossANewUserBurst(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		reads, delay := 0, 0
+		pressure := muxPressureSampler(func() (int, bool) {
+			reads++
+			return delay, delay > 0
+		}, 50*time.Millisecond)
+		if pressure() != 0 {
+			t.Fatal("idle socket reported congestion")
+		}
+		delay = 64
+		time.Sleep(49 * time.Millisecond)
+		pressure()
+		if reads != 1 {
+			t.Fatal("one burst repeatedly sampled the socket")
+		}
+		time.Sleep(time.Millisecond)
+		if pressure() == 0 || reads != 2 {
+			t.Fatal("new users inherited a stale healthy socket sample")
+		}
+		delay = 0
+		time.Sleep(50 * time.Millisecond)
+		if pressure() != 0 {
+			t.Fatal("a recovered socket remained penalized")
+		}
+	})
+}

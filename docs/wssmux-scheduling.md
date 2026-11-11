@@ -8,10 +8,11 @@ user even when another physical session was draining normally.
 
 On Linux the scheduler uses the existing TCP_INFO observer: queued bytes,
 delivery rate, receiver window and retransmission state estimate the delay in
-front of a new stream. Samples are cached for 200 ms per physical session;
+front of a new stream. Samples are cached for 50 ms per physical session;
 there is no additional accounting on application reads or writes. TLS and the
 deadline wrapper are unwrapped only to identify the observed TCP socket. All
 traffic still passes through the original TLS/WebSocket connection.
+Idle sessions are not polled. TCP Forward retains its existing 200 ms cache.
 
 Other platforms, unavailable kernel counters and unsupported wrappers fall
 back to occupancy-based selection. No carrier is discarded just for having a
