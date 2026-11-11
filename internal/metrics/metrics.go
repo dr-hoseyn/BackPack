@@ -16,6 +16,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -241,7 +242,9 @@ func Path(dir, name string) string {
 type Collector struct {
 	// baseIn/baseOut are the totals this tunnel had already accumulated before
 	// this process started, read from the last written snapshot.
-	baseIn, baseOut uint64
+	baseIn, baseOut atomic.Uint64
+	baselineReady   atomic.Bool
+	writeMu         sync.Mutex
 	// startIn/startOut are what the byte sources already read when this
 	// collector was made. Only what they count after that is new: a reload
 	// makes a new collector in the same process, whose process-wide counters
@@ -283,11 +286,25 @@ func NewCollector(dir, name, transport, role string, bytesIn, bytesOut func() ui
 	// config directory and is therefore inside every backup. So restoring a
 	// backup also restores the traffic history, rather than starting the count
 	// again on the new machine.
-	if prev, err := Read(dir, name); err == nil {
-		c.baseIn, c.baseOut = prev.BytesIn, prev.BytesOut
+	if err := c.loadBaseline(); err != nil {
+		log.Printf("metrics: preserve unreadable baseline for %s: %v", name, err)
 	}
 	c.startIn, c.startOut = c.live()
 	return c
+}
+
+// Retry loading the baseline before publishing any replacement snapshot.
+// The live-counter starting point stays fixed so traffic during the read
+// failure is included once the baseline becomes readable.
+func (c *Collector) loadBaseline() error {
+	prev, err := Read(c.dir, c.name)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	c.baseIn.Store(prev.BytesIn)
+	c.baseOut.Store(prev.BytesOut)
+	c.baselineReady.Store(true)
+	return nil
 }
 
 // live is what this tunnel's byte sources read now: the engine's own counters
@@ -316,8 +333,12 @@ func since(now, start uint64) uint64 {
 // every earlier run — the figure a traffic limit is held against. Cheaper than
 // Snapshot, which a limit checked several times a second does not need.
 func (c *Collector) Total() uint64 {
+	if !c.baselineReady.Load() {
+		// Any configured quota must wait until the previous usage is known.
+		return ^uint64(0)
+	}
 	in, out := c.live()
-	return c.baseIn + since(in, c.startIn) + c.baseOut + since(out, c.startOut)
+	return c.baseIn.Load() + since(in, c.startIn) + c.baseOut.Load() + since(out, c.startOut)
 }
 
 // Snapshot reads the current counters without writing anything.
@@ -336,8 +357,8 @@ func (c *Collector) Snapshot() Snapshot {
 	// The persisted baseline plus what has been carried since this collector
 	// took over from it.
 	liveIn, liveOut := c.live()
-	s.BytesIn = c.baseIn + since(liveIn, c.startIn)
-	s.BytesOut = c.baseOut + since(liveOut, c.startOut)
+	s.BytesIn = c.baseIn.Load() + since(liveIn, c.startIn)
+	s.BytesOut = c.baseOut.Load() + since(liveOut, c.startOut)
 	if live, target, configured, mbps := PoolState(); configured > 0 {
 		s.Pool = &PoolStats{Live: live, Target: target, Configured: configured, Mbps: mbps}
 	}
@@ -366,6 +387,13 @@ func (c *Collector) Snapshot() Snapshot {
 // Write persists one snapshot. Failures are returned but are not worth
 // stopping a tunnel over — metrics are diagnostics, not function.
 func (c *Collector) Write() error {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+	if !c.baselineReady.Load() {
+		if err := c.loadBaseline(); err != nil {
+			return fmt.Errorf("preserve traffic baseline for %s: %w", c.name, err)
+		}
+	}
 	s := c.Snapshot()
 	b, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {

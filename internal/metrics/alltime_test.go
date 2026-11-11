@@ -293,3 +293,37 @@ func TestReadingTrafficRejectsMissingCountersAndKeepsSnapshotFields(t *testing.T
 		t.Fatalf("snapshot fields changed during read: %+v, error %v", got, err)
 	}
 }
+
+func TestCollectorPreservesUnreadableBaselineAndRetriesAfterRecovery(t *testing.T) {
+	dir := t.TempDir()
+	path := Path(dir, "t1")
+	const damaged = `{"bytes_in":`
+	if err := os.WriteFile(path, []byte(damaged), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var in, out atomic.Uint64
+	c := NewCollector(dir, "t1", "tcp", "server", in.Load, out.Load)
+	in.Store(50)
+	out.Store(25)
+	if err := c.Write(); err == nil {
+		t.Fatal("collector overwrote an unreadable baseline")
+	}
+	if got, err := os.ReadFile(path); err != nil || string(got) != damaged {
+		t.Fatalf("unreadable baseline changed to %q, error %v", got, err)
+	}
+	if got := c.Total(); got != ^uint64(0) {
+		t.Fatalf("unknown usage = %d, which could permit a limited tunnel to run", got)
+	}
+	if err := os.WriteFile(path, []byte(`{"bytes_in":100,"bytes_out":200}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Write(); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := Read(dir, "t1"); err != nil || got.BytesIn != 150 || got.BytesOut != 225 {
+		t.Fatalf("recovered snapshot = %+v, error %v", got, err)
+	}
+	if got := c.Total(); got != 375 {
+		t.Fatalf("recovered quota usage = %d, want 375", got)
+	}
+}
