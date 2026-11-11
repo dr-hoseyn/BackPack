@@ -19,6 +19,11 @@ func WebSocketStream(conn *websocket.Conn) net.Conn {
 
 const WSMuxBinaryProtocol = "binary"
 
+const (
+	wsMuxWindowUpdateCommand = 4
+	wsMuxWindowUpdateSize    = 8
+)
+
 // Older peers did not frame their data. Select the format only after the
 // authenticated upgrade has acknowledged the standard binary subprotocol.
 func WSMuxStream(conn *websocket.Conn) net.Conn {
@@ -34,6 +39,8 @@ type webSocketStream struct {
 	reader  io.Reader
 	readErr error
 	writeMu sync.Mutex
+	// Only the writeMu owner reuses this fixed-size control metadata.
+	controlFrame [smuxHeaderSize + wsMuxWindowUpdateSize]byte
 }
 
 func (c *webSocketStream) Read(p []byte) (int, error) {
@@ -102,6 +109,29 @@ func (c *webSocketStream) WriteBuffers(v [][]byte) (int, error) {
 	}
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
+	// These smux controls contain no application payload. Gorilla's server
+	// WriteMessage keeps its writer on the stack. Join a v2 window update in
+	// per-carrier storage rather than allocating a temporary 16-byte slice.
+	// All bytes are consumed synchronously while writeMu remains held.
+	if len(v) == 2 && len(v[0]) == smuxHeaderSize {
+		header, body := v[0], v[1]
+		var control []byte
+		if len(body) == 0 {
+			control = header
+		} else if len(body) == wsMuxWindowUpdateSize && header[0] == 2 &&
+			header[1] == wsMuxWindowUpdateCommand && header[2] == wsMuxWindowUpdateSize && header[3] == 0 {
+			copy(c.controlFrame[:smuxHeaderSize], header)
+			copy(c.controlFrame[smuxHeaderSize:], body)
+			control = c.controlFrame[:]
+		}
+		if control != nil {
+			if err := c.conn.WriteMessage(websocket.BinaryMessage, control); err != nil {
+				c.conn.Close()
+				return 0, err
+			}
+			return len(control), nil
+		}
+	}
 	w, err := c.conn.NextWriter(websocket.BinaryMessage)
 	if err != nil {
 		c.conn.Close()

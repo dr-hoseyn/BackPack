@@ -19,16 +19,30 @@ import (
 
 func TestWSMuxBinaryStreamAndLegacyCompatibility(t *testing.T) {
 	for _, tc := range []struct {
-		name   string
-		mode   config.TransportType
-		framed bool
+		name    string
+		mode    config.TransportType
+		framed  bool
+		version int
 	}{
-		{"framed WS", config.WSMUX, true},
-		{"legacy WS", config.WSMUX, false},
-		{"framed WSS", config.WSSMUX, true},
+		{"framed WS", config.WSMUX, true, 1},
+		{"legacy WS", config.WSMUX, false, 1},
+		{"framed WSS", config.WSSMUX, true, 1},
+		{"framed WS v2 small window", config.WSMUX, true, 2},
+		{"framed WSS v2 small window", config.WSSMUX, true, 2},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			const token = "test-token"
+			cfg := smux.DefaultConfig()
+			cfg.Version = tc.version
+			if tc.version == 2 {
+				// One MiB must cross a much smaller window in both directions.
+				// A dropped or corrupted UPD would stall this transfer.
+				cfg.MaxFrameSize = 4 << 10
+				// Keep the session bucket above smux's 256 KiB bootstrap
+				// window; the stream window is the control under test.
+				cfg.MaxReceiveBuffer = 1 << 20
+				cfg.MaxStreamBuffer = 16 << 10
+			}
 			up := websocket.Upgrader{ReadBufferSize: wsReadBufferSize, WriteBufferSize: wsWriteBufferSize, WriteBufferPool: wsWriteBuffers}
 			if tc.framed {
 				up.Subprotocols = []string{WSMuxBinaryProtocol}
@@ -50,7 +64,7 @@ func TestWSMuxBinaryStreamAndLegacyCompatibility(t *testing.T) {
 					return
 				}
 				defer c.Close()
-				s, e := NewWatchedMuxSession(WSMuxStream(c), nil, smux.Server)
+				s, e := NewWatchedMuxSession(WSMuxStream(c), cfg, smux.Server)
 				if e != nil {
 					serverDone <- e
 					return
@@ -81,7 +95,7 @@ func TestWSMuxBinaryStreamAndLegacyCompatibility(t *testing.T) {
 			if (c.Subprotocol() == WSMuxBinaryProtocol) != tc.framed {
 				t.Fatal("framing disagreement")
 			}
-			s, e := NewWatchedMuxSession(WSMuxStream(c), nil, smux.Client)
+			s, e := NewWatchedMuxSession(WSMuxStream(c), cfg, smux.Client)
 			if e != nil {
 				t.Fatal(e)
 			}
@@ -96,10 +110,21 @@ func TestWSMuxBinaryStreamAndLegacyCompatibility(t *testing.T) {
 				t.Fatal(e)
 			}
 			writeDone := make(chan error, 1)
-			go func() { _, e := stream.Write(payload); writeDone <- e }()
+			go func() {
+				_, e := stream.Write(payload)
+				writeDone <- e
+				if e != nil {
+					stream.Close()
+				}
+			}()
 			got := make([]byte, len(payload))
 			if _, e = io.ReadFull(stream, got); e != nil {
-				t.Fatal(e)
+				select {
+				case writeErr := <-writeDone:
+					t.Fatalf("read failed: %v; writer failed: %v", e, writeErr)
+				default:
+					t.Fatal(e)
+				}
 			}
 			if e = <-writeDone; e != nil {
 				t.Fatal(e)
