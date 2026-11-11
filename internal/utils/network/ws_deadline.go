@@ -23,6 +23,9 @@ type streamDeadlineConn struct {
 	closed         bool
 }
 
+// UnderlyingConn exposes socket identity for passive congestion sampling only.
+func (c *streamDeadlineConn) UnderlyingConn() net.Conn { return c.Conn }
+
 func (c *streamDeadlineConn) SetWriteDeadline(t time.Time) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()

@@ -16,7 +16,10 @@ type muxLocalQueue struct {
 	closed  bool
 	ready   chan struct{}
 	// TCP Forward keeps a small group of carriers active before using spares.
-	waiters    map[*muxQueueWaiter]struct{}
+	waiters map[*muxQueueWaiter]struct{}
+	// WebSocket mux spreads new users over healthy carriers; it must not
+	// inherit TCP Forward's preference for concentrating work on a warm pair.
+	balanced   bool
 	selected   *muxQueueWaiter
 	lastUse    uint64
 	warm       [num3WarmCarriers]*muxQueueWaiter
@@ -41,6 +44,13 @@ const (
 
 func newMuxLocalQueue(limit int) *muxLocalQueue {
 	return &muxLocalQueue{limit: limit, ready: make(chan struct{}, 1)}
+}
+
+func newBalancedMuxLocalQueue(limit int) *muxLocalQueue {
+	q := newMuxLocalQueue(limit)
+	q.waiters = make(map[*muxQueueWaiter]struct{})
+	q.balanced = true
+	return q
 }
 
 func (q *muxLocalQueue) push(local LocalTCPConn, queued func()) bool {
@@ -82,18 +92,25 @@ func (q *muxLocalQueue) notify() {
 		if q.selected != nil || q.closed || q.entries.Len() == 0 {
 			return
 		}
-		var bestLoad int
+		var bestLoad, bestPressure int
 		var next *muxQueueWaiter
 		for waiter := range q.waiters {
-			q.warmCarrier(waiter)
+			if !q.balanced {
+				q.warmCarrier(waiter)
+			}
 			// The reserved slot is present on every eligible worker.
 			// Give the warm pair the first few streams, then use the
 			// rest of the pool as concurrent load builds.
 			load := len(waiter.slots) - 1
+			pressure := 0
 			if waiter.pressure != nil {
-				load += waiter.pressure()
+				pressure = waiter.pressure()
 			}
-			if !waiter.warm {
+			if !q.balanced {
+				load += pressure
+				pressure = 0
+			}
+			if !q.balanced && !waiter.warm {
 				load += num3SpareLoad
 				if waiter.lastUse != 0 {
 					// Reuse spares that already carried work before
@@ -101,12 +118,15 @@ func (q *muxLocalQueue) notify() {
 					load -= num3SpareReuse
 				}
 			}
-			if next == nil || load < bestLoad ||
-				(load == bestLoad && waiter.lastUse < next.lastUse) {
-				next, bestLoad = waiter, load
+			// On WS/WSS, an idle stream count cannot make a retransmission-
+			// stalled socket healthier than a busy but draining one. Compare
+			// congestion first, then occupancy, rotating equal candidates.
+			if next == nil || pressure < bestPressure || (pressure == bestPressure &&
+				(load < bestLoad || (load == bestLoad && waiter.lastUse < next.lastUse))) {
+				next, bestLoad, bestPressure = waiter, load, pressure
 			}
 		}
-		if next != nil && (next.warm || !q.waitForWarm(bestLoad)) {
+		if next != nil && (q.balanced || next.warm || !q.waitForWarm(bestLoad)) {
 			q.selected = next
 			next.ready <- struct{}{}
 		}
@@ -179,7 +199,9 @@ func (q *muxLocalQueue) wait(waiter *muxQueueWaiter) <-chan struct{} {
 		return q.ready
 	}
 	q.mu.Lock()
-	q.warmCarrier(waiter)
+	if !q.balanced {
+		q.warmCarrier(waiter)
+	}
 	q.waiters[waiter] = struct{}{}
 	q.notify()
 	q.mu.Unlock()

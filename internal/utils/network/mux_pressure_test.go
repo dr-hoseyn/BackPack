@@ -1,10 +1,31 @@
 package network
 
 import (
+	"crypto/tls"
+	"net"
 	"testing"
 	"testing/synctest"
 	"time"
 )
+
+func TestWSMuxPressureFindsTheSocketUnderTLSAndDeadlineWrappers(t *testing.T) {
+	local, peer := net.Pipe()
+	defer local.Close()
+	defer peer.Close()
+	secure := tls.Client(local, &tls.Config{ServerName: "example.test"})
+	wrapped := &streamDeadlineConn{Conn: secure}
+	if got := tcpMuxPressureConn(wrapped); got != local {
+		t.Fatal("TLS/deadline wrappers hid the carrier's socket from congestion sampling")
+	}
+	if wrapped.Conn != secure || secure.NetConn() != local {
+		t.Fatal("sampling changed the encrypted I/O path")
+	}
+	cycle := &streamDeadlineConn{}
+	cycle.Conn = cycle
+	if tcpMuxPressureConn(cycle) != nil {
+		t.Fatal("a cyclic wrapper chain did not stop at the observation bound")
+	}
+}
 
 func TestTCPMuxPressureConfirmsBacklogAndCachesKernelSamples(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
