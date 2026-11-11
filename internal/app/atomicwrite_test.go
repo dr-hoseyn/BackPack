@@ -103,6 +103,7 @@ func TestWriteFileAtomicNeverExposesPartialContent(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+		defer close(stop)
 		for i := 0; i < 40; i++ {
 			payload := large
 			if i%2 == 0 {
@@ -113,7 +114,6 @@ func TestWriteFileAtomicNeverExposesPartialContent(t *testing.T) {
 				return
 			}
 		}
-		close(stop)
 	}()
 
 	wg.Wait()
