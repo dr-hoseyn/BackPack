@@ -114,7 +114,7 @@ func EnsureUnits() int {
 		if have, err := os.ReadFile(path); err == nil && string(have) == want {
 			continue
 		}
-		if os.WriteFile(path, []byte(want), 0644) == nil {
+		if app.WriteFileAtomic(path, []byte(want), 0644) == nil {
 			n++
 		}
 	}

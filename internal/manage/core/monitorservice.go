@@ -99,7 +99,7 @@ func writeMonitorUnitIfChanged() (bool, error) {
 	if current, err := os.ReadFile(path); err == nil && string(current) == want {
 		return false, nil
 	}
-	if err := os.WriteFile(path, []byte(want), 0644); err != nil {
+	if err := app.WriteFileAtomic(path, []byte(want), 0644); err != nil {
 		return false, err
 	}
 	return true, DaemonReload()
