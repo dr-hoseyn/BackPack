@@ -1,6 +1,6 @@
 //go:build !linux
 
-package tunnelspec
+package core
 
 import "fmt"
 

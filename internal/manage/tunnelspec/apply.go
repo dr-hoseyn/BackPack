@@ -55,7 +55,7 @@ func applyWith(name string, body []byte, note, revision string, prepare func() e
 	mu.Lock()
 	defer mu.Unlock()
 	path, service := app.ConfigPath(name), app.ServiceName(name)
-	unlock, err := lockConfigFile(path + ".edit.lock")
+	unlock, err := core.LockTunnelConfig(name)
 	if err != nil {
 		return err
 	}

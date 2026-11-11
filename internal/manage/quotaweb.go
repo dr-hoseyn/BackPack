@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/backpack/backpack/internal/app"
+	"github.com/backpack/backpack/internal/manage/core"
 	"github.com/backpack/backpack/internal/metrics"
 	"github.com/backpack/backpack/internal/quota"
 )
@@ -44,6 +45,11 @@ func ReadTunnelQuota(name string) (TunnelQuota, error) {
 // the one the users connect to: a limit there stops the traffic at the door,
 // and the kharej has nothing to count that the Iran end does not.
 func SetTunnelQuota(name string, limit uint64) (TunnelQuota, error) {
+	release, err := core.LockTunnelConfig(name)
+	if err != nil {
+		return TunnelQuota{}, err
+	}
+	defer release()
 	t, ok := Find(name)
 	if !ok {
 		return TunnelQuota{}, fmt.Errorf("no tunnel named %q", name)

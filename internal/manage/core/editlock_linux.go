@@ -1,4 +1,4 @@
-package tunnelspec
+package core
 
 import (
 	"fmt"
@@ -7,7 +7,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// The CLI and panel are separate processes. Lock a stable sidecar inode, not
+// Management commands can run in separate processes. Lock a stable sidecar inode, not
 // the config inode that atomic writes replace. The file must not be unlinked.
 func lockConfigFile(path string) (func(), error) {
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0600)

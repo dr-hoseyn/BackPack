@@ -137,6 +137,11 @@ func Delete(name string) error {
 	if err := CheckName(name); err != nil {
 		return err
 	}
+	release, err := LockTunnelConfig(name)
+	if err != nil {
+		return err
+	}
+	defer release()
 	cfg, cfgErr := LoadTunnelConfig(name)
 	service := app.ServiceName(name)
 	if IsActive(service) || IsEnabled(service) {

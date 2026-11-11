@@ -36,6 +36,11 @@ func Rename(oldName, newName string) error {
 	if oldName == newName {
 		return nil
 	}
+	release, err := lockRenameConfigs(app.ConfigDir, oldName, newName)
+	if err != nil {
+		return err
+	}
+	defer release()
 	if err := checkRenameFiles(app.ConfigDir, oldName, newName); err != nil {
 		return err
 	}
