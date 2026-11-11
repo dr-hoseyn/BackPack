@@ -134,7 +134,7 @@ func TestUptimeCountsRecentChecksInThePartialFirstHour(t *testing.T) {
 		{-50, true},  // 09:40, inside the partial first hour
 		{-25, true},  // 10:05, represented by the current hourly bucket
 	} {
-		f.Record("t1", 0, 0, sample.up, now.Add(time.Duration(sample.minutes)*time.Minute))
+		f.Record("t1", sample.up, now.Add(time.Duration(sample.minutes)*time.Minute))
 	}
 	pct, checks, ok := f.Tunnels["t1"].Uptime(now, time.Hour)
 	if !ok || checks != 2 || pct != 100 {

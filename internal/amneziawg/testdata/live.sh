@@ -135,7 +135,8 @@ if [ "${MANAGED:-}" = 1 ]; then
 import json, pathlib, sys
 for role in ('server','client'):
     c=json.loads((pathlib.Path(sys.argv[1])/(role+'.metrics.json')).read_text())
-    assert c['transport']=='awg' and c['bytes_in']>0 and c['bytes_out']>0,c
+    assert c['transport']=='awg' and c['role']==role,c
+    assert 'bytes_in' not in c and 'bytes_out' not in c,c
     assert not any(k in str(c) for k in ('private_key','preshared_key','header_protection_key')),c
 PY
 fi

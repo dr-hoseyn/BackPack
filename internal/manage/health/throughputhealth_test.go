@@ -278,6 +278,12 @@ func TestTheStallLadderSurvivesAWatchdogRestart(t *testing.T) {
 	next := newFlowWatch()
 	next.load()
 
+	// Old traffic totals must not be mistaken for new two-way progress, which
+	// would clear the persisted quiet period after every monitor restart.
+	if got := next.observe("t", 7*stallProgress, 9*stallProgress, now); got != flowUnknown {
+		t.Fatalf("first live reading after reload = %v, want unknown", got)
+	}
+
 	// And it must still be quiet about this tunnel, rather than starting the
 	// ladder again from the bottom.
 	if action, _ := next.decide("t", now.Add(time.Minute)); action != stallWatch {

@@ -27,19 +27,15 @@ const (
 
 // Sample records whether a tunnel was up at one five-minute check.
 type Sample struct {
-	T   int64  `json:"t"` // unix seconds
-	In  uint64 `json:"-"`
-	Out uint64 `json:"-"`
-	Up  bool   `json:"up"`
+	T  int64 `json:"t"` // unix seconds
+	Up bool  `json:"up"`
 }
 
 // Hour records how many of its five-minute checks saw the tunnel up.
 type Hour struct {
-	T   int64  `json:"t"` // start of the hour, unix seconds
-	In  uint64 `json:"-"`
-	Out uint64 `json:"-"`
-	UpN int    `json:"upN"`
-	N   int    `json:"n"`
+	T   int64 `json:"t"` // start of the hour, unix seconds
+	UpN int   `json:"upN"`
+	N   int   `json:"n"`
 }
 
 // History is everything kept for one tunnel.
@@ -96,14 +92,14 @@ func save(f File) error {
 }
 
 // Record adds one reading for a tunnel to the store held in f.
-func (f *File) Record(name string, in, out uint64, up bool, now time.Time) {
+func (f *File) Record(name string, up bool, now time.Time) {
 	h := f.Tunnels[name]
 	if h == nil {
 		h = &History{}
 		f.Tunnels[name] = h
 	}
 
-	h.Recent = append(h.Recent, Sample{T: now.Unix(), In: in, Out: out, Up: up})
+	h.Recent = append(h.Recent, Sample{T: now.Unix(), Up: up})
 	if len(h.Recent) > keepRecent {
 		h.Recent = h.Recent[len(h.Recent)-keepRecent:]
 	}
@@ -111,13 +107,12 @@ func (f *File) Record(name string, in, out uint64, up bool, now time.Time) {
 	hourStart := now.Truncate(time.Hour).Unix()
 	if n := len(h.Hourly); n > 0 && h.Hourly[n-1].T == hourStart {
 		b := &h.Hourly[n-1]
-		b.In, b.Out = in, out // cumulative: the bucket ends at the newest value
 		b.N++
 		if up {
 			b.UpN++
 		}
 	} else {
-		b := Hour{T: hourStart, In: in, Out: out, N: 1}
+		b := Hour{T: hourStart, N: 1}
 		if up {
 			b.UpN = 1
 		}
@@ -169,7 +164,7 @@ func samplePass() {
 	now := time.Now()
 	for _, t := range tunnels {
 		h := manage.TunnelHealth(t)
-		f.Record(t.Name, 0, 0, h.Active && h.Connected, now)
+		f.Record(t.Name, h.Active && h.Connected, now)
 	}
 	f.prune(present)
 	f.Updated = now

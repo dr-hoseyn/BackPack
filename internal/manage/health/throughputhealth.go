@@ -107,6 +107,8 @@ func (f flowState) String() string {
 // flowReading is one tunnel's place in the state machine.
 type flowReading struct {
 	in, out uint64
+	// A restarted monitor needs one live baseline before comparing byte deltas.
+	needsBaseline bool
 	// runs counts consecutive checks that looked stalled.
 	runs int
 	// since is when the stall was first noticed, zero when there is none.
@@ -147,6 +149,11 @@ func (w *flowWatch) observe(name string, in, out uint64, now time.Time) flowStat
 	if !ok {
 		w.seen[name] = &flowReading{in: in, out: out}
 		return flowUnknown // nothing to compare against yet
+	}
+
+	if r.needsBaseline {
+		r.in, r.out, r.needsBaseline = in, out, false
+		return flowUnknown
 	}
 
 	dIn, dOut := delta(r.in, in), delta(r.out, out)
@@ -305,9 +312,6 @@ var flowStatePath = filepath.Join(app.ConfigDir, "stall-state.json")
 // flowReading's fields are unexported and two of them are times, which is
 // exactly what JSON is bad at guessing.
 type persistedReading struct {
-	// Transient byte readings are never persisted.
-	In         uint64 `json:"-"`
-	Out        uint64 `json:"-"`
 	Runs       int    `json:"runs"`
 	Since      int64  `json:"since,omitempty"`
 	Direction  string `json:"direction,omitempty"`
@@ -330,7 +334,7 @@ func (w *flowWatch) save() {
 	out := make(map[string]persistedReading, len(w.seen))
 	for name, r := range w.seen {
 		p := persistedReading{
-			In: r.in, Out: r.out, Runs: r.runs,
+			Runs:      r.runs,
 			Direction: r.direction, Restarts: r.restarts, Reported: r.reported,
 			Reloaded: r.reloaded,
 		}
@@ -371,7 +375,7 @@ func (w *flowWatch) load() {
 	}
 	for name, p := range in {
 		r := &flowReading{
-			in: p.In, out: p.Out, runs: p.Runs,
+			needsBaseline: true, runs: p.Runs,
 			direction: p.Direction, restarts: p.Restarts, reported: p.Reported,
 			reloaded: p.Reloaded,
 		}

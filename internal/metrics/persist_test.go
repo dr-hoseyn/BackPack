@@ -6,13 +6,6 @@ import (
 	"testing"
 )
 
-func resetCounters(t *testing.T) {
-	t.Helper()
-	bytesIn.Store(0)
-	bytesOut.Store(0)
-	t.Cleanup(func() { bytesIn.Store(0); bytesOut.Store(0) })
-}
-
 func TestHealthSnapshotsDoNotReadOrPersistTrafficTotals(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(Path(dir, "t1"), []byte("unreadable old accounting"), 0600); err != nil {

@@ -10,6 +10,10 @@ detection. These counters are not saved across restarts. History records uptime
 observations without byte volumes. Legacy `sniffer` and `sniffer_log` settings
 are accepted for configuration compatibility.
 
+Heap diagnostics use `runtime/metrics` rather than stopping all goroutines with
+`ReadMemStats`. Descriptor enumeration reads bounded batches of names so the
+temporary list does not grow with the total number of open sockets.
+
 <div dir="rtl">
 
 ## خلاصهٔ فارسی
