@@ -124,11 +124,13 @@ func TestQuotaStartupWaitsWhenPersistedTrafficCannotBeRead(t *testing.T) {
 		t.Fatal("a new tunnel without a snapshot should start")
 	}
 	snapshot := metrics.Path(dir, "q1")
-	if err := os.WriteFile(snapshot, []byte(`{"bytes_in":`), 0600); err != nil {
-		t.Fatal(err)
-	}
-	if !quotaReached(configPath) {
-		t.Fatal("the quota gate treated unreadable traffic as zero")
+	for _, body := range []string{`{"bytes_in":`, `null`, `{}`, `{"bytes_in":null,"bytes_out":0}`} {
+		if err := os.WriteFile(snapshot, []byte(body), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if !quotaReached(configPath) {
+			t.Fatalf("the quota gate treated %s as zero traffic", body)
+		}
 	}
 	if err := os.WriteFile(snapshot, []byte(`{"bytes_in":250,"bytes_out":100}`), 0600); err != nil {
 		t.Fatal(err)

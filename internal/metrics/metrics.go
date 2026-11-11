@@ -399,8 +399,20 @@ func Read(dir, name string) (Snapshot, error) {
 	if err != nil {
 		return s, err
 	}
-	err = json.Unmarshal(b, &s)
-	return s, err
+	var stored struct {
+		Snapshot
+		BytesIn  *uint64 `json:"bytes_in"`
+		BytesOut *uint64 `json:"bytes_out"`
+	}
+	if err := json.Unmarshal(b, &stored); err != nil {
+		return s, err
+	}
+	if stored.BytesIn == nil || stored.BytesOut == nil {
+		return s, fmt.Errorf("traffic snapshot for %s is missing byte counters", name)
+	}
+	stored.Snapshot.BytesIn = *stored.BytesIn
+	stored.Snapshot.BytesOut = *stored.BytesOut
+	return stored.Snapshot, nil
 }
 
 // Tunnel traffic counting.

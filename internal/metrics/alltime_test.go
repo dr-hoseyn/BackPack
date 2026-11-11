@@ -273,3 +273,23 @@ func TestRetirementPreservesDocumentsMissingTrafficCounters(t *testing.T) {
 		}
 	}
 }
+
+func TestReadingTrafficRejectsMissingCountersAndKeepsSnapshotFields(t *testing.T) {
+	dir := t.TempDir()
+	for _, body := range []string{`null`, `{}`, `{"bytes_in":1}`, `{"bytes_in":0,"bytes_out":null}`} {
+		if err := os.WriteFile(Path(dir, "t1"), []byte(body), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Read(dir, "t1"); err == nil {
+			t.Errorf("accepted missing counters in %s", body)
+		}
+	}
+	body := []byte(`{"name":"t1","transport":"tcp","role":"server","bytes_in":0,"bytes_out":200}`)
+	if err := os.WriteFile(Path(dir, "t1"), body, 0600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Read(dir, "t1")
+	if err != nil || got.Name != "t1" || got.Transport != "tcp" || got.Role != "server" || got.BytesIn != 0 || got.BytesOut != 200 {
+		t.Fatalf("snapshot fields changed during read: %+v, error %v", got, err)
+	}
+}
