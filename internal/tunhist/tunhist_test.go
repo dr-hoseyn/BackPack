@@ -80,13 +80,17 @@ func TestSamplingPreservesHistoryItCannotRead(t *testing.T) {
 	previous := Dir
 	Dir = t.TempDir()
 	t.Cleanup(func() { Dir = previous })
-	const damaged = `{"tunnels":`
-	if err := os.WriteFile(path(), []byte(damaged), 0600); err != nil {
-		t.Fatal(err)
-	}
-	samplePass()
-	if body, err := os.ReadFile(path()); err != nil || string(body) != damaged {
-		t.Fatalf("unreadable history changed to %q, error %v", body, err)
+	for _, damaged := range []string{`{"tunnels":`, `null`, `{}`, `{"tunnels":null}`} {
+		if err := os.WriteFile(path(), []byte(damaged), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := load(); err == nil {
+			t.Errorf("accepted incomplete history %s", damaged)
+		}
+		samplePass()
+		if body, err := os.ReadFile(path()); err != nil || string(body) != damaged {
+			t.Fatalf("unreadable history changed to %q, error %v", body, err)
+		}
 	}
 }
 

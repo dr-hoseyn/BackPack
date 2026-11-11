@@ -96,7 +96,7 @@ func load() (File, error) {
 		return empty, fmt.Errorf("read %s: %w", path(), err)
 	}
 	if f.Tunnels == nil {
-		f.Tunnels = empty.Tunnels
+		return empty, fmt.Errorf("history %s is missing its tunnel records", path())
 	}
 	return f, nil
 }
