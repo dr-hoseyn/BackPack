@@ -1,15 +1,5 @@
-// Package tunhist keeps the long view of every tunnel: traffic and up/down
-// state, sampled on a timer and kept for a month.
-//
-// The panel's sparkline answers "what is happening right now"; this answers
-// "what happened this week" — how much a tunnel carried per day, and what
-// fraction of the time it was actually up. The sampler runs inside
-// backpack-monitor, the process that is always on; the panel only reads.
-//
-// Two resolutions bound the file: five-minute samples for the last day, and
-// hourly buckets for the last thirty. Byte counts are stored cumulative, the
-// way the metrics report them, so a gap in sampling loses resolution rather
-// than inventing traffic.
+// Package tunhist keeps bounded uptime history for each tunnel.
+// Five-minute checks are retained for a day and hourly buckets for a month.
 package tunhist
 
 import (
@@ -24,7 +14,6 @@ import (
 	"github.com/backpack/backpack/internal/app"
 	"github.com/backpack/backpack/internal/manage"
 	"github.com/backpack/backpack/internal/manage/core"
-	"github.com/backpack/backpack/internal/metrics"
 )
 
 const (
@@ -36,22 +25,19 @@ const (
 	keepHourly = 720 // hours in 30 days
 )
 
-// Sample is one five-minute reading: cumulative bytes and whether the tunnel
-// was up at that moment.
+// Sample records whether a tunnel was up at one five-minute check.
 type Sample struct {
 	T   int64  `json:"t"` // unix seconds
-	In  uint64 `json:"in"`
-	Out uint64 `json:"out"`
+	In  uint64 `json:"-"`
+	Out uint64 `json:"-"`
 	Up  bool   `json:"up"`
 }
 
-// Hour is one hourly bucket. Bytes stay cumulative (the value at the end of
-// the bucket); UpN of N five-minute checks saw the tunnel up, which is what
-// an honest uptime percentage is made of.
+// Hour records how many of its five-minute checks saw the tunnel up.
 type Hour struct {
 	T   int64  `json:"t"` // start of the hour, unix seconds
-	In  uint64 `json:"in"`
-	Out uint64 `json:"out"`
+	In  uint64 `json:"-"`
+	Out uint64 `json:"-"`
 	UpN int    `json:"upN"`
 	N   int    `json:"n"`
 }
@@ -107,18 +93,6 @@ func save(f File) error {
 		return err
 	}
 	return app.WriteFileAtomic(path(), data, 0o644)
-}
-
-func (f *File) lastTraffic(name string) (in, out uint64) {
-	if h := f.Tunnels[name]; h != nil {
-		if n := len(h.Recent); n > 0 {
-			return h.Recent[n-1].In, h.Recent[n-1].Out
-		}
-		if n := len(h.Hourly); n > 0 {
-			return h.Hourly[n-1].In, h.Hourly[n-1].Out
-		}
-	}
-	return 0, 0
 }
 
 // Record adds one reading for a tunnel to the store held in f.
@@ -194,12 +168,8 @@ func samplePass() {
 	}
 	now := time.Now()
 	for _, t := range tunnels {
-		in, out := f.lastTraffic(t.Name)
-		if snap, err := metrics.Read(Dir, t.Name); err == nil {
-			in, out = snap.BytesIn, snap.BytesOut
-		}
 		h := manage.TunnelHealth(t)
-		f.Record(t.Name, in, out, h.Active && h.Connected, now)
+		f.Record(t.Name, 0, 0, h.Active && h.Connected, now)
 	}
 	f.prune(present)
 	f.Updated = now

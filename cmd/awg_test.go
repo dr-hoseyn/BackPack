@@ -16,7 +16,7 @@ import (
 	"github.com/backpack/backpack/internal/metrics"
 )
 
-func TestAWGFinalMetricsWaitForTheFinalDeviceSample(t *testing.T) {
+func TestAWGHealthSnapshotsExcludeDeviceConsumption(t *testing.T) {
 	old := runManagedAWG
 	defer func() { runManagedAWG = old }()
 	ready := make(chan struct{})
@@ -49,8 +49,8 @@ func TestAWGFinalMetricsWaitForTheFinalDeviceSample(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s.BytesIn != 123456 || s.BytesOut != 654321 {
-		t.Fatalf("final device counters were lost: %d/%d", s.BytesIn, s.BytesOut)
+	if s.BytesIn != 0 || s.BytesOut != 0 || s.Transport != "awg" {
+		t.Fatalf("AWG health snapshot contains consumption: %+v", s)
 	}
 }
 

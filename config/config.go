@@ -369,10 +369,9 @@ type ServerConfig struct {
 	// MaxStreamBuffer is the per-stream receive window, in bytes. Filled from a
 	// preset.
 	MaxStreamBuffer int `toml:"mux_streambuffer"`
-	// Sniffer records per-port traffic in the usage log. Off by default: it
-	// costs a write per connection and the page is reachable over SSH only.
+	// Sniffer is accepted for older configurations and has no runtime effect.
 	Sniffer bool `toml:"sniffer"`
-	// SnifferLog is where the per-port traffic record is written.
+	// SnifferLog is a legacy compatibility field; no per-port usage log is written.
 	SnifferLog string `toml:"sniffer_log"`
 	// TLSCertFile is a certificate to present, for the transports that terminate
 	// TLS. Empty generates a self-signed one.
@@ -556,10 +555,9 @@ type ClientConfig struct {
 	// MaxStreamBuffer is the per-stream receive window, in bytes. Filled from a
 	// preset.
 	MaxStreamBuffer int `toml:"mux_streambuffer"`
-	// Sniffer records per-port traffic in the usage log. Off by default: it
-	// costs a write per connection.
+	// Sniffer is accepted for older configurations and has no runtime effect.
 	Sniffer bool `toml:"sniffer"`
-	// SnifferLog is where the per-port traffic record is written.
+	// SnifferLog is a legacy compatibility field; no per-port usage log is written.
 	SnifferLog string `toml:"sniffer_log"`
 	// DialTimeout is how many seconds a single connection attempt may take. It is
 	// also what a filtered address costs before the next one is tried — see

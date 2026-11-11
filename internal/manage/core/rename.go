@@ -8,7 +8,6 @@ import (
 
 	"github.com/backpack/backpack/internal/app"
 	"github.com/backpack/backpack/internal/metrics"
-	"github.com/backpack/backpack/internal/quota"
 )
 
 // Renaming a tunnel.
@@ -110,7 +109,7 @@ func Rename(oldName, newName string) error {
 }
 
 // moveRenameFiles restores the files it moved if a later move or systemd
-// preparation fails. Optional counters and quota may be absent.
+// preparation fails. Optional health snapshots may be absent.
 func moveRenameFiles(dir, oldName, newName string, prepareUnit func() error) (err error) {
 	type move struct {
 		from, to string
@@ -118,7 +117,6 @@ func moveRenameFiles(dir, oldName, newName string, prepareUnit func() error) (er
 	}
 	files := []move{
 		{filepath.Join(dir, oldName+".toml"), filepath.Join(dir, newName+".toml"), false},
-		{quota.Path(dir, oldName), quota.Path(dir, newName), true},
 		{metrics.Path(dir, oldName), metrics.Path(dir, newName), true},
 	}
 	var moved []move
@@ -160,7 +158,6 @@ func checkRenameFiles(dir, oldName, newName string) error {
 	}{
 		{filepath.Join(dir, newName+".toml"), "configuration"},
 		{metrics.Path(dir, newName), "traffic counters"},
-		{quota.Path(dir, newName), "traffic quota"},
 	} {
 		if _, err := os.Lstat(candidate.path); err == nil {
 			return fmt.Errorf("%s for %q already exists", candidate.kind, newName)

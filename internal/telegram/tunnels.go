@@ -10,7 +10,6 @@ import (
 	"github.com/backpack/backpack/internal/geo"
 	"github.com/backpack/backpack/internal/manage"
 	"github.com/backpack/backpack/internal/metrics"
-	"github.com/backpack/backpack/internal/sysstat"
 	"github.com/backpack/backpack/internal/tunhist"
 )
 
@@ -125,8 +124,6 @@ func tunnelRoute(lang, rest string) reply {
 	switch view {
 	case "logs":
 		return logsScreen(lang, t)
-	case "traffic":
-		return trafficScreen(lang, t)
 	case "ping":
 		return pingScreen(lang, t)
 	}
@@ -172,12 +169,6 @@ func tunnelScreen(lang string, t manage.Tunnel) reply {
 		}
 	}
 
-	if snap, err := metrics.Read(app.ConfigDir, t.Name); err == nil {
-		fmt.Fprintf(&out, "↑ %s | ↓ %s | Σ %s\n",
-			sysstat.HumanBytes(snap.BytesOut),
-			sysstat.HumanBytes(snap.BytesIn),
-			sysstat.HumanBytes(snap.BytesIn+snap.BytesOut))
-	}
 	if up, ok := uptime24h(t.Name); ok {
 		fmt.Fprintf(&out, tr(lang, "Uptime 24h")+" : %.1f%%\n", up)
 	}
@@ -196,8 +187,7 @@ func tunnelScreen(lang string, t manage.Tunnel) reply {
 		row(btn{Text: "▶️ " + tr(lang, "Start"), Data: "act:start:" + id},
 			btn{Text: "⏹ " + tr(lang, "Stop"), Data: "act:stop:" + id},
 			btn{Text: "🔄 " + tr(lang, "Restart"), Data: "act:restart:" + id}),
-		row(btn{Text: "📈 " + tr(lang, "Traffic"), Data: "t:" + id + ":traffic"},
-			btn{Text: "📡 " + tr(lang, "Ping"), Data: "t:" + id + ":ping"}),
+		row(btn{Text: "📡 " + tr(lang, "Ping"), Data: "t:" + id + ":ping"}),
 		refreshAndBack(lang, "t:"+id, "nav:tunnels"),
 	))
 }
@@ -256,96 +246,6 @@ func logsScreen(lang string, t manage.Tunnel) reply {
 	id := tunnelID(t.Name)
 	text := b("📄 "+tr(lang, "Logs")+" — "+t.Name) + "\n\n" + preBlock(out)
 	return screenReply(text, kb(refreshAndBack(lang, "t:"+id+":logs", "t:"+id)))
-}
-
-// --- traffic ----------------------------------------------------------------
-
-// sparkChars is the eight-level ramp the chart is drawn with. A real chart
-// would be an image; this is legible in a notification and costs nothing.
-var sparkChars = []rune("▁▂▃▄▅▆▇█")
-
-func trafficScreen(lang string, t manage.Tunnel) reply {
-	id := tunnelID(t.Name)
-	hist := tunhist.Load().Tunnels[t.Name]
-	title := b("📈 " + tr(lang, "Traffic") + " — " + t.Name)
-
-	if hist == nil || len(hist.Hourly) < 2 {
-		return screenReply(
-			title+"\n\n"+esc(tr(lang, "Not enough history yet — the sampler needs about an hour.")),
-			kb(refreshAndBack(lang, "t:"+id+":traffic", "t:"+id)))
-	}
-
-	deltas, peak, total := hourlyDeltas(hist.Hourly, 24)
-	var out strings.Builder
-	out.WriteString(title + "\n\n")
-	out.WriteString(esc(tr(lang, "Last 24 hours")) + "\n")
-	out.WriteString("<code>" + sparkline(deltas, peak) + "</code>\n\n")
-	fmt.Fprintf(&out, tr(lang, "Busiest hour")+" : %s\n", sysstat.HumanBytes(peak))
-	fmt.Fprintf(&out, tr(lang, "Total")+" : %s\n", sysstat.HumanBytes(total))
-	if up, ok := uptime24h(t.Name); ok {
-		fmt.Fprintf(&out, tr(lang, "Uptime 24h")+" : %.1f%%\n", up)
-	}
-
-	return screenReply(out.String(), kb(refreshAndBack(lang, "t:"+id+":traffic", "t:"+id)))
-}
-
-// hourlyDeltas turns cumulative counters into per-hour traffic.
-//
-// The counters restart from zero whenever the tunnel's process does, so a
-// bucket lower than the one before it is a restart, not negative traffic. The
-// bytes since the restart are the honest reading for that hour; treating it as
-// zero would hide the traffic, and subtracting would produce a number the size
-// of the whole previous total.
-func hourlyDeltas(buckets []tunhist.Hour, want int) (deltas []uint64, peak, total uint64) {
-	// One extra bucket at the front: the first delta needs something to
-	// subtract from.
-	from := len(buckets) - want - 1
-	if from < 0 {
-		from = 0
-	}
-	window := buckets[from:]
-
-	for i := 1; i < len(window); i++ {
-		prev := window[i-1].In + window[i-1].Out
-		cur := window[i].In + window[i].Out
-		var d uint64
-		if cur >= prev {
-			d = cur - prev
-		} else {
-			d = cur // counters were reset
-		}
-		deltas = append(deltas, d)
-		total += d
-		if d > peak {
-			peak = d
-		}
-	}
-	return deltas, peak, total
-}
-
-// sparkline draws values as blocks scaled to the peak. An all-zero series draws
-// as a flat floor rather than an empty string, because "no traffic" is an
-// answer and a blank line looks like a bug.
-func sparkline(values []uint64, peak uint64) string {
-	if len(values) == 0 {
-		return strings.Repeat(string(sparkChars[0]), 1)
-	}
-	var out strings.Builder
-	for _, v := range values {
-		if peak == 0 {
-			out.WriteRune(sparkChars[0])
-			continue
-		}
-		idx := int(v * uint64(len(sparkChars)-1) / peak)
-		if idx < 0 {
-			idx = 0
-		}
-		if idx >= len(sparkChars) {
-			idx = len(sparkChars) - 1
-		}
-		out.WriteRune(sparkChars[idx])
-	}
-	return out.String()
 }
 
 // --- ping -------------------------------------------------------------------

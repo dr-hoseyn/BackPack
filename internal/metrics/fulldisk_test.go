@@ -97,7 +97,7 @@ func TestTheLastGoodSnapshotSurvivesAFullDisk(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the snapshot became unreadable once writes started failing: %v", err)
 	}
-	if after.BytesIn != before.BytesIn || after.BytesOut != before.BytesOut {
+	if !after.Taken.Equal(before.Taken) || after.Name != before.Name {
 		t.Fatalf("the snapshot changed while every write was failing: %+v then %+v", before, after)
 	}
 }

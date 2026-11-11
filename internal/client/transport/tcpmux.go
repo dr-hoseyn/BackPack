@@ -91,9 +91,6 @@ func NewMuxClient(parentCtx context.Context, config *TcpMuxConfig, logger *logru
 }
 
 func (c *TcpMuxTransport) Start() {
-	if c.config.Sniffer {
-		c.state.Go(c.state.Usage().Run)
-	}
 
 	c.status.set("Disconnected (TCPMUX)")
 

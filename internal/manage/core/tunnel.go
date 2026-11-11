@@ -12,8 +12,6 @@ import (
 	"github.com/BurntSushi/toml"
 	"github.com/backpack/backpack/config"
 	"github.com/backpack/backpack/internal/app"
-	"github.com/backpack/backpack/internal/metrics"
-	"github.com/backpack/backpack/internal/quota"
 	"github.com/backpack/backpack/internal/utils/network"
 )
 
@@ -131,8 +129,7 @@ func LoadTunnelConfig(name string) (config.Config, error) {
 }
 
 // Delete removes a tunnel: stops/disables the service, deletes the unit,
-// config, any per-tunnel refresh script, and reloads systemd. Its traffic
-// moves to the server's ledger (see metrics.Retire).
+// config, any per-tunnel refresh script, and reloads systemd.
 func Delete(name string) error {
 	if err := CheckName(name); err != nil {
 		return err
@@ -149,24 +146,19 @@ func Delete(name string) error {
 			return err
 		}
 	}
-	// What it carried stays in the server's total, and its own counters go
-	// with it: the service is stopped by now, so its last write is in.
-	if err := metrics.Retire(app.ConfigDir, name); err != nil {
-		return fmt.Errorf("preserve traffic for %s before deleting its configuration: %w", name, err)
-	}
 	if cfgErr == nil {
 		network.CleanupPckGuards(cfg.Server.Token, cfg.Client.Token, cfg.Direct.Token, cfg.L3.Token)
 	}
 	if err := removeScheduledRestart(name); err != nil {
 		return fmt.Errorf("remove restart schedule for %s: %w", name, err)
 	}
+	if err := os.Remove(filepath.Join(app.ConfigDir, name+".metrics.json")); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove health snapshot for %s: %w", name, err)
+	}
 	if err := os.Remove(app.ConfigPath(name)); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("remove configuration for %s: %w", name, err)
 	}
 	removeUnit(name)
-	// Its traffic limit goes with it: a new tunnel given the same name starts
-	// with no limit and a count of zero, not with the old one's.
-	_ = quota.Remove(app.ConfigDir, name)
 	deleteTunnelMeta(name)
 	// The other end, if it was on a managed server, is left running there —
 	// there is deliberately no operation that removes a tunnel on a node, and a

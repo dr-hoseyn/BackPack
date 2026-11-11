@@ -6,7 +6,6 @@ import (
 
 	"github.com/backpack/backpack/internal/app"
 	"github.com/backpack/backpack/internal/metrics"
-	"github.com/backpack/backpack/internal/sysstat"
 	"github.com/backpack/backpack/internal/tui"
 )
 
@@ -61,8 +60,6 @@ func printSnapshot(t Tunnel, s metrics.Snapshot) {
 
 	age := time.Since(s.Taken).Round(time.Second)
 	tui.Warn(fmt.Sprintf("  Recorded %s Ago, Up %s", age, s.Uptime))
-	tui.Info(fmt.Sprintf("  Traffic       : %s In, %s Out",
-		sysstat.HumanBytes(s.BytesIn), sysstat.HumanBytes(s.BytesOut)))
 
 	if s.KCP == nil {
 		if p := s.ManagedPaths; p != nil {

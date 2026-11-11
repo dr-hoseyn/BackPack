@@ -1,34 +1,23 @@
 # Tunnel Metrics
 
-**Manage → Tunnel Metrics** shows traffic and connection counts per tunnel, and
-for **KCP** the numbers that actually explain a slow link:
+**Manage → Tunnel Metrics** reports current connection health, helper readiness,
+pool size, resource use and transport diagnostics. KCP diagnostics include lost,
+duplicated and retransmitted segments and FEC recovery.
 
-- retransmits,
-- lost and duplicated segments, and
-- how many packets **forward error correction (FEC)** repaired.
-
-That last one is the direct answer to "is KCP earning its overhead on my route?"
-
-Traffic totals are counted on **every** transport and are kept across restarts,
-so the numbers do not reset when a tunnel bounces (and they carry on after a
-[backup restore](backup-restore.md)).
-
----
+Usage totals, volume quotas and per-port usage logs are removed. The engine
+keeps in-memory counters for instantaneous speed, adaptive pool sizing and stall
+detection. These counters are not saved across restarts. History records uptime
+observations without byte volumes. Legacy `sniffer` and `sniffer_log` settings
+are accepted for configuration compatibility.
 
 <div dir="rtl">
 
 ## خلاصهٔ فارسی
 
-**Manage → Tunnel Metrics** ترافیک و تعداد اتصال هر تونل را نشان می‌دهد، و برای
-**KCP** همان عددهایی که واقعاً توضیح می‌دهند چرا لینک کند است: ارسال‌های مجدد،
-سگمنت‌های گم‌شده و تکراری، و اینکه **تصحیح خطا (FEC) چند پکت را ترمیم کرده**.
-
-عدد آخری جواب مستقیم این سؤال است: «آیا KCP روی مسیر من ارزش سربارش را دارد؟»
-اگر ترمیم‌های FEC تقریباً صفر باشد، بی‌دلیل داری پهنای باند parity می‌دهی.
-
-آمار ترافیک روی **همهٔ** ترنسپورت‌ها شمرده می‌شود و بین ری‌استارت‌ها حفظ می‌شود،
-پس با بالا و پایین شدن تونل صفر نمی‌شود (و بعد از
-[بازگردانی پشتیبان](backup-restore.md) هم ادامه پیدا می‌کند).
+آمار مصرف حجمی، سهمیهٔ حجم و ثبت مصرف هر پورت حذف شده‌اند. اندازه‌گیری لحظه‌ای
+سرعت برای تنظیم pool و تشخیص توقف انتقال در حافظه انجام می‌شود. تاریخچه فقط
+وضعیت اتصال را ثبت می‌کند و حجم ترافیک را ذخیره نمی‌کند. تنظیمات قدیمی
+`sniffer` و `sniffer_log` برای سازگاری خوانده می‌شوند.
 
 </div>
 

@@ -61,12 +61,7 @@ func runL3Tunnel(cfg *config.Config, ctx context.Context, configPath string) {
 		forwarder.SetTunnelState(tunnel.Up)
 	}
 
-	// The engine's own counters, read once per snapshot. They survive the
-	// restart loop below because the tunnel object does.
-	stopMetrics := startMetricsWithTraffic(ctx, configPath, "l3-"+tunnelCfg.Carrier, l3Role(tunnelCfg.Mode),
-		func() uint64 { return tunnel.Stats().BytesIn },
-		func() uint64 { return tunnel.Stats().BytesOut },
-	)
+	stopMetrics := startMetrics(ctx, configPath, "l3-"+tunnelCfg.Carrier, l3Role(tunnelCfg.Mode))
 	defer stopMetrics()
 
 	// The forwarder runs beside the tunnel rather than inside it, and outlives

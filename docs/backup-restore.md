@@ -56,7 +56,7 @@ copy and replaces individual files atomically. A failed copy triggers recovery
 of the previous files and removal of newly added entries. Readers may observe
 the intermediate file set during this fallback.
 
-Traffic totals resume from the backup. A backup that explicitly records
+A backup that explicitly records
 auto-refresh as disabled removes the schedule during restore. A zero interval
 from an older archive leaves the destination schedule in place.
 
@@ -77,8 +77,7 @@ from an older archive leaves the destination schedule in place.
 تنظیمات تلگرام، گواهی‌های TLS و زمان‌بندی ری‌فرش خودکار. فایل‌ها در
 `/root/BackPack/backups` ذخیره می‌شوند.
 
-**بازگردانی** همهٔ تونل‌ها را دوباره ثبت و استارت می‌کند و آمار ترافیک از همان
-جایی که بوده ادامه پیدا می‌کند، نه از صفر.
+**بازگردانی** همهٔ تونل‌ها را دوباره ثبت و استارت می‌کند.
 
 از منوی CLI (گزینهٔ Backup & Restore) و
 [ربات تلگرام](telegram-bot.md).

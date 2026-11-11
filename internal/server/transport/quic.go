@@ -144,9 +144,6 @@ func (s *QuicTransport) Start() {
 // replace while this run is still using it.
 func (s *QuicTransport) start(g *quicGen) {
 	go sweepTunnelConns(g.ctx, g.tunnelChannel)
-	if s.config.Sniffer {
-		go g.usageMonitor.Run()
-	}
 	s.status.set("Disconnected (QUIC)")
 
 	// handshakeChannel is local to this run: the accept loop publishes the

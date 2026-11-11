@@ -71,7 +71,7 @@ func TestSaveLoad(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := Load()
-	if h := got.Tunnels["t1"]; h == nil || len(h.Recent) != 1 || h.Recent[0].In != 42 {
+	if h := got.Tunnels["t1"]; h == nil || len(h.Recent) != 1 || h.Recent[0].In != 0 {
 		t.Fatalf("round trip lost data: %+v", got.Tunnels)
 	}
 }
@@ -113,7 +113,7 @@ func TestSamplingPrunesDeletedTunnelsAndKeepsUnreadableConfigs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if h := got.Tunnels["broken"]; h == nil || len(h.Recent) != 1 || h.Recent[0].In != 42 {
+	if h := got.Tunnels["broken"]; h == nil || len(h.Recent) != 1 || h.Recent[0].In != 0 {
 		t.Fatalf("history for the existing tunnel changed: %+v", h)
 	}
 	if _, ok := got.Tunnels["deleted"]; ok {

@@ -1,6 +1,7 @@
 package health
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -8,7 +9,7 @@ import (
 	"time"
 
 	"github.com/backpack/backpack/internal/app"
-	"github.com/backpack/backpack/internal/metrics"
+	"github.com/backpack/backpack/internal/enginectl"
 )
 
 // Health defined by what a tunnel is carrying, not by whether it is running.
@@ -267,22 +268,16 @@ func delta(prev, now uint64) uint64 {
 	return now - prev
 }
 
-// tunnelFlow reads a tunnel's counters. It returns ok=false for a snapshot that
-// is missing, too old, or from a tunnel whose engine says it is not connected —
-// a disconnected tunnel is already the watchdog's existing business and must not
-// also be reported as a stall.
+// tunnelFlow reads live in-memory counters through the existing control
+// socket. Usage totals are never recovered from or written to metrics files.
 func tunnelFlow(name string) (in, out uint64, ok bool) {
-	snap, err := metrics.Read(app.ConfigDir, name)
-	if err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	var status enginectl.Status
+	if err := enginectl.AskContext(ctx, name, enginectl.OpStatus, &status); err != nil || !status.Connected {
 		return 0, 0, false
 	}
-	if time.Since(snap.Taken) > datagramPeerWindow {
-		return 0, 0, false
-	}
-	if snap.Connected == nil || !*snap.Connected {
-		return 0, 0, false
-	}
-	return snap.BytesIn, snap.BytesOut, true
+	return status.BytesIn, status.BytesOut, true
 }
 
 // Keeping the ladder across a watchdog restart.
@@ -310,12 +305,9 @@ var flowStatePath = filepath.Join(app.ConfigDir, "stall-state.json")
 // flowReading's fields are unexported and two of them are times, which is
 // exactly what JSON is bad at guessing.
 type persistedReading struct {
-	// One tag per field. Writing `json:"in,out"` for both — which is what this
-	// said first — is one tag applied to two fields, so both serialise as "in"
-	// and the second silently overwrites the first. staticcheck caught it
-	// within an hour of being added to CI.
-	In         uint64 `json:"in"`
-	Out        uint64 `json:"out"`
+	// Transient byte readings are never persisted.
+	In         uint64 `json:"-"`
+	Out        uint64 `json:"-"`
 	Runs       int    `json:"runs"`
 	Since      int64  `json:"since,omitempty"`
 	Direction  string `json:"direction,omitempty"`

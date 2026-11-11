@@ -15,7 +15,6 @@ import (
 	"github.com/backpack/backpack/internal/manage/core"
 	"github.com/backpack/backpack/internal/manage/tunnelspec"
 	"github.com/backpack/backpack/internal/metrics"
-	"github.com/backpack/backpack/internal/quota"
 )
 
 // Watchdog tuning.
@@ -91,12 +90,6 @@ func RunWatchdog(ctx context.Context) {
 		case <-ticker.C:
 			pairs := establishedPairs()
 			for _, t := range core.List() {
-				if quotaHeld(t.Name) {
-					fails[t.Name] = 0
-					seenHealthy[t.Name] = false
-					flow.forget(t.Name)
-					continue
-				}
 				if !core.IsActive(t.Service) {
 					fails[t.Name] = 0 // stopped on purpose (or systemd is restarting a crash)
 					flow.forget(t.Name)
@@ -157,9 +150,6 @@ func reportRecovery(t core.Tunnel) {
 	deadline := time.Now().Add(recoveryWait)
 	for time.Now().Before(deadline) {
 		time.Sleep(3 * time.Second)
-		if quotaHeld(t.Name) {
-			return
-		}
 		if !core.IsActive(t.Service) {
 			continue
 		}
@@ -170,20 +160,6 @@ func reportRecovery(t core.Tunnel) {
 	}
 	alerthist.RecordEvent("🔴 Tunnel " + t.Name + " did not come back after the restart — " +
 		"it is running but still not connected")
-}
-
-// A quota pause keeps systemd active deliberately. It is neither a lost
-// control channel nor a throughput failure for the watchdog to restart.
-func quotaHeld(name string) bool {
-	q, err := quota.Load(app.ConfigDir, name)
-	if err != nil {
-		return true
-	}
-	if q.Limit == 0 {
-		return false
-	}
-	snap, err := metrics.Read(app.ConfigDir, name)
-	return err != nil || q.Reached(snap.BytesIn+snap.BytesOut)
 }
 
 // engineSaysConnected asks the tunnel's own engine whether it holds a control

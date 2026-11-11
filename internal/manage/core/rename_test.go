@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/backpack/backpack/internal/metrics"
-	"github.com/backpack/backpack/internal/quota"
 )
 
 func TestRenameRejectsExistingDestinationTrafficState(t *testing.T) {
@@ -18,7 +17,6 @@ func TestRenameRejectsExistingDestinationTrafficState(t *testing.T) {
 		path func(string, string) string
 	}{
 		{"traffic counters", metrics.Path},
-		{"traffic quota", quota.Path},
 	} {
 		t.Run(tc.kind, func(t *testing.T) {
 			dir := t.TempDir()
@@ -69,7 +67,6 @@ func TestRenameRollsBackConfigAndTrafficWhenUnitPreparationFails(t *testing.T) {
 	files := []func(string, string) string{
 		func(dir, name string) string { return filepath.Join(dir, name+".toml") },
 		metrics.Path,
-		quota.Path,
 	}
 	for _, path := range files {
 		if err := os.WriteFile(path(dir, "old"), []byte("preserved"), 0600); err != nil {

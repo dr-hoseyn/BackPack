@@ -121,9 +121,6 @@ func (s *WsTransport) Start() {
 // replace while this run is still using it.
 func (s *WsTransport) start(g *wsGen) {
 	// for  webui
-	if s.config.Sniffer {
-		go g.usageMonitor.Run()
-	}
 
 	s.status.set(fmt.Sprintf("Disconnected (%s)", s.config.Mode))
 

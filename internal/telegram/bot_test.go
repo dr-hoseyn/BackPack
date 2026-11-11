@@ -8,8 +8,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/backpack/backpack/internal/tunhist"
 )
 
 // A tunnel's handle must survive a restart, because the buttons in the chat do.
@@ -169,48 +167,6 @@ func TestParseAdmins(t *testing.T) {
 		if got[i] != want[i] {
 			t.Errorf("admin %d = %+v, want %+v", i, got[i], want[i])
 		}
-	}
-}
-
-// Counters restart from zero when a tunnel's process does. Treating that as
-// negative traffic (or as zero) is how a busy hour disappears from the chart.
-func TestHourlyDeltasSurviveACounterReset(t *testing.T) {
-	buckets := []tunhist.Hour{
-		{In: 100, Out: 100}, // 200 cumulative
-		{In: 300, Out: 300}, // 600 → 400 this hour
-		{In: 50, Out: 50},   // 100 → restarted, so 100 this hour
-		{In: 80, Out: 80},   // 160 → 60 this hour
-	}
-	deltas, peak, total := hourlyDeltas(buckets, 24)
-
-	want := []uint64{400, 100, 60}
-	if len(deltas) != len(want) {
-		t.Fatalf("got %d deltas, want %d: %v", len(deltas), len(want), deltas)
-	}
-	for i := range want {
-		if deltas[i] != want[i] {
-			t.Errorf("delta %d = %d, want %d", i, deltas[i], want[i])
-		}
-	}
-	if peak != 400 {
-		t.Errorf("peak = %d, want 400", peak)
-	}
-	if total != 560 {
-		t.Errorf("total = %d, want 560", total)
-	}
-}
-
-func TestSparkline(t *testing.T) {
-	got := sparkline([]uint64{0, 50, 100}, 100)
-	if []rune(got)[0] != sparkChars[0] {
-		t.Errorf("the lowest value must draw the lowest block, got %q", got)
-	}
-	if []rune(got)[2] != sparkChars[len(sparkChars)-1] {
-		t.Errorf("the peak must draw the tallest block, got %q", got)
-	}
-	// No traffic is an answer; a blank line looks like a broken screen.
-	if flat := sparkline([]uint64{0, 0, 0}, 0); flat != strings.Repeat(string(sparkChars[0]), 3) {
-		t.Errorf("an idle series must still draw a floor, got %q", flat)
 	}
 }
 

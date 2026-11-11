@@ -136,9 +136,6 @@ func tunnelToBackend(stream net.Conn, backend *net.UDPConn, logger *logrus.Logge
 			activity[0].Store(time.Now().UnixNano())
 			_ = backend.SetReadDeadline(time.Now().Add(udpBackendIdle))
 		}
-		if sniffer {
-			usage.AddOrUpdatePort(port, uint64(len(buf)))
-		}
 	}
 }
 
@@ -165,9 +162,6 @@ func backendToTunnel(stream net.Conn, backend *net.UDPConn, logger *logrus.Logge
 		if len(activity) > 0 {
 			activity[0].Store(time.Now().UnixNano())
 			_ = backend.SetReadDeadline(time.Now().Add(udpBackendIdle))
-		}
-		if sniffer {
-			usage.AddOrUpdatePort(port, uint64(n))
 		}
 	}
 }

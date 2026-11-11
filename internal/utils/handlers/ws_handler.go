@@ -72,9 +72,6 @@ func transferWebSocketToTCP(wsConn *websocket.Conn, tcpConn net.Conn, logger *lo
 			if logger.IsLevelEnabled(logrus.TraceLevel) {
 				logger.Tracef("transferred data from WebSocket to TCP: %d bytes", w)
 			}
-			if sniffer {
-				usage.AddOrUpdatePort(remotePort, uint64(w))
-			}
 		}
 	}
 }
@@ -105,9 +102,6 @@ func transferTCPToWebSocket(tcpConn net.Conn, wsConn *websocket.Conn, logger *lo
 			metrics.AddBytes(0, uint64(n))
 			if logger.IsLevelEnabled(logrus.TraceLevel) {
 				logger.Tracef("transferred data from TCP to WebSocket: %d bytes", n)
-			}
-			if sniffer {
-				usage.AddOrUpdatePort(remotePort, uint64(n))
 			}
 		}
 		if readErr != nil {

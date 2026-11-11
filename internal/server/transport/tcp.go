@@ -128,10 +128,6 @@ func (s *TcpTransport) start(g *tcpGen) {
 	go sweepTunnelConns(g.ctx, g.tunnelChannel)
 	s.status.set("Disconnected (TCP)")
 
-	if s.config.Sniffer {
-		go g.usageMonitor.Run()
-	}
-
 	go s.tunnelPort(g).serve()
 	go handshakeSweep(g.ctx, g.handshakeChannel)
 

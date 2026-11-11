@@ -73,7 +73,7 @@ const (
 const usage = `backpack — non-interactive commands
 
   backpack tunnel list [--json]         every tunnel and its state
-  backpack tunnel status <name> [--json]  one tunnel: state, peer, and what it has carried
+  backpack tunnel status <name> [--json]  one tunnel: state, peer, and health
   backpack check -c <file>              validate a config without starting it
   backpack diagnose -c <file> [--path NAME] [--json]
                                         stage TUIC/Hysteria2 checks from Kharej
@@ -200,8 +200,8 @@ type uptimeView struct {
 // trafficView is the tunnel's counters, plus the derived answer the counters
 // are read for.
 type trafficView struct {
-	BytesIn  uint64 `json:"bytes_in"`
-	BytesOut uint64 `json:"bytes_out"`
+	BytesIn  uint64 `json:"-"`
+	BytesOut uint64 `json:"-"`
 	// Peer is the far end, when the transport knows it.
 	Peer string `json:"peer,omitempty"`
 	// Age is how long ago the engine wrote these, in seconds. A reading nobody
@@ -245,7 +245,6 @@ func attachTraffic(v *tunnelView, name string) {
 		return
 	}
 	v.Traffic = &trafficView{
-		BytesIn: snap.BytesIn, BytesOut: snap.BytesOut,
 		Peer: snap.Peer, Age: int64(age.Seconds()),
 	}
 	// The last hop, named the way an operator can act on it: which address,
@@ -319,8 +318,6 @@ func tunnelStatus(name string, asJSON bool) Result {
 			if t.Peer != "" {
 				fmt.Fprintf(&b, "peer      %s\n", t.Peer)
 			}
-			fmt.Fprintf(&b, "carried   %s in, %s out (%ds ago)\n",
-				humanBytes(t.BytesIn), humanBytes(t.BytesOut), t.Age)
 		}
 		if v.LocalService != "" {
 			fmt.Fprintf(&b, "last hop  %s\n", v.LocalService)

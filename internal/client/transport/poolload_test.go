@@ -1,6 +1,10 @@
 package transport
 
-import "testing"
+import (
+	"github.com/backpack/backpack/internal/metrics"
+	"testing"
+	"time"
+)
 
 // The blind spot this exists to close: a few long-lived streams saturate the
 // connections they already have without ever asking for a new one, so the
@@ -65,5 +69,20 @@ func TestFirstReadingAndCounterResetAreNotMeasurements(t *testing.T) {
 func TestUnconfiguredPoolDoesNotGrow(t *testing.T) {
 	if poolCanGrow(1, 0) {
 		t.Fatal("an unconfigured pool size must not grow")
+	}
+}
+
+// Publishing health must not consume or reset the throughput signal used by pool sizing.
+func TestHealthSnapshotPreservesLivePoolThroughput(t *testing.T) {
+	var p poolLoad
+	p.mbps()
+	p.lastAt = time.Now().Add(-time.Second)
+	metrics.AddBytes(64<<20, 0)
+	c := metrics.NewCollector(t.TempDir(), "pool", "tcp", "client", nil, nil)
+	if err := c.Write(); err != nil {
+		t.Fatal(err)
+	}
+	if mbps := p.mbps(); !p.wantsMore(mbps, 8, 8, 8) {
+		t.Fatalf("health publication lost live pool load: %d Mbps", mbps)
 	}
 }

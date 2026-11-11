@@ -33,28 +33,13 @@ func tunnelNameFromPath(configPath string) string {
 	return strings.TrimSuffix(base, filepath.Ext(base))
 }
 
-// startMetrics records what the tunnel carries so the CLI can show it later.
-// It is best-effort: a tunnel must never fail because diagnostics could not be
-// written.
-//
-// The function it returns stops the collector and waits for its last write.
-// Every engine calls it on the way out: a reload starts the next generation's
-// collector straight after, and that one takes its baseline from the file —
-// read before the last write is in, the traffic since the previous tick was
-// lost from the total.
+// startMetrics publishes current tunnel health and resource diagnostics.
 func startMetrics(ctx context.Context, configPath, transport, role string) (stop func()) {
 	return startMetricsWithTraffic(ctx, configPath, transport, role, nil, nil)
 }
 
-// startMetricsWithTraffic is the same, for an engine that counts its own
-// traffic rather than reporting it through metrics.AddBytes.
-//
-// The reverse transports call AddBytes from inside their copy loops, which is
-// where the bytes pass. The layer-3 engine has no copy loop — it moves whole
-// packets between a device and a carrier — and already keeps exact counters of
-// its own, so it hands them over to be read once per snapshot instead. Without
-// this its panel card showed 0 in and 0 out for a tunnel that was carrying
-// traffic, which reads as a tunnel that is up but doing nothing.
+// The byte-source parameters are retained for compatibility with older tests
+// and callers. Health collectors do not sample or persist traffic totals.
 func startMetricsWithTraffic(
 	ctx context.Context,
 	configPath, transport, role string,
@@ -73,7 +58,6 @@ func startMetricsWithTraffic(
 		return func() {}
 	}
 	c := metrics.NewCollector(filepath.Dir(configPath), name, transport, role, bytesIn, bytesOut)
-	liveCollector.Store(c)
 	ctx, cancel := context.WithCancel(ctx)
 	written := make(chan struct{})
 	go func() {
@@ -82,7 +66,6 @@ func startMetricsWithTraffic(
 		c.Run(ctx.Done(), 30*time.Second)
 	}()
 	return func() {
-		liveCollector.CompareAndSwap(c, nil)
 		cancel()
 		<-written
 	}
@@ -119,22 +102,6 @@ func Run(configPath string, ctx context.Context) {
 	defer stopControl()
 
 	for {
-		// A tunnel that has used its traffic limit up does not start until the
-		// limit is raised. The file may have changed while it waited, so it is
-		// read again rather than starting what was loaded before. See quota.go.
-		ok, waited := awaitQuota(ctx, configPath)
-		if !ok {
-			return
-		}
-		if waited {
-			if next, err := loadConfig(configPath); err == nil {
-				applyDefaults(next)
-				if validateConfig(next) == nil {
-					cfg = next
-				}
-			}
-		}
-
 		// Parent cancellation and a generation ending can become ready together.
 		// Do not apply host tuning or start another generation on shutdown,
 		// even if the watcher happened to report a restart first.
@@ -164,7 +131,6 @@ func Run(configPath string, ctx context.Context) {
 			defer close(done)
 			runEngine(&running, runCtx, configPath, applyTuning)
 		}()
-		go watchQuota(runCtx, configPath, cancel)
 
 		next, why := awaitConfigChange(ctx, runCtx, configPath, cfg)
 		cancel()
@@ -175,10 +141,6 @@ func Run(configPath string, ctx context.Context) {
 			return
 
 		case wakeRestart:
-			if quotaReached(configPath) {
-				// Ended by its traffic limit; awaitQuota holds it at the top.
-				continue
-			}
 			// A restart asked for over the control socket. It is not a reload
 			// and is not reported as one: the same configuration starts again,
 			// after its ports come free.
