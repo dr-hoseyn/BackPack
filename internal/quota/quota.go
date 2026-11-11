@@ -57,7 +57,13 @@ func Load(dir, name string) (Quota, error) {
 	var q Quota
 	b, err := os.ReadFile(Path(dir, name))
 	if errors.Is(err, os.ErrNotExist) {
-		return q, nil
+		// A dangling symlink still represents configured quota state. Treat
+		// only an absent directory entry as an unlimited tunnel.
+		if _, statErr := os.Lstat(Path(dir, name)); errors.Is(statErr, os.ErrNotExist) {
+			return q, nil
+		} else if statErr != nil {
+			return q, statErr
+		}
 	}
 	if err != nil {
 		return q, err
