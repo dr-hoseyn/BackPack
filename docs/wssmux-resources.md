@@ -132,4 +132,4 @@ and a p99/throughput comparison justify a per-service setting.
 
 </div>
 
-Last verified against Backpack v1.22.0 (2026-11-10).
+Last verified against Backpack v1.23.0 (2026-11-11).

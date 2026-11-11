@@ -42,7 +42,9 @@ git push origin v1.8.5
 The release workflow builds every architecture, writes `SHA256SUMS`, signs it
 with the repository secret, and checks real L3 compatibility while CI runs.
 Publication requires successful CI, protocol, recovery, connection-setup,
-capacity and high-concurrency workflows for the exact release commit. The full
+capacity, high-concurrency and NUM3 quality workflows for the exact release
+commit. The NUM3 checks compare resource use with 1,000 open streams and
+transfer quality on a path with delay and loss. The full
 test, race and coverage suites run in CI; the release job reuses that result
 without running the complete suite a second time. Failed or missing checks
 block publication. Published assets and the one-line installer are then verified.
@@ -152,4 +154,4 @@ during the incident.
 
 ---
 
-*Last verified against Backpack v1.22.0*
+*Last verified against Backpack v1.23.0*

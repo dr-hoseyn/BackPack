@@ -702,4 +702,4 @@ See `internal/tunnel/l3/bench_gate_test.go`.
 
 ---
 
-*Last verified against Backpack v1.22.0*
+*Last verified against Backpack v1.23.0*
