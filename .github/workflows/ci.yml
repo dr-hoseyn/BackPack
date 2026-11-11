@@ -32,6 +32,7 @@ jobs:
         shell: bash
         run: |
           sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
+          sudo install -m 600 -o "$(id -un)" -g "$(id -gn)" /dev/null /etc/backpack.restore.lock
           set +e
           go test -race ./config ./internal/carrier ./internal/utils/network ./internal/e2e ./internal/manage ./internal/manage/tunnelspec \
             -run 'Test(StreamCarriers|GRPC|CarrierHandshake|SSHCarrier|SSH|DNSCarrier|Coordinator|NewCarrier|TheConfigReference|EveryDocument|EveryConfigKey|TheConfigSurface|EveryShareLink|ConnectionTestCompaction|Traffic|TheTestSettings|TransportCarriesData/(tls|grpc|dns)$|TransportConcurrentConnections/(tls|grpc|dns)$|WrongTokenIsRejected/(tls|grpc|dns)$)' \
@@ -61,6 +62,7 @@ jobs:
       - name: Verify shared transaction, history and startup recovery
         run: |
           sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
+          sudo install -m 600 -o "$(id -un)" -g "$(id -gn)" /dev/null /etc/backpack.restore.lock
           go test -race ./internal/manage/tunnelspec -count=1 -timeout 2m
       - name: Verify CLI editing and configuration history
         run: go test -race ./internal/manage -run '^(TestSafe|TestForwardPort|TestEdit|TestLayer3Editor|TestTheConfigHistory|TestAMoment)' -count=1 -timeout 2m
@@ -90,7 +92,9 @@ jobs:
           go-version-file: go.mod
           cache: true
       - name: Prepare private configuration fixtures
-        run: sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
+        run: |
+          sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
+          sudo install -m 600 -o "$(id -un)" -g "$(id -gn)" /dev/null /etc/backpack.restore.lock
       - name: Verify configuration, encrypted packets and negative authentication
         run: go test ./internal/amneziawg ./internal/tunnel/naive ./config ./cmd ./internal/manage/tunnelspec -race -count=1 -timeout 4m
       - name: Exercise existing and advanced HTTPS menu flows
@@ -222,7 +226,9 @@ jobs:
       # The ephemeral runner owns their private fixture directory; production
       # configuration permissions remain unchanged.
       - name: Prepare configuration test fixtures
-        run: sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
+        run: |
+          sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
+          sudo install -m 600 -o "$(id -un)" -g "$(id -gn)" /dev/null /etc/backpack.restore.lock
 
       # Exercise native helper paths in the coverage gate rather than crediting
       # skipped optional-helper tests. The protocol job also checks real TUNs.

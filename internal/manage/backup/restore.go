@@ -40,6 +40,7 @@ const (
 	maxRestoreEntries   = 10_000
 	maxRestoreFileBytes = 64 << 20
 	maxRestoreBytes     = 256 << 20
+	maxRestoreStream    = maxRestoreBytes + maxRestoreEntries*4096 + 1<<20
 )
 
 // restoreContents is what an archive turned out to hold, gathered while it is
@@ -79,7 +80,8 @@ func stageRestore(r io.Reader, configDir, stage string) (restoreContents, error)
 	}
 	defer gz.Close()
 
-	tr := tar.NewReader(gz)
+	stream := &io.LimitedReader{R: gz, N: maxRestoreStream + 1}
+	tr := tar.NewReader(stream)
 	seen := make(map[string]bool)
 	var total int64
 
@@ -90,32 +92,6 @@ func stageRestore(r io.Reader, configDir, stage string) (restoreContents, error)
 		}
 		if err != nil {
 			return contents, fmt.Errorf("reading archive: %w", err)
-		}
-
-		// Sidecar: parse for out-of-tree settings, never write it to disk.
-		if hdr.Name == backupMetaName {
-			var m backupMeta
-			if data, err := io.ReadAll(io.LimitReader(tr, maxRestoreFileBytes)); err == nil {
-				if err := json.Unmarshal(data, &m); err != nil {
-					// The restore carries on — the tunnels are the part that
-					// matters and they are in the tree, not in here — but it
-					// must not carry on quietly. A damaged sidecar means a
-					// setting the operator had configured is silently missing
-					// from the machine they have just restored, and the only
-					// symptom is that it stopped happening.
-					contents.Warnings = append(contents.Warnings, fmt.Sprintf(
-						"the backup's settings sidecar is damaged (%v), so out-of-tree "+
-							"settings such as the automatic refresh interval were not "+
-							"restored — check them", err))
-				} else if m.AutoRefreshHours != nil {
-					contents.AutoRefreshHours = *m.AutoRefreshHours
-					// Older archives used zero both for disabled and for an
-					// unreadable crontab. Only a verified zero can disable it.
-					contents.HasAutoRefresh = *m.AutoRefreshHours > 0 ||
-						m.AutoRefreshKnown && *m.AutoRefreshHours == 0
-				}
-			}
-			continue
 		}
 
 		name, err := safeRestoreName(hdr.Name)
@@ -131,6 +107,27 @@ func stageRestore(r io.Reader, configDir, stage string) (restoreContents, error)
 		seen[name] = true
 		if len(seen) > maxRestoreEntries {
 			return contents, fmt.Errorf("archive holds more than %d entries", maxRestoreEntries)
+		}
+
+		if hdr.Typeflag == tar.TypeReg {
+			if hdr.Size > maxRestoreFileBytes {
+				return contents, fmt.Errorf("%s is %d bytes, over the %d-byte limit for one file", name, hdr.Size, int64(maxRestoreFileBytes))
+			}
+			total += hdr.Size
+			if total > maxRestoreBytes {
+				return contents, fmt.Errorf("archive expands to more than %d bytes", int64(maxRestoreBytes))
+			}
+		}
+		// The metadata is part of the archive's bounds and duplicate checks,
+		// but is never written into the staged config directory.
+		if name == backupMetaName {
+			if hdr.Typeflag != tar.TypeReg {
+				return contents, fmt.Errorf("backup settings sidecar must be a regular file")
+			}
+			if err := readBackupMeta(tr, &contents); err != nil {
+				return contents, err
+			}
+			continue
 		}
 
 		// install_path records where install.sh cloned the repo on THIS host.
@@ -149,13 +146,6 @@ func stageRestore(r io.Reader, configDir, stage string) (restoreContents, error)
 			}
 
 		case tar.TypeReg:
-			if hdr.Size > maxRestoreFileBytes {
-				return contents, fmt.Errorf("%s is %d bytes, over the %d-byte limit for one file", name, hdr.Size, int64(maxRestoreFileBytes))
-			}
-			total += hdr.Size
-			if total > maxRestoreBytes {
-				return contents, fmt.Errorf("archive expands to more than %d bytes", int64(maxRestoreBytes))
-			}
 			if err := writeStagedFile(target, tr, hdr); err != nil {
 				return contents, err
 			}
@@ -178,11 +168,34 @@ func stageRestore(r io.Reader, configDir, stage string) (restoreContents, error)
 	// parsed and an archive that is intact. Doing it here, before anything is
 	// committed, is the whole point: a truncated upload used to be discovered
 	// only after it had been written over the live configuration.
-	if _, err := io.Copy(io.Discard, gz); err != nil {
+	if _, err := io.Copy(io.Discard, stream); err != nil {
 		return contents, fmt.Errorf("the archive is corrupt or truncated: %w", err)
 	}
 
+	if stream.N == 0 {
+		return contents, fmt.Errorf("archive exceeds the %d-byte decompressed stream limit", maxRestoreStream)
+	}
 	return contents, nil
+}
+
+func readBackupMeta(r io.Reader, contents *restoreContents) error {
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return fmt.Errorf("read backup settings sidecar: %w", err)
+	}
+	var m backupMeta
+	if err := json.Unmarshal(data, &m); err != nil {
+		contents.Warnings = append(contents.Warnings, fmt.Sprintf(
+			"the backup's settings sidecar is damaged (%v); check the auto-refresh schedule", err))
+		return nil
+	}
+	if m.AutoRefreshHours != nil {
+		contents.AutoRefreshHours = *m.AutoRefreshHours
+		// Older archives used zero for both disabled and unreadable crontabs.
+		contents.HasAutoRefresh = *m.AutoRefreshHours > 0 ||
+			m.AutoRefreshKnown && *m.AutoRefreshHours == 0
+	}
+	return nil
 }
 
 // writeStagedFile writes one archive entry into the staging tree.

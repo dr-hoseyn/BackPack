@@ -481,3 +481,32 @@ func TestRestoreUsesZeroOnlyWhenTheArchiveVerifiedAutoRefreshWasDisabled(t *test
 		})
 	}
 }
+
+func TestRestoreRejectsRepeatedOrNonFileMetadata(t *testing.T) {
+	for _, tc := range []struct {
+		name, wantError string
+		entries         []entry
+	}{
+		{
+			name:      "duplicate metadata",
+			wantError: "more than once",
+			entries: []entry{
+				{name: backupMetaName, body: `{"auto_refresh_hours":24}`},
+				{name: "./" + backupMetaName, body: `{"auto_refresh_hours":48}`},
+			},
+		},
+		{
+			name:      "metadata directory",
+			wantError: "sidecar must be a regular file",
+			entries:   []entry{{name: backupMetaName, typ: tar.TypeDir}},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			data := archiveOf(t, tc.entries...)
+			_, err := stageRestore(bytes.NewReader(data), t.TempDir(), t.TempDir())
+			if err == nil || !strings.Contains(err.Error(), tc.wantError) {
+				t.Fatalf("restore error = %v, want %q", err, tc.wantError)
+			}
+		})
+	}
+}

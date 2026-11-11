@@ -32,6 +32,7 @@ jobs:
       - name: Verify paired DNS configuration and Connection Test coverage
         run: |
           sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
+          sudo install -m 600 -o "$(id -un)" -g "$(id -gn)" /dev/null /etc/backpack.restore.lock
           go test -race ./internal/manage -run 'TestGolden|TestDNS|TestEveryShareLinkFieldHasAnID|TestTheTestSettingsFitOnePacketAndCarryNoToken' -count=1 -timeout 2m
   live:
     runs-on: ubuntu-latest

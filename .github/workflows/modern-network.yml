@@ -26,6 +26,7 @@ jobs:
       - name: Policy, protocol, pairing and soak regressions
         run: |
           sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
+          sudo install -m 600 -o "$(id -un)" -g "$(id -gn)" /dev/null /etc/backpack.restore.lock
           go test -race ./internal/tunnel/l3 ./internal/tunnel/naive ./internal/tunnel/adaptive ./internal/manage ./tools/tunnelbench -run 'TestConnectIP|TestSingAdvanced|TestSingRealm|TestEconomy|TestNetwork|TestAutomatic|TestSoak|TestManagedPeer' -count=1 -v -timeout 8m
       - name: Real CONNECT-IP TUN, verified files, restart and loss
         shell: bash

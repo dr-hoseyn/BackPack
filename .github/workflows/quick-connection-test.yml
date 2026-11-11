@@ -22,7 +22,9 @@ jobs:
           go-version-file: go.mod
           cache: true
       - name: Prepare isolated configuration fixtures
-        run: sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
+        run: |
+          sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
+          sudo install -m 600 -o "$(id -un)" -g "$(id -gn)" /dev/null /etc/backpack.restore.lock
       - name: Verify quick screening, deadlines, setup eligibility and payloads
         run: go test -race ./internal/manage -run '^(TestQuickTest|TestTrafficObservationHasAWallClockLimit|TestTrafficDiscoveryBoundsAHandshakeWithoutPayload|TestCancellationCannotPassEvenAfterTheLastEcho|TestScreenedRowsCannotBeRecommendedOrInstalled|TestTheTestSettingsFitOnePacketAndCarryNoToken|TestConnectionTestHistory)' -count=1 -v -timeout 4m
       - name: Verify history compatibility and comparison scope

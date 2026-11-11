@@ -44,6 +44,7 @@ jobs:
       - name: Capacity regressions with the race detector
         run: |
           sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
+          sudo install -m 600 -o "$(id -un)" -g "$(id -gn)" /dev/null /etc/backpack.restore.lock
           sudo sysctl -w net.core.rmem_max=268435456 net.core.wmem_max=268435456
           go test -race ./internal/client/transport ./internal/server/transport ./internal/utils/network ./internal/manage/tunnelspec -timeout 8m
           go test -race ./internal/e2e -run '^TestMuxCapacityGrowsWhileExistingForwardsStayOpen$' -count=1 -v -timeout 3m
