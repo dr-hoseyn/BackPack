@@ -1,5 +1,35 @@
 # Changelog
 
+## v1.24.0 — 2026-11-11
+
+- Remove persistent traffic totals, volume quotas, per-port usage logs and their
+  background workers. Legacy `sniffer` settings remain readable but do not
+  enable accounting. Existing volume limits are no longer enforced.
+- Retain live throughput measurements for adaptive pool sizing and stall
+  detection, along with connection limits and bandwidth caps. Keep byte counts
+  out of health snapshots and uptime history.
+- Remove the kernel tunnel's one-second accounting sampler. Sample heap
+  diagnostics through `runtime/metrics` and enumerate file descriptors in
+  bounded batches. Establish a fresh live baseline after a monitor restart.
+- Harden backup publication, retention and archive extraction. Serialize
+  configuration changes, stage restores and preserve rollback state when a
+  restore cannot complete.
+- Preserve active and boot-enabled service states during rename. Publish
+  systemd units atomically, serialize crontab edits and report maintenance
+  failures instead of reporting success.
+- Split Connection Test lifecycle and transfer probes into focused files and
+  correct partial-hour uptime reporting.
+
+<div dir="rtl">
+
+آمار مصرف حجمی، سهمیهٔ حجم و ثبت مصرف هر پورت حذف شدند تا کارهای پس‌زمینه و
+نوشتن روی دیسک کمتر شود. سهمیه‌های حجمی قدیمی دیگر اجرا نمی‌شوند. اندازه‌گیری
+لحظه‌ای سرعت، تنظیم خودکار pool، تشخیص توقف انتقال و محدودیت سرعت و تعداد
+اتصال باقی می‌مانند. پایش منابع سبک‌تر شده و پشتیبان‌گیری، بازیابی، تغییر نام
+تانل و زمان‌بندی سرویس‌ها در برابر خطا و اجرای هم‌زمان مقاوم‌تر شده‌اند.
+
+</div>
+
 ## v1.23.0 — 2026-11-11
 
 - Choose NUM3 data carriers using their TCP send backlog and acknowledgement
