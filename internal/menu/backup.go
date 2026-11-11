@@ -118,7 +118,7 @@ func createBackup() {
 	tui.Success("Backup Created:")
 	tui.Info("  " + path)
 	fmt.Println()
-	tui.Warn("Keep It Private — It Holds Tokens And The Panel Password.")
+	tui.Warn("Keep It Private. It Holds Tunnel Tokens And Private Keys.")
 	tui.PressEnter()
 }
 
@@ -173,12 +173,15 @@ func restoreBackup() {
 	}
 
 	tui.Success(fmt.Sprintf("Restored %d File(s).", res.Files))
-	if len(res.Tunnels) > 0 {
+	if len(res.Tunnels) > 0 || res.Failed > 0 {
 		tui.Info(fmt.Sprintf("Tunnels: %d Registered, %d Started, %d Failed.",
 			len(res.Tunnels), res.Started, res.Failed))
 	}
 	if res.AutoRefreshHours > 0 {
 		tui.Info(fmt.Sprintf("Auto Refresh: Every %d Hour(s).", res.AutoRefreshHours))
+	}
+	for _, warning := range res.Warnings {
+		tui.Warn(warning)
 	}
 	tui.PressEnter()
 }

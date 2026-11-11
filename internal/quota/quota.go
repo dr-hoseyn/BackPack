@@ -20,6 +20,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/backpack/backpack/internal/app"
 )
 
 // Quota is what the file holds.
@@ -60,7 +62,17 @@ func Load(dir, name string) (Quota, error) {
 	if err != nil {
 		return q, err
 	}
-	return q, json.Unmarshal(b, &q)
+	var stored struct {
+		Limit *uint64   `json:"limit"`
+		Set   time.Time `json:"set"`
+	}
+	if err := json.Unmarshal(b, &stored); err != nil {
+		return q, err
+	}
+	if stored.Limit == nil {
+		return q, errors.New("traffic quota file is missing its byte limit")
+	}
+	return Quota{Limit: *stored.Limit, Set: stored.Set}, nil
 }
 
 // Save writes a tunnel's limit, or removes the file when there is none.
@@ -72,11 +84,7 @@ func Save(dir, name string, limit uint64) error {
 	if err != nil {
 		return err
 	}
-	tmp := Path(dir, name) + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, Path(dir, name))
+	return app.WriteFileAtomic(Path(dir, name), b, 0o600)
 }
 
 // Remove drops a tunnel's limit.

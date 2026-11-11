@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os/exec"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -105,14 +106,28 @@ func SetCron(marker, spec, command string) error {
 	}
 	var kept []string
 	for _, l := range current {
-		if !strings.Contains(l, "# "+marker) {
+		if !hasCronMarker(l, marker) {
 			kept = append(kept, l)
 		}
 	}
 	if spec != "" {
 		kept = append(kept, fmt.Sprintf("%s %s # %s", spec, command, marker))
 	}
+	if slices.Equal(current, kept) {
+		return nil
+	}
 	return writeCrontab(kept)
+}
+
+// hasCronMarker recognises the trailing tag on a scheduled command.
+func hasCronMarker(line, marker string) bool {
+	line = strings.TrimSpace(line)
+	if line == "" || !strings.ContainsRune("0123456789*@", rune(line[0])) {
+		return false
+	}
+	tag := "# " + marker
+	command, ok := strings.CutSuffix(line, tag)
+	return ok && (strings.HasSuffix(command, " ") || strings.HasSuffix(command, "\t"))
 }
 
 // RemoveCron deletes a marked cron job.
@@ -141,10 +156,10 @@ func GetIntervalHours(marker string) int {
 	// cannot happen here.
 	current, _ := readCrontab()
 	for _, l := range current {
-		if !strings.Contains(l, "# "+marker) {
+		if !hasCronMarker(l, marker) {
 			continue
 		}
-		return intervalFromLine(l)
+		return intervalFromLine(strings.TrimSpace(l))
 	}
 	return 0
 }

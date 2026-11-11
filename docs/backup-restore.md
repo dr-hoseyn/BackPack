@@ -1,7 +1,9 @@
 # Backup & restore
 
 Everything in one portable `.tar.gz`: every tunnel and token, Telegram settings, TLS certificates, and the auto-refresh schedule.
-Backups live in `/root/BackPack/backups`.
+Backups live in `/root/BackPack/backups`. BackPack keeps the ten most recently
+modified backup archives. Local backup storage must support hard links so an
+archive can be published atomically after it has been fully written.
 
 ## Restoring onto a different machine
 
@@ -39,8 +41,11 @@ password, so a single-machine install never sees them.
 
 ## Restore
 
-Restoring **re-registers and starts every tunnel**, and traffic totals carry on
-from where the backup left off rather than resetting to zero.
+Restore stages the configuration before replacing the live directory. It then
+registers and restarts the tunnels and displays any errors from systemd or
+auto-refresh scheduling. If the directory swap and its rollback both fail,
+the error gives the path to the saved configuration.
+Traffic totals resume from the backup.
 
 ## Where you can do it
 
@@ -62,7 +67,7 @@ from where the backup left off rather than resetting to zero.
 **بازگردانی** همهٔ تونل‌ها را دوباره ثبت و استارت می‌کند و آمار ترافیک از همان
 جایی که بوده ادامه پیدا می‌کند، نه از صفر.
 
-از سه جا می‌شود انجامش داد: منوی CLI (گزینهٔ Backup & Restore)،
+از منوی CLI (گزینهٔ Backup & Restore) و
 [ربات تلگرام](telegram-bot.md).
 
 > فایل پشتیبان را خصوصی نگه دار — توکن‌ها و کلیدها داخلش است.
@@ -74,7 +79,7 @@ from where the backup left off rather than resetting to zero.
 
 ## Getting a backup off the machine
 
-Backups are written to `/var/backups/backpack` — on the server they describe.
+Backups are written to `/root/BackPack/backups` on the server they describe.
 The case they exist for is the case where that server is gone, so a copy
 somewhere else is the only one that will be there.
 

@@ -30,14 +30,30 @@ type Tunnel struct {
 
 // List scans the config directory and returns all tunnels, sorted by name.
 func List() []Tunnel {
+	tunnels, _, _ := ScanConfigs(app.ConfigDir)
+	return tunnels
+}
+
+// ScanConfigs returns the readable tunnels and the names of config files
+// present on disk. Callers that remove stored state need the second list:
+// an invalid config still belongs to an existing tunnel.
+func ScanConfigs(dir string) ([]Tunnel, map[string]bool, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, nil, err
+	}
 	var tunnels []Tunnel
-	matches, _ := filepath.Glob(app.ConfigDir + "/*.toml")
-	for _, path := range matches {
-		var cfg config.Config
-		if _, err := toml.DecodeFile(path, &cfg); err != nil {
+	present := make(map[string]bool)
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".toml") {
 			continue
 		}
-		name := strings.TrimSuffix(filepath.Base(path), ".toml")
+		name := strings.TrimSuffix(entry.Name(), ".toml")
+		present[name] = true
+		var cfg config.Config
+		if _, err := toml.DecodeFile(filepath.Join(dir, entry.Name()), &cfg); err != nil {
+			continue
+		}
 		t := Tunnel{Name: name, Service: app.ServiceName(name)}
 
 		switch {
@@ -97,7 +113,7 @@ func List() []Tunnel {
 		tunnels = append(tunnels, t)
 	}
 	sort.Slice(tunnels, func(i, j int) bool { return tunnels[i].Name < tunnels[j].Name })
-	return tunnels
+	return tunnels, present, nil
 }
 
 // LoadTunnelConfig reads a tunnel's full config file. Callers that need more
@@ -128,15 +144,17 @@ func Delete(name string) error {
 			return err
 		}
 	}
+	// What it carried stays in the server's total, and its own counters go
+	// with it: the service is stopped by now, so its last write is in.
+	if err := metrics.Retire(app.ConfigDir, name); err != nil {
+		return fmt.Errorf("preserve traffic for %s before deleting its configuration: %w", name, err)
+	}
 	if cfgErr == nil {
 		network.CleanupPckGuards(cfg.Server.Token, cfg.Client.Token, cfg.Direct.Token, cfg.L3.Token)
 	}
 	removeUnit(name)
 	removeScheduledRestart(name)
 	os.Remove(app.ConfigPath(name))
-	// What it carried stays in the server's total, and its own counters go
-	// with it: the service is stopped by now, so its last write is in.
-	_ = metrics.Retire(app.ConfigDir, name)
 	// Its traffic limit goes with it: a new tunnel given the same name starts
 	// with no limit and a count of zero, not with the old one's.
 	_ = quota.Remove(app.ConfigDir, name)

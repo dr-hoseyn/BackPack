@@ -5,13 +5,13 @@ import (
 	"compress/gzip"
 	"encoding/json"
 	"fmt"
-	"github.com/backpack/backpack/internal/manage/core"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/backpack/backpack/internal/app"
+	"github.com/backpack/backpack/internal/manage/core"
 )
 
 // Restoring is all-or-nothing.
@@ -27,9 +27,9 @@ import (
 // So the whole post-restore tree is now built in a staging directory first:
 // the current configuration copied in, the archive laid over the top, every
 // entry checked before it is written, and the compressed stream read through
-// to its checksum. Only then does anything in the live directory change, and
-// the change is one rename. If any part of that fails, the live directory has
-// not been touched at all.
+// to its checksum. The commit then moves the live directory aside and
+// installs the staged tree. If installation fails, it moves the previous
+// tree back or reports the path where that tree was saved.
 
 const (
 	// Bounds on what an archive may expand to. A backup of this system is
@@ -362,20 +362,30 @@ func commitRestore(configDir, stage string) error {
 		return err
 	}
 
-	previous := configDir + ".restore-previous"
-	os.RemoveAll(previous)
+	parent := filepath.Dir(configDir)
+	rollbackDir, err := os.MkdirTemp(parent, ".backpack-restore-previous-*")
+	if err != nil {
+		return fmt.Errorf("prepare restore rollback: %w", err)
+	}
+	previous := filepath.Join(rollbackDir, "config")
+	keepRollback := false
+	defer func() {
+		if !keepRollback {
+			_ = os.RemoveAll(rollbackDir)
+		}
+	}()
 
 	if err := os.Rename(configDir, previous); err != nil {
 		return fmt.Errorf("could not move the current configuration aside, so nothing was changed: %w", err)
 	}
 	if err := os.Rename(stage, configDir); err != nil {
 		if back := os.Rename(previous, configDir); back != nil {
+			keepRollback = true
 			return fmt.Errorf("could not put the restored configuration in place (%v) and could not put the previous one back either; it is in %s: %w", err, previous, back)
 		}
 		return fmt.Errorf("could not put the restored configuration in place, so the previous one was left as it was: %w", err)
 	}
 
-	syncDir(filepath.Dir(configDir))
-	os.RemoveAll(previous)
+	syncDir(parent)
 	return nil
 }

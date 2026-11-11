@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"sort"
 	"time"
 
 	"github.com/backpack/backpack/internal/alerthist"
@@ -45,20 +44,12 @@ func SetAutoBackup(on bool) error {
 	return os.WriteFile(autoBackupFlag, []byte("weekly\n"), 0644)
 }
 
-// newestBackupTime returns when the most recent archive was written, zero if
-// there is none. Names are timestamped so lexical order is chronological, but
-// the file's own mtime is what actually answers "how old".
 func newestBackupTime() time.Time {
-	matches, _ := filepath.Glob(filepath.Join(app.BackupDir, "backpack-backup-*.tar.gz"))
-	if len(matches) == 0 {
+	archives, _ := listBackupArchives(app.BackupDir)
+	if len(archives) == 0 {
 		return time.Time{}
 	}
-	sort.Strings(matches)
-	fi, err := os.Stat(matches[len(matches)-1])
-	if err != nil {
-		return time.Time{}
-	}
-	return fi.ModTime()
+	return archives[0].modified
 }
 
 // RunAutoBackup takes a weekly backup until ctx is cancelled. It checks

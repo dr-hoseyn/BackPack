@@ -43,3 +43,23 @@ func TestAnEmptyCrontabIsToldApartFromOneThatCouldNotBeRead(t *testing.T) {
 		}
 	}
 }
+
+func TestCronMarkerMatchesOnlyTheTrailingTagOnAJob(t *testing.T) {
+	const marker = "backpack-auto-refresh"
+	for _, tc := range []struct {
+		line string
+		want bool
+	}{
+		{"0 * * * * backpack --restart-all # backpack-auto-refresh", true},
+		{"  0 * * * * backpack --restart-all\t# backpack-auto-refresh  ", true},
+		{"0 * * * * other-job # backpack-auto-refresh-disabled", false},
+		{"0 * * * * other-job '# backpack-auto-refresh' arg", false},
+		{"# 0 * * * * disabled-job # backpack-auto-refresh", false},
+		{"NOTE = some-value # backpack-auto-refresh", false},
+		{"", false},
+	} {
+		if got := hasCronMarker(tc.line, marker); got != tc.want {
+			t.Errorf("hasCronMarker(%q) = %v, want %v", tc.line, got, tc.want)
+		}
+	}
+}

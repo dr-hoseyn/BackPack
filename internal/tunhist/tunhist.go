@@ -15,6 +15,7 @@ package tunhist
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -22,6 +23,7 @@ import (
 
 	"github.com/backpack/backpack/internal/app"
 	"github.com/backpack/backpack/internal/manage"
+	"github.com/backpack/backpack/internal/manage/core"
 	"github.com/backpack/backpack/internal/metrics"
 )
 
@@ -71,34 +73,52 @@ var Dir = app.ConfigDir
 
 func path() string { return filepath.Join(Dir, "history.json") }
 
-// Load reads the store; missing means empty, nothing has been sampled yet.
+// Load reads the store for display, returning an empty history on error.
 func Load() File {
-	f := File{Tunnels: map[string]*History{}}
-	data, err := os.ReadFile(path())
+	f, err := load()
 	if err != nil {
-		return f
-	}
-	if err := json.Unmarshal(data, &f); err != nil {
-		// Reading a damaged file as empty keeps the product working, which
-		// is right. Doing it silently is not: the traffic charts and every uptime figure start again from zero,
-		// and empty looks exactly like a machine where nothing has
-		// happened yet.
-		log.Printf("history: %s is damaged and is being read as empty: %v", path(), err)
-		return File{Tunnels: map[string]*History{}}
-	}
-	if f.Tunnels == nil {
-		f.Tunnels = map[string]*History{}
+		log.Printf("history: %v", err)
 	}
 	return f
 }
 
-func save(f File) {
+func load() (File, error) {
+	empty := File{Tunnels: map[string]*History{}}
+	data, err := os.ReadFile(path())
+	if os.IsNotExist(err) {
+		return empty, nil
+	}
+	if err != nil {
+		return empty, err
+	}
+	var f File
+	if err := json.Unmarshal(data, &f); err != nil {
+		return empty, fmt.Errorf("read %s: %w", path(), err)
+	}
+	if f.Tunnels == nil {
+		f.Tunnels = empty.Tunnels
+	}
+	return f, nil
+}
+
+func save(f File) error {
 	data, err := json.Marshal(f)
 	if err != nil {
-		return
+		return err
 	}
-	// Atomic, because the panel reads this while the monitor writes it.
-	_ = app.WriteFileAtomic(path(), data, 0o644)
+	return app.WriteFileAtomic(path(), data, 0o644)
+}
+
+func (f *File) lastTraffic(name string) (in, out uint64) {
+	if h := f.Tunnels[name]; h != nil {
+		if n := len(h.Recent); n > 0 {
+			return h.Recent[n-1].In, h.Recent[n-1].Out
+		}
+		if n := len(h.Hourly); n > 0 {
+			return h.Hourly[n-1].In, h.Hourly[n-1].Out
+		}
+	}
+	return 0, 0
 }
 
 // Record adds one reading for a tunnel to the store held in f.
@@ -162,19 +182,28 @@ func Run(ctx context.Context) {
 }
 
 func samplePass() {
-	f := Load()
+	f, err := load()
+	if err != nil {
+		log.Printf("history: sampling skipped: %v", err)
+		return
+	}
+	tunnels, present, err := core.ScanConfigs(Dir)
+	if err != nil {
+		log.Printf("history: list tunnel configs: %v", err)
+		return
+	}
 	now := time.Now()
-	current := map[string]bool{}
-	for _, t := range manage.List() {
-		current[t.Name] = true
-		var in, out uint64
-		if snap, err := metrics.Read(app.ConfigDir, t.Name); err == nil {
+	for _, t := range tunnels {
+		in, out := f.lastTraffic(t.Name)
+		if snap, err := metrics.Read(Dir, t.Name); err == nil {
 			in, out = snap.BytesIn, snap.BytesOut
 		}
 		h := manage.TunnelHealth(t)
 		f.Record(t.Name, in, out, h.Active && h.Connected, now)
 	}
-	f.prune(current)
+	f.prune(present)
 	f.Updated = now
-	save(f)
+	if err := save(f); err != nil {
+		log.Printf("history: save sample: %v", err)
+	}
 }

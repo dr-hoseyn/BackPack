@@ -3,9 +3,11 @@ package cmd
 import (
 	"context"
 	"net"
+	"os"
 	"path/filepath"
 	"strconv"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/backpack/backpack/internal/metrics"
@@ -88,5 +90,50 @@ func TestATunnelStopsAtItsTrafficLimitAndComesBackWhenRaised(t *testing.T) {
 	case <-stopped:
 	case <-time.After(10 * time.Second):
 		t.Fatal("Run did not return on shutdown")
+	}
+}
+
+func TestRunningTunnelStopsIfItsQuotaBecomesUnreadable(t *testing.T) {
+	dir := t.TempDir()
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		stopped := make(chan struct{})
+		go watchQuota(ctx, filepath.Join(dir, "q1.toml"), func() { close(stopped) })
+
+		// The watcher has read the initial quota and is waiting on its ticks.
+		synctest.Wait()
+		if err := os.WriteFile(quota.Path(dir, "q1"), []byte(`{}`), 0600); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case <-stopped:
+		case <-time.After(every(&quotaReread) + time.Second):
+			t.Fatal("watcher left the tunnel online with an unreadable quota")
+		}
+	})
+}
+
+func TestQuotaStartupWaitsWhenPersistedTrafficCannotBeRead(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "q1.toml")
+	if err := quota.Save(dir, "q1", 1000); err != nil {
+		t.Fatal(err)
+	}
+	if quotaReached(configPath) {
+		t.Fatal("a new tunnel without a snapshot should start")
+	}
+	snapshot := metrics.Path(dir, "q1")
+	if err := os.WriteFile(snapshot, []byte(`{"bytes_in":`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if !quotaReached(configPath) {
+		t.Fatal("the quota gate treated unreadable traffic as zero")
+	}
+	if err := os.WriteFile(snapshot, []byte(`{"bytes_in":250,"bytes_out":100}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if quotaReached(configPath) {
+		t.Fatal("the quota gate stayed closed after traffic was readable")
 	}
 }

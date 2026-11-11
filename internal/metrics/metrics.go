@@ -8,7 +8,10 @@
 package metrics
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net"
 	"os"
@@ -16,6 +19,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/backpack/backpack/internal/app"
 	"github.com/xtaci/kcp-go/v5"
 )
 
@@ -367,16 +371,7 @@ func (c *Collector) Write() error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(c.dir, 0755); err != nil {
-		return err
-	}
-	// Write to a temporary file and rename, so a reader never sees a half
-	// written snapshot.
-	tmp := Path(c.dir, c.name) + ".tmp"
-	if err := os.WriteFile(tmp, b, 0644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, Path(c.dir, c.name))
+	return app.WriteFileAtomic(Path(c.dir, c.name), b, 0644)
 }
 
 // Run writes a snapshot every interval until the channel closes.
@@ -495,49 +490,112 @@ const retiredFile = "retired-traffic.json"
 type retired struct {
 	BytesIn  uint64 `json:"bytes_in"`
 	BytesOut uint64 `json:"bytes_out"`
+
+	// Pending identifies snapshots already included in the totals but whose
+	// files may still need to be removed after an interrupted retirement.
+	Pending map[string]string `json:"pending,omitempty"`
 }
 
 // Retired is what the tunnels deleted from this server carried between them.
 func Retired(dir string) (in, out uint64) {
-	var r retired
-	path := filepath.Join(dir, retiredFile)
-	if b, err := os.ReadFile(path); err == nil {
-		// A damaged ledger is read as zero, so the server's lifetime total
-		// drops by whatever deleted tunnels carried. Said, because an empty
-		// ledger and a damaged one look identical on the overview.
-		if err := json.Unmarshal(b, &r); err != nil {
-			log.Printf("metrics: %s is damaged and is being read as zero — the traffic of "+
-				"deleted tunnels is missing from the server total: %v", path, err)
-			return 0, 0
-		}
+	r, err := readRetired(dir)
+	if err != nil {
+		log.Printf("metrics: retired traffic is missing from the server total: %v", err)
+		return 0, 0
 	}
 	return r.BytesIn, r.BytesOut
+}
+
+func readRetired(dir string) (retired, error) {
+	var r retired
+	path := filepath.Join(dir, retiredFile)
+	b, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return r, nil
+	}
+	if err != nil {
+		return r, err
+	}
+	if err := json.Unmarshal(b, &r); err != nil {
+		return retired{}, fmt.Errorf("read retired traffic ledger %s: %w", path, err)
+	}
+	return r, nil
 }
 
 // Retire adds a deleted tunnel's totals to the server's ledger and removes the
 // tunnel's own file. Call it once the tunnel has stopped, so its last write is
 // in. A tunnel that never wrote a file has nothing to add.
 func Retire(dir, name string) error {
-	snap, err := Read(dir, name)
+	// Lock a stable file rather than the ledger, whose inode is replaced on
+	// every write. The lock spans both reads and the snapshot removal.
+	lock, err := os.OpenFile(filepath.Join(dir, "."+retiredFile+".lock"), os.O_CREATE|os.O_RDWR, 0600)
+	if os.IsNotExist(err) {
+		return nil
+	}
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
+		return fmt.Errorf("open retired traffic lock: %w", err)
+	}
+	defer lock.Close()
+	if err := lockRetiredFile(lock); err != nil {
+		return fmt.Errorf("lock retired traffic ledger: %w", err)
+	}
+
+	r, err := readRetired(dir)
+	if err != nil {
+		return err
+	}
+	snapshotPath := Path(dir, name)
+	raw, err := os.ReadFile(snapshotPath)
+	if os.IsNotExist(err) {
+		if _, ok := r.Pending[name]; ok {
+			delete(r.Pending, name)
+			return writeRetired(dir, r)
 		}
-		// Unreadable: nothing can be carried over, but the file must still
-		// go, or a new tunnel of this name would try to start from it.
-		return os.Remove(Path(dir, name))
+		return nil
 	}
-	in, out := Retired(dir)
-	b, err := json.MarshalIndent(retired{BytesIn: in + snap.BytesIn, BytesOut: out + snap.BytesOut}, "", "  ")
+	if err != nil {
+		return fmt.Errorf("read traffic snapshot for %s: %w", name, err)
+	}
+	digest := sha256.Sum256(raw)
+	fingerprint := hex.EncodeToString(digest[:])
+	if pending, ok := r.Pending[name]; ok {
+		if pending != fingerprint {
+			return fmt.Errorf("traffic snapshot for %s changed after retirement was interrupted", name)
+		}
+	} else {
+		var snap *Snapshot
+		if err := json.Unmarshal(raw, &snap); err != nil {
+			return fmt.Errorf("read traffic snapshot for %s: %w", name, err)
+		}
+		if snap == nil {
+			return fmt.Errorf("traffic snapshot for %s is empty", name)
+		}
+		r.BytesIn += snap.BytesIn
+		r.BytesOut += snap.BytesOut
+		if r.Pending == nil {
+			r.Pending = make(map[string]string)
+		}
+		r.Pending[name] = fingerprint
+		if err := writeRetired(dir, r); err != nil {
+			return err
+		}
+	}
+	if err := os.Remove(snapshotPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove retired traffic snapshot for %s: %w", name, err)
+	}
+	delete(r.Pending, name)
+	if err := writeRetired(dir, r); err != nil {
+		// The totals and the pending marker are already committed. A later
+		// call for this name can clear the marker once the snapshot is absent.
+		log.Printf("metrics: clear retired traffic marker for %s: %v", name, err)
+	}
+	return nil
+}
+
+func writeRetired(dir string, r retired) error {
+	b, err := json.MarshalIndent(r, "", "  ")
 	if err != nil {
 		return err
 	}
-	path := filepath.Join(dir, retiredFile)
-	if err := os.WriteFile(path+".tmp", b, 0644); err != nil {
-		return err
-	}
-	if err := os.Rename(path+".tmp", path); err != nil {
-		return err
-	}
-	return os.Remove(Path(dir, name))
+	return app.WriteFileAtomic(filepath.Join(dir, retiredFile), b, 0644)
 }

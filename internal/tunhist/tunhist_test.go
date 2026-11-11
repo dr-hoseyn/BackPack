@@ -1,6 +1,8 @@
 package tunhist
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -60,12 +62,57 @@ func TestPrune(t *testing.T) {
 
 // The round trip through disk must preserve the store.
 func TestSaveLoad(t *testing.T) {
+	previous := Dir
 	Dir = t.TempDir()
+	t.Cleanup(func() { Dir = previous })
 	f := File{Tunnels: map[string]*History{}, Updated: time.Now()}
 	f.Record("t1", 42, 7, true, time.Now())
-	save(f)
+	if err := save(f); err != nil {
+		t.Fatal(err)
+	}
 	got := Load()
 	if h := got.Tunnels["t1"]; h == nil || len(h.Recent) != 1 || h.Recent[0].In != 42 {
 		t.Fatalf("round trip lost data: %+v", got.Tunnels)
+	}
+}
+
+func TestSamplingPreservesHistoryItCannotRead(t *testing.T) {
+	previous := Dir
+	Dir = t.TempDir()
+	t.Cleanup(func() { Dir = previous })
+	const damaged = `{"tunnels":`
+	if err := os.WriteFile(path(), []byte(damaged), 0600); err != nil {
+		t.Fatal(err)
+	}
+	samplePass()
+	if body, err := os.ReadFile(path()); err != nil || string(body) != damaged {
+		t.Fatalf("unreadable history changed to %q, error %v", body, err)
+	}
+}
+
+func TestSamplingPrunesDeletedTunnelsAndKeepsUnreadableConfigs(t *testing.T) {
+	previous := Dir
+	Dir = t.TempDir()
+	t.Cleanup(func() { Dir = previous })
+	f := File{Tunnels: map[string]*History{}}
+	now := time.Now()
+	f.Record("broken", 42, 7, true, now)
+	f.Record("deleted", 81, 20, true, now)
+	if err := save(f); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(Dir, "broken.toml"), []byte("[broken"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	samplePass()
+	got, err := load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h := got.Tunnels["broken"]; h == nil || len(h.Recent) != 1 || h.Recent[0].In != 42 {
+		t.Fatalf("history for the existing tunnel changed: %+v", h)
+	}
+	if _, ok := got.Tunnels["deleted"]; ok {
+		t.Fatal("history for the deleted tunnel was retained")
 	}
 }

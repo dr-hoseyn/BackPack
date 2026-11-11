@@ -184,13 +184,18 @@ func TestArchivedInstallPathIsUsedWhenThereIsNoLocalOne(t *testing.T) {
 
 // The commit is the only moment the live directory changes, and it either
 // happens or it does not.
-func TestCommitSwapsTheTreeInOneStep(t *testing.T) {
+func TestCommitReplacesTheLiveTreeAndPreservesEarlierRollbackData(t *testing.T) {
 	parent := t.TempDir()
 	live := filepath.Join(parent, "backpack")
 	if err := os.Mkdir(live, 0755); err != nil {
 		t.Fatal(err)
 	}
 	writeAt(t, live, "old.toml", "the previous configuration", 0600)
+	earlier := live + ".restore-previous"
+	if err := os.Mkdir(earlier, 0700); err != nil {
+		t.Fatal(err)
+	}
+	writeAt(t, earlier, "saved.toml", "recoverable from an earlier failure", 0600)
 
 	stage, err := os.MkdirTemp(parent, ".backpack-restore-*")
 	if err != nil {
@@ -206,8 +211,10 @@ func TestCommitSwapsTheTreeInOneStep(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(live, "old.toml")); !os.IsNotExist(err) {
 		t.Error("the previous tree was left mixed in with the restored one")
 	}
-	if _, err := os.Stat(live + ".restore-previous"); !os.IsNotExist(err) {
-		t.Error("the set-aside copy of the previous tree was not cleaned up")
+	assertStaged(t, earlier, "saved.toml", "recoverable from an earlier failure")
+	leftovers, err := filepath.Glob(filepath.Join(parent, ".backpack-restore-previous-*"))
+	if err != nil || len(leftovers) != 0 {
+		t.Fatalf("rollback leftovers = %v, error %v", leftovers, err)
 	}
 
 	// The live directory has to stay readable by whatever reads a config.

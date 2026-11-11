@@ -42,7 +42,8 @@ func TestTheConfigReferenceIsUpToDate(t *testing.T) {
 	}
 
 	want := stamp.ReplaceAllString(string(out), "")
-	got := stamp.ReplaceAllString(string(have), "")
+	// Git may check out Markdown with CRLF on Windows.
+	got := stamp.ReplaceAllString(strings.ReplaceAll(string(have), "\r\n", "\n"), "")
 
 	if want != got {
 		t.Errorf("docs/config-reference.md no longer matches config/. A key was " +

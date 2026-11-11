@@ -192,8 +192,9 @@ func TestBackupsInTheSameSecondDoNotReplaceEachOther(t *testing.T) {
 func TestPruneKeepsTheNewestAndSweepsStalePartials(t *testing.T) {
 	dir := t.TempDir()
 
-	for i := 0; i < backupRetention+4; i++ {
-		name := filepath.Join(dir, "backpack-backup-2026010"+string(rune('0'+i%10))+"-000000.tar.gz")
+	for i := range backupRetention + 4 {
+		stamp := time.Date(2026, time.January, i+1, 0, 0, 0, 0, time.UTC)
+		name := filepath.Join(dir, "backpack-backup-"+stamp.Format("20060102-150405")+".tar.gz")
 		if err := os.WriteFile(name, []byte("x"), 0600); err != nil {
 			t.Fatal(err)
 		}
