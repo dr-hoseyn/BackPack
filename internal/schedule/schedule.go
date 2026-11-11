@@ -98,6 +98,11 @@ func writeCrontab(lines []string) error {
 // SetCron installs (or replaces) a marked cron job. An empty spec removes it.
 // Each job is tagged with a trailing `# <marker>` comment for identification.
 func SetCron(marker, spec, command string) error {
+	release, err := lockCrontab()
+	if err != nil {
+		return err
+	}
+	defer release()
 	current, err := readCrontab()
 	if err != nil {
 		// Refusing leaves the schedule as it was, which is recoverable.
