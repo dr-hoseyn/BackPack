@@ -62,3 +62,20 @@ func BenchmarkWSMuxHeaderOnlyWrite(b *testing.B) {
 		}
 	}
 }
+
+func BenchmarkWSMuxWindowUpdateWrite(b *testing.B) {
+	stream := controlServerStream(b, &wsControlSink{})
+	header := []byte{2, 4, 8, 0, 1, 0, 0, 0}
+	window := []byte{0, 0, 0, 0, 0, 64, 0, 0}
+	parts := [][]byte{header, window}
+	if _, err := stream.WriteBuffers(parts); err != nil {
+		b.Fatal(err)
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		if n, err := stream.WriteBuffers(parts); n != 16 || err != nil {
+			b.Fatalf("window update %d: %v", n, err)
+		}
+	}
+}

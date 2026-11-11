@@ -63,6 +63,19 @@ func TestWSMuxHeaderOnlyFailureClosesItsCarrier(t *testing.T) {
 	}
 }
 
+func TestWSMuxWindowUpdateFailureClosesItsCarrier(t *testing.T) {
+	raw := &wsControlError{}
+	stream := controlServerStream(t, raw)
+	raw.writeErr = io.ErrClosedPipe
+	parts := [][]byte{{2, 4, 8, 0, 1, 0, 0, 0}, {1, 0, 0, 0, 0, 64, 0, 0}}
+	if n, err := stream.WriteBuffers(parts); n != 0 || !errors.Is(err, io.ErrClosedPipe) {
+		t.Fatalf("failed window update: %d, %v", n, err)
+	}
+	if !raw.closed {
+		t.Fatal("failed window update left its carrier open")
+	}
+}
+
 func TestWSMuxHeaderOnlyAndPayloadFramesKeepTheirBytes(t *testing.T) {
 	for _, secure := range []bool{false, true} {
 		for _, side := range []string{"client", "server"} {
@@ -118,6 +131,27 @@ func TestWSMuxHeaderOnlyAndPayloadFramesKeepTheirBytes(t *testing.T) {
 					}
 					if !bytes.Equal(header, original) {
 						t.Fatal("framing changed the caller's control header")
+					}
+				}
+				// Alternate UPD metadata and an application payload of the
+				// same size. Reusing control storage must change neither one.
+				for i := range 3 {
+					h := []byte{2, 4, 8, 0, 1, 0, 0, 0}
+					if i == 1 {
+						h[1] = smuxPSH
+					}
+					body := []byte{byte(i + 1), 0, 0, 0, 0, 64, 0, 0}
+					hBefore, bodyBefore := bytes.Clone(h), bytes.Clone(body)
+					want := append(bytes.Clone(h), body...)
+					if n, err := stream.WriteBuffers([][]byte{h, body}); n != len(want) || err != nil {
+						t.Fatalf("update/data write %d: %v", n, err)
+					}
+					kind, got, err := reader.ReadMessage()
+					if err != nil || kind != websocket.BinaryMessage || !bytes.Equal(got, want) {
+						t.Fatalf("update/data frame changed: %x, %v", got, err)
+					}
+					if !bytes.Equal(h, hBefore) || !bytes.Equal(body, bodyBefore) {
+						t.Fatal("control staging changed caller-owned metadata or application data")
 					}
 				}
 			})
