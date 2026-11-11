@@ -71,6 +71,21 @@ Those samples predate the follow-up closed-session admission fix. Its
 regressions cover closure before selection and after notification, including
 avoiding a warm-carrier wait when the warm sessions have already closed.
 
+
+A [follow-up measurement](benchmarks/wssmux-outcomes-2026-11-12.json) includes
+the closed-waiter fix and records every attempted probe, including failures,
+as well as demand skipped at the four-probe concurrency cap. All 477 scheduled
+probes per revision were attempted; none were skipped. There were three
+failed fresh probes before and one after. Median per-run p99 including failed
+attempts was 173.7 and 149.8 ms, and p95 was 123.8 and 98.0 ms. Median measured
+application throughput was 19.901 and 19.878 Mbit/s at the fixed offered load;
+bulk and corruption errors remained zero. Candidate run 3 had a 249.7 ms p99,
+worse than any baseline run. These three short runs per revision are promising
+but do not establish an absence of quality regression: this scheduler remains
+a draft. The older artifact uses successful-only latency and a different
+quantile definition, so its latency samples must not be pooled with these.
+The follow-up does not measure the separate shared-channel fix in PR #68.
+
 ## خلاصهٔ فارسی
 
 <div dir="rtl">
