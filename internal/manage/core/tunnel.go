@@ -152,9 +152,13 @@ func Delete(name string) error {
 	if cfgErr == nil {
 		network.CleanupPckGuards(cfg.Server.Token, cfg.Client.Token, cfg.Direct.Token, cfg.L3.Token)
 	}
+	if err := removeScheduledRestart(name); err != nil {
+		return fmt.Errorf("remove restart schedule for %s: %w", name, err)
+	}
+	if err := os.Remove(app.ConfigPath(name)); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove configuration for %s: %w", name, err)
+	}
 	removeUnit(name)
-	removeScheduledRestart(name)
-	os.Remove(app.ConfigPath(name))
 	// Its traffic limit goes with it: a new tunnel given the same name starts
 	// with no limit and a count of zero, not with the old one's.
 	_ = quota.Remove(app.ConfigDir, name)

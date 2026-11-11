@@ -3,6 +3,7 @@ package core
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 
@@ -50,8 +51,7 @@ func SetScheduledRestart(name string, hours, minute int) error {
 	timer := scheduledRestartUnit(name, "timer")
 	service := scheduledRestartUnit(name, "service")
 	if hours <= 0 {
-		removeScheduledRestart(name)
-		return nil
+		return removeScheduledRestart(name)
 	}
 	hours = EffectiveRestartHours(hours)
 	minute = ((minute % 60) + 60) % 60
@@ -86,16 +86,30 @@ WantedBy=timers.target
 }
 
 // removeScheduledRestart stops and deletes a tunnel's schedule, if it has one.
-func removeScheduledRestart(name string) {
+func removeScheduledRestart(name string) error {
+	return removeScheduledRestartAt(app.ServiceDir, name, Systemctl)
+}
+
+func removeScheduledRestartAt(dir, name string, systemctl func(...string) (string, error)) error {
 	timer := scheduledRestartUnit(name, "timer")
-	path := app.ServiceDir + "/" + timer
-	if _, err := os.Stat(path); err != nil {
-		return
+	timerPath := filepath.Join(dir, timer)
+	if _, err := os.Lstat(timerPath); err == nil {
+		if output, err := systemctl("disable", "--now", timer); err != nil {
+			return fmt.Errorf("disable restart timer %s: %w (%s)", timer, err, output)
+		}
+	} else if !os.IsNotExist(err) {
+		return err
 	}
-	_, _ = Systemctl("disable", "--now", timer)
-	os.Remove(path)
-	os.Remove(app.ServiceDir + "/" + scheduledRestartUnit(name, "service"))
-	_ = DaemonReload()
+
+	for _, path := range []string{filepath.Join(dir, scheduledRestartUnit(name, "service")), timerPath} {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+	}
+	if output, err := systemctl("daemon-reload"); err != nil {
+		return fmt.Errorf("reload systemd after removing restart units: %w (%s)", err, output)
+	}
+	return nil
 }
 
 // EffectiveRestartHours is the interval a schedule really gets: any number of

@@ -45,9 +45,11 @@ func Rename(oldName, newName string) error {
 
 	// Stopped first, so its last traffic count is written under the old name
 	// before the file moves.
-	_ = DisableService(oldService)
-	removeUnit(oldName)
-	removeScheduledRestart(oldName)
+	if running {
+		if err := DisableService(oldService); err != nil {
+			return fmt.Errorf("stop %s before renaming: %w", oldService, err)
+		}
+	}
 	restoreOld := func(why error) error {
 		err := WriteUnit(oldName)
 		err = errors.Join(err, DaemonReload())
@@ -60,6 +62,11 @@ func Rename(oldName, newName string) error {
 		}
 		return errors.Join(why, err)
 	}
+
+	if err := removeScheduledRestart(oldName); err != nil {
+		return restoreOld(fmt.Errorf("remove old restart schedule: %w", err))
+	}
+	removeUnit(oldName)
 
 	if err := os.Rename(app.ConfigPath(oldName), app.ConfigPath(newName)); err != nil {
 		return restoreOld(fmt.Errorf("could not rename the config: %w", err))
@@ -84,15 +91,18 @@ func Rename(oldName, newName string) error {
 	if err := DaemonReload(); err != nil {
 		return err
 	}
+	var scheduleErr error
 	if hours > 0 {
-		_ = SetScheduledRestart(newName, hours, minute)
+		if err := SetScheduledRestart(newName, hours, minute); err != nil {
+			scheduleErr = fmt.Errorf("renamed, but the restart schedule could not be installed: %w", err)
+		}
 	}
 	if running {
 		if _, err := Systemctl("enable", "--now", newService); err != nil {
-			return fmt.Errorf("renamed, but %s did not start: %w", newService, err)
+			return errors.Join(scheduleErr, fmt.Errorf("renamed, but %s did not start: %w", newService, err))
 		}
 	}
-	return nil
+	return scheduleErr
 }
 
 // renameTunnelMeta moves a tunnel's metadata to its new name.

@@ -1,6 +1,10 @@
 package core
 
 import (
+	"errors"
+	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -32,5 +36,62 @@ func TestTheRestartScheduleIsUTCAndReadsBack(t *testing.T) {
 	}
 	if EffectiveRestartHours(36) != 24 || EffectiveRestartHours(0) != 0 || EffectiveRestartHours(7) != 7 {
 		t.Error("EffectiveRestartHours")
+	}
+}
+
+func TestRestartScheduleRemovalPreservesFilesWhenSystemdCannotStopTimer(t *testing.T) {
+	dir := t.TempDir()
+	const name = "example"
+	for _, kind := range []string{"timer", "service"} {
+		if err := os.WriteFile(filepath.Join(dir, scheduledRestartUnit(name, kind)), nil, 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var calls []string
+	failure := errors.New("failed to disable")
+	err := removeScheduledRestartAt(dir, name, func(args ...string) (string, error) {
+		calls = append(calls, strings.Join(args, " "))
+		return "systemd refused", failure
+	})
+	if !errors.Is(err, failure) {
+		t.Fatalf("removal returned %v, want %v", err, failure)
+	}
+	if want := []string{"disable --now backpack-restart-example.timer"}; !slices.Equal(calls, want) {
+		t.Fatalf("systemctl calls = %v, want %v", calls, want)
+	}
+	for _, kind := range []string{"timer", "service"} {
+		if _, err := os.Stat(filepath.Join(dir, scheduledRestartUnit(name, kind))); err != nil {
+			t.Errorf("%s unit disappeared after disable failed: %v", kind, err)
+		}
+	}
+}
+
+func TestRestartScheduleRemovalCanRetryDaemonReload(t *testing.T) {
+	dir := t.TempDir()
+	const name = "example"
+	path := filepath.Join(dir, scheduledRestartUnit(name, "service"))
+	if err := os.WriteFile(path, nil, 0644); err != nil {
+		t.Fatal(err)
+	}
+	var calls []string
+	failure := errors.New("reload failed")
+	systemctl := func(args ...string) (string, error) {
+		calls = append(calls, strings.Join(args, " "))
+		if len(calls) == 1 {
+			return "systemd refused", failure
+		}
+		return "", nil
+	}
+	if err := removeScheduledRestartAt(dir, name, systemctl); !errors.Is(err, failure) {
+		t.Fatalf("first removal = %v, want %v", err, failure)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("orphan service file still exists: %v", err)
+	}
+	if err := removeScheduledRestartAt(dir, name, systemctl); err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"daemon-reload", "daemon-reload"}; !slices.Equal(calls, want) {
+		t.Fatalf("systemctl calls = %v, want %v", calls, want)
 	}
 }
