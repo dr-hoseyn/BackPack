@@ -23,8 +23,17 @@ var metaMu sync.Mutex
 func metaPath() string { return app.ConfigDir + "/meta.json" }
 
 func loadMeta() map[string]tunnelMeta {
+	return loadMetaFile(metaPath())
+}
+
+func loadMetaFile(path string) map[string]tunnelMeta {
 	m := map[string]tunnelMeta{}
-	app.WarnState(app.LoadState(metaPath(), &m))
+	app.WarnState(app.LoadState(path, &m))
+	// LoadState resets syntactically damaged data, and JSON null also clears
+	// a map. Callers still need to record the next label or backup address.
+	if m == nil {
+		m = map[string]tunnelMeta{}
+	}
 	return m
 }
 

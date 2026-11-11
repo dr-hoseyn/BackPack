@@ -9,8 +9,8 @@ type NativeUDPStats struct {
 	Sent      uint64 `json:"sent"`
 	Received  uint64 `json:"received"`
 	Dropped   uint64 `json:"dropped"`
-	BytesIn   uint64 `json:"bytes_in"`
-	BytesOut  uint64 `json:"bytes_out"`
+	BytesIn   uint64 `json:"-"`
+	BytesOut  uint64 `json:"-"`
 }
 
 var nativeUDPState struct {

@@ -20,7 +20,9 @@ jobs:
           go-version-file: go.mod
           cache: true
       - name: Prepare private configuration fixtures
-        run: sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
+        run: |
+          sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
+          sudo install -m 600 -o "$(id -un)" -g "$(id -gn)" /dev/null /etc/backpack.restore.lock
       - name: Repeat shutdown and throughput reload regressions
         run: >-
           go test -race ./cmd

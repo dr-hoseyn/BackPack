@@ -66,19 +66,31 @@ func TestTheOpenFileCountIsHonestOrAbsent(t *testing.T) {
 		t.Skip("this platform does not expose /proc/self/fd")
 	}
 
-	// Opening a file must move it by one.
-	f, err := openTempFile(t)
-	if err != nil {
-		t.Skipf("cannot open a file here: %v", err)
+	// Cross a directory-read batch boundary on busy relays.
+	const held = 300
+	files := make([]*os.File, 0, held)
+	defer func() {
+		for _, f := range files {
+			f.Close()
+		}
+	}()
+	for i := 0; i < held; i++ {
+		f, err := os.Open(os.DevNull)
+		if err != nil {
+			t.Skipf("cannot hold %d file descriptors: %v", held, err)
+		}
+		files = append(files, f)
 	}
 	after := openFileCount()
-	if after != n+1 {
-		t.Errorf("opened one file and the count went %d -> %d, want %d", n, after, n+1)
+	if after != n+held {
+		t.Errorf("opened %d files and the count went %d -> %d, want %d", held, n, after, n+held)
 	}
-	f.Close()
+
 }
 
-func openTempFile(t *testing.T) (*os.File, error) {
-	t.Helper()
-	return os.CreateTemp(t.TempDir(), "fdcount")
+func BenchmarkRuntimeStats(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		readRuntimeStats()
+	}
 }

@@ -129,9 +129,6 @@ func (s *WsMuxTransport) Start() {
 func (s *WsMuxTransport) start(g *wsMuxGen) {
 	go sweepTunnelConns(g.ctx, g.tunnelChannel)
 	// for  webui
-	if s.config.Sniffer {
-		go g.usageMonitor.Run()
-	}
 
 	s.status.set(fmt.Sprintf("Disconnected (%s)", s.config.Mode))
 

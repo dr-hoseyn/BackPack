@@ -24,6 +24,7 @@ jobs:
       - name: Config and network regression tests with race detection
         run: |
           sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
+          sudo install -m 600 -o "$(id -un)" -g "$(id -gn)" /dev/null /etc/backpack.restore.lock
           go test ./config ./cmd ./internal/utils/network ./internal/masqueh2 ./internal/nativeudp ./internal/pathprobe ./internal/tunnel/adaptive ./internal/tunnel/l3 ./internal/manage/tunnelspec ./internal/shorthttps ./internal/tunnel/naive -race -count=1 -timeout 10m
       - name: Adaptive paths preserve active streams and recover new connections
         if: success() || failure()
@@ -73,6 +74,7 @@ jobs:
       - name: Prepare private fixtures and test management
         run: |
           sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
+          sudo install -m 600 -o "$(id -un)" -g "$(id -gn)" /dev/null /etc/backpack.restore.lock
           go test ./internal/manage -race -count=1 -timeout 15m
   native-reverse:
     runs-on: ubuntu-latest

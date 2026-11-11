@@ -239,8 +239,8 @@ them both ends have to agree on. This says what exists.
 | `simple_auth` | `bool` | SimpleAuth authorises a wss tunnel by the raw token instead of a proof bound to the TLS session. It exists for one deployment the binding otherwise makes impossible: a TLS-terminating reverse proxy — typically NGINX — in front of the tunnel, which holds a different TLS session from the client so a bound proof can never match. It is off by default because it hands the token to whoever terminates the TLS; turn it on only when a trusted proxy is doing so, and set it on both ends. |
 | `sing` | `SingClientConfig` | Sing selects a restricted managed Hysteria2, AnyTLS, ShadowTLS or TUIC carrier. |
 | `skip_optz` | `bool` | SkipOptz stops the engine applying its own socket and sysctl tuning at start, for a machine whose tuning is managed elsewhere. |
-| `sniffer` | `bool` | Sniffer records per-port traffic in the usage log. Off by default: it costs a write per connection. |
-| `sniffer_log` | `string` | SnifferLog is where the per-port traffic record is written. |
+| `sniffer` | `bool` | Sniffer is accepted for older configurations and has no runtime effect. |
+| `sniffer_log` | `string` | SnifferLog is a legacy compatibility field; no per-port usage log is written. |
 | `so_mark` | `int` | SOMark stamps an fwmark on their packets, which is what `ip rule` matches on — the way to put the tunnel on a routing table of its own without changing routing for the rest of the machine. Linux, and needs CAP_NET_ADMIN. Zero means none. |
 | `so_pin_tcp` | `bool` | SOPinTCP restores the old behaviour of pinning SO_RCVBUF/SO_SNDBUF on TCP sockets. Off by default: pinning them stops the kernel auto-tuning the window, which costs a large multiple of the throughput on a fast uplink. The datagram transports set their own buffers regardless. |
 | `so_rcvbuf` | `int` | SO_RCVBUF is the socket receive buffer in bytes. 0 leaves the kernel's default, which is right unless a measurement says otherwise. |
@@ -530,8 +530,8 @@ them both ends have to agree on. This says what exists.
 | `simple_auth` | `bool` | SimpleAuth authorises a wss tunnel by the raw token instead of a proof bound to the TLS session. It exists for one deployment the binding otherwise makes impossible: a TLS-terminating reverse proxy — typically NGINX — in front of the tunnel, which holds a different TLS session from the client so a bound proof can never match. It is off by default because it hands the token to whoever terminates the TLS; turn it on only when a trusted proxy is doing so, and set it on both ends. |
 | `sing` | `SingServerConfig` | Sing selects a restricted managed Hysteria2, AnyTLS, ShadowTLS or TUIC carrier. |
 | `skip_optz` | `bool` | SkipOptz stops the engine applying its own socket and sysctl tuning at start. For a machine whose tuning is managed elsewhere. |
-| `sniffer` | `bool` | Sniffer records per-port traffic in the usage log. Off by default: it costs a write per connection and the page is reachable over SSH only. |
-| `sniffer_log` | `string` | SnifferLog is where the per-port traffic record is written. |
+| `sniffer` | `bool` | Sniffer is accepted for older configurations and has no runtime effect. |
+| `sniffer_log` | `string` | SnifferLog is a legacy compatibility field; no per-port usage log is written. |
 | `so_pin_tcp` | `bool` | SOPinTCP restores the old behaviour of pinning SO_RCVBUF/SO_SNDBUF on TCP sockets. Off by default: pinning them stops the kernel auto-tuning the window, which costs a large multiple of the throughput on a fast uplink. The datagram transports set their own buffers regardless. |
 | `so_rcvbuf` | `int` | SO_RCVBUF is the socket receive buffer in bytes. 0 leaves the kernel's default, which is right unless a measurement says otherwise. |
 | `so_sndbuf` | `int` | SO_SNDBUF is the socket send buffer in bytes. 0 leaves the kernel's default. |
@@ -580,4 +580,4 @@ them both ends have to agree on. This says what exists.
 
 ---
 
-*Generated from `config/` on 2026-11-10. Last verified against Backpack v1.23.0.*
+*Generated from `config/` on 2026-11-11. Last verified against Backpack v1.24.0.*

@@ -74,7 +74,9 @@ jobs:
       - name: Reverse engines, concurrent transfers, UDP and reply after EOF
         run: go test ./internal/e2e -run '^TestSingReverse' -count=1 -race -v -timeout 4m
       - name: Prepare private configuration fixtures
-        run: sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
+        run: |
+          sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
+          sudo install -m 600 -o "$(id -un)" -g "$(id -gn)" /dev/null /etc/backpack.restore.lock
       - name: Native carriers through Noise and paired management settings
         run: go test ./cmd ./internal/manage ./internal/tunnel/l3 ./internal/amneziawg ./config -run '^(TestSing|TestNativeSing|TestNativeDatagram|TestAWG|TestManagedAWG|TestManagedTelemetry|TestConnectionTestStartup|TestEveryShareLink|TestHelperCertificate)' -count=1 -race -v -timeout 4m
       - name: Real Linux TUN, IPv4 and IPv6, process restart and packet loss

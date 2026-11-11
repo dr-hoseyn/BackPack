@@ -180,13 +180,6 @@ func tunnelBlock(lang string, t manage.Tunnel, h manage.Health) string {
 		}
 	}
 
-	if snap, err := metrics.Read(app.ConfigDir, t.Name); err == nil {
-		total := snap.BytesOut + snap.BytesIn
-		fmt.Fprintf(&b, "↑ %s | ↓ %s | Σ %s\n",
-			sysstat.HumanBytes(snap.BytesOut),
-			sysstat.HumanBytes(snap.BytesIn),
-			sysstat.HumanBytes(total))
-	}
 	return b.String()
 }
 

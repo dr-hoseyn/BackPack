@@ -230,12 +230,12 @@ direction and carrier yourself. The table below describes manual Reverse setup:
 | Option | What it does |
 |---|---|
 | **Manage Tunnels** | Per-tunnel actions. [↓](#manage--manage-tunnels) |
-| **Status** | A live table of every tunnel: role, transport, state, uptime, traffic. |
+| **Status** | A live table of every tunnel: role, transport, state and uptime. |
 | **Health Check** | Tests the server, the panel and every tunnel, and prints a **fix** under each problem it finds. Start here when something is wrong. [More](health-check.md) |
 | **Link Test** | Measures the real route (latency, jitter, loss) and recommends a transport with matching timers. On a lossy link it names the exact FEC ratio and offers to apply it. [More](choosing-a-transport.md) |
 | **Exit Health** | Scores and ranks every server address of a tunnel by `rtt + 2·jitter + 20·loss%`, and offers to pin the healthiest as the primary. The manual companion to health failover. |
 | **IP Spoofing Tester** | Two-node test that finds which forged source IPs actually cross the path. [More](ip-spoofing.md#the-ip-spoofing-tester) |
-| **Tunnel Metrics** | Traffic and connections per transport and, on KCP, retransmits, loss and packets repaired by FEC. Totals survive restarts. [More](tunnel-metrics.md) |
+| **Tunnel Metrics** | Connection health, pool and process resources, plus KCP retransmits, loss and FEC recovery. Consumption totals are not collected. [More](tunnel-metrics.md) |
 | **Restart ALL** | Restarts every tunnel at once and reports how many failed. |
 | **Auto Refresh** | Restart every tunnel every N hours. `0` disables it. |
 | **Built-in Proxy** | Makes this node its own SOCKS5/HTTP backend, so nothing separate has to be installed behind the tunnel. [↓](#manage--built-in-proxy) |
@@ -522,7 +522,7 @@ FEC؛ و zero-copy (فقط روی tcp ساده).
 
 ---
 
-*Last verified against Backpack v1.23.0*
+*Last verified against Backpack v1.24.0*
 
 
 Connection Test also provides [saved history and repeated-run comparison](connection-test-history.md)

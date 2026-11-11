@@ -192,8 +192,9 @@ func TestBackupsInTheSameSecondDoNotReplaceEachOther(t *testing.T) {
 func TestPruneKeepsTheNewestAndSweepsStalePartials(t *testing.T) {
 	dir := t.TempDir()
 
-	for i := 0; i < backupRetention+4; i++ {
-		name := filepath.Join(dir, "backpack-backup-2026010"+string(rune('0'+i%10))+"-000000.tar.gz")
+	for i := range backupRetention + 4 {
+		stamp := time.Date(2026, time.January, i+1, 0, 0, 0, 0, time.UTC)
+		name := filepath.Join(dir, "backpack-backup-"+stamp.Format("20060102-150405")+".tar.gz")
 		if err := os.WriteFile(name, []byte("x"), 0600); err != nil {
 			t.Fatal(err)
 		}
@@ -377,4 +378,26 @@ func archiveNames(t *testing.T, archive []byte) []string {
 		out = append(out, h.Name)
 	}
 	return out
+}
+
+func TestBackupSkipsUnpublishedMetrics(t *testing.T) {
+	dir := t.TempDir()
+	writeTree(t, dir, map[string]os.FileMode{
+		"t1.metrics.json":        0644,
+		"t1.metrics.json.tmp":    0644,
+		".t1.metrics.json-1.tmp": 0600,
+	})
+	var archive bytes.Buffer
+	if err := writeBackupTree(&archive, dir); err != nil {
+		t.Fatal(err)
+	}
+	files := readArchive(t, archive.Bytes())
+	if _, ok := files["t1.metrics.json"]; !ok {
+		t.Error("committed metrics are missing")
+	}
+	for _, name := range []string{"t1.metrics.json.tmp", ".t1.metrics.json-1.tmp"} {
+		if _, ok := files[name]; ok {
+			t.Errorf("unpublished file %s entered the archive", name)
+		}
+	}
 }

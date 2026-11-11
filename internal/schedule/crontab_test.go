@@ -43,3 +43,36 @@ func TestAnEmptyCrontabIsToldApartFromOneThatCouldNotBeRead(t *testing.T) {
 		}
 	}
 }
+
+func TestCronMarkerMatchesOnlyTheTrailingTagOnAJob(t *testing.T) {
+	const marker = "backpack-auto-refresh"
+	for _, tc := range []struct {
+		line string
+		want bool
+	}{
+		{"0 * * * * backpack --restart-all # backpack-auto-refresh", true},
+		{"  0 * * * * backpack --restart-all\t# backpack-auto-refresh  ", true},
+		{"0 * * * * other-job # backpack-auto-refresh-disabled", false},
+		{"0 * * * * other-job '# backpack-auto-refresh' arg", false},
+		{"# 0 * * * * disabled-job # backpack-auto-refresh", false},
+		{"NOTE = some-value # backpack-auto-refresh", false},
+		{"", false},
+	} {
+		if got := hasCronMarker(tc.line, marker); got != tc.want {
+			t.Errorf("hasCronMarker(%q) = %v, want %v", tc.line, got, tc.want)
+		}
+	}
+}
+
+func TestMarkedIntervalDistinguishesDisabledFromAnUnrecognizedSchedule(t *testing.T) {
+	const marker = "backpack-auto-refresh"
+	if hours, err := markedIntervalHours(nil, marker); hours != 0 || err != nil {
+		t.Fatalf("missing schedule = %d, %v", hours, err)
+	}
+	if _, err := markedIntervalHours([]string{"@daily backpack --restart-all # " + marker}, marker); err == nil {
+		t.Fatal("an unrecognized schedule was treated as disabled")
+	}
+	if hours, err := markedIntervalHours([]string{"  0 0 */2 * * backpack --restart-all # " + marker}, marker); hours != 48 || err != nil {
+		t.Fatalf("48-hour schedule = %d, %v", hours, err)
+	}
+}

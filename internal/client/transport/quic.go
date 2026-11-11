@@ -97,9 +97,6 @@ func (c *QuicTransport) getQUICConn() *quic.Conn {
 }
 
 func (c *QuicTransport) Start() {
-	if c.config.Sniffer {
-		c.state.Go(c.state.Usage().Run)
-	}
 
 	c.status.set("Disconnected (QUIC)")
 

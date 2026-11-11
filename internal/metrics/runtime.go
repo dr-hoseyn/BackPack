@@ -1,8 +1,11 @@
 package metrics
 
 import (
+	"io"
 	"os"
 	"runtime"
+	runtimemetrics "runtime/metrics"
+	"sync"
 )
 
 // The numbers that predict a problem before it is a symptom.
@@ -44,18 +47,30 @@ type RuntimeStats struct {
 	HeapObjects uint64 `json:"heap_objects"`
 }
 
+// Reuse the fixed sample buffer to avoid allocating during each diagnostic read.
+// Snapshot can also be called concurrently by diagnostics and tests.
+var heapSamples = struct {
+	sync.Mutex
+	values [2]runtimemetrics.Sample
+}{values: [2]runtimemetrics.Sample{
+	{Name: "/memory/classes/heap/objects:bytes"},
+	{Name: "/gc/heap/objects:objects"},
+}}
+
 // readRuntimeStats samples the process.
 func readRuntimeStats() RuntimeStats {
-	var m runtime.MemStats
-	// ReadMemStats stops the world briefly. At once per snapshot — thirty
-	// seconds — that is not a cost worth avoiding, and the heap figures are
-	// half of what makes this useful.
-	runtime.ReadMemStats(&m)
+	// runtime/metrics samples heap diagnostics without ReadMemStats'
+	// stop-the-world synchronization.
+	heapSamples.Lock()
+	runtimemetrics.Read(heapSamples.values[:])
+	heapBytes := heapSamples.values[0].Value.Uint64()
+	heapObjects := heapSamples.values[1].Value.Uint64()
+	heapSamples.Unlock()
 	return RuntimeStats{
 		Goroutines:  runtime.NumGoroutine(),
 		OpenFiles:   openFileCount(),
-		HeapBytes:   m.HeapAlloc,
-		HeapObjects: m.HeapObjects,
+		HeapBytes:   heapBytes,
+		HeapObjects: heapObjects,
 	}
 }
 
@@ -75,14 +90,18 @@ func openFileCount() int {
 	// Readdirnames rather than ReadDir: the names are all that is wanted, and
 	// stat-ing every descriptor to throw the result away would make a counter
 	// cost more than the thing it counts.
-	names, err := d.Readdirnames(-1)
-	if err != nil {
-		return 0
+	// Bound temporary directory-name storage even on a busy relay with many sockets.
+	count := 0
+	for {
+		names, err := d.Readdirnames(256)
+		count += len(names)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return 0
+		}
 	}
-	// Minus one for the handle opened to do the counting, which is not a
-	// descriptor the tunnel is holding.
-	if n := len(names) - 1; n > 0 {
-		return n
-	}
-	return 0
+	// Exclude the descriptor opened for the count itself.
+	return max(0, count-1)
 }

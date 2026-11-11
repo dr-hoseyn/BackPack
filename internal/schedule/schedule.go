@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os/exec"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -97,6 +98,11 @@ func writeCrontab(lines []string) error {
 // SetCron installs (or replaces) a marked cron job. An empty spec removes it.
 // Each job is tagged with a trailing `# <marker>` comment for identification.
 func SetCron(marker, spec, command string) error {
+	release, err := lockCrontab()
+	if err != nil {
+		return err
+	}
+	defer release()
 	current, err := readCrontab()
 	if err != nil {
 		// Refusing leaves the schedule as it was, which is recoverable.
@@ -105,14 +111,28 @@ func SetCron(marker, spec, command string) error {
 	}
 	var kept []string
 	for _, l := range current {
-		if !strings.Contains(l, "# "+marker) {
+		if !hasCronMarker(l, marker) {
 			kept = append(kept, l)
 		}
 	}
 	if spec != "" {
 		kept = append(kept, fmt.Sprintf("%s %s # %s", spec, command, marker))
 	}
+	if slices.Equal(current, kept) {
+		return nil
+	}
 	return writeCrontab(kept)
+}
+
+// hasCronMarker recognises the trailing tag on a scheduled command.
+func hasCronMarker(line, marker string) bool {
+	line = strings.TrimSpace(line)
+	if line == "" || !strings.ContainsRune("0123456789*@", rune(line[0])) {
+		return false
+	}
+	tag := "# " + marker
+	command, ok := strings.CutSuffix(line, tag)
+	return ok && (strings.HasSuffix(command, " ") || strings.HasSuffix(command, "\t"))
 }
 
 // RemoveCron deletes a marked cron job.
@@ -135,18 +155,29 @@ var dailyIntervalRe = regexp.MustCompile(`^0 0 \*/(\d+) \* \*`)
 // GetIntervalHours returns the configured interval (in hours) for a marker, or
 // 0 if it is not scheduled.
 func GetIntervalHours(marker string) int {
-	// A crontab that cannot be read is reported as "not scheduled", which is
-	// what it has always said and is the only answer a function returning one
-	// int can give. Nothing is written on this path, so the failure above
-	// cannot happen here.
-	current, _ := readCrontab()
-	for _, l := range current {
-		if !strings.Contains(l, "# "+marker) {
-			continue
-		}
-		return intervalFromLine(l)
+	hours, _ := readIntervalHours(marker)
+	return hours
+}
+
+func readIntervalHours(marker string) (int, error) {
+	current, err := readCrontab()
+	if err != nil {
+		return 0, err
 	}
-	return 0
+	return markedIntervalHours(current, marker)
+}
+
+func markedIntervalHours(lines []string, marker string) (int, error) {
+	for _, line := range lines {
+		if hasCronMarker(line, marker) {
+			hours := intervalFromLine(strings.TrimSpace(line))
+			if hours <= 0 {
+				return 0, fmt.Errorf("unrecognized schedule for %s", marker)
+			}
+			return hours, nil
+		}
+	}
+	return 0, nil
 }
 
 // intervalFromLine reads the interval out of one crontab line, or 0 for a line
@@ -184,6 +215,12 @@ func SetAutoRefresh(hours int) error {
 // AutoRefreshHours returns the current auto-refresh interval (0 = disabled).
 func AutoRefreshHours() int {
 	return GetIntervalHours(app.AutoRefreshMarker)
+}
+
+// ReadAutoRefreshHours distinguishes a disabled schedule from an unreadable
+// crontab or a schedule that cannot be represented by an hourly interval.
+func ReadAutoRefreshHours() (int, error) {
+	return readIntervalHours(app.AutoRefreshMarker)
 }
 
 // NextRun is when a job scheduled every hours (as HourlySpec writes it) next

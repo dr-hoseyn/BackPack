@@ -96,9 +96,6 @@ func NewTCPClient(parentCtx context.Context, config *TcpConfig, logger *logrus.L
 }
 
 func (c *TcpTransport) Start() {
-	if c.config.Sniffer {
-		c.state.Go(c.state.Usage().Run)
-	}
 
 	c.status.set("Disconnected (TCP)")
 

@@ -144,9 +144,6 @@ func NewKcpClient(parentCtx context.Context, config *KcpConfig, logger *logrus.L
 }
 
 func (c *KcpTransport) Start() {
-	if c.config.Sniffer {
-		c.state.Go(c.state.Usage().Run)
-	}
 
 	c.status.set("Disconnected (" + c.transportLabel() + ")")
 

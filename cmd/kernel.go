@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"sync/atomic"
 	"time"
 
 	"github.com/backpack/backpack/config"
@@ -16,31 +15,10 @@ func runKernelTunnel(cfg *config.Config, ctx context.Context, path string) {
 		logger.Errorf("kernel tunnel: %v", err)
 		return
 	}
-	var in, out atomic.Uint64
-	stop := startMetricsWithTraffic(context.WithoutCancel(ctx), path, "kernel-"+c.Method, c.Role, in.Load, out.Load)
+	stop := startMetrics(context.WithoutCancel(ctx), path, "kernel-"+c.Method, c.Role)
 	defer stop()
 	for ctx.Err() == nil {
-		baseIn, baseOut := in.Load(), out.Load()
-		generation, finish := context.WithCancel(ctx)
-		sampled := make(chan struct{})
-		go func() {
-			defer close(sampled)
-			tick := time.NewTicker(time.Second)
-			defer tick.Stop()
-			for {
-				select {
-				case <-generation.Done():
-					return
-				case <-tick.C:
-					a, b := kernel.Counters(c.Interface)
-					in.Store(max(in.Load(), baseIn+a))
-					out.Store(max(out.Load(), baseOut+b))
-				}
-			}
-		}()
-		err = kernel.RunManaged(generation, c, func(ready bool) { naive.ReportReadiness(ctx, ready) })
-		finish()
-		<-sampled
+		err = kernel.RunManaged(ctx, c, func(ready bool) { naive.ReportReadiness(ctx, ready) })
 		if ctx.Err() != nil {
 			return
 		}

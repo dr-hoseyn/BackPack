@@ -156,26 +156,12 @@ func lastLine(s string) string {
 
 // NewestBackup returns the most recent backup file on this machine.
 func NewestBackup() (string, error) {
-	entries, err := os.ReadDir(app.BackupDir)
+	archives, err := listBackupArchives(app.BackupDir)
 	if err != nil {
 		return "", fmt.Errorf("no backups yet: %w", err)
 	}
-	var newest string
-	var at time.Time
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".tar.gz") {
-			continue
-		}
-		info, err := e.Info()
-		if err != nil {
-			continue
-		}
-		if info.ModTime().After(at) {
-			at, newest = info.ModTime(), filepath.Join(app.BackupDir, e.Name())
-		}
-	}
-	if newest == "" {
+	if len(archives) == 0 {
 		return "", fmt.Errorf("no backups in %s yet", app.BackupDir)
 	}
-	return newest, nil
+	return archives[0].path, nil
 }

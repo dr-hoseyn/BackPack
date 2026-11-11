@@ -145,10 +145,11 @@ This is the piece worth knowing before changing anything.
                                         └──►  the watchdog
 ```
 
-Nothing reaches into a running tunnel. The engine writes a JSON snapshot every
-thirty seconds — traffic, peer, pool state, whether the control channel is up,
-and what the process is holding (goroutines, descriptors, heap) — and every
-other process reads that file.
+The engine writes a JSON health snapshot every thirty seconds: peer, pool
+state, control-channel readiness and process resources (goroutines, descriptors,
+heap). The panel, Telegram and CLI read this file. Stall detection obtains live
+in-memory progress counters through the engine control socket; consumption
+totals are not stored. Uptime history retains connection observations only.
 
 It is why the watchdog asks the engine rather than the kernel: a socket outlives
 the tunnel it belongs to by a long way, and every failure the watchdog used to
@@ -160,18 +161,21 @@ miss looked healthy in the socket table.
 
 | Package | Responsibility |
 |---|---|
-| `internal/manage` | the real work, and the seam the panel and the CLI both call: wizards, editing, the panel's API, update, migration (12,600 lines). Layered below it: `manage/tunnelspec` (a tunnel's configuration: render, load, apply with revert, presets, history), `manage/health` (tunnel health, watchdog, Health Check), `manage/host` (this machine's addresses, ports, certificates), `manage/backup`, and `manage/core` + `manage/spec` at the bottom (tunnel listing, systemd, the transport and address vocabulary). Each re-exports through `internal/manage`, so callers see one package |
+| `internal/manage` | setup wizards, tunnel edits, Connection Test, updates and migration. Configuration lives in `manage/tunnelspec`, health checks in `manage/health`, host settings in `manage/host`, and backups in `manage/backup`. The `manage/core` and `manage/spec` packages provide systemd operations and shared transport and address types |
 | `internal/menu` | the interactive TUI, over `internal/tui`; its screens are tested through a scripted input |
 | `internal/telegram` | bot, alerts, scheduled reports. Has a read-only admin tier |
 | `internal/node` | the fleet: JSON over the managed server's own SSH, with a closed list of operations |
 | `internal/monitor` | the always-on service: watchdog, bot, alerts, history sampler, auto-backup — each in its own supervised goroutine |
 
-`internal/manage` is the seam. The panel and the CLI are two callers of the same
-functions, which is why a setting can be changed wherever it can be chosen.
+The CLI and Telegram bot use shared management operations. For Connection Test,
+`conntest.go` owns orchestration on Iran, `conntestcoordinator.go` handles peer
+requests, and `conntestkharej.go` runs the peer and its echo servers.
+`conntestengine.go` manages temporary engine processes, and `conntestprobe.go`
+checks traffic through the test tunnels.
 
 ### The fleet
 
-The panel dials **out** over the managed server's own SSH. The far side needs no
+Fleet management connects over the managed server's own SSH. The far side needs no
 agent, no daemon and no state — `backpack node exec -` performs one
 operation from a closed list and prints the answer. The list is the security
 boundary: there is no operation that runs a command, reads a path or installs a
@@ -281,4 +285,4 @@ context)، پورت‌های فوروارد (`forward.go`)، حلقهٔ کانا
 
 ---
 
-*Last verified against Backpack v1.23.0*
+*Last verified against Backpack v1.24.0*

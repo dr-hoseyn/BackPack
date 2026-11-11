@@ -1,21 +1,18 @@
-// Package metrics records what a running tunnel is actually doing — how much
-// it carried, how much had to be sent twice, and how much was repaired by
-// error correction — and leaves a snapshot on disk for the CLI to read.
-//
-// A tunnel runs as its own process, so there is no shared memory to inspect.
-// Each engine writes a small JSON file that the menu reads, which keeps the
-// two sides decoupled and costs nothing when nobody is looking.
+// Package metrics publishes tunnel health and resource diagnostics.
+// Transient byte counters stay in memory for throughput adaptation and stall detection;
+// consumption totals are never persisted.
 package metrics
 
 import (
 	"encoding/json"
-	"log"
 	"net"
 	"os"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/backpack/backpack/internal/app"
 	"github.com/xtaci/kcp-go/v5"
 )
 
@@ -29,9 +26,9 @@ type Snapshot struct {
 	Taken        time.Time          `json:"taken"`
 	Uptime       string             `json:"uptime"`
 
-	// Traffic over the tunnel itself, as the transport sees it.
-	BytesIn  uint64 `json:"bytes_in"`
-	BytesOut uint64 `json:"bytes_out"`
+	// Legacy fields kept for callers; consumption is neither read nor written.
+	BytesIn  uint64 `json:"-"`
+	BytesOut uint64 `json:"-"`
 
 	// Peer is the address of the connected far end, when the transport knows it.
 	//
@@ -235,85 +232,19 @@ func Path(dir, name string) string {
 
 // Collector periodically writes a tunnel's snapshot to disk.
 type Collector struct {
-	// baseIn/baseOut are the totals this tunnel had already accumulated before
-	// this process started, read from the last written snapshot.
-	baseIn, baseOut uint64
-	// startIn/startOut are what the byte sources already read when this
-	// collector was made. Only what they count after that is new: a reload
-	// makes a new collector in the same process, whose process-wide counters
-	// the baseline above already holds.
-	startIn, startOut uint64
+	writeMu sync.Mutex
 
 	dir       string
 	name      string
 	transport string
 	role      string
 	started   time.Time
-
-	// bytesIn/bytesOut are supplied by the caller, since only the transport
-	// knows what it moved.
-	bytesIn  func() uint64
-	bytesOut func() uint64
 }
 
-// NewCollector builds a collector for one tunnel. The byte accessors may be
-// nil when a transport does not track them.
-func NewCollector(dir, name, transport, role string, bytesIn, bytesOut func() uint64) *Collector {
-	c := &Collector{
-		dir:       dir,
-		name:      name,
-		transport: transport,
-		role:      role,
-		started:   time.Now(),
-		bytesIn:   bytesIn,
-		bytesOut:  bytesOut,
-	}
-	// Carry on from whatever this tunnel had already moved.
-	//
-	// The live counters only know about this process, so without a baseline the
-	// totals would reset every restart — and a tunnel restarts for all sorts of
-	// ordinary reasons: an update, a config edit, the watchdog. A figure that
-	// silently returns to zero is not a total of anything.
-	//
-	// The baseline comes from the tunnel's own metrics file, which lives in the
-	// config directory and is therefore inside every backup. So restoring a
-	// backup also restores the traffic history, rather than starting the count
-	// again on the new machine.
-	if prev, err := Read(dir, name); err == nil {
-		c.baseIn, c.baseOut = prev.BytesIn, prev.BytesOut
-	}
-	c.startIn, c.startOut = c.live()
-	return c
-}
-
-// live is what this tunnel's byte sources read now: the engine's own counters
-// when it keeps them, the process-wide ones otherwise.
-func (c *Collector) live() (in, out uint64) {
-	in, out = Traffic()
-	if c.bytesIn != nil {
-		in = c.bytesIn()
-	}
-	if c.bytesOut != nil {
-		out = c.bytesOut()
-	}
-	return in, out
-}
-
-// since is what a counter has moved from start. A source that went back —
-// an engine that rebuilt its counters — counts from zero again.
-func since(now, start uint64) uint64 {
-	if now < start {
-		return now
-	}
-	return now - start
-}
-
-// Total is everything this tunnel has carried, in and out, carried over from
-// every earlier run — the figure a traffic limit is held against. Cheaper than
-// Snapshot, which a limit checked several times a second does not need.
-func (c *Collector) Total() uint64 {
-	in, out := c.live()
-	return c.baseIn + since(in, c.startIn) + c.baseOut + since(out, c.startOut)
+// NewCollector records current health and resource diagnostics only.
+// Byte sources remain accepted for older engine callers but are never sampled.
+func NewCollector(dir, name, transport, role string, _, _ func() uint64) *Collector {
+	return &Collector{dir: dir, name: name, transport: transport, role: role, started: time.Now()}
 }
 
 // Snapshot reads the current counters without writing anything.
@@ -329,11 +260,6 @@ func (c *Collector) Snapshot() Snapshot {
 		Peer:         currentPeer(),
 		Connected:    connected.Load(),
 	}
-	// The persisted baseline plus what has been carried since this collector
-	// took over from it.
-	liveIn, liveOut := c.live()
-	s.BytesIn = c.baseIn + since(liveIn, c.startIn)
-	s.BytesOut = c.baseOut + since(liveOut, c.startOut)
 	if live, target, configured, mbps := PoolState(); configured > 0 {
 		s.Pool = &PoolStats{Live: live, Target: target, Configured: configured, Mbps: mbps}
 	}
@@ -362,21 +288,14 @@ func (c *Collector) Snapshot() Snapshot {
 // Write persists one snapshot. Failures are returned but are not worth
 // stopping a tunnel over — metrics are diagnostics, not function.
 func (c *Collector) Write() error {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
 	s := c.Snapshot()
 	b, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(c.dir, 0755); err != nil {
-		return err
-	}
-	// Write to a temporary file and rename, so a reader never sees a half
-	// written snapshot.
-	tmp := Path(c.dir, c.name) + ".tmp"
-	if err := os.WriteFile(tmp, b, 0644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, Path(c.dir, c.name))
+	return app.WriteFileAtomic(Path(c.dir, c.name), b, 0644)
 }
 
 // Run writes a snapshot every interval until the channel closes.
@@ -408,17 +327,7 @@ func Read(dir, name string) (Snapshot, error) {
 	return s, err
 }
 
-// Tunnel traffic counting.
-//
-// Only KCP used to report traffic, because kcp-go happens to keep process-wide
-// byte counters and the snapshot could just read them. Every other transport
-// reported "0 B in, 0 B out" — not because nothing was flowing, but because
-// nobody was counting.
-//
-// These counters fix that uniformly: the tunnel connection is wrapped, so a
-// read is data arriving from the peer and a write is data leaving for it,
-// whichever side of the tunnel this process is. One tunnel runs per process, so
-// package-level totals describe exactly this tunnel.
+// In-memory progress counters for adaptive pools and live stall detection.
 var (
 	bytesIn  atomic.Uint64
 	bytesOut atomic.Uint64
@@ -478,66 +387,3 @@ func AddBytes(in, out uint64) {
 
 // Traffic returns the bytes carried over the tunnel so far.
 func Traffic() (in, out uint64) { return bytesIn.Load(), bytesOut.Load() }
-
-// The server's own ledger: what tunnels that no longer exist carried.
-//
-// The panel's headline figure is "carried since this server was set up", and
-// it is added up from the tunnels' own files. Deleting a tunnel took its whole
-// history out of that sum, and left the file behind for the next tunnel given
-// the same name to start from. So a delete moves the tunnel's totals here, and
-// the file goes. It lives in the config directory beside the tunnels' files,
-// and so is inside every backup with them.
-
-// retiredFile is the ledger's name. Not "<name>.metrics.json": no tunnel may
-// ever be read as owning it.
-const retiredFile = "retired-traffic.json"
-
-type retired struct {
-	BytesIn  uint64 `json:"bytes_in"`
-	BytesOut uint64 `json:"bytes_out"`
-}
-
-// Retired is what the tunnels deleted from this server carried between them.
-func Retired(dir string) (in, out uint64) {
-	var r retired
-	path := filepath.Join(dir, retiredFile)
-	if b, err := os.ReadFile(path); err == nil {
-		// A damaged ledger is read as zero, so the server's lifetime total
-		// drops by whatever deleted tunnels carried. Said, because an empty
-		// ledger and a damaged one look identical on the overview.
-		if err := json.Unmarshal(b, &r); err != nil {
-			log.Printf("metrics: %s is damaged and is being read as zero — the traffic of "+
-				"deleted tunnels is missing from the server total: %v", path, err)
-			return 0, 0
-		}
-	}
-	return r.BytesIn, r.BytesOut
-}
-
-// Retire adds a deleted tunnel's totals to the server's ledger and removes the
-// tunnel's own file. Call it once the tunnel has stopped, so its last write is
-// in. A tunnel that never wrote a file has nothing to add.
-func Retire(dir, name string) error {
-	snap, err := Read(dir, name)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		// Unreadable: nothing can be carried over, but the file must still
-		// go, or a new tunnel of this name would try to start from it.
-		return os.Remove(Path(dir, name))
-	}
-	in, out := Retired(dir)
-	b, err := json.MarshalIndent(retired{BytesIn: in + snap.BytesIn, BytesOut: out + snap.BytesOut}, "", "  ")
-	if err != nil {
-		return err
-	}
-	path := filepath.Join(dir, retiredFile)
-	if err := os.WriteFile(path+".tmp", b, 0644); err != nil {
-		return err
-	}
-	if err := os.Rename(path+".tmp", path); err != nil {
-		return err
-	}
-	return os.Remove(Path(dir, name))
-}

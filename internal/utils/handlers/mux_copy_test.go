@@ -3,7 +3,6 @@ package handlers
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -106,14 +105,9 @@ func TestMuxReceiveRelayPreservesPayloadAndTunnelAccounting(t *testing.T) {
 				t.Fatalf("mux receive accounting in=%d out=%d", inAfter-inBefore, outAfter-outBefore)
 			}
 			stopUsage()
-			usage.Run() // Flush the same per-port counters the sniffer persists.
-			data, err := os.ReadFile(usageFile)
-			if err != nil {
-				t.Fatal(err)
-			}
-			var ports []traffic.PortUsage
-			if err := json.Unmarshal(data, &ports); err != nil || len(ports) != 1 || ports[0].Port != 8080 || ports[0].Usage != uint64(len(want)) {
-				t.Fatalf("mux receive lost per-port accounting: %s %v", data, err)
+			usage.Run()
+			if _, err := os.Stat(usageFile); !os.IsNotExist(err) {
+				t.Fatalf("relay persisted per-port usage: %v", err)
 			}
 		})
 	}

@@ -52,9 +52,6 @@ func NewUDPClient(parentCtx context.Context, config *UdpConfig, logger *logrus.L
 }
 
 func (c *UdpTransport) Start() {
-	if c.config.Sniffer {
-		c.state.Go(c.state.Usage().Run)
-	}
 
 	c.status.set("Disconnected (UDP)")
 
@@ -355,11 +352,6 @@ func (c *UdpTransport) udpCopy(srcConn, dstConn *net.UDPConn, port int, dstIsTun
 		touchUDPActivity(started, activity)
 		if dstIsTunnel {
 			metrics.AddBytes(0, uint64(totalWritten))
-		}
-
-		// Optionally update the port usage stats if sniffing is enabled
-		if c.config.Sniffer {
-			c.state.Usage().AddOrUpdatePort(port, uint64(totalWritten))
 		}
 
 		if c.logger.IsLevelEnabled(logrus.DebugLevel) {

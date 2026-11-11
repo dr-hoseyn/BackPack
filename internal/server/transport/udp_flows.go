@@ -407,10 +407,6 @@ func (s *UdpTransport) udpLocalCopy(g *udpGen, from *LocalUDPConn, to *TunnelUDP
 			metrics.AddBytes(0, uint64(totalWritten))
 			s.limits.waitBytes(g.ctx, totalWritten)
 
-			if s.config.Sniffer {
-				g.usageMonitor.AddOrUpdatePort(from.listener.LocalAddr().(*net.UDPAddr).Port, uint64(totalWritten))
-			}
-
 			if s.logger.IsLevelEnabled(logrus.DebugLevel) {
 				s.logger.Debugf("forwarded %d bytes from local connection %s to tunnel", packetSize, from.addr.String())
 			}
@@ -455,9 +451,6 @@ func (s *UdpTransport) udpTunnelCopy(g *udpGen, from *TunnelUDPConn, to *LocalUD
 			}
 
 			touchUDPActivity(started, activity)
-			if s.config.Sniffer {
-				g.usageMonitor.AddOrUpdatePort(to.listener.LocalAddr().(*net.UDPAddr).Port, uint64(totalWritten))
-			}
 
 			if s.logger.IsLevelEnabled(logrus.DebugLevel) {
 				s.logger.Debugf("forwarded %d bytes from local connection %s to tunnel", packetSize, from.addr.String())

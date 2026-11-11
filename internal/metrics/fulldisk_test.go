@@ -3,6 +3,7 @@ package metrics
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -26,6 +27,9 @@ import (
 
 func unwritableDir(t *testing.T) string {
 	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows does not enforce POSIX directory mode bits")
+	}
 	if os.Geteuid() == 0 {
 		t.Skip("running as root, which is not subject to the permission bits this test uses")
 	}
@@ -93,7 +97,7 @@ func TestTheLastGoodSnapshotSurvivesAFullDisk(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the snapshot became unreadable once writes started failing: %v", err)
 	}
-	if after.BytesIn != before.BytesIn || after.BytesOut != before.BytesOut {
+	if !after.Taken.Equal(before.Taken) || after.Name != before.Name {
 		t.Fatalf("the snapshot changed while every write was failing: %+v then %+v", before, after)
 	}
 }
@@ -116,7 +120,7 @@ func TestTheCollectorWritesAgainWhenThereIsRoom(t *testing.T) {
 	go func() { defer close(stopped); c.Run(done, 20*time.Millisecond) }()
 	// Run does a final write on its way out, so the test has to outlive it or
 	// t.TempDir's cleanup races that write.
-	stop := func() { close(done); <-stopped }
+	defer func() { close(done); <-stopped }()
 
 	// Long enough that a collector which stopped on the first error has
 	// certainly stopped by now.
@@ -131,13 +135,11 @@ func TestTheCollectorWritesAgainWhenThereIsRoom(t *testing.T) {
 	var last error
 	for time.Now().Before(deadline) {
 		if _, err := Read(dir, "fr-relay"); err == nil {
-			stop()
 			return
 		} else {
 			last = err
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	stop()
 	t.Fatalf("the collector never wrote again after the disk had room: %v", last)
 }

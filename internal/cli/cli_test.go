@@ -266,8 +266,8 @@ func TestAFreshSnapshotIsReportedWithItsAge(t *testing.T) {
 	if v.Traffic == nil {
 		t.Fatal("a fresh snapshot was not reported")
 	}
-	if v.Traffic.BytesIn != 4096 || v.Traffic.BytesOut != 8192 {
-		t.Errorf("counters = %+v", v.Traffic)
+	if v.Traffic.BytesIn != 0 || v.Traffic.BytesOut != 0 {
+		t.Errorf("consumption counters reached the CLI: %+v", v.Traffic)
 	}
 	if v.Traffic.Peer != "1.2.3.4:443" {
 		t.Errorf("peer = %q", v.Traffic.Peer)

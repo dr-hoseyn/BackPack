@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -184,13 +185,18 @@ func TestArchivedInstallPathIsUsedWhenThereIsNoLocalOne(t *testing.T) {
 
 // The commit is the only moment the live directory changes, and it either
 // happens or it does not.
-func TestCommitSwapsTheTreeInOneStep(t *testing.T) {
+func TestCommitReplacesTheLiveTreeAndPreservesEarlierRollbackData(t *testing.T) {
 	parent := t.TempDir()
 	live := filepath.Join(parent, "backpack")
 	if err := os.Mkdir(live, 0755); err != nil {
 		t.Fatal(err)
 	}
 	writeAt(t, live, "old.toml", "the previous configuration", 0600)
+	earlier := live + ".restore-previous"
+	if err := os.Mkdir(earlier, 0700); err != nil {
+		t.Fatal(err)
+	}
+	writeAt(t, earlier, "saved.toml", "recoverable from an earlier failure", 0600)
 
 	stage, err := os.MkdirTemp(parent, ".backpack-restore-*")
 	if err != nil {
@@ -206,8 +212,10 @@ func TestCommitSwapsTheTreeInOneStep(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(live, "old.toml")); !os.IsNotExist(err) {
 		t.Error("the previous tree was left mixed in with the restored one")
 	}
-	if _, err := os.Stat(live + ".restore-previous"); !os.IsNotExist(err) {
-		t.Error("the set-aside copy of the previous tree was not cleaned up")
+	assertStaged(t, earlier, "saved.toml", "recoverable from an earlier failure")
+	leftovers, err := filepath.Glob(filepath.Join(parent, ".backpack-restore-previous-*"))
+	if err != nil || len(leftovers) != 0 {
+		t.Fatalf("rollback leftovers = %v, error %v", leftovers, err)
 	}
 
 	// The live directory has to stay readable by whatever reads a config.
@@ -447,5 +455,90 @@ func TestEveryOtherRestoredFileKeepsItsMode(t *testing.T) {
 			t.Errorf("%s archived %#o would be restored %#o, want %#o",
 				tc.target, tc.archived, got, tc.want)
 		}
+	}
+}
+
+func TestRestoreUsesZeroOnlyWhenTheArchiveVerifiedAutoRefreshWasDisabled(t *testing.T) {
+	for _, tc := range []struct {
+		name, metadata string
+		wantHours      int
+		wantSet        bool
+	}{
+		{name: "missing interval", metadata: `{"auto_refresh_known":true}`},
+		{name: "legacy zero", metadata: `{"auto_refresh_hours":0}`},
+		{name: "legacy enabled", metadata: `{"auto_refresh_hours":48}`, wantHours: 48, wantSet: true},
+		{name: "verified disabled", metadata: `{"auto_refresh_hours":0,"auto_refresh_known":true}`, wantSet: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			data := archiveOf(t, entry{name: backupMetaName, body: tc.metadata})
+			got, err := stageRestore(bytes.NewReader(data), t.TempDir(), t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.AutoRefreshHours != tc.wantHours || got.HasAutoRefresh != tc.wantSet {
+				t.Fatalf("schedule = %d hours, apply=%t, want %d hours, apply=%t",
+					got.AutoRefreshHours, got.HasAutoRefresh, tc.wantHours, tc.wantSet)
+			}
+		})
+	}
+}
+
+func TestRestoreRejectsRepeatedOrNonFileMetadata(t *testing.T) {
+	for _, tc := range []struct {
+		name, wantError string
+		entries         []entry
+	}{
+		{
+			name:      "duplicate metadata",
+			wantError: "more than once",
+			entries: []entry{
+				{name: backupMetaName, body: `{"auto_refresh_hours":24}`},
+				{name: "./" + backupMetaName, body: `{"auto_refresh_hours":48}`},
+			},
+		},
+		{
+			name:      "metadata directory",
+			wantError: "sidecar must be a regular file",
+			entries:   []entry{{name: backupMetaName, typ: tar.TypeDir}},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			data := archiveOf(t, tc.entries...)
+			_, err := stageRestore(bytes.NewReader(data), t.TempDir(), t.TempDir())
+			if err == nil || !strings.Contains(err.Error(), tc.wantError) {
+				t.Fatalf("restore error = %v, want %q", err, tc.wantError)
+			}
+		})
+	}
+}
+
+func TestMountedRestoreRecoversFilesAndRemovesNewEntriesAfterCopyFailure(t *testing.T) {
+	parent := t.TempDir()
+	live, stage, previous := filepath.Join(parent, "live"), filepath.Join(parent, "stage"), filepath.Join(parent, "previous")
+	for _, dir := range []string{live, stage} {
+		if err := os.Mkdir(dir, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeAt(t, live, "t1.toml", "original", 0600)
+	writeAt(t, stage, "t1.toml", "restored", 0600)
+	writeAt(t, stage, "new/sub/file.json", "new data", 0600)
+	failure := errors.New("copy interrupted")
+	copy := func(source, target string) error {
+		if err := copyTree(source, target); err != nil {
+			return err
+		}
+		if source == stage {
+			return failure
+		}
+		return nil
+	}
+	keep, err := commitMountedRestore(live, stage, previous, copy)
+	if keep || !errors.Is(err, failure) {
+		t.Fatalf("mounted restore = keep recovery %t, error %v", keep, err)
+	}
+	assertStaged(t, live, "t1.toml", "original")
+	if _, err := os.Stat(filepath.Join(live, "new")); !os.IsNotExist(err) {
+		t.Fatalf("new entries remain after recovery: %v", err)
 	}
 }

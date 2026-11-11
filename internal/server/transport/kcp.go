@@ -197,9 +197,6 @@ func (s *KcpTransport) Start() {
 // replace while this run is still using it.
 func (s *KcpTransport) start(g *kcpGen) {
 	go sweepTunnelConns(g.ctx, g.tunnelChannel)
-	if s.config.Sniffer {
-		go g.usageMonitor.Run()
-	}
 	s.status.set("Disconnected (" + s.transportLabel() + ")")
 
 	go s.tunnelListener(g)

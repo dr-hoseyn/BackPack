@@ -149,9 +149,6 @@ func (s *TcpMuxTransport) Start() {
 // replace while this run is still using it.
 func (s *TcpMuxTransport) start(g *tcpMuxGen) {
 	go sweepTunnelConns(g.ctx, g.tunnelChannel)
-	if s.config.Sniffer {
-		go g.usageMonitor.Run()
-	}
 	s.status.set("Disconnected (TCPMux)")
 
 	go s.tunnelPort(g).serve()

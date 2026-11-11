@@ -166,9 +166,6 @@ func writeAll(from, to net.Conn, data []byte, logger *logrus.Logger, usage *traf
 	if logger.IsLevelEnabled(logrus.TraceLevel) {
 		logger.Tracef("read data: %d bytes, written data: %d bytes", len(data), totalWritten)
 	}
-	if sniffer {
-		usage.AddOrUpdatePort(remotePort, uint64(totalWritten))
-	}
 	return true
 }
 
@@ -206,9 +203,6 @@ func spliceTransfer(from net.Conn, to net.Conn, logger *logrus.Logger, usage *tr
 			metrics.AddBytes(uint64(n), 0)
 		case toCounted:
 			metrics.AddBytes(0, uint64(n))
-		}
-		if sniffer {
-			usage.AddOrUpdatePort(remotePort, uint64(n))
 		}
 	}
 

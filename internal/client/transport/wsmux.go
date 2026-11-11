@@ -82,9 +82,6 @@ func NewWSMuxClient(parentCtx context.Context, config *WsMuxConfig, logger *logr
 }
 
 func (c *WsMuxTransport) Start() {
-	if c.config.Sniffer {
-		c.state.Go(c.state.Usage().Run)
-	}
 
 	c.status.set(fmt.Sprintf("Disconnected (%s)", c.config.Mode))
 

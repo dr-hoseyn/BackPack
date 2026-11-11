@@ -2,6 +2,7 @@ package backup
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -76,6 +77,66 @@ func TestListSnapshotsOrdersSameSecondAndSkipsIncompleteCopies(t *testing.T) {
 	for i, snapshot := range got {
 		if filepath.Base(snapshot.Dir) != want[i] {
 			t.Fatalf("restore point %d is %s, want %s", i, snapshot.Dir, want[i])
+		}
+	}
+}
+
+func TestSnapshotRestoreStagesAllFilesBeforeChangingLiveConfigs(t *testing.T) {
+	parent := t.TempDir()
+	source, live := filepath.Join(parent, "snapshot"), filepath.Join(parent, "live")
+	for _, dir := range []string{source, live} {
+		if err := os.Mkdir(dir, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeAt(t, live, "t1.toml", "current config", 0600)
+	writeAt(t, source, "t1.toml", "saved config", 0600)
+	// A saved directory cannot replace an existing regular file.
+	writeAt(t, live, "z-conflict", "keep this file", 0600)
+	if err := os.Mkdir(filepath.Join(source, "z-conflict"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if stage, err := stageSnapshotConfig(source, live); err == nil {
+		os.RemoveAll(stage)
+		t.Fatal("staging accepted a file/directory conflict")
+	}
+	assertStaged(t, live, "t1.toml", "current config")
+	assertStaged(t, live, "z-conflict", "keep this file")
+	stages, err := filepath.Glob(filepath.Join(parent, ".backpack-snapshot-restore-*"))
+	if err != nil || len(stages) != 0 {
+		t.Fatalf("failed snapshot staging left %v, error %v", stages, err)
+	}
+}
+
+func TestSnapshotConfigFailureRestoresTheInstalledBinary(t *testing.T) {
+	dir := t.TempDir()
+	source, target := filepath.Join(dir, "saved"), filepath.Join(dir, "installed")
+	if err := os.WriteFile(source, []byte("snapshot binary"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, existing := range []bool{false, true} {
+		if existing {
+			if err := os.WriteFile(target, []byte("installed binary"), 0700); err != nil {
+				t.Fatal(err)
+			}
+		}
+		failure := errors.New("config swap failed")
+		err := installSnapshotBinary(source, target, func() error {
+			if got, err := os.ReadFile(target); err != nil || string(got) != "snapshot binary" {
+				t.Errorf("snapshot binary was not installed: %q, error %v", got, err)
+			}
+			return failure
+		})
+		if !errors.Is(err, failure) {
+			t.Fatalf("restore error = %v, want %v", err, failure)
+		}
+		body, err := os.ReadFile(target)
+		if existing {
+			if err != nil || string(body) != "installed binary" {
+				t.Fatalf("original binary was lost: %q, error %v", body, err)
+			}
+		} else if !os.IsNotExist(err) {
+			t.Fatalf("new binary was retained after rollback: %q, error %v", body, err)
 		}
 	}
 }

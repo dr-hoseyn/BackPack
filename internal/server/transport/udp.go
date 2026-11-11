@@ -144,10 +144,6 @@ func (s *UdpTransport) Start() {
 func (s *UdpTransport) start(g *udpGen) {
 	s.status.set("Disconnected (UDP)")
 
-	if s.config.Sniffer {
-		go g.usageMonitor.Run()
-	}
-
 	go s.channelHandshake(g)
 }
 

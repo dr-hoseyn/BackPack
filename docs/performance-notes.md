@@ -560,7 +560,8 @@ wrapper; pacing/unknown wrappers and destinations other than real TCP sockets
 kept the existing buffered path. TCP consumes the borrowed slice synchronously,
 so smux can recycle it after Write returns. Failed or short writes end the
 stream instead of allowing a frame tail to be discarded. Tunnel byte counts,
-per-port usage, EOF and cancellation are covered for smux versions 1 and 2.
+EOF, cancellation and live throughput counting are covered for smux versions 1
+and 2. Legacy sniffer settings no longer produce per-port usage files.
 
 The change was first measured outside the PR branch. The
 [bounded-profile comparison](https://github.com/dr-hoseyn/BackPack/actions/runs/41632246215)
@@ -702,4 +703,4 @@ See `internal/tunnel/l3/bench_gate_test.go`.
 
 ---
 
-*Last verified against Backpack v1.23.0*
+*Last verified against Backpack v1.24.0*

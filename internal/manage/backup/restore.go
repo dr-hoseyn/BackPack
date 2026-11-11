@@ -4,17 +4,19 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"github.com/backpack/backpack/internal/manage/core"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/backpack/backpack/internal/app"
+	"github.com/backpack/backpack/internal/manage/core"
 )
 
-// Restoring is all-or-nothing.
+// Restore stages the complete tree before committing it.
 //
 // It used to extract straight into the live config directory, one entry at a
 // time, as the archive was read. Every way an archive can turn out to be bad
@@ -27,9 +29,10 @@ import (
 // So the whole post-restore tree is now built in a staging directory first:
 // the current configuration copied in, the archive laid over the top, every
 // entry checked before it is written, and the compressed stream read through
-// to its checksum. Only then does anything in the live directory change, and
-// the change is one rename. If any part of that fails, the live directory has
-// not been touched at all.
+// to its checksum. The commit then moves the live directory aside and
+// installs the staged tree. If installation fails, it moves the previous
+// tree back or reports the path where that tree was saved. Mountpoints use
+// per-file publication with a recovery copy because their roots cannot move.
 
 const (
 	// Bounds on what an archive may expand to. A backup of this system is
@@ -40,6 +43,7 @@ const (
 	maxRestoreEntries   = 10_000
 	maxRestoreFileBytes = 64 << 20
 	maxRestoreBytes     = 256 << 20
+	maxRestoreStream    = maxRestoreBytes + maxRestoreEntries*4096 + 1<<20
 )
 
 // restoreContents is what an archive turned out to hold, gathered while it is
@@ -49,6 +53,7 @@ type restoreContents struct {
 	TelegramConfig   bool
 	SawTunnelConfig  bool
 	AutoRefreshHours int
+	HasAutoRefresh   bool
 
 	// Warnings are things the restore carried on past and the operator should
 	// know about. A restore that half-worked and said so is recoverable; one
@@ -78,7 +83,8 @@ func stageRestore(r io.Reader, configDir, stage string) (restoreContents, error)
 	}
 	defer gz.Close()
 
-	tr := tar.NewReader(gz)
+	stream := &io.LimitedReader{R: gz, N: maxRestoreStream + 1}
+	tr := tar.NewReader(stream)
 	seen := make(map[string]bool)
 	var total int64
 
@@ -89,28 +95,6 @@ func stageRestore(r io.Reader, configDir, stage string) (restoreContents, error)
 		}
 		if err != nil {
 			return contents, fmt.Errorf("reading archive: %w", err)
-		}
-
-		// Sidecar: parse for out-of-tree settings, never write it to disk.
-		if hdr.Name == backupMetaName {
-			var m backupMeta
-			if data, err := io.ReadAll(io.LimitReader(tr, maxRestoreFileBytes)); err == nil {
-				if err := json.Unmarshal(data, &m); err != nil {
-					// The restore carries on — the tunnels are the part that
-					// matters and they are in the tree, not in here — but it
-					// must not carry on quietly. A damaged sidecar means a
-					// setting the operator had configured is silently missing
-					// from the machine they have just restored, and the only
-					// symptom is that it stopped happening.
-					contents.Warnings = append(contents.Warnings, fmt.Sprintf(
-						"the backup's settings sidecar is damaged (%v), so out-of-tree "+
-							"settings such as the automatic refresh interval were not "+
-							"restored — check them", err))
-				} else {
-					contents.AutoRefreshHours = m.AutoRefreshHours
-				}
-			}
-			continue
 		}
 
 		name, err := safeRestoreName(hdr.Name)
@@ -126,6 +110,27 @@ func stageRestore(r io.Reader, configDir, stage string) (restoreContents, error)
 		seen[name] = true
 		if len(seen) > maxRestoreEntries {
 			return contents, fmt.Errorf("archive holds more than %d entries", maxRestoreEntries)
+		}
+
+		if hdr.Typeflag == tar.TypeReg {
+			if hdr.Size > maxRestoreFileBytes {
+				return contents, fmt.Errorf("%s is %d bytes, over the %d-byte limit for one file", name, hdr.Size, int64(maxRestoreFileBytes))
+			}
+			total += hdr.Size
+			if total > maxRestoreBytes {
+				return contents, fmt.Errorf("archive expands to more than %d bytes", int64(maxRestoreBytes))
+			}
+		}
+		// The metadata is part of the archive's bounds and duplicate checks,
+		// but is never written into the staged config directory.
+		if name == backupMetaName {
+			if hdr.Typeflag != tar.TypeReg {
+				return contents, fmt.Errorf("backup settings sidecar must be a regular file")
+			}
+			if err := readBackupMeta(tr, &contents); err != nil {
+				return contents, err
+			}
+			continue
 		}
 
 		// install_path records where install.sh cloned the repo on THIS host.
@@ -144,13 +149,6 @@ func stageRestore(r io.Reader, configDir, stage string) (restoreContents, error)
 			}
 
 		case tar.TypeReg:
-			if hdr.Size > maxRestoreFileBytes {
-				return contents, fmt.Errorf("%s is %d bytes, over the %d-byte limit for one file", name, hdr.Size, int64(maxRestoreFileBytes))
-			}
-			total += hdr.Size
-			if total > maxRestoreBytes {
-				return contents, fmt.Errorf("archive expands to more than %d bytes", int64(maxRestoreBytes))
-			}
 			if err := writeStagedFile(target, tr, hdr); err != nil {
 				return contents, err
 			}
@@ -173,11 +171,34 @@ func stageRestore(r io.Reader, configDir, stage string) (restoreContents, error)
 	// parsed and an archive that is intact. Doing it here, before anything is
 	// committed, is the whole point: a truncated upload used to be discovered
 	// only after it had been written over the live configuration.
-	if _, err := io.Copy(io.Discard, gz); err != nil {
+	if _, err := io.Copy(io.Discard, stream); err != nil {
 		return contents, fmt.Errorf("the archive is corrupt or truncated: %w", err)
 	}
 
+	if stream.N == 0 {
+		return contents, fmt.Errorf("archive exceeds the %d-byte decompressed stream limit", maxRestoreStream)
+	}
 	return contents, nil
+}
+
+func readBackupMeta(r io.Reader, contents *restoreContents) error {
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return fmt.Errorf("read backup settings sidecar: %w", err)
+	}
+	var m backupMeta
+	if err := json.Unmarshal(data, &m); err != nil {
+		contents.Warnings = append(contents.Warnings, fmt.Sprintf(
+			"the backup's settings sidecar is damaged (%v); check the auto-refresh schedule", err))
+		return nil
+	}
+	if m.AutoRefreshHours != nil {
+		contents.AutoRefreshHours = *m.AutoRefreshHours
+		// Older archives used zero for both disabled and unreadable crontabs.
+		contents.HasAutoRefresh = *m.AutoRefreshHours > 0 ||
+			m.AutoRefreshKnown && *m.AutoRefreshHours == 0
+	}
+	return nil
 }
 
 // writeStagedFile writes one archive entry into the staging tree.
@@ -290,13 +311,16 @@ func safeRestoreName(name string) (string, error) {
 // seedStage copies configDir into stage so the staging tree starts out as the
 // installation that is there now.
 func seedStage(configDir, stage string) error {
-	return filepath.Walk(configDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
+	return filepath.Walk(configDir, func(path string, info os.FileInfo, walkErr error) error {
 		rel, err := filepath.Rel(configDir, path)
 		if err != nil {
 			return err
+		}
+		if isMetricsTemp(rel) {
+			return nil
+		}
+		if walkErr != nil {
+			return walkErr
 		}
 		if rel == "." {
 			return nil
@@ -362,20 +386,78 @@ func commitRestore(configDir, stage string) error {
 		return err
 	}
 
-	previous := configDir + ".restore-previous"
-	os.RemoveAll(previous)
+	parent := filepath.Dir(configDir)
+	rollbackDir, err := os.MkdirTemp(parent, ".backpack-restore-previous-*")
+	if err != nil {
+		return fmt.Errorf("prepare restore rollback: %w", err)
+	}
+	previous := filepath.Join(rollbackDir, "config")
+	keepRollback := false
+	defer func() {
+		if !keepRollback {
+			_ = os.RemoveAll(rollbackDir)
+		}
+	}()
 
 	if err := os.Rename(configDir, previous); err != nil {
+		if errors.Is(err, syscall.EBUSY) {
+			keepRollback, err = commitMountedRestore(configDir, stage, previous, copyTree)
+			return err
+		}
 		return fmt.Errorf("could not move the current configuration aside, so nothing was changed: %w", err)
 	}
 	if err := os.Rename(stage, configDir); err != nil {
 		if back := os.Rename(previous, configDir); back != nil {
+			keepRollback = true
 			return fmt.Errorf("could not put the restored configuration in place (%v) and could not put the previous one back either; it is in %s: %w", err, previous, back)
 		}
 		return fmt.Errorf("could not put the restored configuration in place, so the previous one was left as it was: %w", err)
 	}
 
-	syncDir(filepath.Dir(configDir))
-	os.RemoveAll(previous)
+	syncDir(parent)
 	return nil
+}
+
+// A mountpoint cannot be renamed. Keep a full recovery tree, publish each file
+// atomically, and restore the original files if installation fails. The caller
+// holds the configuration lock and has stopped the tunnel writers.
+func commitMountedRestore(live, stage, previous string, copyTree func(string, string) error) (keepRecovery bool, err error) {
+	if err := copyTree(live, previous); err != nil {
+		return false, fmt.Errorf("save mounted configuration before restore: %w", err)
+	}
+	var added []string
+	if err := filepath.Walk(stage, func(path string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		rel, err := filepath.Rel(stage, path)
+		if err != nil || rel == "." {
+			return err
+		}
+		target := filepath.Join(live, rel)
+		if _, err := os.Lstat(target); os.IsNotExist(err) {
+			added = append(added, target)
+		} else if err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
+		return false, err
+	}
+
+	if err := copyTree(stage, live); err != nil {
+		var recovery error
+		for i := len(added) - 1; i >= 0; i-- {
+			if removeErr := os.Remove(added[i]); removeErr != nil && !os.IsNotExist(removeErr) {
+				recovery = errors.Join(recovery, removeErr)
+			}
+		}
+		recovery = errors.Join(recovery, copyTree(previous, live))
+		if recovery != nil {
+			return true, errors.Join(err, fmt.Errorf("recover mounted configuration from %s: %w", previous, recovery))
+		}
+		return false, fmt.Errorf("install mounted configuration; previous files restored: %w", err)
+	}
+	syncDir(live)
+	return false, nil
 }

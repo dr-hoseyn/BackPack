@@ -1,6 +1,7 @@
 package health
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -8,7 +9,7 @@ import (
 	"time"
 
 	"github.com/backpack/backpack/internal/app"
-	"github.com/backpack/backpack/internal/metrics"
+	"github.com/backpack/backpack/internal/enginectl"
 )
 
 // Health defined by what a tunnel is carrying, not by whether it is running.
@@ -106,6 +107,8 @@ func (f flowState) String() string {
 // flowReading is one tunnel's place in the state machine.
 type flowReading struct {
 	in, out uint64
+	// A restarted monitor needs one live baseline before comparing byte deltas.
+	needsBaseline bool
 	// runs counts consecutive checks that looked stalled.
 	runs int
 	// since is when the stall was first noticed, zero when there is none.
@@ -146,6 +149,11 @@ func (w *flowWatch) observe(name string, in, out uint64, now time.Time) flowStat
 	if !ok {
 		w.seen[name] = &flowReading{in: in, out: out}
 		return flowUnknown // nothing to compare against yet
+	}
+
+	if r.needsBaseline {
+		r.in, r.out, r.needsBaseline = in, out, false
+		return flowUnknown
 	}
 
 	dIn, dOut := delta(r.in, in), delta(r.out, out)
@@ -267,22 +275,16 @@ func delta(prev, now uint64) uint64 {
 	return now - prev
 }
 
-// tunnelFlow reads a tunnel's counters. It returns ok=false for a snapshot that
-// is missing, too old, or from a tunnel whose engine says it is not connected —
-// a disconnected tunnel is already the watchdog's existing business and must not
-// also be reported as a stall.
+// tunnelFlow reads live in-memory counters through the existing control
+// socket. Usage totals are never recovered from or written to metrics files.
 func tunnelFlow(name string) (in, out uint64, ok bool) {
-	snap, err := metrics.Read(app.ConfigDir, name)
-	if err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	var status enginectl.Status
+	if err := enginectl.AskContext(ctx, name, enginectl.OpStatus, &status); err != nil || !status.Connected {
 		return 0, 0, false
 	}
-	if time.Since(snap.Taken) > datagramPeerWindow {
-		return 0, 0, false
-	}
-	if snap.Connected == nil || !*snap.Connected {
-		return 0, 0, false
-	}
-	return snap.BytesIn, snap.BytesOut, true
+	return status.BytesIn, status.BytesOut, true
 }
 
 // Keeping the ladder across a watchdog restart.
@@ -310,12 +312,6 @@ var flowStatePath = filepath.Join(app.ConfigDir, "stall-state.json")
 // flowReading's fields are unexported and two of them are times, which is
 // exactly what JSON is bad at guessing.
 type persistedReading struct {
-	// One tag per field. Writing `json:"in,out"` for both — which is what this
-	// said first — is one tag applied to two fields, so both serialise as "in"
-	// and the second silently overwrites the first. staticcheck caught it
-	// within an hour of being added to CI.
-	In         uint64 `json:"in"`
-	Out        uint64 `json:"out"`
 	Runs       int    `json:"runs"`
 	Since      int64  `json:"since,omitempty"`
 	Direction  string `json:"direction,omitempty"`
@@ -338,7 +334,7 @@ func (w *flowWatch) save() {
 	out := make(map[string]persistedReading, len(w.seen))
 	for name, r := range w.seen {
 		p := persistedReading{
-			In: r.in, Out: r.out, Runs: r.runs,
+			Runs:      r.runs,
 			Direction: r.direction, Restarts: r.restarts, Reported: r.reported,
 			Reloaded: r.reloaded,
 		}
@@ -379,7 +375,7 @@ func (w *flowWatch) load() {
 	}
 	for name, p := range in {
 		r := &flowReading{
-			in: p.In, out: p.Out, runs: p.Runs,
+			needsBaseline: true, runs: p.Runs,
 			direction: p.Direction, restarts: p.Restarts, reported: p.Reported,
 			reloaded: p.Reloaded,
 		}
