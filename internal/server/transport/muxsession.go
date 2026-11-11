@@ -165,7 +165,7 @@ func (m muxSession) run(session *smux.Session) {
 	}()
 	var waiter *muxQueueWaiter
 	if m.local.waiters != nil {
-		waiter = &muxQueueWaiter{ready: make(chan struct{}, 1), slots: counter, pressure: m.pressure}
+		waiter = &muxQueueWaiter{ready: make(chan struct{}, 1), slots: counter, done: session.CloseChan(), pressure: m.pressure}
 		defer m.local.leave(waiter)
 	}
 

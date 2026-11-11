@@ -30,9 +30,19 @@ type muxLocalQueue struct {
 type muxQueueWaiter struct {
 	ready    chan struct{}
 	slots    chan struct{}
+	done     <-chan struct{}
 	lastUse  uint64
 	warm     bool
 	pressure func() int
+}
+
+func (w *muxQueueWaiter) isClosed() bool {
+	select {
+	case <-w.done:
+		return true
+	default:
+		return false
+	}
 }
 
 const (
@@ -89,12 +99,21 @@ func (q *muxLocalQueue) push(local LocalTCPConn, queued func()) bool {
 // requests remain, instead of waking every session for a single connection.
 func (q *muxLocalQueue) notify() {
 	if q.waiters != nil {
+		// Socket observation on a closed carrier can report zero pressure.
+		// Do not interpret that as a healthy path while its worker is still
+		// waking up to leave the queue.
+		if q.selected != nil && q.selected.isClosed() {
+			q.removeWaiter(q.selected)
+		}
 		if q.selected != nil || q.closed || q.entries.Len() == 0 {
 			return
 		}
 		var bestLoad, bestPressure int
 		var next *muxQueueWaiter
 		for waiter := range q.waiters {
+			if waiter.isClosed() {
+				continue
+			}
 			if !q.balanced {
 				q.warmCarrier(waiter)
 			}
@@ -159,7 +178,7 @@ func (q *muxLocalQueue) waitForWarm(spareLoad int) bool {
 		return false
 	}
 	for _, warm := range q.warm {
-		if warm == nil || len(warm.slots) >= min(cap(warm.slots), spareLoad) {
+		if warm == nil || warm.isClosed() || len(warm.slots) >= min(cap(warm.slots), spareLoad) {
 			continue
 		}
 		if warm.pressure != nil && len(warm.slots)+warm.pressure() >= spareLoad {
@@ -199,6 +218,12 @@ func (q *muxLocalQueue) wait(waiter *muxQueueWaiter) <-chan struct{} {
 		return q.ready
 	}
 	q.mu.Lock()
+	if waiter.isClosed() {
+		q.removeWaiter(waiter)
+		q.notify()
+		q.mu.Unlock()
+		return waiter.ready
+	}
 	if !q.balanced {
 		q.warmCarrier(waiter)
 	}
@@ -256,6 +281,12 @@ func (q *muxLocalQueue) popFor(waiter *muxQueueWaiter) (LocalTCPConn, bool) {
 	defer q.mu.Unlock()
 	if waiter != nil {
 		q.removeWaiter(waiter)
+		// A worker may already have consumed its notification when the
+		// carrier closes. Leave the user queued for a live replacement.
+		if waiter.isClosed() {
+			q.notify()
+			return LocalTCPConn{}, false
+		}
 	}
 	entry := q.entries.Front()
 	if entry == nil {

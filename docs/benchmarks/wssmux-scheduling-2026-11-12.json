@@ -2,7 +2,7 @@
   "date_local": "2026-11-12",
   "timezone": "Asia/Tehran",
   "baseline_source": "c62ead64d0cdd785604284c170288a9362174e25",
-  "candidate_source_code": "23feb5e (PR #67; subsequent commits only document the change)",
+  "candidate_source_code": "23feb5e (PR #67; measurement predates the follow-up closed-session admission fix)",
   "binary_sha256": {
     "baseline": "6de09ca86f928f180a009881923a4d5d21ff12d003476270463590eaeee3ef5e",
     "candidate": "cdf65597a4daeeb615e5edde8dd5c32bf2c2e5b4997d8b549843786b3d61cb5d"

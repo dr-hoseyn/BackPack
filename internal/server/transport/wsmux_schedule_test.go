@@ -79,6 +79,57 @@ func TestWSMuxQueueReassignsUsersWhenTheSelectedCarrierLeaves(t *testing.T) {
 	takeScheduledWSMux(t, q, replacement, 2)
 }
 
+func TestWSMuxQueueDoesNotGiveAUserToAClosedCarrierReportingZeroPressure(t *testing.T) {
+	q := newBalancedMuxLocalQueue(2)
+	done := make(chan struct{})
+	closed := wsMuxWaiter(0, func() int { return 0 })
+	closed.done = done
+	live := wsMuxWaiter(100, func() int { return 0 })
+	q.wait(closed)
+	q.wait(live)
+	close(done)
+	q.push(LocalTCPConn{timeCreated: 1}, nil)
+	takeScheduledWSMux(t, q, live, 1)
+	select {
+	case <-closed.ready:
+		t.Fatal("a closed socket's zero pressure attracted a new user")
+	default:
+	}
+}
+
+func TestWSMuxQueuePreservesFIFOWhenACarrierClosesAfterNotification(t *testing.T) {
+	q := newBalancedMuxLocalQueue(2)
+	done := make(chan struct{})
+	closing, live := wsMuxWaiter(0, nil), wsMuxWaiter(1, nil)
+	closing.done = done
+	q.wait(closing)
+	q.wait(live)
+	q.push(LocalTCPConn{timeCreated: 1}, nil)
+	<-closing.ready // its worker woke before the failure was published
+	close(done)
+	q.push(LocalTCPConn{timeCreated: 2}, nil)
+	if _, ok := q.popFor(closing); ok {
+		t.Fatal("a closing carrier stole a user after its wake-up")
+	}
+	takeScheduledWSMux(t, q, live, 1)
+	q.wait(live)
+	takeScheduledWSMux(t, q, live, 2)
+}
+
+func TestMuxQueueNeverWaitsForAClosedWarmCarrier(t *testing.T) {
+	q, _, spare := muxQueueWithWarmOpeners()
+	done := make(chan struct{})
+	close(done)
+	for _, warm := range q.warm {
+		warm.done = done
+	}
+	q.push(LocalTCPConn{timeCreated: 1}, nil)
+	takeScheduledWSMux(t, q, spare, 1)
+	if q.warmTimer != nil {
+		t.Fatal("a departed warm carrier delayed a live spare")
+	}
+}
+
 func BenchmarkWSMuxCarrierSelection(b *testing.B) {
 	for _, count := range []int{8, 32, 128} {
 		b.Run(fmt.Sprint(count), func(b *testing.B) {

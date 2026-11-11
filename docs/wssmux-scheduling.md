@@ -17,6 +17,9 @@ Idle sessions are not polled. TCP Forward retains its existing 200 ms cache.
 Other platforms, unavailable kernel counters and unsupported wrappers fall
 back to occupancy-based selection. No carrier is discarded just for having a
 high score. A recovered carrier becomes eligible again at the next sample.
+Closed sessions are excluded directly through their close notification, even
+if socket sampling returns zero. If a selected session closes after waking its
+worker, the user remains queued for a live session in the original FIFO order.
 When all carriers have pressure, new users use the least congested available
 one. FIFO order, pairing timeouts, queue capacity, stream admission limits,
 pool growth and safe retirement retain their existing behavior.
@@ -64,6 +67,9 @@ application throughput was 19.891 and 19.876 Mbit/s at a 20 Mbit/s offered load.
 Successful-probe p99 medians were 128.6 and 155.7 ms respectively. These small
 samples demonstrate fewer failures in this scenario, not a general tail-latency
 or WAN-throughput improvement; failed probes are reported separately from latency.
+Those samples predate the follow-up closed-session admission fix. Its
+regressions cover closure before selection and after notification, including
+avoiding a warm-carrier wait when the warm sessions have already closed.
 
 ## خلاصهٔ فارسی
 
