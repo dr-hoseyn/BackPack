@@ -3,6 +3,7 @@ package transport
 import (
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 )
@@ -115,7 +116,7 @@ func TestBackendPoolGroupCacheIsBounded(t *testing.T) {
 	p := &backendPool{groups: map[string]*backendGroup{}}
 	for i := 0; i < backendMaxGroups+50; i++ {
 		list := []string{fmt.Sprintf("a-%d:1", i), fmt.Sprintf("b-%d:2", i)}
-		p.group(fmt.Sprintf("group-%d", i), list)
+		p.group(list)
 	}
 	if len(p.groups) != backendMaxGroups {
 		t.Fatalf("group cache holds %d entries, want at most %d", len(p.groups), backendMaxGroups)
@@ -143,5 +144,52 @@ func TestBackendPoolBoundsMembersPerGroup(t *testing.T) {
 		if len(g.list) != backendMaxMembers {
 			t.Fatalf("group holds %d members, want %d", len(g.list), backendMaxMembers)
 		}
+	}
+}
+
+func TestUDPBackendSelectionPreservesTheFirstUsableAddress(t *testing.T) {
+	for _, tc := range []struct{ target, want string }{
+		{"127.0.0.1:8443", "127.0.0.1:8443"},
+		{"  [::1]:8443  ", "[::1]:8443"},
+		{" | \t | 127.0.0.1:8443 | [::1]:8444", "127.0.0.1:8443"},
+		{"", ""},
+		{" | \t | ", " | \t | "},
+	} {
+		if got := firstBackend(tc.target); got != tc.want {
+			t.Fatalf("first backend of %q = %q, want %q", tc.target, got, tc.want)
+		}
+	}
+	target := " | 127.0.0.1:8443 |" + strings.Repeat("ignored:9|", 4096)
+	if got := testing.AllocsPerRun(100, func() {
+		if firstBackend(target) != "127.0.0.1:8443" {
+			t.Fatal("UDP selected a later backend")
+		}
+	}); got != 0 {
+		t.Fatalf("selecting a UDP backend allocated %.1f objects", got)
+	}
+}
+
+func TestBackendParsingBoundsWorkBeforeDiscardingExcessMembers(t *testing.T) {
+	var prefix []string
+	for i := 0; i < backendMaxMembers; i++ {
+		prefix = append(prefix, fmt.Sprintf("host-%d:8443", i))
+	}
+	// Empty and whitespace-only fields must not use up real member slots.
+	target := " | " + strings.Join(prefix, " | | ") + " | "
+	oversized := target + strings.Repeat("ignored:9|", 4096)
+	for _, input := range []string{target, oversized} {
+		if got := splitBackends(input); !slices.Equal(got, prefix) {
+			t.Fatalf("bounded parsing changed backend order: got %v, want %v", got, prefix)
+		}
+	}
+	allocs := func(input string) float64 {
+		return testing.AllocsPerRun(100, func() {
+			if len(splitBackends(input)) != backendMaxMembers {
+				t.Fatal("parser changed its member limit")
+			}
+		})
+	}
+	if short, long := allocs(target), allocs(oversized); long != short {
+		t.Fatalf("ignored suffix changed allocations: %.1f for bounded list, %.1f for oversized list", short, long)
 	}
 }

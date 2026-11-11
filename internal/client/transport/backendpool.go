@@ -72,18 +72,17 @@ func (p *backendPool) candidates(target string) []string {
 		return []string{target} // nothing usable; let the dial fail and be reported
 	case len(list) == 1:
 		return list
-	case len(list) > backendMaxMembers:
-		list = list[:backendMaxMembers]
 	}
 	// Key on the parsed list rather than the raw target so that spacing and a
 	// trailing separator do not each get a pool of their own.
-	return p.group(strings.Join(list, backendSep), list).candidates()
+	return p.group(list).candidates()
 }
 
 // group returns the pool for a parsed backend list, creating it the first time
 // that list is seen. The map is bounded and evicts the group used longest ago,
 // because what goes into it is decided by the far end of the tunnel.
-func (p *backendPool) group(key string, list []string) *backendGroup {
+func (p *backendPool) group(list []string) *backendGroup {
+	key := strings.Join(list, backendSep)
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.groups == nil {
@@ -97,7 +96,9 @@ func (p *backendPool) group(key string, list []string) *backendGroup {
 		p.evictOldestLocked()
 	}
 	g := &backendGroup{
-		list:     append([]string(nil), list...),
+		// Reference the bounded canonical key, not slices of the raw target.
+		// Otherwise an ignored suffix stays alive for the group's lifetime.
+		list:     strings.Split(key, backendSep),
 		healthy:  make([]bool, len(list)),
 		fails:    make([]int, len(list)),
 		lastUsed: time.Now(),
@@ -234,19 +235,32 @@ func backendProbe(addr string) bool {
 // unchanged. Used by the UDP transport, which cannot be health-checked with a
 // TCP probe, so it does not load-balance — it just tolerates a list.
 func firstBackend(target string) string {
-	if b := splitBackends(target); len(b) > 0 {
-		return b[0]
+	// UDP uses only the first usable member. Do not allocate or parse the
+	// rest of a TCP backend list just to discard it.
+	for part := range strings.SplitSeq(target, backendSep) {
+		if part = strings.TrimSpace(part); part != "" {
+			return part
+		}
 	}
 	return target
 }
 
-// splitBackends parses a backend list into trimmed, non-empty addresses.
+// splitBackends keeps the first backendMaxMembers trimmed, non-empty addresses.
+// Stop while parsing: splitting the whole peer-supplied target and truncating
+// afterwards still allocated for every ignored member and separator.
 func splitBackends(list string) []string {
-	var out []string
-	for _, p := range strings.Split(list, backendSep) {
+	// Collect into bounded stack storage, then allocate only the returned
+	// members. Growing a slice repeatedly costs more allocations at the cap.
+	var members [backendMaxMembers]string
+	n := 0
+	for p := range strings.SplitSeq(list, backendSep) {
 		if p = strings.TrimSpace(p); p != "" {
-			out = append(out, p)
+			members[n] = p
+			n++
+			if n == backendMaxMembers {
+				break
+			}
 		}
 	}
-	return out
+	return append([]string(nil), members[:n]...)
 }
