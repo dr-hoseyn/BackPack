@@ -1,5 +1,10 @@
 # dr-hoseyn fork
 
+**v1.24.0** removes consumption totals, volume quotas and per-port usage logs,
+retains live adaptive-pool throughput measurements, and hardens backup, restore
+and maintenance workflows. [Release notes](CHANGELOG.md#v1240--2026-11-11) ·
+[Health and resource diagnostics](docs/tunnel-metrics.md).
+
 **v1.23.0** improves TCP Forward (XMPP) carrier selection and queueing, and
 restores lost pool capacity sooner.
 
