@@ -138,6 +138,12 @@ func RestoreSnapshot(s Snapshot, logf func(string)) error {
 		return fmt.Errorf("snapshot not found or incomplete: %s", s.Dir)
 	}
 
+	release, err := core.LockConfigRestore()
+	if err != nil {
+		return err
+	}
+	defer release()
+
 	// 1) Binary.
 	if bin := filepath.Join(s.Dir, "backpack"); core.FileExists(bin) {
 		logf("Restoring the previous binary...")

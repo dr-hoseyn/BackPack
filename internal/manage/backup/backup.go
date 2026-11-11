@@ -196,7 +196,7 @@ func BackupToFile(dir string) (string, error) {
 func Restore(r io.Reader) (RestoreResult, error) {
 	var res RestoreResult
 
-	release, err := lockRestore(app.ConfigDir)
+	release, err := core.LockConfigRestore()
 	if err != nil {
 		return res, err
 	}
