@@ -128,7 +128,8 @@ func EnsureUnits() int {
 // binary in engine mode against its config.
 func WriteUnit(name string) error {
 	path := app.ServiceDir + "/" + app.ServiceName(name)
-	return os.WriteFile(path, []byte(UnitFor(name)), 0644)
+	// Preserve the existing unit if a write fails before completion.
+	return app.WriteFileAtomic(path, []byte(UnitFor(name)), 0644)
 }
 
 // UnitFor is the unit a tunnel should have. One definition, so EnsureUnits is

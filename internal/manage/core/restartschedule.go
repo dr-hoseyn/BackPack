@@ -72,10 +72,10 @@ AccuracySec=1s
 [Install]
 WantedBy=timers.target
 `, name, hours, restartCalendar(hours, minute))
-	if err := os.WriteFile(app.ServiceDir+"/"+service, []byte(svc), 0644); err != nil {
+	if err := app.WriteFileAtomic(app.ServiceDir+"/"+service, []byte(svc), 0644); err != nil {
 		return err
 	}
-	if err := os.WriteFile(app.ServiceDir+"/"+timer, []byte(tmr), 0644); err != nil {
+	if err := app.WriteFileAtomic(app.ServiceDir+"/"+timer, []byte(tmr), 0644); err != nil {
 		return err
 	}
 	if err := DaemonReload(); err != nil {
