@@ -19,10 +19,10 @@ func lockConfigFile(path string) (func(), error) {
 // replace the locked inode. Ordinary changes may proceed in parallel.
 func lockConfigTree(dir string, exclusive bool) (func(), error) {
 	mode := unix.LOCK_SH
-	busy := "a configuration restore is in progress"
+	busy := "a configuration backup or restore is in progress"
 	if exclusive {
 		mode = unix.LOCK_EX
-		busy = "another configuration restore or tunnel change is in progress"
+		busy = "another configuration backup, restore or tunnel change is in progress"
 	}
 	return lockConfigPath(filepath.Clean(dir)+".restore.lock", mode, busy)
 }

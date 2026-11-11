@@ -290,13 +290,16 @@ func safeRestoreName(name string) (string, error) {
 // seedStage copies configDir into stage so the staging tree starts out as the
 // installation that is there now.
 func seedStage(configDir, stage string) error {
-	return filepath.Walk(configDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
+	return filepath.Walk(configDir, func(path string, info os.FileInfo, walkErr error) error {
 		rel, err := filepath.Rel(configDir, path)
 		if err != nil {
 			return err
+		}
+		if isMetricsTemp(rel) {
+			return nil
+		}
+		if walkErr != nil {
+			return walkErr
 		}
 		if rel == "." {
 			return nil

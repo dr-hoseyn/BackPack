@@ -40,6 +40,11 @@ func Root() string { return app.InstallDir + "/snapshots" }
 // TakeSnapshot copies the running binary and the whole config directory into a
 // timestamped folder so a failed update or a bad config change can be undone.
 func TakeSnapshot(reason string) (Snapshot, error) {
+	release, err := core.LockConfigSnapshot()
+	if err != nil {
+		return Snapshot{}, err
+	}
+	defer release()
 	now := time.Now()
 	stamp := now.Format("20060102-150405")
 	if err := os.MkdirAll(Root(), 0755); err != nil {
@@ -138,7 +143,7 @@ func RestoreSnapshot(s Snapshot, logf func(string)) error {
 		return fmt.Errorf("snapshot not found or incomplete: %s", s.Dir)
 	}
 
-	release, err := core.LockConfigRestore()
+	release, err := core.LockConfigSnapshot()
 	if err != nil {
 		return err
 	}
@@ -225,13 +230,16 @@ func copyTree(src, dst string) error {
 	if !info.IsDir() {
 		return copyFile(src, dst, info.Mode().Perm())
 	}
-	return filepath.Walk(src, func(path string, fi os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
+	return filepath.Walk(src, func(path string, fi os.FileInfo, walkErr error) error {
 		rel, err := filepath.Rel(src, path)
 		if err != nil {
 			return err
+		}
+		if isMetricsTemp(rel) {
+			return nil
+		}
+		if walkErr != nil {
+			return walkErr
 		}
 		target := filepath.Join(dst, rel)
 		if fi.IsDir() {

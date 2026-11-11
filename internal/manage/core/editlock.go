@@ -15,8 +15,9 @@ func LockTunnelConfig(name string) (func(), error) {
 	return lockTunnelConfig(app.ConfigDir, name)
 }
 
-// LockConfigRestore excludes tunnel changes until a configuration restore ends.
-func LockConfigRestore() (func(), error) {
+// LockConfigSnapshot excludes managed tunnel changes while the configuration
+// tree is copied or restored.
+func LockConfigSnapshot() (func(), error) {
 	return lockConfigTree(app.ConfigDir, true)
 }
 

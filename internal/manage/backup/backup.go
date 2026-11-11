@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/backpack/backpack/internal/app"
@@ -50,7 +51,14 @@ type RestoreResult struct {
 //
 // Tunnel configs, tokens, Telegram settings, certificates and install metadata
 // share one archive, plus a sidecar for the auto-refresh schedule.
-func WriteBackup(w io.Writer) error { return writeBackupTree(w, app.ConfigDir) }
+func WriteBackup(w io.Writer) error {
+	release, err := core.LockConfigSnapshot()
+	if err != nil {
+		return err
+	}
+	defer release()
+	return writeBackupTree(w, app.ConfigDir)
+}
 
 // writeBackupTree is WriteBackup against a named root, so that the archive
 // itself can be exercised against a tree a test builds rather than against the
@@ -107,13 +115,16 @@ func writeBackupEntries(tw *tar.Writer, root string) error {
 
 	// Walk the config directory and add every file, preserving relative paths
 	// and permissions (so 0600 key/config files stay 0600 on restore).
-	return filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
+	return filepath.Walk(root, func(path string, info os.FileInfo, walkErr error) error {
 		rel, err := filepath.Rel(root, path)
 		if err != nil {
 			return err
+		}
+		if isMetricsTemp(rel) {
+			return nil
+		}
+		if walkErr != nil {
+			return walkErr
 		}
 		if rel == "." {
 			return nil
@@ -150,35 +161,53 @@ func writeBackupEntries(tw *tar.Writer, root string) error {
 			return fmt.Errorf("refusing to back up %s: not a regular file (%s)", rel, info.Mode().Type())
 		}
 
+		name := filepath.ToSlash(rel)
+		if !info.IsDir() {
+			return writeBackupFile(tw, path, name)
+		}
 		hdr, err := tar.FileInfoHeader(info, "")
 		if err != nil {
 			return err
 		}
-		hdr.Name = filepath.ToSlash(rel)
-		if info.IsDir() {
-			hdr.Name += "/"
-			return tw.WriteHeader(hdr)
-		}
-		if err := tw.WriteHeader(hdr); err != nil {
-			return err
-		}
-		return copyFileInto(tw, path)
+		hdr.Name = name + "/"
+		return tw.WriteHeader(hdr)
 	})
 }
 
-// copyFileInto streams one file into the archive and closes it before
-// returning. The close used to be deferred inside the walk callback, which
-// defers to the end of the walk rather than the end of the file: every file in
-// the tree stayed open until the whole archive was written, so a config
-// directory with enough in it ran the process out of descriptors.
-func copyFileInto(tw *tar.Writer, path string) error {
+// Metrics publishers can rename these files while the config is being copied.
+func isMetricsTemp(rel string) bool {
+	return filepath.Dir(rel) == "." &&
+		(strings.HasSuffix(rel, ".metrics.json.tmp") ||
+			strings.HasPrefix(rel, ".") && strings.Contains(rel, ".metrics.json-") && strings.HasSuffix(rel, ".tmp"))
+}
+
+// Read metadata and content from the same open file. Background collectors can
+// atomically replace their snapshots between the directory walk and this open.
+func writeBackupFile(tw *tar.Writer, path, name string) error {
 	f, err := os.Open(path)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
-	_, err = io.Copy(tw, f)
-	return err
+	info, err := f.Stat()
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("refusing to back up %s: not a regular file", name)
+	}
+	hdr, err := tar.FileInfoHeader(info, "")
+	if err != nil {
+		return err
+	}
+	hdr.Name = name
+	if err := tw.WriteHeader(hdr); err != nil {
+		return err
+	}
+	if _, err := io.Copy(tw, f); err != nil {
+		return fmt.Errorf("archive %s: %w", name, err)
+	}
+	return nil
 }
 
 // BackupToFile writes a complete archive and prunes old backups in dir.
@@ -196,7 +225,7 @@ func BackupToFile(dir string) (string, error) {
 func Restore(r io.Reader) (RestoreResult, error) {
 	var res RestoreResult
 
-	release, err := core.LockConfigRestore()
+	release, err := core.LockConfigSnapshot()
 	if err != nil {
 		return res, err
 	}

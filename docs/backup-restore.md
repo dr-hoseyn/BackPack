@@ -3,7 +3,10 @@
 Everything in one portable `.tar.gz`: every tunnel and token, Telegram settings, TLS certificates, and the auto-refresh schedule.
 Backups live in `/root/BackPack/backups`. BackPack keeps the ten most recently
 modified backup archives. Local backup storage must support hard links so an
-archive can be published atomically after it has been fully written.
+archive can be published atomically after it has been fully written. A backup
+excludes tunnel edits, renames, deletions and restores while it copies the
+configuration. If one of those operations is in progress, retry the backup
+after it finishes.
 
 ## Restoring onto a different machine
 
