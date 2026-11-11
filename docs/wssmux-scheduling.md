@@ -55,6 +55,16 @@ deadline and retirement tests continue to run.
 throughput. Compare complete transfers and fresh-user p95/p99 latency under
 the same offered load before drawing conclusions about a WAN route.
 
+An owner-hosted Linux loopback comparison is preserved in the
+[raw measurements](benchmarks/wssmux-scheduling-2026-11-12.json). Three runs per
+revision used eight bulk workers, 32 verified silent streams and a six-second
+pause on one test-only carrier. Bulk and corruption errors were zero on both
+revisions; fresh-probe failures were four before and one after. Median measured
+application throughput was 19.891 and 19.876 Mbit/s at a 20 Mbit/s offered load.
+Successful-probe p99 medians were 128.6 and 155.7 ms respectively. These small
+samples demonstrate fewer failures in this scenario, not a general tail-latency
+or WAN-throughput improvement; failed probes are reported separately from latency.
+
 ## خلاصهٔ فارسی
 
 <div dir="rtl">
