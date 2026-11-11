@@ -102,6 +102,17 @@ func (c *webSocketStream) WriteBuffers(v [][]byte) (int, error) {
 	}
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
+	// smux sends SYN/FIN/keepalive as an eight-byte header with no payload.
+	// Gorilla's server-side WriteMessage path keeps its message writer on the
+	// stack. There is no payload to stage or acknowledge on a failed control
+	// write; the watched mux socket retires the carrier on any write error.
+	if len(v) == 2 && len(v[0]) == smuxHeaderSize && len(v[1]) == 0 {
+		if err := c.conn.WriteMessage(websocket.BinaryMessage, v[0]); err != nil {
+			c.conn.Close()
+			return 0, err
+		}
+		return smuxHeaderSize, nil
+	}
 	w, err := c.conn.NextWriter(websocket.BinaryMessage)
 	if err != nil {
 		c.conn.Close()
