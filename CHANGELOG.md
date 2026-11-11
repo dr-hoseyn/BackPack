@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v1.23.0 — 2026-11-11
 
 - Choose NUM3 data carriers using their TCP send backlog and acknowledgement
   delay alongside active stream counts. Confirm transient queue samples and
@@ -9,6 +9,7 @@
   queueing while preserving throughput, the send buffer and congestion window.
 - Negotiate idle pool retirement between updated NUM3 peers and repair lost
   minimum pool capacity before the next sizing tick.
+- Build with Go 1.26.11 and verify the updated source-install toolchains.
 
 ## v1.22.0 — 2026-11-10
 

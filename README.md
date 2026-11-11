@@ -1,5 +1,8 @@
 # dr-hoseyn fork
 
+**v1.23.0** improves TCP Forward (XMPP) carrier selection and queueing, and
+restores lost pool capacity sooner.
+
 **v1.22.0** adds [TCP Forward (XMPP)](docs/transports.md#num3-style-opening-and-reusable-connections-tcpfwd-xmpp)
 with a NUM3-style opening, encrypted payloads and reusable TCP sessions.
 Select `tcpfwd-xmpp` on both updated Backpack peers.

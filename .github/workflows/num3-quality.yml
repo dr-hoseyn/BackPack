@@ -1,7 +1,10 @@
 name: NUM3 lossy-path quality
 on:
+  push:
+    branches: [main]
   pull_request:
     paths:
+      - 'go.mod'
       - 'internal/client/transport/tcpmux.go'
       - 'internal/client/transport/pool*.go'
       - 'internal/server/transport/tcpmux.go'
