@@ -93,8 +93,30 @@ and syscall overhead while carrying a fixed 200 Mbit/s offered load. This
 profile combines both engines, the echo backend and the load generator; it
 does not compare this scheduler. Its CPU and latency measurements cannot be
 generalized to an eight-core host with crypto acceleration. The owner's
-four-vCPU host exposes these features, but its profile upload was interrupted
-before execution, so no comparable profile is claimed for that machine.
+four-vCPU host exposes these features. A subsequent
+[profile on that host](benchmarks/wssmux-modern-cpu-profile-2026-11-12.json)
+used the identical binary with GOMAXPROCS=2 for the combined test process:
+at the same offered load it reported 200.0 Mbit/s, 27.04 CPU seconds per GiB
+and fresh-probe p99 of 1.598 ms. Its sampled hot paths include accelerated
+AES-GCM, with 58.89% of CPU samples in Syscall6. This is a host diagnostic;
+different hardware and CPU limits prevent attributing these differences to
+a software optimization. Neither profile evaluates this scheduler.
+
+A separate [same-host scheduler comparison](benchmarks/wssmux-modern-outcomes-2026-11-12.json)
+ran three trials per revision on the four-vCPU host with the earlier 20 Mbit/s
+workload and six-second carrier pause. Every scheduled probe was attempted:
+baseline had three failures in 477, candidate had one. Median per-run p99
+including failed attempts was 32.509 versus 16.050 ms, and application goodput
+was 19.972 versus 19.970 Mbit/s. Bulk/corruption errors were zero, and all
+32 silent streams remained usable. However, candidate run 2 had p99 205.516 ms,
+worse than every baseline run; median p95 was 2.971 versus 2.681 ms. These
+results do not establish no regression or justify a general speedup claim.
+A [same-host no-fault control](benchmarks/wssmux-modern-control-2026-11-12.json)
+attempted all 477 probes per revision without bulk, corruption or probe errors.
+Median per-run p99 was 12.609 versus 7.800 ms, but median p50 increased from
+1.727 to 1.926 ms and p95 from 2.552 to 2.866 ms. Those typical-latency
+regressions matter even with a better p99: the scheduler remains a draft.
+Both comparisons measure code 9a2e747 and are separate from the CPU profiles.
 
 ## خلاصهٔ فارسی
 

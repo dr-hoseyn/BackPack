@@ -85,7 +85,7 @@
     "This single-host diagnostic is not a maximum-throughput benchmark or a performance comparison of the scheduler.",
     "The combined process includes test backend and load-generator CPU/heap/RSS. It is not the cost of one production tunnel endpoint.",
     "The server exposes only one CPU and lacks the listed crypto acceleration features, so this is not representative of an eight-core deployment.",
-    "The 4-vCPU host exposes those acceleration features, but its profile binary upload was interrupted before execution. Its partial upload was explicitly removed; no profile result exists for that host.",
+    "The first direct SSH upload to the four-vCPU host was interrupted before profiling. A later peer-transfer run succeeded and is recorded separately in wssmux-modern-cpu-profile-2026-11-12.json.",
     "Feature flags were inspected in a separate read-only SSH command after the profile run."
   ],
   "remote_cleanup": "Profile test directory removed; no production services or global kernel settings changed.",

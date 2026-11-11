@@ -1,0 +1,87 @@
+{
+  "date_local": "2026-11-12",
+  "timezone": "Asia/Tehran",
+  "source": "dd14c7914a3d2342ff2faf53f2e45a7a2edc731a",
+  "scope": "Diagnostic profile of PR #69 source, identical binary and resource fixture on a different 4-vCPU host; combined client/server, echo backend and load generator. This is not a comparison of scheduler revisions.",
+  "binary_sha256": "ce6a6b8f51c09226b023e698b2de323d2359930c12aa4bc6d70cd0d2174bdbe3",
+  "fixture": "internal/e2e/wssmux_resources_test.go:TestWSMuxResourceProfile",
+  "environment": [
+    "GOMAXPROCS=2",
+    "BP_RESOURCE_BENCHMARK=1",
+    "BP_RESOURCE_IDLE_CONNECTIONS=64",
+    "BP_RESOURCE_ROUNDS=8",
+    "BP_RESOURCE_TARGET_MBPS=200",
+    "BP_WSSMUX_BOUNDED=1",
+    "BP_RESOURCE_PROFILE_DIR=/tmp/bp-peer-profile-32e2eef2fafd",
+    "BP_RESOURCE_PROFILE_NAME=current"
+  ],
+  "host": {
+    "online_vcpu": 4,
+    "cpu_features": {
+      "aes": true,
+      "pclmulqdq": true,
+      "ssse3": true,
+      "sse4_1": true,
+      "avx2": true,
+      "bmi2": true
+    }
+  },
+  "measured": {
+    "idle_connections": 64,
+    "idle_heap_delta_bytes": 6827104,
+    "idle_heap_bytes": 9704576,
+    "idle_rss_bytes": 28119040,
+    "idle_goroutines": 430,
+    "offered_application_mbps": 200,
+    "payload_bytes": 268435456,
+    "echo_mbps": 200.0,
+    "cpu_seconds": 6.76,
+    "cpu_seconds_per_gib": 27.04,
+    "probe_p99_ms": 1.598,
+    "gc_cycles": 9.0,
+    "gc_pause_ms": 0.739,
+    "sampled_peak_rss_bytes": 135778304
+  },
+  "cpu_profile": {
+    "duration_seconds": 10.74,
+    "sample_seconds": 6.69,
+    "flat_nodes": [
+      {
+        "function": "internal/runtime/syscall/linux.Syscall6",
+        "seconds": 3.94,
+        "percent": 58.89
+      },
+      {
+        "function": "runtime.futex",
+        "seconds": 0.41,
+        "percent": 6.13
+      },
+      {
+        "function": "crypto/internal/fips140/aes/gcm.gcmAesDec",
+        "seconds": 0.23,
+        "percent": 3.44
+      },
+      {
+        "function": "runtime.memmove",
+        "seconds": 0.17,
+        "percent": 2.54
+      },
+      {
+        "function": "crypto/internal/fips140/aes/gcm.gcmAesEnc",
+        "seconds": 0.15,
+        "percent": 2.24
+      }
+    ],
+    "capture_sha256": "58fcb312b9690bc7604aec79c84eed633bc6a4167727dc934f3da5f50c871150"
+  },
+  "result": "TestWSMuxResourceProfile passed, including payload verification; no cipher policy or host feature flags were changed.",
+  "limitations": [
+    "One diagnostic run on a second machine, not a scheduler comparison, production no-regression proof or maximum-throughput measurement.",
+    "The binary hash matches the earlier 1-vCPU profile, but hardware, available CPU count, background workload and GOMAXPROCS differ. Do not attribute the difference in counters to a software optimization.",
+    "GOMAXPROCS=2 caps the combined process; the host has four online virtual CPUs.",
+    "CPU, heap and RSS include both engines, the echo backend and load fixture.",
+    "This remains loopback; there is no WAN delay or loss in the profile."
+  ],
+  "remote_cleanup": "Profile test directory removed; no production services or global kernel settings changed.",
+  "raw_test_output": "=== RUN   TestWSMuxResourceProfile\n    wssmux_resources_test.go:160: RESOURCE_IDLE connections=64 heap_delta_bytes=6827104 heap_bytes=9704576 rss_bytes=28119040 goroutines=430\n    wssmux_resources_test.go:231: RESOURCE_TARGET application_mbps=200.0\n    wssmux_resources_test.go:289: RESOURCE_PEAK sampled_peak_rss_bytes=135778304\n    wssmux_resources_test.go:298: RESOURCE_MIXED app_bytes=268435456 echo_mbps=200.0 cpu_seconds=6.760000 cpu_seconds_per_gib=27.040000 probe_p99_ms=1.598 gc_cycles=9 gc_pause_ms=0.739\n    wssmux_resources_test.go:306: RESOURCE_AFTER heap_bytes=15852256 goroutines=440\n--- PASS: TestWSMuxResourceProfile (11.43s)\nPASS\n"
+}
