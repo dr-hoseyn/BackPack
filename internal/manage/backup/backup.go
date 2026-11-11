@@ -255,7 +255,17 @@ func Restore(r io.Reader) (RestoreResult, error) {
 		// Staging failed, so the live directory was never touched.
 		return res, err
 	}
-	if err := commitRestore(app.ConfigDir, stage); err != nil {
+	var activeServices []string
+	if contents.SawTunnelConfig {
+		for _, tunnel := range core.List() {
+			if core.IsActive(tunnel.Service) {
+				activeServices = append(activeServices, tunnel.Service)
+			}
+		}
+	}
+	if err := commitStoppedRestore(activeServices, core.StopService, core.RestartService, func() error {
+		return commitRestore(app.ConfigDir, stage)
+	}); err != nil {
 		return res, err
 	}
 

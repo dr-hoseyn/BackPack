@@ -44,7 +44,10 @@ password, so a single-machine install never sees them.
 
 ## Restore
 
-Restore stages the configuration before replacing the live directory. It then
+Restore stages the configuration before replacing the live directory. When
+the archive includes tunnel configurations, it stops active tunnels before the
+swap so their final metrics writes finish against the previous tree. A failed
+stop or swap triggers an attempt to resume those services. It then
 registers and restarts the tunnels and displays any errors from systemd or
 auto-refresh scheduling. If the directory swap and its rollback both fail,
 the error gives the path to the saved configuration.
