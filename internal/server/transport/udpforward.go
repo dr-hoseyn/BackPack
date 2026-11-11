@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"net"
+	"net/netip"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -57,7 +58,7 @@ type udpForwarder struct {
 	target string
 
 	mu     sync.Mutex
-	flows  map[string]*udpFlow
+	flows  map[netip.AddrPort]*udpFlow
 	closed bool
 }
 
@@ -81,7 +82,7 @@ func newUDPForwarder(logger *logrus.Logger, localAddr, remoteAddr string) (*udpF
 		conn:   conn,
 		logger: logger,
 		target: network.MarkUDP(remoteAddr),
-		flows:  map[string]*udpFlow{},
+		flows:  map[netip.AddrPort]*udpFlow{},
 	}, nil
 }
 
@@ -119,7 +120,7 @@ func startUDPForward(ctx context.Context, logger *logrus.Logger, localAddr, remo
 func (fw *udpForwarder) run(admit func(conn net.Conn, target string) bool) {
 	buf := make([]byte, network.MaxDatagram)
 	for {
-		n, peer, err := fw.conn.ReadFromUDP(buf)
+		n, peer, err := fw.conn.ReadFromUDPAddrPort(buf)
 		if err != nil {
 			fw.mu.Lock()
 			closed := fw.closed
@@ -131,11 +132,14 @@ func (fw *udpForwarder) run(admit func(conn net.Conn, target string) bool) {
 			continue
 		}
 
-		key := peer.String()
+		// A value address is already a comparable flow key, including its
+		// IPv6 zone. Keep address allocation and string formatting off the
+		// per-datagram path; net.Conn's address is built once on admission.
+		key := peer
 		fw.mu.Lock()
 		flow, known := fw.flows[key]
 		if !known && !fw.closed {
-			flow = newUDPFlow(fw, peer, key)
+			flow = newUDPFlow(fw, peer)
 			fw.flows[key] = flow
 		}
 		fw.mu.Unlock()
@@ -197,7 +201,7 @@ func (fw *udpForwarder) close() {
 	fw.conn.Close()
 }
 
-func (fw *udpForwarder) forget(key string, f *udpFlow) {
+func (fw *udpForwarder) forget(key netip.AddrPort, f *udpFlow) {
 	fw.mu.Lock()
 	// Only if it is still the same flow: a peer that came back after a reap
 	// has a newer one under this key, and removing that would strand it.
@@ -217,7 +221,7 @@ func (fw *udpForwarder) forget(key string, f *udpFlow) {
 type udpFlow struct {
 	fwd  *udpForwarder
 	peer *net.UDPAddr
-	key  string
+	key  netip.AddrPort
 
 	in   chan []byte
 	done chan struct{}
@@ -239,11 +243,11 @@ type udpFlow struct {
 	want int
 }
 
-func newUDPFlow(fw *udpForwarder, peer *net.UDPAddr, key string) *udpFlow {
+func newUDPFlow(fw *udpForwarder, peer netip.AddrPort) *udpFlow {
 	f := &udpFlow{
 		fwd:  fw,
-		peer: peer,
-		key:  key,
+		peer: net.UDPAddrFromAddrPort(peer),
+		key:  peer,
 		in:   make(chan []byte, udpFlowQueue),
 		done: make(chan struct{}),
 	}
@@ -359,7 +363,7 @@ func (f *udpFlow) Write(p []byte) (int, error) {
 // send puts one datagram back on the wire, from the forwarded port itself so
 // the source sees the reply coming from the address it sent to.
 func (f *udpFlow) send(payload []byte) error {
-	if _, err := f.fwd.conn.WriteToUDP(payload, f.peer); err != nil {
+	if _, err := f.fwd.conn.WriteToUDPAddrPort(payload, f.key); err != nil {
 		return err
 	}
 	f.touch()
