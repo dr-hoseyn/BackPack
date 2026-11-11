@@ -241,3 +241,35 @@ func TestRetirementRetryPreservesAChangedSnapshot(t *testing.T) {
 		t.Fatalf("ledger changed after rejected retry: %d/%d", in, out)
 	}
 }
+
+func TestRetirementPreservesDocumentsMissingTrafficCounters(t *testing.T) {
+	for _, body := range []string{
+		`null`, `{}`, `{"bytes_in":100}`, `{"bytes_in":null,"bytes_out":200}`,
+	} {
+		for _, incompleteLedger := range []bool{false, true} {
+			dir := t.TempDir()
+			snapshot := Path(dir, "t1")
+			ledger := filepath.Join(dir, retiredFile)
+			valid := []byte(`{"bytes_in":100,"bytes_out":200}`)
+			snapshotBody, ledgerBody := valid, valid
+			if incompleteLedger {
+				ledgerBody = []byte(body)
+			} else {
+				snapshotBody = []byte(body)
+			}
+			for path, contents := range map[string][]byte{snapshot: snapshotBody, ledger: ledgerBody} {
+				if err := os.WriteFile(path, contents, 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := Retire(dir, "t1"); err == nil {
+				t.Errorf("retirement accepted %s, incomplete ledger=%t", body, incompleteLedger)
+			}
+			for path, want := range map[string][]byte{snapshot: snapshotBody, ledger: ledgerBody} {
+				if got, err := os.ReadFile(path); err != nil || string(got) != string(want) {
+					t.Errorf("%s changed to %q, error %v", path, got, err)
+				}
+			}
+		}
+	}
+}

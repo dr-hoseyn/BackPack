@@ -516,10 +516,18 @@ func readRetired(dir string) (retired, error) {
 	if err != nil {
 		return r, err
 	}
-	if err := json.Unmarshal(b, &r); err != nil {
+	var stored struct {
+		BytesIn  *uint64           `json:"bytes_in"`
+		BytesOut *uint64           `json:"bytes_out"`
+		Pending  map[string]string `json:"pending"`
+	}
+	if err := json.Unmarshal(b, &stored); err != nil {
 		return retired{}, fmt.Errorf("read retired traffic ledger %s: %w", path, err)
 	}
-	return r, nil
+	if stored.BytesIn == nil || stored.BytesOut == nil {
+		return retired{}, fmt.Errorf("retired traffic ledger %s is missing byte counters", path)
+	}
+	return retired{BytesIn: *stored.BytesIn, BytesOut: *stored.BytesOut, Pending: stored.Pending}, nil
 }
 
 // Retire adds a deleted tunnel's totals to the server's ledger and removes the
@@ -563,15 +571,18 @@ func Retire(dir, name string) error {
 			return fmt.Errorf("traffic snapshot for %s changed after retirement was interrupted", name)
 		}
 	} else {
-		var snap *Snapshot
+		var snap struct {
+			BytesIn  *uint64 `json:"bytes_in"`
+			BytesOut *uint64 `json:"bytes_out"`
+		}
 		if err := json.Unmarshal(raw, &snap); err != nil {
 			return fmt.Errorf("read traffic snapshot for %s: %w", name, err)
 		}
-		if snap == nil {
-			return fmt.Errorf("traffic snapshot for %s is empty", name)
+		if snap.BytesIn == nil || snap.BytesOut == nil {
+			return fmt.Errorf("traffic snapshot for %s is missing byte counters", name)
 		}
-		r.BytesIn += snap.BytesIn
-		r.BytesOut += snap.BytesOut
+		r.BytesIn += *snap.BytesIn
+		r.BytesOut += *snap.BytesOut
 		if r.Pending == nil {
 			r.Pending = make(map[string]string)
 		}
