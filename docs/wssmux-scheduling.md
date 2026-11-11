@@ -130,6 +130,15 @@ Both comparisons measure code 9a2e747 and are separate from the CPU profiles.
 They predate the admission-sampling shortcut above and are not measurements
 of that follow-up change.
 
+The [shortcut's separate no-fault comparison](benchmarks/wssmux-shortcut-control-2026-11-12.json)
+measures code 14a9105. All 477 probes per revision were attempted with zero
+bulk, corruption or probe errors, and the silent streams remained usable.
+Median p50 was 1.845 versus 1.878 ms, p95 was 2.608 versus 3.026 ms, and p99
+was 7.217 versus 6.392 ms. Goodput stayed near the fixed offered 20 Mbit/s.
+The p50 difference is small in this run, but p95 remains higher; the shortcut
+does not establish latency parity. The earlier fault results do not measure
+this revision. Raw samples are kept separate and the PR remains a draft.
+
 ## خلاصهٔ فارسی
 
 <div dir="rtl">
@@ -142,7 +151,8 @@ of that follow-up change.
 
 در مسیر سالم، ابتدا کم‌بارترین نشست بررسی می‌شود؛ اگر فشار آن صفر باشد، خواندن
 آمار TCP نشست‌های دیگر نمی‌تواند انتخاب بهتری ایجاد کند. در صورت وجود فشار،
-جست‌وجوی کامل انجام می‌شود. اندازه‌گیری‌های ثبت‌شده پیش از این اصلاح اخیر هستند.
+جست‌وجوی کامل انجام می‌شود. اندازه‌گیری‌های پیش و پس از اصلاح، با نام نسخه‌ها
+جداگانه ثبت شده‌اند؛ بالاتر رفتن p95 هنوز منتفی نشده است.
 
 رمزنگاری، قالب پیام، اندازهٔ پنجره‌ها، سقف اتصال و مهلت جفت‌شدن تغییر نکرده‌اند.
 استریم باز روی همان مسیر قبلی می‌ماند؛ این روش مشکل صف TCP یک استریم موجود را
