@@ -41,6 +41,25 @@ jobs:
           (cd "$RUNNER_TEMP/num3-base" && go test -c -o "$RUNNER_TEMP/num3-baseline" ./internal/e2e)
           echo "BP_RESOURCE_BASELINE_REF=$BASE_REF" >> "$GITHUB_ENV"
           echo "BP_RESOURCE_BASELINE_SHA=$(git -C "$RUNNER_TEMP/num3-base" rev-parse HEAD)" >> "$GITHUB_ENV"
+      - name: Compare resources and fresh-user latency with 1000 idle streams
+        env:
+          BP_RESOURCE_TRANSPORT: tcpfwd-xmpp
+          BP_RESOURCE_BENCHMARK: '1'
+          BP_RESOURCE_ROUNDS: '8'
+        run: |
+          set -euo pipefail
+          ulimit -n 16384
+          for sample in 1 2 3 4 5; do
+            order="baseline candidate"
+            if [ $((sample % 2)) -eq 0 ]; then order="candidate baseline"; fi
+            for kind in $order; do
+              "$RUNNER_TEMP/num3-$kind" -test.run '^TestWSMuxResourceProfile$' -test.v -test.timeout 2m \
+                | tee "$RUNNER_TEMP/num3-resource-$kind-$sample.txt"
+            done
+          done
+          python3 .github/scripts/compare-wssmux-resources.py "$RUNNER_TEMP" num3-resource \
+            | tee "$RUNNER_TEMP/num3-resource-comparison.json"
+          cat "$RUNNER_TEMP/num3-resource-comparison.json" >> "$GITHUB_STEP_SUMMARY"
       - name: Install isolated path emulation
         run: |
           sudo apt-get update -qq
@@ -67,4 +86,6 @@ jobs:
         if: always()
         with:
           name: num3-lossy-path-quality
-          path: ${{ runner.temp }}/delayed-num3-*
+          path: |
+            ${{ runner.temp }}/delayed-num3-*
+            ${{ runner.temp }}/num3-resource-*
