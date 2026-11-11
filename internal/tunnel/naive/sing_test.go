@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/base64"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/backpack/backpack/config"
+	"github.com/backpack/backpack/internal/testport"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/net/proxy"
 )
@@ -87,24 +89,11 @@ func TestSingShadowTLSRequiresACoverIdentitySeparateFromItsReverseTarget(t *test
 	}
 }
 
-func singFreeAddr(t *testing.T, udp bool) string {
+func singFreeAddr(t *testing.T, _ bool) string {
 	t.Helper()
-	if udp {
-		l, err := net.ListenPacket("udp", "127.0.0.1:0")
-		if err != nil {
-			t.Fatal(err)
-		}
-		a := l.LocalAddr().String()
-		l.Close()
-		return a
-	}
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	a := l.Addr().String()
-	l.Close()
-	return a
+	// The shared allocator checks TCP and UDP and avoids outgoing ephemeral
+	// ports that the cover or backend can consume before the helper binds.
+	return fmt.Sprintf("127.0.0.1:%d", testport.Free(t))
 }
 
 // This test runs the actual pinned helper contract, including a local real TLS
