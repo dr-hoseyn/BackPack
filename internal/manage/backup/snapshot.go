@@ -149,20 +149,40 @@ func RestoreSnapshot(s Snapshot, logf func(string)) error {
 	}
 	defer release()
 
-	// 1) Binary.
-	if bin := filepath.Join(s.Dir, "backpack"); core.FileExists(bin) {
-		logf("Restoring the previous binary...")
-		if err := copyFile(bin, app.BinPath, 0755); err != nil {
-			return fmt.Errorf("could not restore the binary: %w", err)
+	// Prepare the entire configuration before changing either live artifact.
+	var stage string
+	if cfg := filepath.Join(s.Dir, "config"); core.FileExists(cfg) {
+		logf("Preparing restored configuration...")
+		stage, err = stageSnapshotConfig(cfg, app.ConfigDir)
+		if err != nil {
+			return fmt.Errorf("could not stage the configuration: %w", err)
 		}
+		defer os.RemoveAll(stage)
 	}
 
-	// 2) Configs.
-	if cfg := filepath.Join(s.Dir, "config"); core.FileExists(cfg) {
-		logf("Restoring configuration...")
-		if err := copyTree(cfg, app.ConfigDir); err != nil {
-			return fmt.Errorf("could not restore the configuration: %w", err)
+	var activeServices []string
+	if stage != "" {
+		for _, tunnel := range core.List() {
+			if core.IsActive(tunnel.Service) {
+				activeServices = append(activeServices, tunnel.Service)
+			}
 		}
+	}
+	if err := commitStoppedRestore(activeServices, core.StopService, core.RestartService, func() error {
+		installConfig := func() error {
+			if stage != "" {
+				logf("Restoring configuration...")
+				return commitRestore(app.ConfigDir, stage)
+			}
+			return nil
+		}
+		if bin := filepath.Join(s.Dir, "backpack"); core.FileExists(bin) {
+			logf("Restoring the previous binary...")
+			return installSnapshotBinary(bin, app.BinPath, installConfig)
+		}
+		return installConfig()
+	}); err != nil {
+		return err
 	}
 
 	// 3) Re-register and restart everything.
@@ -188,6 +208,73 @@ func RestoreSnapshot(s Snapshot, logf func(string)) error {
 		failures = append(failures, fmt.Errorf("%d tunnel service(s) failed to restart after rollback", failed))
 	}
 	return errors.Join(failures...)
+}
+
+// Keep the currently installed binary available until the config commit
+// succeeds so a failed restore can resume the original configuration.
+func installSnapshotBinary(source, target string, commitConfig func() error) error {
+	if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
+		return err
+	}
+	backupDir, err := os.MkdirTemp(filepath.Dir(target), ".backpack-binary-restore-*")
+	if err != nil {
+		return err
+	}
+	keepRecovery := false
+	defer func() {
+		if !keepRecovery {
+			_ = os.RemoveAll(backupDir)
+		}
+	}()
+	previous := filepath.Join(backupDir, "backpack")
+	info, statErr := os.Stat(target)
+	if statErr != nil && !os.IsNotExist(statErr) {
+		return statErr
+	}
+	if statErr == nil {
+		if err := copyFile(target, previous, info.Mode().Perm()); err != nil {
+			return fmt.Errorf("save installed binary for restore recovery: %w", err)
+		}
+	}
+	if err := copyFile(source, target, 0755); err != nil {
+		return fmt.Errorf("restore snapshot binary: %w", err)
+	}
+	if err := commitConfig(); err != nil {
+		var recovery error
+		if statErr == nil {
+			recovery = copyFile(previous, target, info.Mode().Perm())
+		} else {
+			recovery = os.Remove(target)
+		}
+		if recovery != nil {
+			keepRecovery = statErr == nil
+			return errors.Join(err, fmt.Errorf("recover installed binary after failed config restore (saved copy in %s): %w", backupDir, recovery))
+		}
+		return err
+	}
+	return nil
+}
+
+// stageSnapshotConfig merges into a private tree so a failed copy leaves
+// the live installation intact.
+func stageSnapshotConfig(source, live string) (stage string, err error) {
+	if err := os.MkdirAll(live, 0755); err != nil {
+		return "", err
+	}
+	stage, err = os.MkdirTemp(filepath.Dir(live), ".backpack-snapshot-restore-*")
+	if err != nil {
+		return "", err
+	}
+	defer func() {
+		if err != nil {
+			_ = os.RemoveAll(stage)
+		}
+	}()
+	if err = seedStage(live, stage); err != nil {
+		return stage, err
+	}
+	err = copyTree(source, stage)
+	return stage, err
 }
 
 // --- small file helpers -----------------------------------------------------
