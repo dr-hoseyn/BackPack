@@ -54,3 +54,5 @@ deadline and retirement tests continue to run.
 `BenchmarkWSMuxCarrierSelection` measures only scheduling, not network
 throughput. Compare complete transfers and fresh-user p95/p99 latency under
 the same offered load before drawing conclusions about a WAN route.
+
+Last verified against Backpack v1.24.0 (2026-11-12).
