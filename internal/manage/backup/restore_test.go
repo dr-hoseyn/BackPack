@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -508,5 +509,36 @@ func TestRestoreRejectsRepeatedOrNonFileMetadata(t *testing.T) {
 				t.Fatalf("restore error = %v, want %q", err, tc.wantError)
 			}
 		})
+	}
+}
+
+func TestMountedRestoreRecoversFilesAndRemovesNewEntriesAfterCopyFailure(t *testing.T) {
+	parent := t.TempDir()
+	live, stage, previous := filepath.Join(parent, "live"), filepath.Join(parent, "stage"), filepath.Join(parent, "previous")
+	for _, dir := range []string{live, stage} {
+		if err := os.Mkdir(dir, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeAt(t, live, "t1.toml", "original", 0600)
+	writeAt(t, stage, "t1.toml", "restored", 0600)
+	writeAt(t, stage, "new/sub/file.json", "new data", 0600)
+	failure := errors.New("copy interrupted")
+	copy := func(source, target string) error {
+		if err := copyTree(source, target); err != nil {
+			return err
+		}
+		if source == stage {
+			return failure
+		}
+		return nil
+	}
+	keep, err := commitMountedRestore(live, stage, previous, copy)
+	if keep || !errors.Is(err, failure) {
+		t.Fatalf("mounted restore = keep recovery %t, error %v", keep, err)
+	}
+	assertStaged(t, live, "t1.toml", "original")
+	if _, err := os.Stat(filepath.Join(live, "new")); !os.IsNotExist(err) {
+		t.Fatalf("new entries remain after recovery: %v", err)
 	}
 }

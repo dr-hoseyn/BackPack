@@ -4,17 +4,19 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/backpack/backpack/internal/app"
 	"github.com/backpack/backpack/internal/manage/core"
 )
 
-// Restoring is all-or-nothing.
+// Restore stages the complete tree before committing it.
 //
 // It used to extract straight into the live config directory, one entry at a
 // time, as the archive was read. Every way an archive can turn out to be bad
@@ -29,7 +31,8 @@ import (
 // entry checked before it is written, and the compressed stream read through
 // to its checksum. The commit then moves the live directory aside and
 // installs the staged tree. If installation fails, it moves the previous
-// tree back or reports the path where that tree was saved.
+// tree back or reports the path where that tree was saved. Mountpoints use
+// per-file publication with a recovery copy because their roots cannot move.
 
 const (
 	// Bounds on what an archive may expand to. A backup of this system is
@@ -397,6 +400,10 @@ func commitRestore(configDir, stage string) error {
 	}()
 
 	if err := os.Rename(configDir, previous); err != nil {
+		if errors.Is(err, syscall.EBUSY) {
+			keepRollback, err = commitMountedRestore(configDir, stage, previous, copyTree)
+			return err
+		}
 		return fmt.Errorf("could not move the current configuration aside, so nothing was changed: %w", err)
 	}
 	if err := os.Rename(stage, configDir); err != nil {
@@ -409,4 +416,48 @@ func commitRestore(configDir, stage string) error {
 
 	syncDir(parent)
 	return nil
+}
+
+// A mountpoint cannot be renamed. Keep a full recovery tree, publish each file
+// atomically, and restore the original files if installation fails. The caller
+// holds the configuration lock and has stopped the tunnel writers.
+func commitMountedRestore(live, stage, previous string, copyTree func(string, string) error) (keepRecovery bool, err error) {
+	if err := copyTree(live, previous); err != nil {
+		return false, fmt.Errorf("save mounted configuration before restore: %w", err)
+	}
+	var added []string
+	if err := filepath.Walk(stage, func(path string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		rel, err := filepath.Rel(stage, path)
+		if err != nil || rel == "." {
+			return err
+		}
+		target := filepath.Join(live, rel)
+		if _, err := os.Lstat(target); os.IsNotExist(err) {
+			added = append(added, target)
+		} else if err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
+		return false, err
+	}
+
+	if err := copyTree(stage, live); err != nil {
+		var recovery error
+		for i := len(added) - 1; i >= 0; i-- {
+			if removeErr := os.Remove(added[i]); removeErr != nil && !os.IsNotExist(removeErr) {
+				recovery = errors.Join(recovery, removeErr)
+			}
+		}
+		recovery = errors.Join(recovery, copyTree(previous, live))
+		if recovery != nil {
+			return true, errors.Join(err, fmt.Errorf("recover mounted configuration from %s: %w", previous, recovery))
+		}
+		return false, fmt.Errorf("install mounted configuration; previous files restored: %w", err)
+	}
+	syncDir(live)
+	return false, nil
 }
