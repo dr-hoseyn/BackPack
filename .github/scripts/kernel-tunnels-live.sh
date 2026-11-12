@@ -55,7 +55,7 @@ PY_ECHO
 echo_pid=$!
 
 for mode in ${MODES:-direct reverse}; do
-    for method in ${METHODS:-gre ipip 6to4 6to4-gre sit ip6gre ipip6 ip6ip6 wireguard xfrm-ipsec fou-gre gue-ipip ecmp-lanes eoip gretap ip6gretap vxlan geneve l2tpv3 etherip}; do
+    for method in ${METHODS:-gre xgre ipip 6to4 6to4-gre sit ip6gre ipip6 ip6ip6 wireguard xfrm-ipsec fou-gre gue-ipip ecmp-lanes eoip gretap ip6gretap vxlan geneve l2tpv3 etherip}; do
         path="$work/$mode-$method"
         mkdir -p "$path"
         rev=false

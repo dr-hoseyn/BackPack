@@ -22,6 +22,7 @@ type Method struct {
 
 var methods = []Method{
 	{"gre", "L3", false, false, false}, {"ipip", "L3", false, false, false},
+	{"xgre", "L3", false, false, false},
 	{"6to4", "L3", false, false, false}, {"6to4-gre", "L3", false, false, false},
 	{"sit", "L3", false, true, false}, {"ip6gre", "L3", true, false, false},
 	{"ipip6", "L3", true, false, false}, {"ip6ip6", "L3", true, true, false},
@@ -86,12 +87,15 @@ func Resolve(c config.KernelConfig) (config.KernelConfig, error) {
 	seed := sha256.Sum256([]byte("backpack-kernel-v1|" + c.Token + "|" + c.Method))
 	automaticID := c.ID == 0
 	if c.ID == 0 {
-		c.ID = binary.BigEndian.Uint32(seed[:4]) & 0xffffff
+		c.ID = binary.BigEndian.Uint32(seed[:4])
+		if c.Method != "xgre" {
+			c.ID &= 0xffffff
+		}
 		if c.ID == 0 {
 			c.ID = 1
 		}
 	}
-	if c.ID > 0xffffff || (c.Method == "eoip" && c.ID > 65535) {
+	if c.Method != "xgre" && c.ID > 0xffffff || (c.Method == "eoip" && c.ID > 65535) {
 		if automaticID && c.Method == "eoip" && c.ID <= 0xffffff {
 			c.ID = c.ID%65535 + 1
 		} else {
@@ -106,6 +110,17 @@ func Resolve(c config.KernelConfig) (config.KernelConfig, error) {
 	}
 	if c.MTU == 0 {
 		c.MTU = 1380
+		if c.Method == "xgre" {
+			c.MTU = 1472
+		}
+	}
+	if c.Method == "xgre" {
+		if c.GREIgnoreDF == nil {
+			ignore := c.Role == "iran"
+			c.GREIgnoreDF = &ignore
+		}
+	} else if c.GREIgnoreDF != nil {
+		return c, fmt.Errorf("kernel: gre_ignore_df requires method xgre")
 	}
 	if c.MTU < 576 || c.MTU > 9000 || peer.Is6() && c.MTU < 1280 {
 		return c, fmt.Errorf("kernel: invalid mtu")
@@ -159,6 +174,11 @@ func Peer(c config.KernelConfig) config.KernelConfig {
 		c.Role = "iran"
 	}
 	c.LocalAddr, c.RemoteAddr = c.RemoteAddr, c.LocalAddr
+	if c.Method == "xgre" {
+		// DF policy belongs to the local endpoint, not the paired wire key.
+		ignore := c.Role == "iran"
+		c.GREIgnoreDF = &ignore
+	}
 	p, _ := netip.ParsePrefix(c.LocalIP)
 	other, _ := netip.ParseAddr(c.PeerIP)
 	c.LocalIP, c.PeerIP = netip.PrefixFrom(other, p.Bits()).String(), p.Addr().String()

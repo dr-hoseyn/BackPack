@@ -23,10 +23,12 @@ type KernelConfig struct {
 	Token string `toml:"token"`
 	// Port is the method's UDP port, or the reverse TCP carrier port; zero takes the method default.
 	Port int `toml:"port"`
-	// MTU is the inner interface MTU; zero takes 1380.
+	// MTU is the inner interface MTU; zero takes 1472 for xgre, otherwise 1380.
 	MTU int `toml:"mtu"`
-	// ID is the paired GRE key, VNI or pseudowire ID; zero derives one from Token.
+	// ID is the paired GRE key, VNI or pseudowire ID; xgre accepts the full uint32 range. Zero derives one from Token.
 	ID uint32 `toml:"id"` // shared GRE key, VNI or pseudowire ID
+	// GREIgnoreDF overrides xgre's local IPv4 DF policy. Unset defaults to true on Iran and false on Kharej; peer links recompute their own role default.
+	GREIgnoreDF *bool `toml:"gre_ignore_df" json:",omitempty"`
 	// Lanes selects 1..8 parallel GRE interfaces; ECMP defaults to four.
 	Lanes int `toml:"lanes"`
 	// Reverse makes Kharej initiate eight encrypted TCP lanes, or native UDP for WireGuard.

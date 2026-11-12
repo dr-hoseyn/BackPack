@@ -131,6 +131,13 @@ func RunManaged(ctx context.Context, input config.KernelConfig, ready func(bool)
 		return err
 	}
 	defer func() { err = errors.Join(err, clean()) }()
+	if c.Method == "xgre" {
+		// These settings are confined to the newly owned interface and vanish
+		// with it. Do not change the host's global forwarding or firewall policy.
+		if _, err = command(ctx, "sysctl", []string{"-w", "net.ipv4.conf." + c.Interface + ".rp_filter=2", "net.ipv4.conf." + c.Interface + ".forwarding=1"}, nil); err != nil {
+			return err
+		}
+	}
 	if c.Method == "wireguard" {
 		if _, err = command(ctx, "wg", []string{"syncconf", c.Interface, "/dev/stdin"}, strings.NewReader(wireguardConfig(c))); err != nil {
 			return err

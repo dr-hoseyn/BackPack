@@ -200,7 +200,20 @@ func setupKernel(side directSide) {
 		tui.Info("Kernel methods use eight Noise-authenticated TCP lanes. WireGuard keeps its native UDP handshake.")
 	}
 	c.Port = tui.PromptInt("Carrier Port (0 = Method Default)", 0)
-	c.MTU = tui.PromptInt("MTU", 1380)
+	mtu := 1380
+	if c.Method == "xgre" {
+		mtu = 1472
+	}
+	c.MTU = tui.PromptInt("MTU", mtu)
+	if c.Method == "xgre" {
+		key, keyErr := promptXGREKey(0)
+		if keyErr != nil {
+			tui.Error(keyErr.Error())
+			return
+		}
+		c.ID = key
+		tui.Info("Copy the existing peer's GRE key for interoperability. Native xGRE does not encrypt traffic.")
+	}
 	if c.Method == "gre" || c.Method == "ip6gre" || c.Method == "ecmp-lanes" {
 		c.Lanes = tui.PromptInt("Parallel GRE Lanes (1..8)", 1)
 		if c.Method == "ecmp-lanes" && c.Lanes == 1 {
@@ -349,6 +362,19 @@ func editKernel(t Tunnel) {
 	tui.Title("Kernel Tunnel — " + t.Name)
 	tui.Info("Apply paired port and MTU changes on the other server too.")
 	c.MTU = tui.PromptInt("MTU", c.MTU)
+	if c.Method == "xgre" {
+		c.ID, err = promptXGREKey(c.ID)
+		if err != nil {
+			tui.Error(err.Error())
+			return
+		}
+		ignore := c.Role == "iran"
+		if c.GREIgnoreDF != nil {
+			ignore = *c.GREIgnoreDF
+		}
+		ignore = tui.Confirm("Ignore Inner IPv4 DF", ignore)
+		c.GREIgnoreDF = &ignore
+	}
 	if c.Port > 0 {
 		c.Port = tui.PromptInt("Carrier Port", c.Port)
 	}
@@ -365,4 +391,17 @@ func editKernel(t Tunnel) {
 		return
 	}
 	applyEdit(t, body)
+}
+
+func promptXGREKey(value uint32) (uint32, error) {
+	raw := tui.PromptDefault("GRE Key (0 = Derive; Decimal Or 0x Hex)", strconv.FormatUint(uint64(value), 10))
+	base := 10
+	if strings.HasPrefix(strings.ToLower(raw), "0x") {
+		raw, base = raw[2:], 16
+	}
+	v, err := strconv.ParseUint(raw, base, 32)
+	if err != nil {
+		return 0, fmt.Errorf("GRE key must be a 32-bit unsigned integer")
+	}
+	return uint32(v), nil
 }

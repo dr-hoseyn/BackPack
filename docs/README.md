@@ -21,6 +21,7 @@ Reference pages: what each part of Backpack **is**, and every setting it has.
 
 ### Tunnel direction
 - [Standard kernel L3/L2 tunnels](kernel-tunnels.md) — GRE, WireGuard, IPsec, Ethernet and ECMP, with optional reverse TCP
+- [Native xGRE profile](xgre.md) — full-width keyed GRE matching the observed unencrypted BPP data plane
 - [Direct tunnel — stream transports](direct-tunnel.md) — the `[direct]` engine, no longer offered by the wizard; the same forwarded ports, with Iran dialling
   out instead of waiting to be dialled
 - [Direct tunnel](l3-direct-tunnel.md) — **what the wizard builds**: a private network between the two
