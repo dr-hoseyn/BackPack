@@ -38,7 +38,7 @@ func transferWebSocketToTCP(wsConn *websocket.Conn, tcpConn net.Conn, logger *lo
 	// on a busy tunnel was a fifth of the relay's CPU in the collector.
 	// Keep the capability-hiding adapters for the whole relay: boxing new
 	// adapters for every message allocates twice on the receive hot path.
-	reader, writer := &readerOnly{}, &writerOnly{tcpConn}
+	reader, writer := &readerOnly{}, &wsInboundWriter{tcpConn}
 	for {
 		messageType, message, err := wsConn.NextReader()
 		if err != nil {
@@ -60,17 +60,14 @@ func transferWebSocketToTCP(wsConn *websocket.Conn, tcpConn net.Conn, logger *lo
 			bufp := getRelayBuffer()
 			n, err := io.CopyBuffer(writer, reader, *bufp)
 			putRelayBuffer(bufp)
-			w := int(n)
 			if err != nil {
 				logger.Trace("unable to relay a WebSocket message to the TCP connection: ", err)
 				wsConn.Close()
 				tcpConn.Close()
 				return
 			}
-			// Arrived over the tunnel.
-			metrics.AddBytes(uint64(w), 0)
 			if logger.IsLevelEnabled(logrus.TraceLevel) {
-				logger.Tracef("transferred data from WebSocket to TCP: %d bytes", w)
+				logger.Tracef("transferred data from WebSocket to TCP: %d bytes", n)
 			}
 		}
 	}
@@ -119,7 +116,7 @@ func transferTCPToWebSocket(tcpConn net.Conn, wsConn *websocket.Conn, logger *lo
 
 }
 
-// readerOnly and writerOnly hide everything but Read and Write, so
+// readerOnly and wsInboundWriter hide everything but Read and Write, so
 // io.CopyBuffer uses the buffer it is given. Left visible, a *net.TCPConn's
 // ReadFrom takes over the copy and, for a source that is not a socket or a
 // file, allocates a fresh buffer of its own on every message.
@@ -127,6 +124,16 @@ type readerOnly struct{ r io.Reader }
 
 func (r readerOnly) Read(p []byte) (int, error) { return r.r.Read(p) }
 
-type writerOnly struct{ w io.Writer }
+type wsInboundWriter struct{ w io.Writer }
 
-func (w writerOnly) Write(p []byte) (int, error) { return w.w.Write(p) }
+func (w wsInboundWriter) Write(p []byte) (int, error) {
+	n, err := w.w.Write(p)
+	// A fragmented message can carry data for longer than a pool sampling
+	// interval. Report progress as each chunk reaches TCP, including bytes
+	// accepted with an error, rather than waiting for the final WS fragment.
+	// This is the receive direction even though the last hop is a TCP write.
+	if n > 0 {
+		metrics.AddBytes(uint64(n), 0)
+	}
+	return n, err
+}
