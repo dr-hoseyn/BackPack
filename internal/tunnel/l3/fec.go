@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
+	"hash"
 	"io"
 	"net"
 	"sync"
@@ -153,6 +154,14 @@ type fecCarrier struct {
 	enc   reedsolomon.Encoder
 	keys  *fecKeys
 
+	// Directional HMAC states are reused only under their existing I/O lock.
+	// Reinitializing HMAC/SHA256 for each shard adds key setup and allocations
+	// to every authenticated data and parity packet.
+	sendMAC hash.Hash
+	recvMAC hash.Hash
+	sendTag [sha256.Size]byte
+	recvTag [sha256.Size]byte
+
 	sendMu    sync.Mutex
 	sendGrp   uint32
 	sendIdx   int
@@ -213,14 +222,19 @@ func newFECCarrier(below DatagramCarrier, cfg FECConfig, keys *fecKeys) (Datagra
 	if _, err := rand.Read(first[:]); err != nil {
 		return nil, fmt.Errorf("l3: choosing the initial FEC group: %w", err)
 	}
-	return &fecCarrier{
+	c := &fecCarrier{
 		sendGrp: binary.BigEndian.Uint32(first[:]),
 		below:   below,
 		cfg:     cfg,
 		keys:    keys,
 		enc:     enc,
 		groups:  make(map[uint32]*fecGroup),
-	}, nil
+	}
+	if keys != nil {
+		c.sendMAC = hmac.New(sha256.New, keys.send[:])
+		c.recvMAC = hmac.New(sha256.New, keys.recv[:])
+	}
+	return c, nil
 }
 
 func (c *fecCarrier) tagLen() int {
@@ -302,7 +316,9 @@ func (c *fecCarrier) wireFrame(size int) []byte {
 func (c *fecCarrier) writeFrame(frame []byte, addr net.Addr) error {
 	if c.keys != nil {
 		frame[0] |= fecKindAuth
-		tag := fecMAC(&c.keys.send, frame)
+		c.sendMAC.Reset()
+		_, _ = c.sendMAC.Write(frame)
+		tag := c.sendMAC.Sum(c.sendTag[:0])
 		frame = append(frame, tag[:fecTagLen]...)
 	}
 	n, err := c.below.WriteTo(frame, addr)
@@ -374,7 +390,9 @@ func (c *fecCarrier) ReadFrom(p []byte) (int, net.Addr, error) {
 				continue
 			}
 			frame = frame[:n-fecTagLen]
-			want := fecMAC(&c.keys.recv, frame)
+			c.recvMAC.Reset()
+			_, _ = c.recvMAC.Write(frame)
+			want := c.recvMAC.Sum(c.recvTag[:0])
 			if !hmac.Equal(want[:fecTagLen], buf[n-fecTagLen:n]) {
 				continue
 			}

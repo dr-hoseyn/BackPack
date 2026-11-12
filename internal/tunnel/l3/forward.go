@@ -539,32 +539,47 @@ func (f *Forwarder) pumpUDPReplies(
 		f.limiter.Release()
 	}()
 
-	waiter, err := newUDPReplyWaiter(flow.socket)
-	if err != nil {
-		flow.noteBackendReadError(flow.ctx, err)
-		return
+	// Keep one full buffer per flow: avoiding an extra readiness syscall and
+	// a shared buffer exchange on every reply is preferable on busy tunnels.
+	buf := make([]byte, udpBufferSize)
+	capped := f.limiter.HasBandwidthCap()
+	if !capped {
+		if err := flow.backend.SetReadDeadline(time.Now().Add(udpFlowIdle)); err != nil {
+			return
+		}
 	}
 	for {
-		// A read deadline rather than a blocking read: it is what lets a flow
-		// whose backend never answers be reaped instead of holding a goroutine
-		// and a socket forever.
-		_ = flow.backend.SetReadDeadline(time.Now().Add(udpFlowIdle))
-		buf, n, err := readUDPReply(waiter, flow.backend, &udpReplyBuffers)
+		// A capped read may also wait for shared pacing credit after receiving
+		// its packet. Keep its full per-read budget. Ordinary socket reads only
+		// need a timer renewal when the existing idle deadline actually fires.
+		if capped {
+			if err := flow.backend.SetReadDeadline(time.Now().Add(udpFlowIdle)); err != nil {
+				return
+			}
+		}
+		n, err := flow.backend.Read(buf)
 		if err != nil {
 			if flow.ctx.Err() != nil {
 				return
 			}
 			var netErr net.Error
 			if errors.As(err, &netErr) && netErr.Timeout() && !flow.idle(time.Now(), udpFlowIdle) {
+				if !capped {
+					// Traffic in either direction keeps this flow alive. Re-arm
+					// to its actual last activity, rather than extending an idle
+					// conversation by another whole timeout.
+					deadline := time.Unix(0, flow.lastSeen.Load()).Add(udpFlowIdle)
+					if err := flow.backend.SetReadDeadline(deadline); err != nil {
+						return
+					}
+				}
 				continue // the client is still sending; keep waiting for a reply
 			}
 			flow.noteBackendReadError(flow.ctx, err)
 			return
 		}
 		flow.touch()
-		_, err = local.WriteToUDPAddrPort(buf[:n], client)
-		udpReplyBuffers.put(buf)
-		if err != nil {
+		if _, err := local.WriteToUDPAddrPort(buf[:n], client); err != nil {
 			return
 		}
 	}

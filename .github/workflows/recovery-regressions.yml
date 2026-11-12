@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   l3-udp-quality:
-    name: L3 UDP latency, idle resources and cancellation
+    name: L3 UDP and authenticated FEC CPU and quality
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -22,16 +22,17 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Repeat datagram, idle buffer, deadline and fair pacing checks
+      - name: Repeat datagram, deadline, fair pacing and authentication checks
         run: >-
           go test -race ./internal/tunnel/l3
-          -run '^Test(UDPReply|UDPWriteQueue|UDPFlowClose|ForwarderCarriesUDP|ForwarderKeepsUDPFlows|ForwarderRoutesUDPRepliesAcrossAddressFamilies|ForwarderPacesUDPAcrossFlows)'
+          -run '^Test(UDPReply|UDPWriteQueue|UDPFlowClose|ForwarderCarriesUDP|ForwarderKeepsUDPFlows|ForwarderRoutesUDPRepliesAcrossAddressFamilies|ForwarderPacesUDPAcrossFlows|AuthenticatedFEC|FEC|ReviewedFEC)'
           -count=20 -v -timeout 3m
-      - name: Measure retained heap on 300 idle UDP flows
+      - name: Measure verified reply CPU, FEC cost and idle memory
         run: |
           set -euo pipefail
           go test ./internal/tunnel/l3 -run '^$' -bench '^BenchmarkUDPIdleReplyFlows$' -benchtime=1x -count=3 | tee "$RUNNER_TEMP/udp-idle-candidate.txt"
-          go test ./internal/tunnel/l3 -run '^$' -bench '^BenchmarkUDPForwardedReplies$' -benchmem -benchtime=200ms -count=3 | tee "$RUNNER_TEMP/udp-idle-replies-candidate.txt"
+          go test ./internal/tunnel/l3 -run '^$' -bench '^BenchmarkUDPForwardedReplies$' -benchmem -benchtime=1s -count=5 | tee "$RUNNER_TEMP/udp-idle-replies-candidate.txt"
+          go test ./internal/tunnel/l3 -run '^$' -bench '^BenchmarkAuthenticatedFEC$' -benchmem -benchtime=1s -count=5 | tee "$RUNNER_TEMP/udp-idle-fec-candidate.txt"
       - name: Measure the same idle workers on the PR base
         if: github.event_name == 'pull_request'
         env:
@@ -40,13 +41,15 @@ jobs:
           set -euo pipefail
           git worktree add --detach "$RUNNER_TEMP/udp-idle-base" "$BASE_SHA"
           cp internal/tunnel/l3/udpflow_memory_test.go "$RUNNER_TEMP/udp-idle-base/internal/tunnel/l3/"
+          cp internal/tunnel/l3/fec_cpu_test.go "$RUNNER_TEMP/udp-idle-base/internal/tunnel/l3/"
           cd "$RUNNER_TEMP/udp-idle-base"
           go test ./internal/tunnel/l3 -run '^$' -bench '^BenchmarkUDPIdleReplyFlows$' -benchtime=1x -count=3 | tee "$RUNNER_TEMP/udp-idle-base.txt"
-          go test ./internal/tunnel/l3 -run '^$' -bench '^BenchmarkUDPForwardedReplies$' -benchmem -benchtime=200ms -count=3 | tee "$RUNNER_TEMP/udp-idle-replies-base.txt"
+          go test ./internal/tunnel/l3 -run '^$' -bench '^BenchmarkUDPForwardedReplies$' -benchmem -benchtime=1s -count=5 | tee "$RUNNER_TEMP/udp-idle-replies-base.txt"
+          go test ./internal/tunnel/l3 -run '^$' -bench '^BenchmarkAuthenticatedFEC$' -benchmem -benchtime=1s -count=5 | tee "$RUNNER_TEMP/udp-idle-fec-base.txt"
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: l3-udp-idle-resources
+          name: l3-udp-fec-cpu-quality
           path: ${{ runner.temp }}/udp-idle-*.txt
   udp-readiness:
     name: Direct UDP listener readiness under race scheduling

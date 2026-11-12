@@ -15,7 +15,17 @@ import (
 	"time"
 
 	"github.com/sirupsen/logrus"
+	"golang.org/x/sys/unix"
 )
+
+func udpBenchmarkProcessCPU(b *testing.B) time.Duration {
+	b.Helper()
+	var r unix.Rusage
+	if err := unix.Getrusage(unix.RUSAGE_SELF, &r); err != nil {
+		b.Fatal(err)
+	}
+	return time.Duration(r.Utime.Sec+r.Stime.Sec)*time.Second + time.Duration(r.Utime.Usec+r.Stime.Usec)*time.Microsecond
+}
 
 // This benchmark also compiles against the previous implementation so CI can
 // compare retained Go heap on actual idle backend reply workers. It does not
@@ -111,6 +121,7 @@ func BenchmarkUDPForwardedReplies(b *testing.B) {
 			b.SetBytes(int64(size))
 			b.ReportAllocs()
 			b.ResetTimer()
+			cpuStart := udpBenchmarkProcessCPU(b)
 			for range b.N {
 				_ = client.SetReadDeadline(time.Now().Add(2 * time.Second))
 				if _, err := backend.WriteToUDP(want, target); err != nil {
@@ -121,7 +132,11 @@ func BenchmarkUDPForwardedReplies(b *testing.B) {
 					b.Fatalf("forwarded reply changed: bytes=%d err=%v", n, err)
 				}
 			}
+			cpuElapsed := udpBenchmarkProcessCPU(b) - cpuStart
 			b.StopTimer()
+			// Includes this benchmark process's client, backend and reply
+			// pump; it is not an isolated production server CPU measurement.
+			b.ReportMetric(float64(cpuElapsed)/float64(b.N), "cpu-ns/op")
 		})
 	}
 }
