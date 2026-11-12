@@ -1,6 +1,30 @@
 # Changelog
 
-## v1.24.0 — 2026-11-11
+## v1.25.0 — 2026-11-12
+
+- Keep address health selection scoped to the active carrier and preserve
+  queued users when a mux carrier closes during admission.
+- Reduce forwarded UDP receive allocations and bound backend-list parsing
+  without changing datagram payloads, peer isolation or backend selection.
+- Reduce contention between live upload and download counters and allocations
+  for canonical WSSMux control frames. Preserve payload framing and encryption.
+- Keep WS/WSS load counters current during fragmented transfers.
+- Preserve immediate mux replies and buffered stream tails with smux v1.5.59.
+- Join client workers before reload or transport fallback while preserving
+  the control-channel goodbye, including queued KCP output.
+- Prefer ready WSSMux carriers without measured TCP backpressure, using FIFO
+  readiness order to preserve fair admission for fresh and quiet users.
+
+<div dir="rtl">
+
+مصرف حافظه و تخصیص‌های مسیر UDP و پیام‌های کنترلی WSSMux کمتر شده و انتخاب
+مسیر سالم، پذیرش اتصال‌های صف‌شده و تحویل پاسخ و انتهای داده‌های mux اصلاح
+شده‌اند. توقف کلاینت پیش از تعویض ترنسپورت کامل می‌شود و پیام پایان KCP حفظ
+می‌شود. زمان‌بندی WSSMux کانال‌های آماده با فشار کمتر را ترجیح می‌دهد.
+
+</div>
+
+## v1.24.0 â€” 2026-11-11
 
 - Remove persistent traffic totals, volume quotas, per-port usage logs and their
   background workers. Legacy `sniffer` settings remain readable but do not
@@ -22,15 +46,15 @@
 
 <div dir="rtl">
 
-آمار مصرف حجمی، سهمیهٔ حجم و ثبت مصرف هر پورت حذف شدند تا کارهای پس‌زمینه و
-نوشتن روی دیسک کمتر شود. سهمیه‌های حجمی قدیمی دیگر اجرا نمی‌شوند. اندازه‌گیری
-لحظه‌ای سرعت، تنظیم خودکار pool، تشخیص توقف انتقال و محدودیت سرعت و تعداد
-اتصال باقی می‌مانند. پایش منابع سبک‌تر شده و پشتیبان‌گیری، بازیابی، تغییر نام
-تانل و زمان‌بندی سرویس‌ها در برابر خطا و اجرای هم‌زمان مقاوم‌تر شده‌اند.
+ط¢ظ…ط§ط± ظ…طµط±ظپ ط­ط¬ظ…غŒطŒ ط³ظ‡ظ…غŒظ‡ظ” ط­ط¬ظ… ظˆ ط«ط¨طھ ظ…طµط±ظپ ظ‡ط± ظ¾ظˆط±طھ ط­ط°ظپ ط´ط¯ظ†ط¯ طھط§ ع©ط§ط±ظ‡ط§غŒ ظ¾ط³â€Œط²ظ…غŒظ†ظ‡ ظˆ
+ظ†ظˆط´طھظ† ط±ظˆغŒ ط¯غŒط³ع© ع©ظ…طھط± ط´ظˆط¯. ط³ظ‡ظ…غŒظ‡â€Œظ‡ط§غŒ ط­ط¬ظ…غŒ ظ‚ط¯غŒظ…غŒ ط¯غŒع¯ط± ط§ط¬ط±ط§ ظ†ظ…غŒâ€Œط´ظˆظ†ط¯. ط§ظ†ط¯ط§ط²ظ‡â€Œع¯غŒط±غŒ
+ظ„ط­ط¸ظ‡â€Œط§غŒ ط³ط±ط¹طھطŒ طھظ†ط¸غŒظ… ط®ظˆط¯ع©ط§ط± poolطŒ طھط´ط®غŒطµ طھظˆظ‚ظپ ط§ظ†طھظ‚ط§ظ„ ظˆ ظ…ط­ط¯ظˆط¯غŒطھ ط³ط±ط¹طھ ظˆ طھط¹ط¯ط§ط¯
+ط§طھطµط§ظ„ ط¨ط§ظ‚غŒ ظ…غŒâ€Œظ…ط§ظ†ظ†ط¯. ظ¾ط§غŒط´ ظ…ظ†ط§ط¨ط¹ ط³ط¨ع©â€Œطھط± ط´ط¯ظ‡ ظˆ ظ¾ط´طھغŒط¨ط§ظ†â€Œع¯غŒط±غŒطŒ ط¨ط§ط²غŒط§ط¨غŒطŒ طھط؛غŒغŒط± ظ†ط§ظ…
+طھط§ظ†ظ„ ظˆ ط²ظ…ط§ظ†â€Œط¨ظ†ط¯غŒ ط³ط±ظˆغŒط³â€Œظ‡ط§ ط¯ط± ط¨ط±ط§ط¨ط± ط®ط·ط§ ظˆ ط§ط¬ط±ط§غŒ ظ‡ظ…â€Œط²ظ…ط§ظ† ظ…ظ‚ط§ظˆظ…â€Œطھط± ط´ط¯ظ‡â€Œط§ظ†ط¯.
 
 </div>
 
-## v1.23.0 — 2026-11-11
+## v1.23.0 â€” 2026-11-11
 
 - Choose NUM3 data carriers using their TCP send backlog and acknowledgement
   delay alongside active stream counts. Confirm transient queue samples and
@@ -41,7 +65,7 @@
   minimum pool capacity before the next sizing tick.
 - Build with Go 1.26.11 and verify the updated source-install toolchains.
 
-## v1.22.0 — 2026-11-10
+## v1.22.0 â€” 2026-11-10
 
 - Add **TCP Forward (XMPP)** (`tcpfwd-xmpp`) with the XMPP-shaped opening
   observed in PenguTunnel NUM3. This built-in Backpack transport protects
@@ -54,14 +78,14 @@
 
 <div dir="rtl">
 
-حالت **TCP Forward (XMPP)** با پیام آغازین NUM3، دادهٔ رمزگذاری‌شده و استفادهٔ
-مجدد از اتصال‌های TCP اضافه شد. برای استفاده، هر دو سرور BackPack را به‌روز
-کنید و `tcpfwd-xmpp` را با توکن مشترک انتخاب کنید. حالت `tcpfwd` بعد از
-احراز هویت و تعیین مقصد، داده را روی TCP عبور می‌دهد.
+ط­ط§ظ„طھ **TCP Forward (XMPP)** ط¨ط§ ظ¾غŒط§ظ… ط¢ط؛ط§ط²غŒظ† NUM3طŒ ط¯ط§ط¯ظ‡ظ” ط±ظ…ط²ع¯ط°ط§ط±غŒâ€Œط´ط¯ظ‡ ظˆ ط§ط³طھظپط§ط¯ظ‡ظ”
+ظ…ط¬ط¯ط¯ ط§ط² ط§طھطµط§ظ„â€Œظ‡ط§غŒ TCP ط§ط¶ط§ظپظ‡ ط´ط¯. ط¨ط±ط§غŒ ط§ط³طھظپط§ط¯ظ‡طŒ ظ‡ط± ط¯ظˆ ط³ط±ظˆط± BackPack ط±ط§ ط¨ظ‡â€Œط±ظˆط²
+ع©ظ†غŒط¯ ظˆ `tcpfwd-xmpp` ط±ط§ ط¨ط§ طھظˆع©ظ† ظ…ط´طھط±ع© ط§ظ†طھط®ط§ط¨ ع©ظ†غŒط¯. ط­ط§ظ„طھ `tcpfwd` ط¨ط¹ط¯ ط§ط²
+ط§ط­ط±ط§ط² ظ‡ظˆغŒطھ ظˆ طھط¹غŒغŒظ† ظ…ظ‚طµط¯طŒ ط¯ط§ط¯ظ‡ ط±ط§ ط±ظˆغŒ TCP ط¹ط¨ظˆط± ظ…غŒâ€Œط¯ظ‡ط¯.
 
 </div>
 
-## v1.21.0 — 2026-11-10
+## v1.21.0 â€” 2026-11-10
 
 - Add the built-in TCP Forward (`tcpfwd`) transport, inspired by PenguTunnel.
   It uses a TCP preface, AES-256-GCM for the control and destination messages,
@@ -72,13 +96,13 @@
 
 <div dir="rtl">
 
-حالت بومی TCP Forward به منوی تانل معکوس اضافه شد. هر دو سمت همین نسخهٔ
-BackPack را اجرا می‌کنند. کنترل و تعیین مقصد با AES-256-GCM محافظت می‌شوند.
-دادهٔ کاربر روی TCP عبور می‌کند و استخر اتصال از دو اتصال شروع می‌شود.
+ط­ط§ظ„طھ ط¨ظˆظ…غŒ TCP Forward ط¨ظ‡ ظ…ظ†ظˆغŒ طھط§ظ†ظ„ ظ…ط¹ع©ظˆط³ ط§ط¶ط§ظپظ‡ ط´ط¯. ظ‡ط± ط¯ظˆ ط³ظ…طھ ظ‡ظ…غŒظ† ظ†ط³ط®ظ‡ظ”
+BackPack ط±ط§ ط§ط¬ط±ط§ ظ…غŒâ€Œع©ظ†ظ†ط¯. ع©ظ†طھط±ظ„ ظˆ طھط¹غŒغŒظ† ظ…ظ‚طµط¯ ط¨ط§ AES-256-GCM ظ…ط­ط§ظپط¸طھ ظ…غŒâ€Œط´ظˆظ†ط¯.
+ط¯ط§ط¯ظ‡ظ” ع©ط§ط±ط¨ط± ط±ظˆغŒ TCP ط¹ط¨ظˆط± ظ…غŒâ€Œع©ظ†ط¯ ظˆ ط§ط³طھط®ط± ط§طھطµط§ظ„ ط§ط² ط¯ظˆ ط§طھطµط§ظ„ ط´ط±ظˆط¹ ظ…غŒâ€Œط´ظˆط¯.
 
 </div>
 
-## v1.20.3 — 2026-11-07
+## v1.20.3 â€” 2026-11-07
 
 - Keep the WS, WSS, WSMux and WSSMux control channel and existing streams
   on their live connections when route scores change. New data dials use
@@ -92,15 +116,15 @@ BackPack را اجرا می‌کنند. کنترل و تعیین مقصد با A
 
 <div dir="rtl">
 
-در WS و WSS، از جمله حالت‌های Mux، تغییر امتیاز IPv4 و IPv6 فقط مسیر اتصال‌های
-دادهٔ جدید را عوض می‌کند. کانال کنترل و اتصال‌های فعال برقرار می‌مانند و اگر
-کانال کنترل واقعاً قطع شود، کلاینت آدرس‌های پشتیبان را امتحان می‌کند. تست سلامت
-WSS پس از تکمیل TLS احراز هویت می‌شود. برای امتیازدهی WebSocket هر دو سمت را
-به‌روز کنید.
+ط¯ط± WS ظˆ WSSطŒ ط§ط² ط¬ظ…ظ„ظ‡ ط­ط§ظ„طھâ€Œظ‡ط§غŒ MuxطŒ طھط؛غŒغŒط± ط§ظ…طھغŒط§ط² IPv4 ظˆ IPv6 ظپظ‚ط· ظ…ط³غŒط± ط§طھطµط§ظ„â€Œظ‡ط§غŒ
+ط¯ط§ط¯ظ‡ظ” ط¬ط¯غŒط¯ ط±ط§ ط¹ظˆط¶ ظ…غŒâ€Œع©ظ†ط¯. ع©ط§ظ†ط§ظ„ ع©ظ†طھط±ظ„ ظˆ ط§طھطµط§ظ„â€Œظ‡ط§غŒ ظپط¹ط§ظ„ ط¨ط±ظ‚ط±ط§ط± ظ…غŒâ€Œظ…ط§ظ†ظ†ط¯ ظˆ ط§ع¯ط±
+ع©ط§ظ†ط§ظ„ ع©ظ†طھط±ظ„ ظˆط§ظ‚ط¹ط§ظ‹ ظ‚ط·ط¹ ط´ظˆط¯طŒ ع©ظ„ط§غŒظ†طھ ط¢ط¯ط±ط³â€Œظ‡ط§غŒ ظ¾ط´طھغŒط¨ط§ظ† ط±ط§ ط§ظ…طھط­ط§ظ† ظ…غŒâ€Œع©ظ†ط¯. طھط³طھ ط³ظ„ط§ظ…طھ
+WSS ظ¾ط³ ط§ط² طھع©ظ…غŒظ„ TLS ط§ط­ط±ط§ط² ظ‡ظˆغŒطھ ظ…غŒâ€Œط´ظˆط¯. ط¨ط±ط§غŒ ط§ظ…طھغŒط§ط²ط¯ظ‡غŒ WebSocket ظ‡ط± ط¯ظˆ ط³ظ…طھ ط±ط§
+ط¨ظ‡â€Œط±ظˆط² ع©ظ†غŒط¯.
 
 </div>
 
-## v1.20.2 — 2026-11-07
+## v1.20.2 â€” 2026-11-07
 
 - Recover WS, WSS and WSSMux listeners after accept failures. Repair lost
   WSSMux data sessions sooner, fall back to healthy routes, and release
@@ -119,14 +143,14 @@ WSS پس از تکمیل TLS احراز هویت می‌شود. برای امت�
 
 <div dir="rtl">
 
-بازیابی WSSMux و TCPMux سریع‌تر انجام می‌شود و در پورت‌های چندمقصدی، خرابی یک
-مقصد می‌تواند در همان اتصال جبران شود. گزارش Connection Test در ترمینال باریک
-خواناتر است و نتیجهٔ ناموجود را از مقدار صفر جدا نشان می‌دهد. نصب، به‌روزرسانی
-و بازگردانی نسخه هم در برابر خطا مقاوم‌تر شده‌اند.
+ط¨ط§ط²غŒط§ط¨غŒ WSSMux ظˆ TCPMux ط³ط±غŒط¹â€Œطھط± ط§ظ†ط¬ط§ظ… ظ…غŒâ€Œط´ظˆط¯ ظˆ ط¯ط± ظ¾ظˆط±طھâ€Œظ‡ط§غŒ ع†ظ†ط¯ظ…ظ‚طµط¯غŒطŒ ط®ط±ط§ط¨غŒ غŒع©
+ظ…ظ‚طµط¯ ظ…غŒâ€Œطھظˆط§ظ†ط¯ ط¯ط± ظ‡ظ…ط§ظ† ط§طھطµط§ظ„ ط¬ط¨ط±ط§ظ† ط´ظˆط¯. ع¯ط²ط§ط±ط´ Connection Test ط¯ط± طھط±ظ…غŒظ†ط§ظ„ ط¨ط§ط±غŒع©
+ط®ظˆط§ظ†ط§طھط± ط§ط³طھ ظˆ ظ†طھغŒط¬ظ‡ظ” ظ†ط§ظ…ظˆط¬ظˆط¯ ط±ط§ ط§ط² ظ…ظ‚ط¯ط§ط± طµظپط± ط¬ط¯ط§ ظ†ط´ط§ظ† ظ…غŒâ€Œط¯ظ‡ط¯. ظ†طµط¨طŒ ط¨ظ‡â€Œط±ظˆط²ط±ط³ط§ظ†غŒ
+ظˆ ط¨ط§ط²ع¯ط±ط¯ط§ظ†غŒ ظ†ط³ط®ظ‡ ظ‡ظ… ط¯ط± ط¨ط±ط§ط¨ط± ط®ط·ط§ ظ…ظ‚ط§ظˆظ…â€Œطھط± ط´ط¯ظ‡â€Œط§ظ†ط¯.
 
 </div>
 
-## v1.20.1 — 2026-11-06
+## v1.20.1 â€” 2026-11-06
 
 - Recover the WSMUX and WSSMUX listener after a fatal accept-loop failure.
 - Cancel backend dials and relays when their physical mux session fails.
@@ -134,7 +158,7 @@ WSS پس از تکمیل TLS احراز هویت می‌شود. برای امت�
   [GO-2026-6865](https://pkg.go.dev/vuln/GO-2026-6865) and
   [GO-2026-6888](https://pkg.go.dev/vuln/GO-2026-6888).
 
-## v1.20.0 — 2026-11-01
+## v1.20.0 â€” 2026-11-01
 
 - Add built-in TLS, bidirectional streaming gRPC over HTTP/2, pinned-host SSH
   forwarding and DNS-shaped KCP to reverse tunnels, fallback chains, paired
@@ -162,17 +186,17 @@ its temporary test endpoint. Read [the carrier guide](docs/additional-carriers.m
 
 <div dir="rtl">
 
-TLS، gRPC، SSH و DNS روی UDP مستقیم به تانل معکوس و Connection Test اضافه شدند.
-هماهنگ‌کنندهٔ تست رمزنگاری شد؛ پاسخ ناقص، انتظار طولانی TCP و نوشتن پس از بستن
-اتصال gRPC اصلاح شدند. تست مستقل اتصال و p95 به گزارش اضافه شد. قابلیت‌ها و
-تست‌های کرنلی نسخهٔ قبلی حفظ شده‌اند. هر دو سرور را ارتقا بده و لینک تست تازه بساز.
+TLSطŒ gRPCطŒ SSH ظˆ DNS ط±ظˆغŒ UDP ظ…ط³طھظ‚غŒظ… ط¨ظ‡ طھط§ظ†ظ„ ظ…ط¹ع©ظˆط³ ظˆ Connection Test ط§ط¶ط§ظپظ‡ ط´ط¯ظ†ط¯.
+ظ‡ظ…ط§ظ‡ظ†ع¯â€Œع©ظ†ظ†ط¯ظ‡ظ” طھط³طھ ط±ظ…ط²ظ†ع¯ط§ط±غŒ ط´ط¯ط› ظ¾ط§ط³ط® ظ†ط§ظ‚طµطŒ ط§ظ†طھط¸ط§ط± ط·ظˆظ„ط§ظ†غŒ TCP ظˆ ظ†ظˆط´طھظ† ظ¾ط³ ط§ط² ط¨ط³طھظ†
+ط§طھطµط§ظ„ gRPC ط§طµظ„ط§ط­ ط´ط¯ظ†ط¯. طھط³طھ ظ…ط³طھظ‚ظ„ ط§طھطµط§ظ„ ظˆ p95 ط¨ظ‡ ع¯ط²ط§ط±ط´ ط§ط¶ط§ظپظ‡ ط´ط¯. ظ‚ط§ط¨ظ„غŒطھâ€Œظ‡ط§ ظˆ
+طھط³طھâ€Œظ‡ط§غŒ ع©ط±ظ†ظ„غŒ ظ†ط³ط®ظ‡ظ” ظ‚ط¨ظ„غŒ ط­ظپط¸ ط´ط¯ظ‡â€Œط§ظ†ط¯. ظ‡ط± ط¯ظˆ ط³ط±ظˆط± ط±ط§ ط§ط±طھظ‚ط§ ط¨ط¯ظ‡ ظˆ ظ„غŒظ†ع© طھط³طھ طھط§ط²ظ‡ ط¨ط³ط§ط².
 
 </div>
 
-## v1.19.2 — 2026-11-01
+## v1.19.2 â€” 2026-11-01
 
 - Shorten kernel Quick tests: two observation echoes, 100 ms warmup and
-  500–750 ms verified directional speed samples. Bound silent native paths
+  500â€“750 ms verified directional speed samples. Bound silent native paths
   to 3 seconds, reverse carriers to 5, and WireGuard/IPsec to 8. Keep all
   healthy protocols, four streams, payload verification, acknowledged cleanup
   and the existing Full profile. Poll kernel transitions every 100 ms, cache
@@ -189,15 +213,15 @@ samples are estimates; use Full for slow-starting paths and sustained validation
 
 <div dir="rtl">
 
-**خلاصهٔ فارسی:** تست Quick کرنل کوتاه‌تر شد: بررسی ترافیک ۲ ثانیه، انتظار مسیر
-بی‌پاسخ ۳ ثانیه برای روش بومی، ۵ ثانیه برای معکوس و ۸ ثانیه برای WireGuard/IPsec.
-سرعت همهٔ روش‌های سالم همچنان در هر دو جهت سنجیده می‌شود؛ Full بررسی طولانی را
-نگه می‌دارد. تست واقعی GRE مستقیم و معکوس حدود ۳۸ درصد کوتاه‌تر شد؛ این عدد
-تضمین زمان برای همهٔ مسیرها نیست. هر دو سرور را ارتقا بده.
+**ط®ظ„ط§طµظ‡ظ” ظپط§ط±ط³غŒ:** طھط³طھ Quick ع©ط±ظ†ظ„ ع©ظˆطھط§ظ‡â€Œطھط± ط´ط¯: ط¨ط±ط±ط³غŒ طھط±ط§ظپغŒع© غ² ط«ط§ظ†غŒظ‡طŒ ط§ظ†طھط¸ط§ط± ظ…ط³غŒط±
+ط¨غŒâ€Œظ¾ط§ط³ط® غ³ ط«ط§ظ†غŒظ‡ ط¨ط±ط§غŒ ط±ظˆط´ ط¨ظˆظ…غŒطŒ غµ ط«ط§ظ†غŒظ‡ ط¨ط±ط§غŒ ظ…ط¹ع©ظˆط³ ظˆ غ¸ ط«ط§ظ†غŒظ‡ ط¨ط±ط§غŒ WireGuard/IPsec.
+ط³ط±ط¹طھ ظ‡ظ…ظ‡ظ” ط±ظˆط´â€Œظ‡ط§غŒ ط³ط§ظ„ظ… ظ‡ظ…ع†ظ†ط§ظ† ط¯ط± ظ‡ط± ط¯ظˆ ط¬ظ‡طھ ط³ظ†ط¬غŒط¯ظ‡ ظ…غŒâ€Œط´ظˆط¯ط› Full ط¨ط±ط±ط³غŒ ط·ظˆظ„ط§ظ†غŒ ط±ط§
+ظ†ع¯ظ‡ ظ…غŒâ€Œط¯ط§ط±ط¯. طھط³طھ ظˆط§ظ‚ط¹غŒ GRE ظ…ط³طھظ‚غŒظ… ظˆ ظ…ط¹ع©ظˆط³ ط­ط¯ظˆط¯ غ³غ¸ ط¯ط±طµط¯ ع©ظˆطھط§ظ‡â€Œطھط± ط´ط¯ط› ط§غŒظ† ط¹ط¯ط¯
+طھط¶ظ…غŒظ† ط²ظ…ط§ظ† ط¨ط±ط§غŒ ظ‡ظ…ظ‡ظ” ظ…ط³غŒط±ظ‡ط§ ظ†غŒط³طھ. ظ‡ط± ط¯ظˆ ط³ط±ظˆط± ط±ط§ ط§ط±طھظ‚ط§ ط¨ط¯ظ‡.
 
 </div>
 
-## v1.19.1 — 2026-10-31
+## v1.19.1 â€” 2026-10-31
 
 - Integrate all 20 standard kernel methods into Connection Test in native and
   reverse modes. Test real peer traffic and verified four-stream download/upload;
@@ -221,15 +245,15 @@ sampling and cleanup. A short healthy sample does not establish long-term uptime
 
 <div dir="rtl">
 
-**خلاصهٔ فارسی:** تونل‌های کرنل، مستقیم و معکوس، وارد Connection Test شدند؛
-سرعت، تاریخچه، پیشنهاد و ساخت تونل از نتیجهٔ موفق هم پشتیبانی می‌شوند. Quick
-برای هر روش کرنل ۴ ثانیه بررسی دارد و سپس دانلود/آپلود را می‌سنجد؛ Full بررسی
-طولانی‌تر را حفظ می‌کند. پاک‌سازی دو سمت، لغو تست، کنترل UDP، تداخل مسیر و
-تشخیص سلامت نیز هماهنگ شده‌اند. هر دو سرور را ارتقا بده.
+**ط®ظ„ط§طµظ‡ظ” ظپط§ط±ط³غŒ:** طھظˆظ†ظ„â€Œظ‡ط§غŒ ع©ط±ظ†ظ„طŒ ظ…ط³طھظ‚غŒظ… ظˆ ظ…ط¹ع©ظˆط³طŒ ظˆط§ط±ط¯ Connection Test ط´ط¯ظ†ط¯ط›
+ط³ط±ط¹طھطŒ طھط§ط±غŒط®ع†ظ‡طŒ ظ¾غŒط´ظ†ظ‡ط§ط¯ ظˆ ط³ط§ط®طھ طھظˆظ†ظ„ ط§ط² ظ†طھغŒط¬ظ‡ظ” ظ…ظˆظپظ‚ ظ‡ظ… ظ¾ط´طھغŒط¨ط§ظ†غŒ ظ…غŒâ€Œط´ظˆظ†ط¯. Quick
+ط¨ط±ط§غŒ ظ‡ط± ط±ظˆط´ ع©ط±ظ†ظ„ غ´ ط«ط§ظ†غŒظ‡ ط¨ط±ط±ط³غŒ ط¯ط§ط±ط¯ ظˆ ط³ظ¾ط³ ط¯ط§ظ†ظ„ظˆط¯/ط¢ظ¾ظ„ظˆط¯ ط±ط§ ظ…غŒâ€Œط³ظ†ط¬ط¯ط› Full ط¨ط±ط±ط³غŒ
+ط·ظˆظ„ط§ظ†غŒâ€Œطھط± ط±ط§ ط­ظپط¸ ظ…غŒâ€Œع©ظ†ط¯. ظ¾ط§ع©â€Œط³ط§ط²غŒ ط¯ظˆ ط³ظ…طھطŒ ظ„ط؛ظˆ طھط³طھطŒ ع©ظ†طھط±ظ„ UDPطŒ طھط¯ط§ط®ظ„ ظ…ط³غŒط± ظˆ
+طھط´ط®غŒطµ ط³ظ„ط§ظ…طھ ظ†غŒط² ظ‡ظ…ط§ظ‡ظ†ع¯ ط´ط¯ظ‡â€Œط§ظ†ط¯. ظ‡ط± ط¯ظˆ ط³ط±ظˆط± ط±ط§ ط§ط±طھظ‚ط§ ط¨ط¯ظ‡.
 
 </div>
 
-## v1.19.0 — 2026-10-31
+## v1.19.0 â€” 2026-10-31
 
 - Add 20 standard Linux kernel L3/L2 tunnel methods as an independent engine:
   GRE/IPIP/SIT and IPv6 variants, WireGuard, IKEv2-managed XFRM/IPsec, FOU/GUE,
@@ -266,16 +290,16 @@ needs inbound UDP on both servers and does not traverse recursive resolvers.
 
 <div dir="rtl">
 
-**خلاصهٔ فارسی:** ۲۰ روش تونل کرنل، DNS/EDNS0 و دو حالت ICMP اضافه شدند.
-Quick محدودیت سه پروتکل ندارد و پنجرهٔ بررسی ترافیک آن ۲۰ ثانیه است؛ زمان کل
-به برقراری اتصال و سرعت‌سنجی هم بستگی دارد. تداخل subnet، نصب هم‌زمان، MTU،
-شروع WireGuard و اندازهٔ پاسخ‌های Connection Test اصلاح شدند. برای قابلیت‌های
-جدید هر دو سرور را ارتقا بده. روش‌های خام کرنل رمزنگاری ندارند؛ IPsec به
-strongSwan نیاز دارد و DNS باید روی هر دو سرور پورت دریافت باز داشته باشد.
+**ط®ظ„ط§طµظ‡ظ” ظپط§ط±ط³غŒ:** غ²غ° ط±ظˆط´ طھظˆظ†ظ„ ع©ط±ظ†ظ„طŒ DNS/EDNS0 ظˆ ط¯ظˆ ط­ط§ظ„طھ ICMP ط§ط¶ط§ظپظ‡ ط´ط¯ظ†ط¯.
+Quick ظ…ط­ط¯ظˆط¯غŒطھ ط³ظ‡ ظ¾ط±ظˆطھع©ظ„ ظ†ط¯ط§ط±ط¯ ظˆ ظ¾ظ†ط¬ط±ظ‡ظ” ط¨ط±ط±ط³غŒ طھط±ط§ظپغŒع© ط¢ظ† غ²غ° ط«ط§ظ†غŒظ‡ ط§ط³طھط› ط²ظ…ط§ظ† ع©ظ„
+ط¨ظ‡ ط¨ط±ظ‚ط±ط§ط±غŒ ط§طھطµط§ظ„ ظˆ ط³ط±ط¹طھâ€Œط³ظ†ط¬غŒ ظ‡ظ… ط¨ط³طھع¯غŒ ط¯ط§ط±ط¯. طھط¯ط§ط®ظ„ subnetطŒ ظ†طµط¨ ظ‡ظ…â€Œط²ظ…ط§ظ†طŒ MTUطŒ
+ط´ط±ظˆط¹ WireGuard ظˆ ط§ظ†ط¯ط§ط²ظ‡ظ” ظ¾ط§ط³ط®â€Œظ‡ط§غŒ Connection Test ط§طµظ„ط§ط­ ط´ط¯ظ†ط¯. ط¨ط±ط§غŒ ظ‚ط§ط¨ظ„غŒطھâ€Œظ‡ط§غŒ
+ط¬ط¯غŒط¯ ظ‡ط± ط¯ظˆ ط³ط±ظˆط± ط±ط§ ط§ط±طھظ‚ط§ ط¨ط¯ظ‡. ط±ظˆط´â€Œظ‡ط§غŒ ط®ط§ظ… ع©ط±ظ†ظ„ ط±ظ…ط²ظ†ع¯ط§ط±غŒ ظ†ط¯ط§ط±ظ†ط¯ط› IPsec ط¨ظ‡
+strongSwan ظ†غŒط§ط² ط¯ط§ط±ط¯ ظˆ DNS ط¨ط§غŒط¯ ط±ظˆغŒ ظ‡ط± ط¯ظˆ ط³ط±ظˆط± ظ¾ظˆط±طھ ط¯ط±غŒط§ظپطھ ط¨ط§ط² ط¯ط§ط´طھظ‡ ط¨ط§ط´ط¯.
 
 </div>
 
-## v1.18.1 — 2026-10-30
+## v1.18.1 â€” 2026-10-30
 
 - Carry WS/WSS mux and direct WebSocket traffic in authenticated, negotiated
   RFC 6455 binary messages with client masking and control-frame handling.
@@ -309,14 +333,14 @@ unless the new optional settings are configured.
 
 <div dir="rtl">
 
-**خلاصهٔ فارسی:** فریم‌بندی و احراز هویت WSS و چند ایراد UDP/FEC و فیل‌اوور TCP
-اصلاح شده‌اند. ابتدا سرور را ارتقا دهید و توکن خصوصی یکسان را نگه دارید. در
-`simple_auth` با گواهی خصوصی، فایل اعتماد گواهی را روی کلاینت تنظیم کنید. پروفایل
-۶۰۰ مگابیت اختیاری است؛ سرعت مسیر و شناسایی‌نشدن تضمین نمی‌شود.
+**ط®ظ„ط§طµظ‡ظ” ظپط§ط±ط³غŒ:** ظپط±غŒظ…â€Œط¨ظ†ط¯غŒ ظˆ ط§ط­ط±ط§ط² ظ‡ظˆغŒطھ WSS ظˆ ع†ظ†ط¯ ط§غŒط±ط§ط¯ UDP/FEC ظˆ ظپغŒظ„â€Œط§ظˆظˆط± TCP
+ط§طµظ„ط§ط­ ط´ط¯ظ‡â€Œط§ظ†ط¯. ط§ط¨طھط¯ط§ ط³ط±ظˆط± ط±ط§ ط§ط±طھظ‚ط§ ط¯ظ‡غŒط¯ ظˆ طھظˆع©ظ† ط®طµظˆطµغŒ غŒع©ط³ط§ظ† ط±ط§ ظ†ع¯ظ‡ ط¯ط§ط±غŒط¯. ط¯ط±
+`simple_auth` ط¨ط§ ع¯ظˆط§ظ‡غŒ ط®طµظˆطµغŒطŒ ظپط§غŒظ„ ط§ط¹طھظ…ط§ط¯ ع¯ظˆط§ظ‡غŒ ط±ط§ ط±ظˆغŒ ع©ظ„ط§غŒظ†طھ طھظ†ط¸غŒظ… ع©ظ†غŒط¯. ظ¾ط±ظˆظپط§غŒظ„
+غ¶غ°غ° ظ…ع¯ط§ط¨غŒطھ ط§ط®طھغŒط§ط±غŒ ط§ط³طھط› ط³ط±ط¹طھ ظ…ط³غŒط± ظˆ ط´ظ†ط§ط³ط§غŒغŒâ€Œظ†ط´ط¯ظ† طھط¶ظ…غŒظ† ظ†ظ…غŒâ€Œط´ظˆط¯.
 
 </div>
 
-## v1.18.0 — 2026-10-27
+## v1.18.0 â€” 2026-10-27
 
 - Automatically enable persistent high-concurrency host tuning for the
   Throughput preset on Linux, including existing Throughput tunnels starting
@@ -333,7 +357,7 @@ unless the new optional settings are configured.
   fallback remains enabled; TCP control carriers, including raw UDP forwarding,
   retain health-scored switching.
 
-## v1.17.0 — 2026-10-27
+## v1.17.0 â€” 2026-10-27
 
 - Start TCP relay directions with a pooled 16 KiB buffer and grow immediately
   to the existing 64 KiB bulk buffer after a full read. Preserve byte ordering,
@@ -360,9 +384,9 @@ unless the new optional settings are configured.
   under the race detector so early ICMP refusals cannot masquerade as a broken
   tunnel. Production UDP behavior is unchanged.
 
-## v1.16.0 — 2026-10-26
+## v1.16.0 â€” 2026-10-26
 
-- Add **Edit → Automatic Address Failover** for existing reverse client
+- Add **Edit â†’ Automatic Address Failover** for existing reverse client
   tunnels, including IPv4 primary and IPv6 backup on the same server. Health
   switches now rebuild the control channel and connection pool, so an active
   mux tunnel leaves a degraded route instead of keeping old sessions there.
@@ -382,7 +406,7 @@ unless the new optional settings are configured.
   session before sending test traffic. Repeat the case under the race detector
   so listener startup scheduling cannot falsely fail a healthy WS tunnel.
 
-## v1.15.1 — 2026-10-24
+## v1.15.1 â€” 2026-10-24
 
 - Extend the opt-in high-concurrency profile to disable supported kernel busy
   polling, preserving original CPU settings for rollback and safely upgrading
@@ -417,7 +441,7 @@ unless the new optional settings are configured.
   migration/MTU and cancellation fixes; update kcp-go to v5.6.73 for queued
   segment preservation across MTU changes and reduced deadline timer overhead.
 
-## v1.15.0 — 2026-10-23
+## v1.15.0 â€” 2026-10-23
 
 - Upgrade this CLI-only release from an SSH session or the installer; the browser updater is retired.
 - Remove the management web panel, browser terminal, authentication endpoints,
@@ -432,9 +456,9 @@ unless the new optional settings are configured.
 - Update CLI menu numbering, documentation, dependencies and Linux regression checks.
 
 
-## v1.14.2 — 2026-10-22 (dr-hoseyn fork)
+## v1.14.2 â€” 2026-10-22 (dr-hoseyn fork)
 
-- Restore Reverse → ICMP → xDi (ICMP) in the terminal and web panel. Keep
+- Restore Reverse â†’ ICMP â†’ xDi (ICMP) in the terminal and web panel. Keep
   Direct xDi available separately, and include Reverse xDi in Connection Test
   with explicit privilege checks on both endpoints.
 - Verify simultaneous reverse TCP streams, forwarded UDP, client restart and
@@ -446,13 +470,13 @@ unless the new optional settings are configured.
 
 <div dir="rtl">
 
-گزینهٔ **Reverse → ICMP → xDi (ICMP)** به منوی ترمینال و پنل برگشت و به
-Connection Test اضافه شد. هر دو سمت به لینوکس و دسترسی root یا CAP_NET_RAW
-نیاز دارند. نصب ابزار NaiveProxy نیز با نسخه و checksum جدید اصلاح شد.
+ع¯ط²غŒظ†ظ‡ظ” **Reverse â†’ ICMP â†’ xDi (ICMP)** ط¨ظ‡ ظ…ظ†ظˆغŒ طھط±ظ…غŒظ†ط§ظ„ ظˆ ظ¾ظ†ظ„ ط¨ط±ع¯ط´طھ ظˆ ط¨ظ‡
+Connection Test ط§ط¶ط§ظپظ‡ ط´ط¯. ظ‡ط± ط¯ظˆ ط³ظ…طھ ط¨ظ‡ ظ„غŒظ†ظˆع©ط³ ظˆ ط¯ط³طھط±ط³غŒ root غŒط§ CAP_NET_RAW
+ظ†غŒط§ط² ط¯ط§ط±ظ†ط¯. ظ†طµط¨ ط§ط¨ط²ط§ط± NaiveProxy ظ†غŒط² ط¨ط§ ظ†ط³ط®ظ‡ ظˆ checksum ط¬ط¯غŒط¯ ط§طµظ„ط§ط­ ط´ط¯.
 
 </div>
 
-## v1.14.1 — 2026-10-21 (dr-hoseyn fork)
+## v1.14.1 â€” 2026-10-21 (dr-hoseyn fork)
 
 - Remove the fixed 128 MiB mux receive-window budget that could prevent a
   healthy tunnel from adding sessions when its stream slots were full. Grow
@@ -489,15 +513,15 @@ Connection Test اضافه شد. هر دو سمت به لینوکس و دستر�
 
 <div dir="rtl">
 
-نسخهٔ **v1.14.1** محدودیت مصنوعی رشد نشست‌ها و واکنش کند به بار را اصلاح می‌کند.
-پروفایل Throughput برای همهٔ تونل‌های پشتیبانی‌شده در دسترس است و ظرفیت صف‌ها،
-نشست‌ها و پنجره‌های جریان افزایش یافته است. برای کانفیگ‌های موجود، پروفایل را
-روی هر دو سمت دوباره اعمال کنید؛ مقادیر دستی با آپدیت بی‌صدا تغییر نمی‌کنند.
-سرعت واقعی مسیر باید جداگانه سنجیده شود و برای همهٔ کریرها عدد ثابتی تضمین نمی‌شود.
+ظ†ط³ط®ظ‡ظ” **v1.14.1** ظ…ط­ط¯ظˆط¯غŒطھ ظ…طµظ†ظˆط¹غŒ ط±ط´ط¯ ظ†ط´ط³طھâ€Œظ‡ط§ ظˆ ظˆط§ع©ظ†ط´ ع©ظ†ط¯ ط¨ظ‡ ط¨ط§ط± ط±ط§ ط§طµظ„ط§ط­ ظ…غŒâ€Œع©ظ†ط¯.
+ظ¾ط±ظˆظپط§غŒظ„ Throughput ط¨ط±ط§غŒ ظ‡ظ…ظ‡ظ” طھظˆظ†ظ„â€Œظ‡ط§غŒ ظ¾ط´طھغŒط¨ط§ظ†غŒâ€Œط´ط¯ظ‡ ط¯ط± ط¯ط³طھط±ط³ ط§ط³طھ ظˆ ط¸ط±ظپغŒطھ طµظپâ€Œظ‡ط§طŒ
+ظ†ط´ط³طھâ€Œظ‡ط§ ظˆ ظ¾ظ†ط¬ط±ظ‡â€Œظ‡ط§غŒ ط¬ط±غŒط§ظ† ط§ظپط²ط§غŒط´ غŒط§ظپطھظ‡ ط§ط³طھ. ط¨ط±ط§غŒ ع©ط§ظ†ظپغŒع¯â€Œظ‡ط§غŒ ظ…ظˆط¬ظˆط¯طŒ ظ¾ط±ظˆظپط§غŒظ„ ط±ط§
+ط±ظˆغŒ ظ‡ط± ط¯ظˆ ط³ظ…طھ ط¯ظˆط¨ط§ط±ظ‡ ط§ط¹ظ…ط§ظ„ ع©ظ†غŒط¯ط› ظ…ظ‚ط§ط¯غŒط± ط¯ط³طھغŒ ط¨ط§ ط¢ظ¾ط¯غŒطھ ط¨غŒâ€Œطµط¯ط§ طھط؛غŒغŒط± ظ†ظ…غŒâ€Œع©ظ†ظ†ط¯.
+ط³ط±ط¹طھ ظˆط§ظ‚ط¹غŒ ظ…ط³غŒط± ط¨ط§غŒط¯ ط¬ط¯ط§ع¯ط§ظ†ظ‡ ط³ظ†ط¬غŒط¯ظ‡ ط´ظˆط¯ ظˆ ط¨ط±ط§غŒ ظ‡ظ…ظ‡ظ” ع©ط±غŒط±ظ‡ط§ ط¹ط¯ط¯ ط«ط§ط¨طھغŒ طھط¶ظ…غŒظ† ظ†ظ…غŒâ€Œط´ظˆط¯.
 
 </div>
 
-## v1.14.0 — 2026-10-20 (dr-hoseyn fork)
+## v1.14.0 â€” 2026-10-20 (dr-hoseyn fork)
 
 - Set up both servers from a successful Connection Test. Choose a measured IP
   path and tunnel and enter forwarded ports on either endpoint or the Iran web
@@ -525,7 +549,7 @@ Connection Test اضافه شد. هر دو سمت به لینوکس و دستر�
 
 All notable changes to Backpack are documented here.
 
-## v1.13.0 — 2026-10-18 (dr-hoseyn fork)
+## v1.13.0 â€” 2026-10-18 (dr-hoseyn fork)
 
 - Add combined XHTTP/REALITY, restricted TrustTunnel HTTP/3 with HTTP/2
   fallback, and native WebTransport streams and fragmented datagrams.
@@ -570,15 +594,15 @@ See [Network efficiency and modern carriers](docs/modern-networking.md).
 
 <div dir="rtl">
 
-نسخهٔ v1.13.0 بهینه‌سازی مصرف منابع، رفع مشکلات اتصال و جفت‌سازی، پنل هماهنگ‌تر
-و حامل‌های XHTTP+REALITY، TrustTunnel، WebTransport و Tailcat+DERP آزمایشی را
-اضافه می‌کند. تنظیمات جدید را روی هر دو سمت با همین نسخه استفاده کنید. TrustTunnel
-در این نسخه حامل محدود Reverse است؛ محدودیت EOF در endpoint رسمی و شیوهٔ
-آزمایش آن در مستندات شبکه توضیح داده شده است.
+ظ†ط³ط®ظ‡ظ” v1.13.0 ط¨ظ‡غŒظ†ظ‡â€Œط³ط§ط²غŒ ظ…طµط±ظپ ظ…ظ†ط§ط¨ط¹طŒ ط±ظپط¹ ظ…ط´ع©ظ„ط§طھ ط§طھطµط§ظ„ ظˆ ط¬ظپطھâ€Œط³ط§ط²غŒطŒ ظ¾ظ†ظ„ ظ‡ظ…ط§ظ‡ظ†ع¯â€Œطھط±
+ظˆ ط­ط§ظ…ظ„â€Œظ‡ط§غŒ XHTTP+REALITYطŒ TrustTunnelطŒ WebTransport ظˆ Tailcat+DERP ط¢ط²ظ…ط§غŒط´غŒ ط±ط§
+ط§ط¶ط§ظپظ‡ ظ…غŒâ€Œع©ظ†ط¯. طھظ†ط¸غŒظ…ط§طھ ط¬ط¯غŒط¯ ط±ط§ ط±ظˆغŒ ظ‡ط± ط¯ظˆ ط³ظ…طھ ط¨ط§ ظ‡ظ…غŒظ† ظ†ط³ط®ظ‡ ط§ط³طھظپط§ط¯ظ‡ ع©ظ†غŒط¯. TrustTunnel
+ط¯ط± ط§غŒظ† ظ†ط³ط®ظ‡ ط­ط§ظ…ظ„ ظ…ط­ط¯ظˆط¯ Reverse ط§ط³طھط› ظ…ط­ط¯ظˆط¯غŒطھ EOF ط¯ط± endpoint ط±ط³ظ…غŒ ظˆ ط´غŒظˆظ‡ظ”
+ط¢ط²ظ…ط§غŒط´ ط¢ظ† ط¯ط± ظ…ط³طھظ†ط¯ط§طھ ط´ط¨ع©ظ‡ طھظˆط¶غŒط­ ط¯ط§ط¯ظ‡ ط´ط¯ظ‡ ط§ط³طھ.
 
 </div>
 
-## v1.12.0 — 2026-10-18 (dr-hoseyn fork)
+## v1.12.0 â€” 2026-10-18 (dr-hoseyn fork)
 
 - Set up Kharej directly from a Setup Link: direction, protocol, helper
   credentials and private trust are inferred before asking manual questions.
@@ -611,15 +635,15 @@ Direct/L3/AmneziaWG and native packet engines retain their separate setup flows.
 
 <div dir="rtl">
 
-نسخهٔ v1.12.0 راه‌اندازی خارج با تشخیص خودکار از لینک، گزینهٔ Automatic کنار
-Reverse و Direct، بازیابی سریع‌تر مسیرها، تاریخچهٔ Connection Test، عیب‌یابی
-مرحله‌ای TUIC و Hysteria2 و سنجش واقعی آپلود، دانلود، CPU و رم را اضافه می‌کند.
-برای استفادهٔ کامل از قابلیت‌های جدید، هر دو سمت را ارتقا دهید. فایروال خودکار
-تغییر نمی‌کند و پورت‌های موردنیاز پیش از ساخت نمایش داده می‌شوند.
+ظ†ط³ط®ظ‡ظ” v1.12.0 ط±ط§ظ‡â€Œط§ظ†ط¯ط§ط²غŒ ط®ط§ط±ط¬ ط¨ط§ طھط´ط®غŒطµ ط®ظˆط¯ع©ط§ط± ط§ط² ظ„غŒظ†ع©طŒ ع¯ط²غŒظ†ظ‡ظ” Automatic ع©ظ†ط§ط±
+Reverse ظˆ DirectطŒ ط¨ط§ط²غŒط§ط¨غŒ ط³ط±غŒط¹â€Œطھط± ظ…ط³غŒط±ظ‡ط§طŒ طھط§ط±غŒط®ع†ظ‡ظ” Connection TestطŒ ط¹غŒط¨â€ŒغŒط§ط¨غŒ
+ظ…ط±ط­ظ„ظ‡â€Œط§غŒ TUIC ظˆ Hysteria2 ظˆ ط³ظ†ط¬ط´ ظˆط§ظ‚ط¹غŒ ط¢ظ¾ظ„ظˆط¯طŒ ط¯ط§ظ†ظ„ظˆط¯طŒ CPU ظˆ ط±ظ… ط±ط§ ط§ط¶ط§ظپظ‡ ظ…غŒâ€Œع©ظ†ط¯.
+ط¨ط±ط§غŒ ط§ط³طھظپط§ط¯ظ‡ظ” ع©ط§ظ…ظ„ ط§ط² ظ‚ط§ط¨ظ„غŒطھâ€Œظ‡ط§غŒ ط¬ط¯غŒط¯طŒ ظ‡ط± ط¯ظˆ ط³ظ…طھ ط±ط§ ط§ط±طھظ‚ط§ ط¯ظ‡غŒط¯. ظپط§غŒط±ظˆط§ظ„ ط®ظˆط¯ع©ط§ط±
+طھط؛غŒغŒط± ظ†ظ…غŒâ€Œع©ظ†ط¯ ظˆ ظ¾ظˆط±طھâ€Œظ‡ط§غŒ ظ…ظˆط±ط¯ظ†غŒط§ط² ظ¾غŒط´ ط§ط² ط³ط§ط®طھ ظ†ظ…ط§غŒط´ ط¯ط§ط¯ظ‡ ظ…غŒâ€Œط´ظˆظ†ط¯.
 
 </div>
 
-## v1.11.0 — 2026-10-18 (dr-hoseyn fork)
+## v1.11.0 â€” 2026-10-18 (dr-hoseyn fork)
 
 - Add managed adaptive paths with authenticated upload/download probes, warm
   helpers, hysteresis, idle-pool retirement and independent native UDP selection.
@@ -646,7 +670,7 @@ Reverse و Direct، بازیابی سریع‌تر مسیرها، تاریخچه
 - Keep Connection Test settings inside one packet as the carrier list grows,
   restoring the authenticated endpoint from the copied link.
 
-## v1.10.0 — 2026-10-17 (dr-hoseyn fork)
+## v1.10.0 â€” 2026-10-17 (dr-hoseyn fork)
 
 - Add managed Hysteria2/Salamander, AnyTLS, ShadowTLS v3 with SS2022 and
   TUIC v5 reverse tunnels, with verified TLS, restricted private targets,
@@ -688,7 +712,7 @@ Reverse و Direct، بازیابی سریع‌تر مسیرها، تاریخچه
   latency/jitter/loss and speed convergence without recommending failed or
   incomplete tests or claiming long-term uptime from a short sample.
 
-## v1.9.3 — 2026-10-17 (dr-hoseyn fork)
+## v1.9.3 â€” 2026-10-17 (dr-hoseyn fork)
 
 - Run reverse PCK and direct PCK/SNI/xDi over IPv6. Use IPv6 TCP checksums,
   family-aware sockets, scoped ip6tables guards and MTU accounting; IP Spoofing
@@ -702,7 +726,7 @@ Reverse و Direct، بازیابی سریع‌تر مسیرها، تاریخچه
 - Group the direct setup menu and panel into ICMP, TCP, UDP, HTTPS and IP Spoofing
   families. MASQUE is under HTTPS; existing CLI-only panel restrictions remain.
 
-## v1.9.2 — 2026-10-17 (dr-hoseyn fork)
+## v1.9.2 â€” 2026-10-17 (dr-hoseyn fork)
 
 - Add authenticated HTTP/3 CONNECT-UDP MASQUE as an L3 tunnel carrier, with
   certificate verification, restricted loopback targets, paired Setup Links,
@@ -715,7 +739,7 @@ Reverse و Direct، بازیابی سریع‌تر مسیرها، تاریخچه
   notices, and explain the IPv4-only cases skipped on IPv6.
 - Verify the public installer and default helper files after publishing a release.
 
-## v1.9.1 — 2026-10-15 (dr-hoseyn fork)
+## v1.9.1 â€” 2026-10-15 (dr-hoseyn fork)
 
 - Sync with upstream main at `132467b` (BackPack v1.9.0).
 - Merge #104: managed-helper readiness, startup deadlines and preserved tunnel settings.
@@ -724,7 +748,7 @@ Reverse و Direct، بازیابی سریع‌تر مسیرها، تاریخچه
 - Keep HTTPS probe reports and unavailable-family reports in the combined coordinator.
 - Install and update from dr-hoseyn/BackPack, with the fork's own signed release assets.
 
-## v1.9.0 — 2026-10-09
+## v1.9.0 â€” 2026-10-09
 
 ### Added
 
@@ -768,8 +792,8 @@ Reverse و Direct، بازیابی سریع‌تر مسیرها، تاریخچه
   only the tunnels that answered every echo are measured, one at a time, with
   four streams and separate download and upload figures counted from verified
   bytes at the receiver. Each direction skips two seconds of warm-up and
-  samples for two to four, stopping early once the readings settle — typically
-  eight to twelve seconds per healthy tunnel, never more than twenty — and an
+  samples for two to four, stopping early once the readings settle â€” typically
+  eight to twelve seconds per healthy tunnel, never more than twenty â€” and an
   unstable tunnel costs no speed-test time at all. The menu and the panel show
   both directions and the speed phase as it runs. Both servers need this
   version for the speed test; against an older one it says so plainly, and the
@@ -782,8 +806,8 @@ Reverse و Direct، بازیابی سریع‌تر مسیرها، تاریخچه
   private `reality-cover.log` in the test's temporary directory, whose path is
   shown only when a cover fails; configuration-check failures still surface as
   errors. Covers are tried Microsoft, Bing, then Apple as the last fallback, and
-  the startup screen runs in stages — preparing, connecting the kharej,
-  testing — with a cover verified on Iran shown apart from the two-server
+  the startup screen runs in stages â€” preparing, connecting the kharej,
+  testing â€” with a cover verified on Iran shown apart from the two-server
   verdict.
 
 - **Less work on the packet hot paths.** The Noise record layer reuses its read
@@ -807,8 +831,8 @@ Reverse و Direct، بازیابی سریع‌تر مسیرها، تاریخچه
 ### Security
 
 - **Built with Go 1.26.9.** 1.26.6 carried twelve standard-library
-  vulnerabilities that this code reaches — eight in `net/http`, and others in
-  `net/textproto`, `crypto/tls` and `html/template` — on paths through the web
+  vulnerabilities that this code reaches â€” eight in `net/http`, and others in
+  `net/textproto`, `crypto/tls` and `html/template` â€” on paths through the web
   panel, setup-link decoding, the updater's checksum download and the Telegram
   client. All are fixed in 1.26.9; `golang.org/x/net` moves to v0.60.0 for the
   same advisories. The installer's build-from-source fallback pins 1.26.9 and
@@ -818,17 +842,17 @@ Reverse و Direct، بازیابی سریع‌تر مسیرها، تاریخچه
 
 - **Connection Test picked the kharej's listener ports on the Iran server**
   (#94). Direct test tunnels listen on the kharej, but the port came from Iran,
-  so on a busy kharej an unrelated service — often Xray, with many UDP
-  sockets — could already hold it and the row read DOWN before any traffic was
+  so on a busy kharej an unrelated service â€” often Xray, with many UDP
+  sockets â€” could already hold it and the row read DOWN before any traffic was
   measured. The kharej now picks free ports itself and tells Iran over the
   authenticated test coordinator before joining; the choice is frozen once it
   has checked in, a local setup failure shows as skipped on both machines, and
   an older peer keeps the old behaviour. When the coordinator itself cannot be
   reached, the message now says that no tunnel has been measured yet and that
-  ICMP and raw carriers may still pass — see the new [Checking a heavily
+  ICMP and raw carriers may still pass â€” see the new [Checking a heavily
   filtered path](docs/filtered-paths.md).
 - **Connection Test could pick a port the server was about to use itself.**
-  Test ports came from 20000–59999, most of which is the kernel's ephemeral
+  Test ports came from 20000â€“59999, most of which is the kernel's ephemeral
   range, where every outgoing connection draws its source port. A port is
   checked free and bound by the engine a moment later, so an outgoing
   connection could take it in between, and that tunnel read DOWN without
@@ -931,7 +955,7 @@ Reverse و Direct، بازیابی سریع‌تر مسیرها، تاریخچه
 - **AutoMTU never measured the path after a slow first handshake** (#80). The
   settle timer started at `Tunnel.Run` rather than at session establishment, so
   a handshake longer than two seconds meant probing ran without keys, failed at
-  once and waited thirty minutes to retry — small packets worked while larger
+  once and waited thirty minutes to retry â€” small packets worked while larger
   traffic stalled on an unmeasured path.
 - **Installing from source could stop before Backpack built** (#91). A 403 from
   `proxy.golang.org` stopped the comma-separated proxy list from reaching its
@@ -955,39 +979,39 @@ Reverse و Direct، بازیابی سریع‌تر مسیرها، تاریخچه
   so on Windows `lib\dom.js` read as a whole filename and an existing module
   was reported unused (#90).
 
-## v1.8.5 — 2026-09-30
+## v1.8.5 â€” 2026-09-30
 
 ### Added
 
 - **A traffic limit per tunnel.** Set on the Iran end from the pencil in the
   card's bottom band, which now reads *used / limit* with a line that turns
-  amber at 70% and red at 90% (no limit is the default, shown as ∞). The
+  amber at 70% and red at 90% (no limit is the default, shown as âˆ‍). The
   Traffic limit dialog has presets from 50 GB to 10 TB, any amount in GB or
   TB, and quick adds. The engine enforces it: the running total, in and out
   together, is checked four times a second and the tunnel goes offline the
-  moment it reaches the limit — the card says *Limit reached* — and stays
+  moment it reaches the limit â€” the card says *Limit reached* â€” and stays
   offline, service still up, until the limit is raised; then it comes back on
   its own within two seconds. The count is the tunnel's own total, which
   restarts, reloads and updates carry over and a backup restores, so nothing
   resets it but deleting the tunnel. `/api/tunnel/quota`; the limit is
   `<name>.quota.json` beside the config.
 - **`backpack proxy enable <socks5|http> <port> [--user U --pass P]`**, `proxy
-  disable` and `proxy status` — the menu's Built-in Proxy without the menu,
-  and the line Manage → Built-in Proxy hands over for the kharej.
+  disable` and `proxy status` â€” the menu's Built-in Proxy without the menu,
+  and the line Manage â†’ Built-in Proxy hands over for the kharej.
 - **Applying a setup link again updates the tunnel it made.** After an edit on
-  the Iran end, `sudo backpack link apply '…'` on the kharej rewrites its end
-  of that tunnel in place — same name, the new transport and port — instead of
+  the Iran end, `sudo backpack link apply 'â€¦'` on the kharej rewrites its end
+  of that tunnel in place â€” same name, the new transport and port â€” instead of
   refusing because the tunnel exists. `link apply` also reads better: a boxed
   report with the result, and "waiting for the Iran server" printed while it
   waits, not after.
 
-- **Web panel: the dock is now Overview · Connection test · Tunnels · Terminal
-  · Manage.** *Connection test* runs the Iran side of the menu's Connection
-  Test from the browser — start it, copy the one `sudo backpack link apply
-  '…'` line (or the install-and-test line for a kharej without Backpack), and
+- **Web panel: the dock is now Overview آ· Connection test آ· Tunnels آ· Terminal
+  آ· Manage.** *Connection test* runs the Iran side of the menu's Connection
+  Test from the browser â€” start it, copy the one `sudo backpack link apply
+  'â€¦'` line (or the install-and-test line for a kharej without Backpack), and
   watch every transport's row fill live, ending in the best-settings card.
   *Terminal* is a root shell on the server (xterm.js, vendored under
-  `panel/js/vendor`, MIT): browser sessions only — never an API token —
+  `panel/js/vendor`, MIT): browser sessions only â€” never an API token â€”
   same-origin WebSocket, at most four at once, and every one opened is written
   to the audit record and the alert feed. The shell survives moving between
   sections. *Manage* carries Auto Refresh (with a 24-hour dial of when the
@@ -996,21 +1020,21 @@ Reverse و Direct، بازیابی سریع‌تر مسیرها، تاریخچه
   Locations (grouped, filterable, with size, item count and age). *Servers* is
   out of the dock for now; its route still answers.
 - **Web panel: the rest of the menu's setup, backup, update and panel screens.**
-  *Setup link* (tunnel card → ⋯ → Setup link…, and at the end of Add tunnel
+  *Setup link* (tunnel card â†’ â‹¯ â†’ Setup linkâ€¦, and at the end of Add tunnel
   when only this end is built) shows the link with the kharej's
-  `sudo backpack link apply '…'` line and the install-and-set-up line.
-  *Maintenance → Backup* lists the archives kept in the backups folder with
-  Back up now, Test (the menu's Test A Restore — changes nothing), Download,
+  `sudo backpack link apply 'â€¦'` line and the install-and-set-up line.
+  *Maintenance â†’ Backup* lists the archives kept in the backups folder with
+  Back up now, Test (the menu's Test A Restore â€” changes nothing), Download,
   Restore and Delete, and sets and tries the off-site copy command.
-  *Maintenance → Update* installs from an uploaded
+  *Maintenance â†’ Update* installs from an uploaded
   `backpack_linux_<arch>.tar.gz` (+ SHA256SUMS), refusing another
-  architecture's archive, and *Restore points* can roll back. *Settings →
+  architecture's archive, and *Restore points* can roll back. *Settings â†’
   Panel access* moves the address path (random, your own, none), issues a new
   login code and restarts the panel, following it to its new address. The
   fleet key stays in the menu only, on purpose (see menu/backup.go).
 - **Web panel: Add tunnel no longer needs a managed server.** It is the CLI
-  wizard again — Iran or kharej, then reverse or direct (as two cards, not a
-  small switch), then the tunnel, performance, optional and done — and it
+  wizard again â€” Iran or kharej, then reverse or direct (as two cards, not a
+  small switch), then the tunnel, performance, optional and done â€” and it
   builds this server's end only, ending on the setup link for the other one.
   The token is made here and carried by the link; the reverse Iran side's
   token field had no name, so it was never sent.
@@ -1019,8 +1043,8 @@ Reverse و Direct، بازیابی سریع‌تر مسیرها، تاریخچه
   every reverse transport the wizard offers (tcp, tcpmux, stealth, pck, ws,
   wss, wsmux, wssmux, kcp, quic, udp) and, as root, every direct carrier (udp,
   quic, pck, xdi, sni) on free ports, with the performance preset the operator
-  picks, and checks IP spoofing both ways the way Manage → IP Spoofing Tester
-  does, with 10.10.10.10 as the forged source. It prints a short link —
+  picks, and checks IP spoofing both ways the way Manage â†’ IP Spoofing Tester
+  does, with 10.10.10.10 as the forged source. It prints a short link â€”
   `backpack://t.` and 26 characters: where the Iran side's coordinator is and
   the test's secret. On the kharej, the same menu item or `backpack link apply
   '<link>'` fetches the rest from the coordinator in one packet and builds the
@@ -1034,23 +1058,23 @@ Reverse و Direct، بازیابی سریع‌تر مسیرها، تاریخچه
   second table gives the settings to build with: the fastest steady transport,
   the preset its speed and round trip call for, the path MTU (measured with
   unfragmentable probes) and the TCP MSS clamp it implies, the MTU the direct
-  tunnels measured, keepalive and heartbeat, and FEC — the timers and FEC by
+  tunnels measured, keepalive and heartbeat, and FEC â€” the timers and FEC by
   the same rules as Link Test. Nothing is installed and nothing is left
   behind. Made after a route that cut every flow after a few packets had to be
   diagnosed by hand; over a simulated route like that it reports every
   ordinary transport as failing and names the carriers that got through.
 
 - **A kharej without Backpack is set up with one command.** Under the setup
-  link, the Iran wizard (and Manage → Setup Link) now prints a second line:
-  `bash <(curl -fsSL …/install.sh) link apply 'backpack://…'`. Run as root on
+  link, the Iran wizard (and Manage â†’ Setup Link) now prints a second line:
+  `bash <(curl -fsSL â€¦/install.sh) link apply 'backpack://â€¦'`. Run as root on
   the kharej, it installs Backpack, builds the tunnel from the link, starts it,
-  and waits to say whether it connected — nothing is asked. On a kharej that
+  and waits to say whether it connected â€” nothing is asked. On a kharej that
   already runs Backpack the same is `backpack link apply '<link>'`, which also
   takes `--name` and `--host` (for a link that does not carry the Iran
   server's address). Applying the same link twice is refused, since a second
   tunnel with one token takes the connection from the first.
 - **The setup link carries backup addresses.** The reverse Iran wizard asks
-  for this server's other addresses — another IP, a domain, a CDN edge — and
+  for this server's other addresses â€” another IP, a domain, a CDN edge â€” and
   a kharej built from the link fails over to them on its own.
 - **A tunnel can restart on both servers at once, on a schedule.** Both Iran
   wizards ask *Restart This Tunnel On Both Servers Every N Hours (0 = Off)*;
@@ -1058,16 +1082,16 @@ Reverse و Direct، بازیابی سریع‌تر مسیرها، تاریخچه
   +03:30 and a kharej on UTC restart together; the link carries it to the
   kharej. (Auto Refresh, from cron in each machine's own timezone, restarts
   the two ends hours apart.)
-- **A setup link can be pasted as it arrived** — inside a Telegram message, in
+- **A setup link can be pasted as it arrived** â€” inside a Telegram message, in
   quotes, or broken over two lines.
 
 
 ### Changed
 
 - **Setup links are half as long.** A new link format (backpack://2.) carries
-  exactly the same settings as before — each field as a one-byte number, the
+  exactly the same settings as before â€” each field as a one-byte number, the
   repeated words as one byte, an IPv4 address in four bytes, the token packed
-  as the base-62 number it is, and the default name left out — with a checksum
+  as the base-62 number it is, and the default name left out â€” with a checksum
   so a link cut short in a paste is refused. A reverse tunnel's link went from
   264 characters to 132. Links from older builds (backpack://1.) still work; a
   build older than this one cannot read the new format and says so.
@@ -1075,21 +1099,21 @@ Reverse و Direct، بازیابی سریع‌تر مسیرها، تاریخچه
 - **IP spoofing and SNI spoofing use the new wizard and the setup link.** Both
   are set up from the Iran server like every other carrier: the Iran side
   answers what both ends share (packet profile, Stealth, the SNI domain) and
-  its own forged source, and the link carries the shared answers — and, for
-  spoof, the Iran server's real address — to the kharej, which asks only its
+  its own forged source, and the link carries the shared answers â€” and, for
+  spoof, the Iran server's real address â€” to the kharej, which asks only its
   own: the source it forges, its interface, and the Iran server's address when
   a link lacks it. The classic both-ends-by-hand wizard is gone.
 
-- **The menus are shorter.** Every screen of the terminal menu — the main
+- **The menus are shorter.** Every screen of the terminal menu â€” the main
   menu, Manage, the wizards, Edit, Backup, Web Panel, Telegram, Update and the
-  tools — now reads in short Title Case labels, and the paragraphs of
+  tools â€” now reads in short Title Case labels, and the paragraphs of
   explanation are one line or gone.
 
 ### Security
 
 - **Anyone could redirect a direct tunnel on the default `udp` carrier.** The
-  carrier took the source of every datagram it read as the peer — before the
-  tunnel had authenticated anything — and sent the whole tunnel there. One
+  carrier took the source of every datagram it read as the peer â€” before the
+  tunnel had authenticated anything â€” and sent the whole tunnel there. One
   forged datagram to the listening port moved the tunnel to the sender. A
   single path now hands its peer to the tunnel, which moves it only on an
   authenticated packet. With `paths` above 1 each extra socket still follows
@@ -1105,7 +1129,7 @@ Reverse و Direct، بازیابی سریع‌تر مسیرها، تاریخچه
   token, so something on the path that terminates the TLS can no longer pose
   as the Iran server. An older server that does not answer is still accepted;
   one that has answered once in this run and then stops is refused. Plain
-  `tcp`, `tcpmux`, `ws` and `udp` still do not authenticate the server — the
+  `tcp`, `tcpmux`, `ws` and `udp` still do not authenticate the server â€” the
   docs now say so instead of implying they do.
 - **With the password known, the second factor could be guessed without
   limit.** The password step reset the failure count, so password, four wrong
@@ -1114,7 +1138,7 @@ Reverse و Direct، بازیابی سریع‌تر مسیرها، تاریخچه
 - **The built-in SOCKS5/HTTP proxy without auth was an open door into the
   server itself.** It binds loopback, but a tunnel forwards its port to the
   public side, and the tunnel token authenticates servers, not the people using
-  the port — so anyone could reach the server's loopback services and the cloud
+  the port â€” so anyone could reach the server's loopback services and the cloud
   metadata address through it. Loopback, unspecified, link-local and multicast
   destinations are now refused after resolution, for CONNECT, UDP ASSOCIATE and
   the HTTP proxy alike.
@@ -1125,8 +1149,8 @@ Reverse و Direct، بازیابی سریع‌تر مسیرها، تاریخچه
 - **A failed Telegram send put the bot token in the error**, and the panel's
   *Send test message* showed that error to anyone with a write token. Errors
   are redacted now.
-- **The bot answered admins in group chats** — the panel password on `/webui`
-  and the backup archive included — for every member to read. It answers in
+- **The bot answered admins in group chats** â€” the panel password on `/webui`
+  and the backup archive included â€” for every member to read. It answers in
   private chats only and says so elsewhere.
 - **Fleet requests, tunnel tokens included, were readable in a managed
   server's process list.** The panel passed each request as an argument to
@@ -1162,7 +1186,7 @@ Reverse و Direct، بازیابی سریع‌تر مسیرها، تاریخچه
     any tuning sent clears the preset. Only what was touched is sent now. An
     untouched direct form also read the reverse form's preset row and sent
     none, which the server took as Turbo.
-  - Editing a reverse tunnel's transport — UDP to TCP, reported on v1.8.4 —
+  - Editing a reverse tunnel's transport â€” UDP to TCP, reported on v1.8.4 â€”
     took several tries: choosing the TCP family left the transport on "udp",
     so saving changed nothing. The transport now follows the family. And the
     kharej, still on the old transport, could not reconnect; after a change
@@ -1172,15 +1196,15 @@ Reverse و Direct، بازیابی سریع‌تر مسیرها، تاریخچه
     port was changed by hand (reported on v1.8.4). The reopen-from-new-ports
     fix pck and sni got in this version now covers udp, xdi and quic too: after
     90 seconds of unanswered handshakes the dialling end opens a new socket,
-    which is a new flow. Spoof is left out — its source is forged, not a port
+    which is a new flow. Spoof is left out â€” its source is forged, not a port
     this end can move.
   - Settings and Maintenance showed the preview's sample figures (1.7.6, five
     restore points, another server's port) for the seconds it took to ask
     GitHub for the latest release. Dialogs now open on a loader until their
     values are in, and the release check is kept for ten minutes and warmed
     when the panel starts.
-  - On a phone, the tunnel Metrics dialog ran off its right edge — its section
-    rules had taken the log lines' grid — and the Logs toolbar, the Edit tabs,
+  - On a phone, the tunnel Metrics dialog ran off its right edge â€” its section
+    rules had taken the log lines' grid â€” and the Logs toolbar, the Edit tabs,
     the Settings search and the History figures overflowed. All fit now.
   - Connection test is two panes of one size: the left one is the form, then a
     15-minute dial with the kharej's line under it, then the test's own
@@ -1191,12 +1215,12 @@ Reverse و Direct، بازیابی سریع‌تر مسیرها، تاریخچه
     ran on is named beside it.
   - Manage: Auto Refresh is a square card with a 24-hour dial and a live
     countdown to the next restart on the server's own clock and zone; the
-    Built-in Proxy beside it can be wired to a reverse tunnel — it adds the
+    Built-in Proxy beside it can be wired to a reverse tunnel â€” it adds the
     forward and hands over the kharej's `backpack proxy enable` line; File
     Locations is a search bar that opens.
-  - Tunnel cards fill the row — two tunnels take the width between them, three
-    to a row at most — and carry the preset as a chip (Reverse · TCP ·
-    Aggressive · 443).
+  - Tunnel cards fill the row â€” two tunnels take the width between them, three
+    to a row at most â€” and carry the preset as a chip (Reverse آ· TCP آ·
+    Aggressive آ· 443).
   - Add tunnel builds the Iran end only: one first step, *this server is Iran*,
     with Reverse and Direct under it; forwarded ports have a Random button; and
     the presets are cards with their own mark, what each is for and its load,
@@ -1211,7 +1235,7 @@ Reverse و Direct، بازیابی سریع‌تر مسیرها، تاریخچه
   - The overview's server uptime was the host node's on OpenVZ/Virtuozzo
     guests (gopsutil reads /proc/stat's btime there); it is read from
     /proc/uptime.
-  - Logs showed "[blob data]" instead of the engine's lines on systemd ≤ 254
+  - Logs showed "[blob data]" instead of the engine's lines on systemd â‰¤ 254
     (Ubuntu 20.04/22.04): the coloured level tag made journalctl refuse the
     line without `--all`. The read now passes `--all` and strips the colour
     codes, and the dialog parses the short-iso line into clock, level and
@@ -1220,7 +1244,7 @@ Reverse و Direct، بازیابی سریع‌تر مسیرها، تاریخچه
     with no tunnels, which left the preview's sample points (1.7.4/1.7.5) and
     its "Install 1.7.6" row on screen; the Release row now says what is
     actually available.
-  - Panel access → Copy did nothing (it found no input to copy, and plain HTTP
+  - Panel access â†’ Copy did nothing (it found no input to copy, and plain HTTP
     has no `navigator.clipboard`); every Copy button now falls back to
     `execCommand`.
   - Security's two-factor, token and audit text fell back to 16px browser
@@ -1231,14 +1255,14 @@ Reverse و Direct، بازیابی سریع‌تر مسیرها، تاریخچه
   - Tabbed dialogs (Edit, Settings, Add) keep one height between tabs.
   - The Link test button is gone from tunnel cards.
 - **Editing a direct tunnel in the web panel opened the reverse form and could
-  not save.** The Edit dialog filled the reverse form — transport families,
-  mux and KCP settings a direct tunnel does not have — and posted its fields
+  not save.** The Edit dialog filled the reverse form â€” transport families,
+  mux and KCP settings a direct tunnel does not have â€” and posted its fields
   where the direct edit reads nothing. A direct tunnel now gets its own form:
   forwarded ports, UDP, preset, MTU and Auto MTU, sockets (udp), FEC, Stealth
   (spoof) and limits, saved under the direct edit.
 
 - **The web panel was slow.** Three causes. The tunnel list looked up every
-  peer's location on every poll with nothing remembered on failure — on a
+  peer's location on every poll with nothing remembered on failure â€” on a
   server that cannot reach the geo providers, which an Iran server usually
   cannot, that was three providers at up to six seconds each, every six
   seconds; a failed lookup is now remembered for ten minutes and the list
@@ -1252,13 +1276,13 @@ Reverse و Direct، بازیابی سریع‌تر مسیرها، تاریخچه
 
 - **A reverse pck tunnel stopped carrying anything the first time it was
   pushed hard.** When the local transmit queue filled, the packet socket
-  reported "no buffer space available", and KCP — which runs on top of pck —
+  reported "no buffer space available", and KCP â€” which runs on top of pck â€”
   takes any send error as the end of its session: it closed it for good and
   dropped the rest of what it was sending. Echoes passed; a 1 MB transfer both
   ways stalled at about two thirds, every time, with nothing in the Iran log.
   A full queue is now a lost packet, as it is on a UDP socket, and KCP resends
   it. Found by the new Connection Test; on the same path the transfer now
-  runs at 50–80 Mbps, with Turbo and Aggressive alike.
+  runs at 50â€“80 Mbps, with Turbo and Aggressive alike.
 
 - **The panel's "carried since this server was set up" went back down after
   every update.** Three separate leaks. A direct (layer-3) tunnel's engine
@@ -1277,7 +1301,7 @@ Reverse و Direct، بازیابی سریع‌تر مسیرها، تاریخچه
 - **Automatic failover to a backup address brought the control channel up and
   left every user connection failing.** With *Automatic Failover To The
   Healthiest Address* on, the kharej raced its addresses and connected the
-  control channel through the backup — but its data connections followed the
+  control channel through the backup â€” but its data connections followed the
   health scorer, which measured only ping. A primary address that answers
   ping with its tunnel port closed or filtered (common on these routes, where
   ICMP gets through) kept the pool pointed at it: the tunnel showed connected
@@ -1287,21 +1311,21 @@ Reverse و Direct، بازیابی سریع‌تر مسیرها، تاریخچه
 - **A reverse tunnel on an unsteady path restarted every time the kharej
   re-dialed, cutting every user on it.** Reported from several Iran servers on
   v1.8.4: `restarting server...` over and over, and forwarded ports that kept
-  dropping. Any trouble with the control channel — the kharej re-dialing after a
-  one-second drop, a failed read, a second claim — rebuilt the whole run: the
+  dropping. Any trouble with the control channel â€” the kharej re-dialing after a
+  one-second drop, a failed read, a second claim â€” rebuilt the whole run: the
   tunnel port and every forwarded port were closed and bound again, and every
   user connection through them ended. Now the tunnel and its ports stay up and
   only the kharej is replaced: its new control channel takes over in place, the
   old one's pool is dropped, and users who connect in between wait for it
   rather than being refused. All seven transports; nothing changes on the wire,
   and older kharej servers are served as before. Two kharej servers set up with
-  one token — which takes the tunnel from each other every few seconds — are
+  one token â€” which takes the tunnel from each other every few seconds â€” are
   named in the Iran log. See `docs/adr/0005-a-generation-outlives-its-clients.md`.
 - **A direct `pck` tunnel died after about a day, and only deleting it and
-  making it again brought it back — restarts and Auto Refresh did not.**
+  making it again brought it back â€” restarts and Auto Refresh did not.**
   Reported on v1.8.4. The dialling end's source port was derived from the
-  token, so every restart sent the same flow — the one the path had stopped
-  passing — and only a new tunnel, with a new token, got out. The ports are now
+  token, so every restart sent the same flow â€” the one the path had stopped
+  passing â€” and only a new tunnel, with a new token, got out. The ports are now
   drawn afresh whenever the carrier opens, and when no handshake over a `pck` or
   `sni` flow is answered for 90 seconds the tunnel reopens the carrier on its
   own, from new ports. Tested live with the flow dropped on the path: v1.8.4
@@ -1309,21 +1333,21 @@ Reverse و Direct، بازیابی سریع‌تر مسیرها، تاریخچه
   now names the source port, interface, next hop and RST guard, as the reverse
   transport's already did; firewall rules left by an earlier run are found by
   the tunnel's tag and removed.
-- **Stopping the web panel did not last.** Web Panel → Stop panel stopped it,
+- **Stopping the web panel did not last.** Web Panel â†’ Stop panel stopped it,
   and the next `sudo backpack` started it again. The stop is now recorded and
   kept until Restart panel; a panel stopped under v1.8.4 is recognised as
   stopped, and a restored backup keeps its owner's choice.
 - **A reverse kharej made from a setup link could not be created**, while the
-  same tunnel typed in by hand worked. The link under Manage → Setup Link did
+  same tunnel typed in by hand worked. The link under Manage â†’ Setup Link did
   not carry the Iran server's address, and Set up from a link then refused with
   "the server address is required" without asking for it. The link now carries
   this server's public address, and a link without one asks for it; the Iran
   wizard also says when it has none to put in the link.
 - **There was no way to change the kharej's address in Edit.** A direct tunnel
   whose kharej moved had to be deleted and made again. Edit now has *Kharej
-  address* on the Iran side of direct and layer-3 tunnels — an IP or domain
+  address* on the Iran side of direct and layer-3 tunnels â€” an IP or domain
   keeps the port, IP:port changes both, and a spoof carrier's recorded peer
-  moves with it — and *Iran server's real IP* on a spoof kharej. The change is
+  moves with it â€” and *Iran server's real IP* on a spoof kharej. The change is
   written to the tunnel's file and the tunnel restarts.
 - **Adding a server to the fleet, and upgrading one, installed nothing and
   reported success.** The installer was piped into a shell whose stdin was then
@@ -1353,8 +1377,8 @@ Reverse و Direct، بازیابی سریع‌تر مسیرها، تاریخچه
   and their slots given back when a generation ends.
 - **A reverse `udp` tunnel's restart raced its own connections**, replacing a
   lock that the previous generation was still holding.
-- **A kharej whose transport ended without a restart — a config reload, a
-  fallback chain moving on — left its `kcp`/`quic` sessions and control
+- **A kharej whose transport ended without a restart â€” a config reload, a
+  fallback chain moving on â€” left its `kcp`/`quic` sessions and control
   connection open for ever.** Over KCP nothing tells those sockets the peer is
   gone. They are closed with the generation now.
 - **A kharej that reconnected just as the Iran end restarted could sit
@@ -1370,8 +1394,8 @@ Reverse و Direct، بازیابی سریع‌تر مسیرها، تاریخچه
   system call. They run now: measured live, about 24 datagrams per `sendmsg`.
 - **Plain `ws` carried less than half of what `wsmux` did** on the same link:
   every message was read into a fresh buffer and every 64 KiB write split into
-  4–16 frames. It now copies through a pooled buffer and writes in 64 KiB
-  frames (2.8 → 7 Gbit/s on loopback).
+  4â€“16 frames. It now copies through a pooled buffer and writes in 64 KiB
+  frames (2.8 â†’ 7 Gbit/s on loopback).
 - **Every KCP dial ran 100,000 rounds of PBKDF2**, once per pooled connection.
   The key is derived once per token now.
 - **On a tunnel with PROXY protocol and a bandwidth cap, every forwarded UDP
@@ -1383,29 +1407,29 @@ Reverse و Direct، بازیابی سریع‌تر مسیرها، تاریخچه
 - **A kharej could not dial a bracketed IPv6 target** such as
   `[2001:db8::1]:443` ("invalid port format").
 
-## v1.8.4 — 2026-09-26
+## v1.8.4 â€” 2026-09-26
 
 ### Changed
 
 - **A direct tunnel is set up from the Iran server, and the kharej server
   pastes one line.** The Iran wizard asks short questions, in order: **Kharej
   IP Or Domain**, **Tunnel Port**, **Forwarded Ports (Blank For TUN)**,
-  **Tunnel Name**, **Security Token** — generated on the Iran side, press
-  Enter — UDP, **Error Correction (FEC)**, the preset and fine-tuning; the
+  **Tunnel Name**, **Security Token** â€” generated on the Iran side, press
+  Enter â€” UDP, **Error Correction (FEC)**, the preset and fine-tuning; the
   tunnel addresses are picked for it. The paragraphs of explanation between
   the questions are gone. The summary before **Create This Tunnel** is one
-  short block — *Direct PCK*, interface, where it dials, forwarded ports,
-  tuning, config file — with the **Setup Link** (`backpack://…`) under it. On
+  short block â€” *Direct PCK*, interface, where it dials, forwarded ports,
+  tuning, config file â€” with the **Setup Link** (`backpack://â€¦`) under it. On
   the kharej server, after the carrier: **Setup Link** (paste the line; only a
   name is asked) or **Manual**. Each kharej behind one Iran server gets its own
   link. By hand, the kharej side no longer invents a token: it has to be the
   Iran server's.
 - **The reverse wizard works the same way.** Iran asks, in order: **Iran IP Or
   Domain** (the detected public IP is the default), **Tunnel Port**,
-  **Forwarded Ports**, **Tunnel Name**, **Security Token** (generated — press
-  Enter), UDP, then the transport's own questions — **TLS Certificate** and
+  **Forwarded Ports**, **Tunnel Name**, **Security Token** (generated â€” press
+  Enter), UDP, then the transport's own questions â€” **TLS Certificate** and
   **Simple Token Auth** for WSS, **TCP Flag Pattern** for PCK, **Send Real
-  Client IP (PROXY Protocol)** where it can be carried — the preset and
+  Client IP (PROXY Protocol)** where it can be carried â€” the preset and
   fine-tuning. One short summary (*Reverse TCP*, where it listens, what kharej
   dials, where each forwarded port lands on kharej) shows the **Setup Link**
   before **Create This Tunnel**. On kharej, after the transport: **Setup Link**
@@ -1419,26 +1443,26 @@ Reverse و Direct، بازیابی سریع‌تر مسیرها، تاریخچه
   Spoofing**, in that order. xDi, PCK, UDP and Quic use the setup-link wizard;
   UDP's several-sockets question is short too, and the summary names the port
   range the kharej must open. **IP Spoofing and SNI Spoofing keep the classic
-  wizard** — both ends by hand, the token made on kharej — since their answers
+  wizard** â€” both ends by hand, the token made on kharej â€” since their answers
   belong to the route and are worked out on each machine.
 - **The setup link now carries everything the two ends must agree on.** The
   GRE key, the exact error-correction pair, the MTU, the TCP segment cap and
-  automatic MTU were missing, so a tunnel built from a link — or by the panel
-  on a managed server — could differ between its two ends. Measured through
+  automatic MTU were missing, so a tunnel built from a link â€” or by the panel
+  on a managed server â€” could differ between its two ends. Measured through
   the menus with one Iran and three kharej (Germany, USA, Finland on ports
   1245, 3294 and 3190): 1 GiB crossed each tunnel at the same time at about
   1 Gbit/s apiece, on `pck` and on `xdi`, with one session per tunnel and no
   drop after an idle minute.
 - **The sign-in pages look like the panel.** The password and two-factor
   pages use the panel's own palette, glass card, mark and accent-bar ground,
-  and follow its light or dark theme and its accent — they used to be a fixed
+  and follow its light or dark theme and its accent â€” they used to be a fixed
   red page that knew none of the panel's current accents. A wrong password or
   code now says so under the field instead of the page silently reappearing.
 - **The panel installs as an app on a phone again.** Behind a trusted
   certificate (Let's Encrypt or your own), Android and desktop Chrome offer to
-  install it — an **Install app** button appears in the header — and it opens
+  install it â€” an **Install app** button appears in the header â€” and it opens
   full screen from the home screen, clear of the notch and the home
-  indicator. On an iPhone the same button explains Share → Add to Home Screen.
+  indicator. On an iPhone the same button explains Share â†’ Add to Home Screen.
   The rebuilt panel had stopped linking the manifest and registering the
   service worker, so no browser ever offered it. The app icon, the sign-in
   pages and the offline screen use the panel's own dark look.
@@ -1450,8 +1474,8 @@ Reverse و Direct، بازیابی سریع‌تر مسیرها، تاریخچه
 ### Removed
 
 - **Speed Test and Game Latency Test are gone, everywhere.** Both left the
-  Manage menu; the panel's speed test went with them — the button on the
-  tunnel card, its screen, `/api/speedtest` and `/api/speedtest/plan` — and a
+  Manage menu; the panel's speed test went with them â€” the button on the
+  tunnel card, its screen, `/api/speedtest` and `/api/speedtest/plan` â€” and a
   managed server no longer answers the `receive` operation that started the
   far-end sink. The game endpoint list (`/etc/backpack/game-endpoints.list`)
   is no longer read.
@@ -1461,7 +1485,7 @@ Reverse و Direct، بازیابی سریع‌تر مسیرها، تاریخچه
 - **A reverse kharej built from a setup link outside the wizard lost its
   pairing.** "Setup from a link", the panel's paste box and a managed server's
   far end all went through a path that dropped simple auth, the smux version
-  and kcp's exact error correction — and, when the link carried an MSS, sent a
+  and kcp's exact error correction â€” and, when the link carried an MSS, sent a
   tuning block whose every zero replaced the preset: heartbeat off, Nagle on,
   kcp FEC off. The tuning block now carries only the settings it answers, on
   this machine and across the wire to a managed server.
@@ -1476,8 +1500,8 @@ Reverse و Direct، بازیابی سریع‌تر مسیرها، تاریخچه
   minute, it now takes the Iran server's clock as it is, and says so in its
   log. While a session is up nothing changes.
 - **After an update the menu was still the old version.** The menu that ran
-  the update went on as the build it was started as — old version on the
-  title, old screens — until it was quit and opened again. After an update, an
+  the update went on as the build it was started as â€” old version on the
+  title, old screens â€” until it was quit and opened again. After an update, an
   install from a file or a rollback, pressing Enter now opens the installed
   binary in its place.
 - **Install from a downloaded file always said "Version unknown".** The
@@ -1499,7 +1523,7 @@ Reverse و Direct، بازیابی سریع‌تر مسیرها، تاریخچه
   second tunnel failing to bind and restarting for ever; the wizard, the panel
   and the setup link now refuse it and say which tunnel has the port.
 - **A wizard left open when the session dropped asked the same question for
-  ever.** A refused name — or a refused address in the spoofing screens — was
+  ever.** A refused name â€” or a refused address in the spoofing screens â€” was
   asked again on every empty read once stdin had closed, burning a core. It
   now stops.
 - **A port spread over several kharej could panic after two billion
@@ -1507,8 +1531,8 @@ Reverse و Direct، بازیابی سریع‌تر مسیرها، تاریخچه
   an int.
 - **Direct `pck` tunnels dropped and reconnected on their own.** A tunnel that
   heard nothing from its peer for 15 seconds started a new handshake, and a
-  tunnel carrying only one-way traffic — or only the kernel's own chatter on
-  the interface — looked exactly like one whose peer had died. It now asks the
+  tunnel carrying only one-way traffic â€” or only the kernel's own chatter on
+  the interface â€” looked exactly like one whose peer had died. It now asks the
   peer directly, under the current session, before tearing anything down, and
   keeps the session when the peer answers.
 - **A second kharej never came up** when its config gave `local_ip` and
@@ -1528,23 +1552,23 @@ Reverse و Direct، بازیابی سریع‌تر مسیرها، تاریخچه
   unreachable.
 - **Every `xdi` tunnel reported "peer moved" as it came up.** ICMP has no
   ports, so the kharej's address was read back as `1.2.3.4` after being dialled
-  as `1.2.3.4:6999`, and the same server was logged as a move — which read as a
+  as `1.2.3.4:6999`, and the same server was logged as a move â€” which read as a
   fault on a tunnel that was working. Only a change of host is reported now.
 - **A forwarded port already in use was accepted.** A tunnel forwarding the web
   panel's own `7777` started and then failed to bind, in a log nobody was
   reading. The wizard and the panel now refuse the port up front.
 - **The main menu spun for ever when its input closed.** Run with a closed
-  stdin — from a script, `< /dev/null`, a dropped SSH session — it printed
+  stdin â€” from a script, `< /dev/null`, a dropped SSH session â€” it printed
   "Invalid option" in a tight loop, taking a core and filling the disk with
   output (3.6 GB in one test). It now exits.
 
-## v1.8.3 — 2026-09-25
+## v1.8.3 â€” 2026-09-25
 
 ### Added
 
 - **Several kharej servers behind one Iran server, on a direct layer-3
   tunnel.** The Iran side of a direct tunnel dials, so each kharej is its own
-  tunnel — its own interface and `10.10.N.0/30`, any carrier, `pck` included —
+  tunnel â€” its own interface and `10.10.N.0/30`, any carrier, `pck` included â€”
   and one forwarded port can now be served by all of them. Each new connection
   goes to the kharej with the fewest connections open, so bandwidth adds up:
   two kharej on `pck`, each limited to 300 Mbit/s, gave 267 Mbit/s apiece and
@@ -1559,9 +1583,9 @@ Reverse و Direct، بازیابی سریع‌تر مسیرها، تاریخچه
 
 - **pck is much faster.** Measured on a loopback pair in network namespaces,
   three runs each:
-  - **Layer-3 pck, 16 parallel downloads: 742 → 1,300 Mbit/s**, with 60% less
-    CPU on the Iran side and 43% less on kharej. One stream: 970 → 1,390.
-  - **Reverse pck, 16 parallel downloads: 545 → 631 Mbit/s.**
+  - **Layer-3 pck, 16 parallel downloads: 742 â†’ 1,300 Mbit/s**, with 60% less
+    CPU on the Iran side and 43% less on kharej. One stream: 970 â†’ 1,390.
+  - **Reverse pck, 16 parallel downloads: 545 â†’ 631 Mbit/s.**
 
   Three causes, found by profiling a loaded tunnel:
   - Every segment sent or received read the clock to stamp a "last seen" time
@@ -1575,20 +1599,20 @@ Reverse و Direct، بازیابی سریع‌تر مسیرها، تاریخچه
   - Sending took one syscall per segment; a batch now goes out in one
     (sendmmsg), with one clock read for the batch.
 - **xdi (ICMP) is twice as fast** on a direct layer-3 tunnel: 16 parallel
-  downloads 543 → 1,150 Mbit/s, 16 uploads 627 → 1,325, one stream
-  582 → 1,112. It reads and sends its echoes in batches, as pck now does.
+  downloads 543 â†’ 1,150 Mbit/s, 16 uploads 627 â†’ 1,325, one stream
+  582 â†’ 1,112. It reads and sends its echoes in batches, as pck now does.
 - **The xdi server no longer sends every upload back.** The client's data
   travels in Echo Requests, and the server's kernel answered each one with an
   Echo Reply carrying the whole payload. The client discarded them, but they
   had already crossed the path: every byte uploaded through xdi left the
-  server twice. One iptables rule now drops exactly those — the tunnel's tag
-  with the client's direction byte — and nothing else: pings to the server
+  server twice. One iptables rule now drops exactly those â€” the tunnel's tag
+  with the client's direction byte â€” and nothing else: pings to the server
   and across the tunnel still answer. With the batching, the server's CPU for
   a 16-stream upload fell from 17 to 7.7 CPU-seconds. Where the `u32` module is
   missing the rule does not install and the tunnel works as before.
 - **The speed test measures with 8 connections at once** instead of one. One
   TCP connection measures its own window, which on a long or lossy path is far
-  below what the tunnel carries — and a tunnel carrying a VPN is never carrying
+  below what the tunnel carries â€” and a tunnel carrying a VPN is never carrying
   one connection. The result says how many streams it used, and an older
   receiver on the far end measures the same way.
 
@@ -1601,7 +1625,7 @@ Reverse و Direct، بازیابی سریع‌تر مسیرها، تاریخچه
   aside for 20 s, and while another is left to try a dial gives up after 3 s:
   the same ten took 3.1 s.
 
-## v1.8.2 — 2026-09-24
+## v1.8.2 â€” 2026-09-24
 
 Every finding of a section-by-section audit of the whole project, and the
 mechanism that lets a fix like these reach a server that already exists.
@@ -1611,13 +1635,13 @@ nothing for a server that already exists, because what they correct is not in
 the binary: it is a permission bit on a file written once at setup, and a kernel
 value written once and never read back. `ip_local_port_range` is the case that
 proves the point. It was corrected in v1.8.1, Health Check was taught to report
-it, and the engine went on widening it back on every single tunnel start — so an
+it, and the engine went on widening it back on every single tunnel start â€” so an
 operator could optimize the machine, pass its own check, and be wide again the
 moment a tunnel restarted. An update now corrects the machine as well as the
 binary.
 
-Verified on a real tunnel, not only in tests: all six layer-3 carriers — `udp`,
-`quic`, `pck`, `sni`, `xdi` and `spoof` — carried a 5 MB payload byte-identical
+Verified on a real tunnel, not only in tests: all six layer-3 carriers â€” `udp`,
+`quic`, `pck`, `sni`, `xdi` and `spoof` â€” carried a 5 MB payload byte-identical
 over a TUN device in a network namespace, with no packet loss on a ping across
 the tunnel. That path had never been exercised end to end before, because the
 raw-socket carriers need capabilities a test process does not have.
@@ -1625,14 +1649,14 @@ raw-socket carriers need capabilities a test process does not have.
 ### Security
 
 - **Any Telegram admin with write access could read the panel password** from
-  the Web UI screen, or take a backup that carries it — and the panel password
+  the Web UI screen, or take a backup that carries it â€” and the panel password
   is everything, including who else gets in. The same gap the panel's `write`
   tokens had. Both are now the bot owner's alone; added admins keep running the
   tunnels.
 
 - **A release signature did not say which release it was for.** It covered the
-  checksum list, which names archives but not versions, so a mirror or proxy —
-  which is how restricted networks fetch releases — could serve an older
+  checksum list, which names archives but not versions, so a mirror or proxy â€”
+  which is how restricted networks fetch releases â€” could serve an older
   release's genuine archive, checksums and signature under a newer tag, and
   every updater would verify and install it: a downgrade signed by the
   publisher. The tag is now part of what is signed. No release carried a
@@ -1647,15 +1671,15 @@ raw-socket carriers need capabilities a test process does not have.
   a proof of its own; a man in the middle holds a different session with each
   end and gets nothing usable. A test puts a real QUIC man in the middle between
   the two and checks the tunnel does not come up and the token never crosses
-  it — it did both before. **Upgrade the Iran server first**: a new server
+  it â€” it did both before. **Upgrade the Iran server first**: a new server
   still accepts an older client's token, a new client never sends one.
 - **A recorded layer-3 handshake could be replayed for ever.** Protocol v2 puts
   a monotonic timestamp inside the dialler's encrypted handshake payload and
   the listener refuses one that does not advance (WireGuard's rule); once it has
   seen one, it refuses the older, untimestamped handshake too. It interoperates
   with v1.8.1 in both directions: against an old listener the dialler falls back
-  on that listener's own authenticated answer — never on silence, so the path
-  cannot force it — and retries v2 every half hour. Verified against a real
+  on that listener's own authenticated answer â€” never on silence, so the path
+  cannot force it â€” and retries v2 every half hour. Verified against a real
   v1.8.1 binary each way.
 - **The audit record is a hash chain.** Editing or deleting a line is shown at
   the top of the record, and every line forwarded to Telegram carries the head
@@ -1668,7 +1692,7 @@ raw-socket carriers need capabilities a test process does not have.
   devices, the Telegram admin list, the panel's port and certificate, and backup
   export and restore. A backup carries the password out, and a restore replaces
   every credential file, so any one of them turned a `write` token into the
-  panel password — which is `admin`. They are all `admin` now, and the whole
+  panel password â€” which is `admin`. They are all `admin` now, and the whole
   route table is tested as it is wired (`internal/webui/routes_test.go`), not
   only the guard on its own. The refusal names the scope held and the scope
   needed instead of calling every credential "read-only".
@@ -1681,7 +1705,7 @@ raw-socket carriers need capabilities a test process does not have.
 
 - **The Go toolchain moved from 1.26.0 to 1.26.6, which closes 24 known
   vulnerabilities.** Every one of them is in the standard library, every one was
-  already fixed upstream, and every one is on code this product actually runs —
+  already fixed upstream, and every one is on code this product actually runs â€”
   `net/http`, `crypto/tls`, `crypto/x509`, `html/template`, `net/url`,
   `encoding/asn1`. The panel serves HTTP over TLS with HTML templates and the
   updater fetches releases over HTTPS, so none of it was theoretical.
@@ -1698,7 +1722,7 @@ raw-socket carriers need capabilities a test process does not have.
   they found two bugs in the first minute.
 
   `parseReplyPayload` accepted a *negative* protocol version. `Atoi` is happy
-  with `-1`, and version agreement takes the lower of the two — so a peer
+  with `-1`, and version agreement takes the lower of the two â€” so a peer
   announcing `v-1` negotiated the session down to a version that does not exist
   and then behaved as legacy, which is the one outcome version negotiation was
   built to prevent. The downgrade check did not catch it because it looks at the
@@ -1706,8 +1730,8 @@ raw-socket carriers need capabilities a test process does not have.
 
   And **the setup link was silently corrupting tokens.** Its payload is JSON,
   and `encoding/json` replaces any byte sequence that is not valid UTF-8 with a
-  replacement character, without a word. A token carrying one stray byte — from
-  a paste, or a terminal in another encoding — arrived at the other end as a
+  replacement character, without a word. A token carrying one stray byte â€” from
+  a paste, or a terminal in another encoding â€” arrived at the other end as a
   *different* token, and the tunnel then refused every connection for the one
   reason neither machine reports: the two ends do not hold the same secret. The
   entire purpose of a setup link is to remove the manual retyping step. It
@@ -1717,14 +1741,14 @@ raw-socket carriers need capabilities a test process does not have.
 
 - **A read-only Telegram admin could read the web panel's password.** The bot
   splits its admins into those who may act and those who may only look, and the
-  split was written as "every screen, no actions" — so every `nav:` screen was
+  split was written as "every screen, no actions" â€” so every `nav:` screen was
   answered for anyone on the admin list, and only the buttons that change
   something were checked. That reading is right for eleven of the twelve
   screens, which are readings: how much traffic, which tunnels are up, what the
   last alert said.
 
   The Web Panel screen is not a reading. It prints the panel's password in plain
-  text, and the panel is root on that machine — every tunnel and its token, the
+  text, and the panel is root on that machine â€” every tunnel and its token, the
   backups, the updater, the bot's own settings. So the account that had
   deliberately been denied the bot's restart button could take the whole server
   by opening a different screen, and `/webui` reached it without a button to
@@ -1746,17 +1770,17 @@ raw-socket carriers need capabilities a test process does not have.
   an operator out.** What stopped one was a chain of three things, each of which
   holds: the session cookie is `SameSite=Lax` and so is not sent on a cross-site
   POST, every mutating handler enforces POST, and the panel answers only under a
-  path nobody can guess. The shape of that is worth noticing — the last link is
+  path nobody can guess. The shape of that is worth noticing â€” the last link is
   a secret in the address bar, which makes the base path a load-bearing control
   rather than the obscurity it is described as.
 
   A browser says where a request came from and an attacker's page cannot make it
   say otherwise, so that is checked now: a cross-site write is refused outright.
   Signing out is the exception that proves it, because it changes state on a GET
-  and has to stay a link — under `SameSite=Lax` a cross-site top-level
+  and has to stay a link â€” under `SameSite=Lax` a cross-site top-level
   navigation still carries the cookie, which is exactly what Lax is for. It is
-  checked where it is handled. Anything that is not a browser — a script, a peer
-  panel holding the remote access token, curl — sends no such header and is
+  checked where it is handled. Anything that is not a browser â€” a script, a peer
+  panel holding the remote access token, curl â€” sends no such header and is
   unaffected.
 
 - **Every transport compares the tunnel's token in constant time.** `tcp` and
@@ -1770,8 +1794,8 @@ raw-socket carriers need capabilities a test process does not have.
 - **Tunnel configs are written `0600`.** A tunnel's config holds its token, and
   on `tcp`, `udp` and `kcp` that token is the whole of what authorises a
   connection to it. Every other file this program writes that holds a secret was
-  already `0600` — `telegram.json`, `webui.json`, the node registry, the TLS
-  key, the backups — and the tunnel configs alone were `0644`, so any account on
+  already `0600` â€” `telegram.json`, `webui.json`, the node registry, the TLS
+  key, the backups â€” and the tunnel configs alone were `0644`, so any account on
   the box could read every token on it. Nine call sites across five files, which
   is how they came to disagree; the mode is one constant now. Existing configs
   are tightened by the migration below.
@@ -1786,20 +1810,20 @@ raw-socket carriers need capabilities a test process does not have.
 
 - **The tool now measures whether UDP works here instead of asking you to.**
 
-  Every recommendation for a lossy link is a UDP carrier — KCP, QUIC, plain UDP
-  — and every one of them carried the same sentence: *"KCP runs over UDP — if
+  Every recommendation for a lossy link is a UDP carrier â€” KCP, QUIC, plain UDP
+  â€” and every one of them carried the same sentence: *"KCP runs over UDP â€” if
   your provider throttles UDP this will be worse, not better, so test it before
   committing."* That was an admission. The tool measured the path with TCP,
   concluded the link was lossy, recommended a UDP carrier, and then told the
-  operator to go and find out something the tool had not asked — which they
+  operator to go and find out something the tool had not asked â€” which they
   mostly cannot, because the far end refuses to answer an unauthenticated
   datagram by design and there is nothing to test against.
 
   It asks now: a DNS query to three public resolvers on different networks,
   stopping at the first answer. If UDP leaves the machine and comes back, the
   reading is reported and the caveat is gone. If none of them answer, **the
-  recommendation moves** — a UDP carrier there is not a slower choice, it is one
-  that never comes up — and it says what it moved off, that this is the second
+  recommendation moves** â€” a UDP carrier there is not a slower choice, it is one
+  that never comes up â€” and it says what it moved off, that this is the second
   best answer for this link, and that `pck` carries the same KCP inside
   TCP-shaped packets and needs no UDP at all.
 
@@ -1824,13 +1848,13 @@ raw-socket carriers need capabilities a test process does not have.
   The engine can now be asked to restart its own transport. That keeps the
   process, its metrics history, its uptime, its accumulated counters and its log
   continuity, and it clears every stall that is about the transport rather than
-  about the path — which is most of them. A stall that clears there never
+  about the path â€” which is most of them. A stall that clears there never
   reaches the `systemctl` rung.
 
   It is safe because it is not a new way of stopping a transport: a restart
   asked for over the socket ends the running generation exactly as a
   configuration change does, which is the path with years of production behind
-  it. And it degrades — an engine too old to have a socket falls straight
+  it. And it degrades â€” an engine too old to have a socket falls straight
   through to the next rung, which is the ordinary state of a machine mid-update,
   since the monitor and the engines are separate units and are not updated in
   the same instant.
@@ -1841,12 +1865,12 @@ raw-socket carriers need capabilities a test process does not have.
   invisible.
 
 - **The panel can tell you whether the fleet is running what you asked for.**
-  `Servers → Check the fleet`.
+  `Servers â†’ Check the fleet`.
 
   Every fleet operation was a one-way instruction: the panel told a server to
   create a tunnel, the server said it had, and that was the end of it. Nothing
   remembered the instruction, so nothing could notice that it had stopped being
-  true — a tunnel removed on the far machine by somebody with a terminal, a unit
+  true â€” a tunnel removed on the far machine by somebody with a terminal, a unit
   disabled during an incident and never re-enabled, an apply that reported
   success and then lost its config to a rollback. All of them leave a fleet that
   looks correct on the panel and is not, and the only way to find out was to go
@@ -1864,7 +1888,7 @@ raw-socket carriers need capabilities a test process does not have.
   Two things it deliberately does not call drift, because either would turn a
   useful report into one nobody opens: a field an older node does not report,
   and a tunnel that was stopped from the panel on purpose. A server that could
-  not be reached is listed apart from one that has drifted — a machine that is
+  not be reached is listed apart from one that has drifted â€” a machine that is
   down has not changed, it is simply not answering.
 
 - **The layer-3 carrier hands whole runs of packets to the kernel to cut up.**
@@ -1872,7 +1896,7 @@ raw-socket carriers need capabilities a test process does not have.
 
   This is the change that says the `sendmmsg` conclusion was only half right.
   That one removed seven eighths of the syscalls and bought no measurable
-  throughput, and the reason is that the cost is not the syscall — it is **per
+  throughput, and the reason is that the cost is not the syscall â€” it is **per
   datagram, inside the kernel**: a copy into the socket buffer and a walk down
   the protocol stack, each, for every datagram. Batching the *calls* does
   nothing about that.
@@ -1882,8 +1906,8 @@ raw-socket carriers need capabilities a test process does not have.
   three to four times the rate**, with fewer syscalls on top of that at a longer
   run. The middle figure is the one that decided it.
 
-  Every segment but the last has to be the same size — that is the mechanism,
-  not the implementation — so the carrier splits a batch into as many segmented
+  Every segment but the last has to be the same size â€” that is the mechanism,
+  not the implementation â€” so the carrier splits a batch into as many segmented
   writes as it can rather than taking one and refusing the rest. A *short*
   packet does not merely end a run, it is that run's last segment, because the
   kernel's remainder is the final datagram; a batch of full-sized packets with
@@ -1894,10 +1918,10 @@ raw-socket carriers need capabilities a test process does not have.
   family and the route: the first refusal turns it off for the life of the
   socket and re-sends the same batch the old way, so nothing is dropped.
 
-  Verified on a real TUN in a network namespace as well as in tests — `udp` and
+  Verified on a real TUN in a network namespace as well as in tests â€” `udp` and
   `quic` carriers, ping plus 2 MB byte-identical.
 
-- **Every document has a Persian summary — 38 of 38, up from 24.** The people
+- **Every document has a Persian summary â€” 38 of 38, up from 24.** The people
   who run this are Iranian, and a page that exists only in English is a page a
   good part of its audience reads with a dictionary open. `troubleshooting.md`
   is the clearest case: it is read when something is already broken, which is
@@ -1906,24 +1930,24 @@ raw-socket carriers need capabilities a test process does not have.
   They are summaries rather than translations, and that is a decision. A full
   translation is a second copy to keep in step, and a second copy of a
   configuration reference that has quietly fallen behind is worse than none.
-  Each one carries the argument of its page — what the thing is, when you want
+  Each one carries the argument of its page â€” what the thing is, when you want
   it, and what will go wrong.
 
   The fourteen that were missing were not an oversight anybody could see,
   because nothing listed them. A test lists them now, and checks the block is
   marked right-to-left; without that it renders as left-aligned text with the
   punctuation in the wrong places. `config-reference.md` is generated, so its
-  note is generated with it — anything hand-added to that file is lost on the
+  note is generated with it â€” anything hand-added to that file is lost on the
   next regeneration.
 
-- **Two-factor sign-in for the panel.** The panel is root on the machine —
-  everything it can do, it does as root — and it was behind one password, on a
+- **Two-factor sign-in for the panel.** The panel is root on the machine â€”
+  everything it can do, it does as root â€” and it was behind one password, on a
   port that has to be reachable. A code from an authenticator app is now the
   second thing somebody would have to have.
 
   It is RFC 6238, with no dependency added: a TOTP is an HMAC over a counter and
   a truncation, the algorithm has not changed since 2011, and the RFC's own
-  published test vectors are the test — so a drift that would stop every phone
+  published test vectors are the test â€” so a drift that would stop every phone
   in a fleet at once cannot get through. SHA-1, six digits, thirty seconds,
   because that is what every app defaults to and an operator who has to
   hand-configure an entry is an operator who leaves the feature off.
@@ -1935,7 +1959,7 @@ raw-socket carriers need capabilities a test process does not have.
   exactly once.
 
   **And there is a way back that does not depend on either.** If the phone and
-  the codes are both gone, CLI → Web Panel → Two-factor sign-in turns it off
+  the codes are both gone, CLI â†’ Web Panel â†’ Two-factor sign-in turns it off
   from the machine itself. That asks for no password on purpose: anyone who can
   run it is already root and can read the file the secret is in, so a prompt
   would protect nothing and would strand an operator who had also forgotten the
@@ -1952,15 +1976,15 @@ raw-socket carriers need capabilities a test process does not have.
   nothing. Those are the conditions a tunnel is designed for. These are the ones
   that take one down, and none of them had a test.
 
-  *A peer killed mid-transfer* — a client destroyed with 4 MB in flight, three
+  *A peer killed mid-transfer* â€” a client destroyed with 4 MB in flight, three
   times over. What is checked is not only that it comes back: the interrupted
   transfer has to **fail** rather than hang, because a caller left blocked on a
   dead tunnel never finds out; the server has to take a fourth client
   afterwards; and the open-descriptor count must not climb with each life, which
-  is the failure that actually happens — recovering every time while keeping
+  is the failure that actually happens â€” recovering every time while keeping
   something from each previous one.
 
-  *A backend that resets instead of closing* — `SO_LINGER 0`, which is what a
+  *A backend that resets instead of closing* â€” `SO_LINGER 0`, which is what a
   killed process produces. The tunnel has to pass that through rather than
   absorb it.
 
@@ -1981,14 +2005,14 @@ raw-socket carriers need capabilities a test process does not have.
   JSON output has existed for a while and there was not much anyone could do
   with it. An operator with five servers who shipped all five journals to one
   place got a single stream in which no line said which machine or which tunnel
-  produced it — so searching it meant already knowing which server to look at,
+  produced it â€” so searching it meant already knowing which server to look at,
   which is the problem shipping was supposed to solve.
 
   The field names are an interface, not an implementation detail: a dashboard,
   an alert rule or a line in a runbook is written against them, and renaming one
   would break all of them on the update that shipped it with nothing failing
-  anywhere. They are documented in `docs/log-schema.md` — which also carries a
-  promtail and a vector recipe, both reading journald — and a test fails if one
+  anywhere. They are documented in `docs/log-schema.md` â€” which also carries a
+  promtail and a vector recipe, both reading journald â€” and a test fails if one
   is renamed.
 
   The human-readable format is untouched. It is read by somebody on the server
@@ -1997,17 +2021,17 @@ raw-socket carriers need capabilities a test process does not have.
 
 - **The panel's JavaScript has tests.** Twenty-seven of them, in
   `internal/webui/paneltest/`, run by `go test ./internal/webui` and written as
-  plain `node --test` — no `package.json`, no `node_modules`, no dependency of
+  plain `node --test` â€” no `package.json`, no `node_modules`, no dependency of
   any kind. A Go toolchain remains the only thing this repository requires; the
   test skips where node is not installed.
 
-  Three files cover the modules that decide what a number or a state *means* —
+  Three files cover the modules that decide what a number or a state *means* â€”
   formatting, tunnel state, routing. Those are shared by every screen, so a unit
   mistake in one of them is wrong on all of them at once, and there is no DOM
   involved in any of it.
 
   The fourth is a static wiring check, and it is the one that earns its keep.
-  The panel has no build step — a deliberate choice, and this is its cost:
+  The panel has no build step â€” a deliberate choice, and this is its cost:
   nothing notices an import naming a file that does not exist, or a function
   exported and never called. Both have happened. It now checks that every module
   is imported by something, every export is referenced elsewhere, and every
@@ -2024,11 +2048,11 @@ raw-socket carriers need capabilities a test process does not have.
   there, and the failures that matter in the field are precisely the ones it
   cannot produce.
 
-  Three passes over nine transports — a real MTU, a 1280-byte MTU, and 2% loss
-  with 20 ms of latency — twenty-seven of twenty-seven. The QUIC fault below is
+  Three passes over nine transports â€” a real MTU, a 1280-byte MTU, and 2% loss
+  with 20 ms of latency â€” twenty-seven of twenty-seven. The QUIC fault below is
   what the first run found.
 
-- **`tools/mutate` — mutation testing.** Coverage says a line ran; it says
+- **`tools/mutate` â€” mutation testing.** Coverage says a line ran; it says
   nothing about whether a test would have noticed had that line been wrong, and
   a test that exercises code without asserting on the result raises coverage by
   exactly as much as one that checks everything.
@@ -2040,21 +2064,21 @@ raw-socket carriers need capabilities a test process does not have.
   did not compile separately from mutants that were killed.
 
   Pointed at the fallback chain it scored 59.5%, and the survivors were not
-  noise. `Single()` — which decides whether the rotation machinery runs at all —
+  noise. `Single()` â€” which decides whether the rotation machinery runs at all â€”
   could have its comparison inverted, so a three-candidate chain would report
   itself as having nothing to fall back to, and no test noticed. The window
   arithmetic had the same shape of hole: the rendezvous test asserts a bound, so
   "two candidates" could be treated as "one" and a client would hold a blocked
   carrier for the server's whole dwell. Both are closed, and the score is 67.6%.
 
-- **`docs/design-decisions.md` — what Backpack deliberately does not do.** The
+- **`docs/design-decisions.md` â€” what Backpack deliberately does not do.** The
   seventeen proposals that were considered seriously and turned down, each with
   the reason, plus the three facts every one of them rests on and the licence
   reality that decides what can be sold. Features that get built stop being
   interesting; the reasons for the ones that were refused otherwise have to be
   re-derived every time somebody proposes them again.
 
-- **`docs/web-panel-screens.md` and `img/panel-map.svg` — the panel, screen by
+- **`docs/web-panel-screens.md` and `img/panel-map.svg` â€” the panel, screen by
   screen.** All seventeen screens: the three sections in the dock, the seven
   per-tunnel dialogs and the seven installation ones, each with its address,
   what it shows, and the CLI entry that does the same job.
@@ -2067,13 +2091,13 @@ raw-socket carriers need capabilities a test process does not have.
 
 - **`backpack tunnel status` now says whether the tunnel is carrying anything.**
   It reported the name, the role, the transport, the address and `state: online`
-  — which is exactly the answer that is wrong in the failure this product cares
+  â€” which is exactly the answer that is wrong in the failure this product cares
   about most. From a terminal there was no way to ask the first question anybody
   asks about a tunnel that looks healthy.
 
-  It now shows the peer, bytes in and bytes out *separately* — one climbing
+  It now shows the peer, bytes in and bytes out *separately* â€” one climbing
   while the other is frozen is a stall, and both frozen is an idle tunnel, which
-  is not a fault — how old the reading is, and the failing last hop with the
+  is not a fault â€” how old the reading is, and the failing last hop with the
   shape of the failure: `refused` is a service that is not running, `timeout` is
   usually a firewall on the same machine, and the two have different fixes. A
   reading too old to mean anything is left out rather than shown, because a
@@ -2084,19 +2108,19 @@ raw-socket carriers need capabilities a test process does not have.
 
 
 - **The pairing step three transports had a copy of is now written once.** Seven
-  transports on the server side repeat accept → pair → admit → relay → release
+  transports on the server side repeat accept â†’ pair â†’ admit â†’ relay â†’ release
   by copy, and the copies have already proved they drift: the connection-slot
   release on a pairing timeout was missing from four of the seven, the timeout
-  itself could not fire in the one case it exists for — the age was checked
+  itself could not fire in the one case it exists for â€” the age was checked
   once and then the loop blocked, so on a pool that had run dry nothing ever
-  woke up — and a run ending while a connection sat there leaked one socket and
+  woke up â€” and a run ending while a connection sat there leaked one socket and
   one slot per parked connection on every restart. Each was found and fixed
   once per copy, on three separate occasions.
 
   `tcp`, `ws` and `quic` now share one state machine. What stays per transport
   is what genuinely differs: how the backend address is announced, how an
   unusable tunnel connection is dropped, and the relay itself. The mux
-  transports are deliberately left alone — they open a stream on a session they
+  transports are deliberately left alone â€” they open a stream on a session they
   already hold, so nothing is ever parked, which is a different lifecycle and
   not a copy of this one.
 
@@ -2104,14 +2128,14 @@ raw-socket carriers need capabilities a test process does not have.
   owned the managed servers: the runner that reaches them, the loop that
   measures the path to each one, and the state of every long-running operation
   all lived in package-level variables next to HTTP handlers. Nothing was broken
-  by that, and everything built on top of it made the separation harder — each
+  by that, and everything built on top of it made the separation harder â€” each
   new operations feature added one more package-level variable to a package
   whose job is to render a page.
 
   There is a `internal/control` now, and it is a **package** boundary rather
   than a service boundary: no new process, no socket, no daemon, and the
-  single-binary install is untouched. What changes is that a second reader — a
-  CLI, an API, the monitor — becomes a caller rather than a rewrite.
+  single-binary install is untouched. What changes is that a second reader â€” a
+  CLI, an API, the monitor â€” becomes a caller rather than a rewrite.
 
   It also brings **one job abstraction** for operations that outlive the request
   that started them, with progress, cancellation and a memory of what happened
@@ -2122,25 +2146,25 @@ raw-socket carriers need capabilities a test process does not have.
 
 - **The panel has scopes, API tokens and a record of what was done.** It had one
   password and one level of access: anyone who could open it could change
-  anything, and nothing was written down afterwards — so "who restarted the
+  anything, and nothing was written down afterwards â€” so "who restarted the
   tunnel at three in the morning" had no answer.
 
   Every request is now authorised at one function against one of three scopes:
   read, write, admin. Handing out a credential is separate from using one, so a
   write credential cannot mint itself a better one. The vocabulary is the
-  Telegram bot's, ported rather than reinvented — two permission models in one
+  Telegram bot's, ported rather than reinvented â€” two permission models in one
   product is how a gap opens between them.
 
   **The record is written by that same function, not by the handlers.** A log
   each handler writes for itself has one hole per handler somebody forgot to
   update, and those holes are invisible until the day somebody goes looking.
   Written at the choke point, the only way to act without being recorded is to
-  act without being authorised. Reads are not recorded — the panel polls itself,
-  and they would bury the lines that matter — but refused attempts are.
+  act without being authorised. Reads are not recorded â€” the panel polls itself,
+  and they would bury the lines that matter â€” but refused attempts are.
 
   **API tokens are back, and `/metrics` works again.** The panel had a read-only
   token once and it was removed for good reason: nothing issued it, so nothing
-  rotated it. That left `/metrics` — an endpoint built for scrapers — behind a
+  rotated it. That left `/metrics` â€” an endpoint built for scrapers â€” behind a
   session cookie no scraper has. The new ones address the reasons rather than
   repeating them: a name and an expiry are both required, last use is recorded
   so a dead token is recognisable, and they are listed on a screen operators
@@ -2150,13 +2174,13 @@ raw-socket carriers need capabilities a test process does not have.
 - **Fleet upgrades are staged: one server first, watched, then the rest in
   waves.** "Upgrade all" replaced the binary on every managed server at once, in
   parallel, and told you afterwards which ones had failed. That is the right
-  shape for a fleet of one and an act of faith for a fleet of twenty — a release
+  shape for a fleet of one and an act of faith for a fleet of twenty â€” a release
   with a fault in it takes every server down before anybody has read the first
   error, and the per-node rollback that already exists cannot help, because by
   then every node has rolled itself back and nobody knows into what.
 
   Now one server goes first, is left alone for a soak window, and is checked
-  before anything else is touched — and *checked* means it answers **and** the
+  before anything else is touched â€” and *checked* means it answers **and** the
   tunnels that are supposed to be running on it are running, because a binary
   that comes back with dead tunnels behind it is exactly what staging is for.
   The rest follow in waves, each verified, halting when one fails. The plan is
@@ -2170,13 +2194,13 @@ raw-socket carriers need capabilities a test process does not have.
   exported by the panel's API layer and called from nowhere at all.
 
 - **The layer-3 receive path reads several datagrams per syscall.** The comment
-  that used to explain why it could not was right about *timer-based* batching —
+  that used to explain why it could not was right about *timer-based* batching â€”
   holding packets back to gather them trades latency for syscalls on the path
-  where latency is the thing being protected — and it does not apply to
+  where latency is the thing being protected â€” and it does not apply to
   `recvmmsg`, which waits exactly as long as a single read would and then takes
   whatever else has already arrived. An idle tunnel pays nothing.
 
-  Measured on 40,000 1200-byte datagrams: 59 → 214 kpps. The rate is the smaller
+  Measured on 40,000 1200-byte datagrams: 59 â†’ 214 kpps. The rate is the smaller
   half of the result. Reading one at a time, the receive loop could not keep up
   with the sender and the socket dropped 12,318 of the 40,000; the batched path
   took every one. A tunnel losing packets inside its own receive loop looks
@@ -2184,7 +2208,7 @@ raw-socket carriers need capabilities a test process does not have.
   of fault to chase.
 
   Linux only, plain `udp` carrier only, and every other carrier reads exactly as
-  it did before — including if the batch path refuses at runtime, which costs
+  it did before â€” including if the batch path refuses at runtime, which costs
   throughput rather than the tunnel. All six layer-3 carriers were re-run over
   real raw sockets in a network namespace afterwards.
 
@@ -2192,7 +2216,7 @@ raw-socket carriers need capabilities a test process does not have.
   getting through.** This was the gap between what the product is for and what
   the engine would actually do: a tunnel is pinned to one transport, so when
   that transport is the one being filtered it retried it for ever and the
-  operator was the failover mechanism — at three in the morning, from a phone,
+  operator was the failover mechanism â€” at three in the morning, from a phone,
   on a connection that is also being filtered.
 
   `fallback_transports` is an ordered list of carriers the tunnel may move to.
@@ -2203,14 +2227,14 @@ raw-socket carriers need capabilities a test process does not have.
   because starting a transport binds the forwarded ports, and the outgoing one
   is given time to let go of them before the next binds.
 
-  It is a better *connect*, not live switching — there is no session migration
+  It is a better *connect*, not live switching â€” there is no session migration
   here. A carrier that is up is left alone, including through a short drop,
   because every transport already reconnects on its own and rotating through a
   blip would turn a short outage into a long one. Rotation resumes only after a
   working carrier has been down for five minutes.
 
   Off unless configured, and a tunnel without a list runs exactly the code it
-  ran before. Set it from `Manage tunnels → Transport fallback chain` on either
+  ran before. Set it from `Manage tunnels â†’ Transport fallback chain` on either
   end; see `docs/transport-fallback.md`.
 
 - **An update now corrects the machine it is installed on, not only the binary.**
@@ -2220,7 +2244,7 @@ raw-socket carriers need capabilities a test process does not have.
 
   So an update applies a list of corrections to what an older version left
   behind: the tunnel configs on disk, and machine state no config holds. It
-  applies them without asking, and that is deliberate — everything on the list
+  applies them without asking, and that is deliberate â€” everything on the list
   is a value this program itself wrote and later decided was wrong, so a setting
   the operator never chose is not one they should have to choose again. It is
   also the limit: a migration that would overwrite a real decision does not
@@ -2229,14 +2253,14 @@ raw-socket carriers need capabilities a test process does not have.
   the exact string the engine used to write.
 
   Nothing is remembered between runs. A marker file recording "already applied"
-  would be wrong in both directions — a config restored from an older backup
-  would be skipped, and a value forced back by hand would stay forced back — so
+  would be wrong in both directions â€” a config restored from an older backup
+  would be skipped, and a value forced back by hand would stay forced back â€” so
   every migration is idempotent, runs on every update, and writes only when
   something is actually different. A migration that rewrites a config files what
   it replaced in that tunnel's configuration history first, so an update that
   changes a config is in the panel's Undo list like any other edit. It runs
   before the tunnels restart, so they come back up on the corrected settings, and
-  it runs on the offline install too — that path is taken on servers that cannot
+  it runs on the offline install too â€” that path is taken on servers that cannot
   reach GitHub at all, which are the least likely to have anything else come
   along and fix them. Nothing it does can fail an update; everything it changes,
   and everything it tried and could not, is logged.
@@ -2246,7 +2270,7 @@ raw-socket carriers need capabilities a test process does not have.
 
 - **The tunnel's own port can be bound to one address, the way a forwarded port
   already could.** On a server with two public addresses, the operator wants the
-  control channel on one and the user-facing port on the other — both on 443, so
+  control channel on one and the user-facing port on the other â€” both on 443, so
   the control channel blends in as HTTPS like everything else. The forwarded
   ports have taken an address for a while: `85.10.11.61:443=127.0.0.1:2053`
   binds that one and nothing else. The control port could not. Every path that
@@ -2259,7 +2283,7 @@ raw-socket carriers need capabilities a test process does not have.
   accepted an address, the reload path's port settling was already written in
   terms of a full address, and the check that refuses two tunnels sharing a port
   already compared host and port together. The documentation even described the
-  arrangement — and then said to set it by editing the config, because the
+  arrangement â€” and then said to set it by editing the config, because the
   wizard only offered the two wildcards. What was missing was a way to say it.
 
   So the **Tunnel port** field takes `85.10.11.51:443` wherever it is asked for:
@@ -2283,7 +2307,7 @@ raw-socket carriers need capabilities a test process does not have.
   quietly widen it. Widening is said out loud instead: `0.0.0.0:443`.
 
   A client is refused rather than obliged. Its tunnel port is the port on the
-  *server* — it binds nothing — so an address there is aimed at a different
+  *server* â€” it binds nothing â€” so an address there is aimed at a different
   setting, and it is told which one.
 
   A host must be an IP literal; a name is refused. A bind address is a local
@@ -2296,7 +2320,7 @@ raw-socket carriers need capabilities a test process does not have.
   because asking about `:443` when the answer is `85.10.11.51:443` produces
   exactly the refusal this feature exists to get past. Health Check does the
   same, and gained a warning for a tunnel pinned to an address this server does
-  not currently hold — a warning and not a failure, because a floating address,
+  not currently hold â€” a warning and not a failure, because a floating address,
   a VIP that keepalived has not claimed, and an interface that comes up later
   are all real, and `ip_nonlocal_bind` exists so that binding one can be made to
   work. And a bind that fails because the address is not on the machine now says
@@ -2313,13 +2337,13 @@ raw-socket carriers need capabilities a test process does not have.
   been in place since this release opened: every release carries a SHA256SUMS
   file, the updater refuses an archive whose hash is not in it, and CI signs
   that list. What was missing was the key, so `releasesAreSigned()` was false and
-  the signature check returned nil on every update — checksums only, which the
+  the signature check returned nil on every update â€” checksums only, which the
   updater said out loud.
 
   There is a key now. The consequence is worth stating plainly rather than
   discovering: **from this build on, a release without a valid signature is
   refused rather than warned about.** That is the correct behaviour and it is a
-  one-way door — the signing secret has to be in place before the next tag, or
+  one-way door â€” the signing secret has to be in place before the next tag, or
   that release installs nowhere. Rotating later is the same operation and is not
   free either: a machine on an older binary trusts the old key, so a new one has
   to ship in a release still signed by the old.
@@ -2332,25 +2356,25 @@ raw-socket carriers need capabilities a test process does not have.
   arrived with the binary already running.
 
 - **The attribution and the name are now written down, and enforced.** The
-  licence has always been AGPL-3.0 and that has not changed — the text in
+  licence has always been AGPL-3.0 and that has not changed â€” the text in
   `LICENSE` is untouched, deliberately, because part of the tunnel data plane
   derives from prior AGPL/GPL work and editing the licence is not ours to do.
 
   What is new is two additional terms in `NOTICE`, both of them things Section 7
   of that licence expressly permits and neither of them taking away anything it
-  grants. Under 7(b), a modified version has to keep one line — "Based on
-  BackPack by Amin Mohammadi (AminMGMT)" — in its NOTICE, its README, its
+  grants. Under 7(b), a modified version has to keep one line â€” "Based on
+  BackPack by Amin Mohammadi (AminMGMT)" â€” in its NOTICE, its README, its
   version output, and the notices its panel shows the people using it. Under
   7(e), the name and the logo are not licensed with the code: a fork is welcome
   and needs a name of its own. `TRADEMARK.md` sets out the detail, including the
-  parts that need no permission at all — saying truthfully that your work is
+  parts that need no permission at all â€” saying truthfully that your work is
   based on, forked from or compatible with BackPack is always fine.
 
   A requirement stated in a file and enforced by nothing is one that disappears
   the first time somebody tidies a template, so there is a test. It checks that
   the same sentence appears in all five places, that it is one sentence rather
   than five that have drifted, that `LICENSE` is still the unmodified AGPL text,
-  and that the additional terms still cite the section that permits them — which
+  and that the additional terms still cite the section that permits them â€” which
   is what distinguishes them from the further restrictions Section 7 forbids.
   Removing the line is a failing build, for a fork and for us.
 
@@ -2365,7 +2389,7 @@ raw-socket carriers need capabilities a test process does not have.
 
   It is the one fleet action with real logic in it: reach the machine while the
   operator is still looking at the form, install Backpack when the machine has
-  none, and take the entry back out when it cannot be reached at all — because a
+  none, and take the entry back out when it cannot be reached at all â€” because a
   fleet entry that has never worked is not a server, it is a typo, and leaving
   it is how a fleet fills with servers that do nothing and say nothing about
   why.
@@ -2379,7 +2403,7 @@ raw-socket carriers need capabilities a test process does not have.
   failed install is the far machine's own words.
 
 - **The seven client transports share one pool-sizing loop.** Each kept its own
-  copy of the loop that decides how big the connection pool should be — the same
+  copy of the loop that decides how big the connection pool should be â€” the same
   two tickers, the same four factors, the same growth and shrink conditions.
   495 lines removed, 84 left.
 
@@ -2388,7 +2412,7 @@ raw-socket carriers need capabilities a test process does not have.
   formatting:
 
   **A udp tunnel never reported its pool**, so the panel's connection-pool card
-  was not empty or zero on one — it was absent, while every other transport had
+  was not empty or zero on one â€” it was absent, while every other transport had
   one. **And it never grew its pool on throughput**: the signal that lets a pool
   grow when its connections are each working hard, rather than only when
   somebody is waiting for one, was added to the others and not to it, so a udp
@@ -2402,8 +2426,8 @@ raw-socket carriers need capabilities a test process does not have.
   for the same call.
 
 - **The three mux transports share one session loop.** `tcpmux`, `wsmux` and
-  `kcp` reach the same place by different roads — a smux session over TCP, over
-  a websocket, or over KCP — and from there they did exactly the same thing in
+  `kcp` reach the same place by different roads â€” a smux session over TCP, over
+  a websocket, or over KCP â€” and from there they did exactly the same thing in
   three copies that were character-for-character identical apart from the
   receiver's type and two comments. 279 lines removed, 60 left.
 
@@ -2418,7 +2442,7 @@ raw-socket carriers need capabilities a test process does not have.
 
   Two tests that read the three files looking for the same fix in each were
   replaced by ones that read the single copy and additionally check that all
-  three transports still delegate to it — which is the stronger statement, and
+  three transports still delegate to it â€” which is the stronger statement, and
   the one that stops a fourth copy appearing.
 
 - **The layer-3 receive batch is thirty-two datagrams, not eight.** Eight was
@@ -2427,15 +2451,15 @@ raw-socket carriers need capabilities a test process does not have.
   wrong. Measured at four widths: ~50, ~225, ~300 and ~275 kpps for 1, 8, 32 and
   128.
 
-  Thirty-two is the peak rather than a compromise — a hundred and twenty-eight
+  Thirty-two is the peak rather than a compromise â€” a hundred and twenty-eight
   is no faster and sometimes slower, and would cost 900 KB more of buffers per
   tunnel. The first figure is the one worth keeping, though: a reader taking one
   datagram at a time cannot keep up at all, and the socket drops nearly half of
   them.
 
   The measurement also answered the question behind it, and the answer was no:
-  one reading goroutine takes 500–800 kpps with four senders pushing at once and
-  loses nothing — five to eight gigabits a second of tunnelled traffic — and
+  one reading goroutine takes 500â€“800 kpps with four senders pushing at once and
+  loses nothing â€” five to eight gigabits a second of tunnelled traffic â€” and
   neither of the ways of adding more helps. `SO_REUSEPORT` distributes by
   *flow*, and this tunnel has exactly one, so N sockets would leave N-1 idle;
   and N goroutines on one socket are serialised by the kernel and measured no
@@ -2444,7 +2468,7 @@ raw-socket carriers need capabilities a test process does not have.
 
 - **`internal/manage` has a leaf underneath it: `internal/manage/spec`.** The
   transport predicates, the address and port helpers, the forwarded-port syntax
-  and the control-port bind type — about 500 lines that every one of that
+  and the control-port bind type â€” about 500 lines that every one of that
   package's sixty-two files uses and that use nothing themselves.
 
   It is the layer the split plan had missed. Measuring the package before moving
@@ -2466,7 +2490,7 @@ raw-socket carriers need capabilities a test process does not have.
 
 - **`internal/menu` is one file per screen.** `menu.go` was 1,462 lines with one
   function per screen and `Run()` a long switch over all of them. It is 179 now
-  — the root screen and the helpers every screen shares — and the screens live
+  â€” the root screen and the helpers every screen shares â€” and the screens live
   in `manage.go`, `proxy.go`, `backup.go`, `webpanel.go`, `system.go`,
   `telegram.go` and `update.go`, each opening with a sentence saying what that
   screen is for. Nothing else changed: same functions, same behaviour.
@@ -2477,7 +2501,7 @@ raw-socket carriers need capabilities a test process does not have.
   the whole package now.
 
 - **The menu package can be tested.** `tui.SetInput` replaces the source every
-  prompt reads from and returns the function that puts it back — a seam, so that
+  prompt reads from and returns the function that puts it back â€” a seam, so that
   a test can be the keyboard.
 
   It matters because `internal/menu` is where an operator meets this product and
@@ -2490,8 +2514,8 @@ raw-socket carriers need capabilities a test process does not have.
   refused rather than rounded to something.
 
   21.1% by statement, with a CI floor to keep it there. No screen is driven into
-  an action, and the one screen that could not be driven safely — kernel tuning,
-  whose confirmation defaults to yes — is excluded with the reason written next
+  an action, and the one screen that could not be driven safely â€” kernel tuning,
+  whose confirmation defaults to yes â€” is excluded with the reason written next
   to it.
 
 
@@ -2506,7 +2530,7 @@ raw-socket carriers need capabilities a test process does not have.
   about where the pipe mode went now sits on the configuration it is about.
 
   `internal/testport` stays, and says why: it is an ordinary package that only
-  `_test.go` files import, which reads as dead code to a tool and is not — a
+  `_test.go` files import, which reads as dead code to a tool and is not â€” a
   helper in a `_test.go` file belongs to one package's test binary and cannot be
   shared, and three packages need this one.
 
@@ -2531,13 +2555,13 @@ raw-socket carriers need capabilities a test process does not have.
   its own copy, and the two had drifted in four places. `ip_local_port_range`
   was the one anybody noticed, because losing a service's port is visible;
   `net.core.rmem_default` (16 MB put back to 1 MB), `wmem_default` (the same)
-  and `tcp_notsent_lowat` (128 KB to 32 KB) were not visible at all — an
+  and `tcp_notsent_lowat` (128 KB to 32 KB) were not visible at all â€” an
   operator who had deliberately optimized the machine had three settings quietly
   undone by the next tunnel restart.
 
   There is one table now and the engine applies a named subset of it: socket
   buffers, queue lengths, and how TCP treats its own connections. What a
-  starting tunnel deliberately does not touch is machine policy — the ephemeral
+  starting tunnel deliberately does not touch is machine policy â€” the ephemeral
   port range, the congestion control algorithm, the queue discipline, IP
   forwarding. Those change how everything else on the box behaves, and
   installing a tunnel is not consent to have them changed.
@@ -2545,7 +2569,7 @@ raw-socket carriers need capabilities a test process does not have.
 - **A typo and two stale comments.** `deafultHeartbeat`; a zero-copy line
   duplicated in both engines; and `isKCP`'s doc naming four transports including
   spoof, which has been a direct-tunnel carrier rather than a reverse transport
-  for some time — the function stopped covering it when it stopped being one,
+  for some time â€” the function stopped covering it when it stopped being one,
   and the sentence did not.
 
 ### Fixed
@@ -2557,11 +2581,11 @@ raw-socket carriers need capabilities a test process does not have.
     every socket on the machine. With 40,000 connections, five tunnels and one
     tab: **45% of a core**. The kernel now filters to the tunnels' own ports,
     once per poll for all of them, shared between tabs for 3 s: **6%**. (Quiet
-    server: 5.8% → 2.5%.)
+    server: 5.8% â†’ 2.5%.)
   - **xdi, client side.** Each pooled session had its own raw ICMP socket, and
     the kernel hands every one of them every ICMP packet the host receives.
     A socket filter now gives each only its own echo replies: a 256 MB transfer
-    went from **54 CPU-seconds to 13**, and faster (541 → 669 Mbit/s).
+    went from **54 CPU-seconds to 13**, and faster (541 â†’ 669 Mbit/s).
   - **KCP-family tunnels on the kernel's default socket buffer.** A config
     without `so_rcvbuf`/`so_sndbuf` (the presets set them; hand-written and old
     ones may not) ran KCP, xdi, pck, QUIC and UDP on ~200 KB. Under many
@@ -2574,29 +2598,29 @@ raw-socket carriers need capabilities a test process does not have.
     core doing nothing** on a 16-core machine, against 0.15% for every TCP
     transport. One scheduler: **3%**, with the same CPU per byte under load.
     And a session that has carried nothing for three seconds now flushes
-    every 200 ms instead of every 10–20, and goes back to the preset's
+    every 200 ms instead of every 10â€“20, and goes back to the preset's
     interval the moment it reads or writes; while slowed it acknowledges
     every packet at once, so the first exchange after a quiet spell is not
-    held back. Idle: **3% → 1.4%**.
+    held back. Idle: **3% â†’ 1.4%**.
   - **xdi, every packet.** Each echo was built and parsed through x/net's ICMP
-    message types — an allocation for the message, its body and the output,
+    message types â€” an allocation for the message, its body and the output,
     and a second copy of the payload, in both directions. It is now written
     and read in place in a pooled buffer: a 256 MB transfer went from
     **700 to 950 Mbit/s**, and from 24 CPU-seconds to 18.
 
 - **The panel could not use a certificate obtained any other way than its own
-  Let's Encrypt run** (#49). Where Let's Encrypt could not verify the server —
-  port 80 taken, or its validators unable to reach it — there was no way out: a
+  Let's Encrypt run** (#49). Where Let's Encrypt could not verify the server â€”
+  port 80 taken, or its validators unable to reach it â€” there was no way out: a
   certificate copied into place was overwritten by the self-signed one, which
   did not name the server's addresses. There is now a fourth option, *HTTPS, my
   own certificate*, in the panel and the CLI: two PEM paths (certbot's
   `fullchain.pem` and `privkey.pem`), checked before they are saved, re-read on
-  renewal without a restart, and — if they ever become unreadable — replaced by
+  renewal without a restart, and â€” if they ever become unreadable â€” replaced by
   the self-signed certificate rather than a panel that will not start.
 - **A tunnel whose server heartbeat was longer than the client could wait
   reconnected every half minute, with nothing in the log to say why** (#45).
   A client gives up after one and a half keepalives (at least 30 s); a server
-  with `heartbeat = 60` never sends one in time. Reproduced on v1.8.1 — four
+  with `heartbeat = 60` never sends one in time. Reproduced on v1.8.1 â€” four
   reconnects in 150 s. The server's control heartbeat is now at most 10 s
   whatever the setting, which ends it for every client, old ones included (0
   reconnects measured). A new client talking to an old server still cannot
@@ -2610,14 +2634,14 @@ raw-socket carriers need capabilities a test process does not have.
   **115 s** to recover from a `kill -9` a few seconds after connecting. The
   server now opens every control channel with seven quick heartbeats, doubling
   from 0.1 s up to its steady beat. A first beat that quick is something no
-  older server can send — its shortest heartbeat is a second — so the client
+  older server can send â€” its shortest heartbeat is a second â€” so the client
   takes it as proof and gives up on silence after 15 s from that moment on,
-  and after 30 s once the steady beat is learnt. Measured: **115 s → 17 s** on
+  and after 30 s once the steady beat is learnt. Measured: **115 s â†’ 17 s** on
   KCP, pck, xdi and QUIC, for a crash one second into the connection; a
   v1.8.1 server or client on the other end ran 150 s without a reconnect. Older clients only reset their deadline on a heartbeat
   and are unaffected; an older server never sends them, so a new client stays
   exactly as patient with it as before.
-- **A tunnel could not be put on Turbo — it always came back as Balanced.**
+- **A tunnel could not be put on Turbo â€” it always came back as Balanced.**
   The edit form posts its whole Fine-tune section along with the preset, and
   those fields still held the old preset's numbers. The server applied them
   after the preset and, because a number had been set by hand, cleared the
@@ -2626,10 +2650,10 @@ raw-socket carriers need capabilities a test process does not have.
   applies only the Fine-tune fields that actually changed from what the form
   was filled with, and only those clear the preset; a switch unrelated to the
   preset (log level, MSS, zero-copy, UDP) no longer does. A tunnel with no
-  preset now shows "Custom — tuned by hand" instead of "Balanced".
+  preset now shows "Custom â€” tuned by hand" instead of "Balanced".
 - **Health Check kept failing after Optimize.** Two causes:
   - Optimize wrote `/etc/sysctl.d/99-backpack.conf`, which at boot is read
-    *before* `99-sysctl.conf` — the link to `/etc/sysctl.conf`, where other
+    *before* `99-sysctl.conf` â€” the link to `/etc/sysctl.conf`, where other
     installers and panels write their own values. Theirs won after every
     reboot. The file is now `zz-backpack.conf`, applied last; the old one is
     removed the next time Optimize runs, which `update` does on its own.
@@ -2643,8 +2667,8 @@ raw-socket carriers need capabilities a test process does not have.
 - **Every systemd operation failed.** When the service helpers moved into
   `internal/manage/core`, renaming the function `systemctl` to `Systemctl` also
   renamed the program it runs, and no Linux has a `Systemctl`. Starting,
-  stopping, restarting, enabling and reloading tunnels — from the CLI, the
-  panel, the bot and the watchdog alike — all failed with "executable file not
+  stopping, restarting, enabling and reloading tunnels â€” from the CLI, the
+  panel, the bot and the watchdog alike â€” all failed with "executable file not
   found". No test ran a real command, so nothing noticed; one does now, against
   a stand-in named exactly `systemctl`. This never shipped: it came in during
   this version.
@@ -2656,17 +2680,17 @@ raw-socket carriers need capabilities a test process does not have.
     the client learns that rhythm and gives up after three missed beats (30 s)
     instead of a keepalive and a half (112 s). A client too old to learn it
     waits as it always did; a server too old to beat faster is not rushed;
-  - a KCP server that gets a new claim while it still holds the old one — a
-    client that crashed and came back — now says it is restarting to adopt it
+  - a KCP server that gets a new claim while it still holds the old one â€” a
+    client that crashed and came back â€” now says it is restarting to adopt it
     instead of answering as granted and dropping it in silence, which left the
     client believing it was connected for 116 seconds;
-  - after all of it: 1–5 s for a crash of either side on every transport, and
+  - after all of it: 1â€“5 s for a crash of either side on every transport, and
     within 20 s of a rebooted host coming back.
 - **A layer-3 QUIC tunnel never recovered from a dialler crash.** The listener
   accepted one connection for the life of the process; a dialler that came back
   sat in its accept queue unanswered. It now keeps every connection it accepts,
-  like an unconnected UDP socket, and the tunnel's own rule — only a packet that
-  authenticates moves the peer — decides which one it talks to. (Letting the
+  like an unconnected UDP socket, and the tunnel's own rule â€” only a packet that
+  authenticates moves the peer â€” decides which one it talks to. (Letting the
   newest connection win instead, which was tried first, would have let anyone
   who can reach the port knock an established tunnel off, no token needed.) A 5-second keepalive and 20-second idle timeout (were
   15 and 60), and a stateless-reset key derived from the token so a restarted
@@ -2686,15 +2710,15 @@ raw-socket carriers need capabilities a test process does not have.
   the FIN at once. Over UDP the goodbye was lost with the socket: quic-go ends a
   closed transport's connections without a CONNECTION_CLOSE, and kcp-go marks a
   session dead before its final flush, so the `SG_Closed` the server wrote never
-  left. The client heard nothing and waited out its control deadline — 112
-  seconds at the default keepalive — after a restart that took one. Measured in
-  two network namespaces: 113s before, 2–4s after, on all four. The server now
+  left. The client heard nothing and waited out its control deadline â€” 112
+  seconds at the default keepalive â€” after a restart that took one. Measured in
+  two network namespaces: 113s before, 2â€“4s after, on all four. The server now
   closes each QUIC connection with CONNECTION_CLOSE and gives the goodbye a
   moment to leave before the socket goes; `TestAStoppedServerIsNoticedAtOnce`
   runs at the production keepalive, which the existing recovery test did not.
 - **A layer-3 dialler did not notice its listener had restarted.** The listener
   came back with no session, dropped everything sealed under the old one, and
-  the dialler kept sealing into it until the routine two-minute rekey — then
+  the dialler kept sealing into it until the routine two-minute rekey â€” then
   logged that as "the tunnel did not drop". Measured: 122 seconds of black hole.
   The dialler now handshakes again after 15 seconds of sending with nothing
   authentic coming back (WireGuard's rule), and says so.
@@ -2712,19 +2736,19 @@ raw-socket carriers need capabilities a test process does not have.
   `tools/transporttest` and `tools/carriertest` each start two engine processes
   and a listener inside a namespace, and never stopped them. The namespace
   disappears when the run ends; the processes do not, because they are not in a
-  PID namespace — they carry on as orphans for as long as the machine is up.
+  PID namespace â€” they carry on as orphans for as long as the machine is up.
 
   A day of matrix runs had left **324 of them holding six and a half
   gigabytes**, and that is the smaller half of the problem. They inherit the
-  script's standard output, so anything that waits for the pipe to close — a
-  shell, a CI step, a task runner — waits for the orphans instead of for the
+  script's standard output, so anything that waits for the pipe to close â€” a
+  shell, a CI step, a task runner â€” waits for the orphans instead of for the
   test. A run that finished in forty seconds looked like it was still going
   eight hours later.
 
   Both harnesses now reap what they start, on every exit including the
   interrupt, which is the case that leaks most: somebody stopping a matrix half
   way through. `carriertest` also picked up the fix `transporttest` already had
-  — a capture file per run rather than a shared `/tmp/got.bin`, which one
+  â€” a capture file per run rather than a shared `/tmp/got.bin`, which one
   leftover listener from a previous run is enough to corrupt.
 
   **Every performance figure in `docs/performance-notes.md` was re-taken
@@ -2733,7 +2757,7 @@ raw-socket carriers need capabilities a test process does not have.
 
 - **Two allocation-budget tests were flaky, about one run in five.** Both drive
   a real socket, and when the far side falls behind, the send or receive path
-  takes an error return — which allocates an `*net.OpError`, a wrapped syscall
+  takes an error return â€” which allocates an `*net.OpError`, a wrapped syscall
   error, a string. That has nothing to do with whether `ReadBatch` and
   `WriteBatch` allocate per call, which is the whole question they exist to
   answer.
@@ -2745,13 +2769,13 @@ raw-socket carriers need capabilities a test process does not have.
   exceeded. Twelve consecutive runs, clean.
 
 - **`docs/releasing.md` carried its verification stamp in the middle of the
-  document**, with a whole section written after it — so everything below it
+  document**, with a whole section written after it â€” so everything below it
   looked unstamped to a reader and the test that watches those stamps was
   satisfied by a line nobody would read as covering the rest.
 
 - **`log_format = "json"` did nothing on a layer-3 or a direct tunnel.** It was
   offered in the menus, accepted, written into the configuration file and shown
-  back as set — and both engines built their logger with the text formatter
+  back as set â€” and both engines built their logger with the text formatter
   hardcoded, so the setting had no effect at all. Only the reverse tunnel ever
   honoured it. All three do now.
 
@@ -2768,7 +2792,7 @@ raw-socket carriers need capabilities a test process does not have.
 
   1280 is not an exotic number. It is the standard MTU of an IPv6 tunnel, the
   figure a great many mobile carriers hand out, and what is left after any
-  encapsulation on top of a 1500-byte link — including a BackPack layer-3 tunnel
+  encapsulation on top of a 1500-byte link â€” including a BackPack layer-3 tunnel
   carrying another tunnel, which is why the `quic` carrier had it too.
 
   Found by running the transports over a real pair of network namespaces rather
@@ -2776,8 +2800,8 @@ raw-socket carriers need capabilities a test process does not have.
   byte-identical and `quic` carried zero bytes. Loopback has a 65536-byte MTU
   and can never show this.
 
-  Both QUIC endpoints now start from 1232 bytes — 1280 less an IPv6 and a UDP
-  header, so it fits either address family — and Path MTU Discovery, which stays
+  Both QUIC endpoints now start from 1232 bytes â€” 1280 less an IPv6 and a UDP
+  header, so it fits either address family â€” and Path MTU Discovery, which stays
   enabled, grows it to whatever the route really carries within the first few
   round trips. A fat path loses nothing but the size of the handshake itself.
   Verified over both a 1280 and a 1400-byte namespace path, 2 MB byte-identical
@@ -2785,7 +2809,7 @@ raw-socket carriers need capabilities a test process does not have.
   narrow path.
 
 - **A layer-3 tunnel could report packets carrying no bytes.** The two counters
-  cannot be updated in one step, and the writer bumped packets first — so a
+  cannot be updated in one step, and the writer bumped packets first â€” so a
   reader landing between the two lines saw a tunnel that had carried packets
   containing nothing. Not stale: impossible.
 
@@ -2794,21 +2818,21 @@ raw-socket carriers need capabilities a test process does not have.
   frozen for an instant is precisely the signal it exists to act on.
 
   Every writer now adds bytes before packets and the reader loads packets before
-  bytes — opposite orders, on purpose — which makes "packets seen implies bytes
+  bytes â€” opposite orders, on purpose â€” which makes "packets seen implies bytes
   seen" true at every instant. A test that reads flat out while packets cross
   holds it, and it is the test that found the second half: the fix had been
   applied to the receive side only, and the send side had the same bug.
 
 - **A reload could fight the tunnel it was replacing for its own ports.**
   `Start` returned when the transport's supervisor stopped, not when the
-  goroutines it launched had — so for a window afterwards the old run still held
+  goroutines it launched had â€” so for a window afterwards the old run still held
   its listeners, and a reload builds the next generation as soon as the previous
   `Start` returns.
 
   It was papered over by a flat two-second sleep in every transport's restart
   path, and the comment next to that sleep said what it was for. A sleep is a
   guess: usually long enough, never a guarantee, and silently wrong on a loaded
-  machine — which is exactly when a restart is most likely to be happening.
+  machine â€” which is exactly when a restart is most likely to be happening.
 
   Every transport now counts the listeners it holds and `Start` waits for that
   count to reach zero, so "Start returned" means "the ports are free". The
@@ -2817,8 +2841,8 @@ raw-socket carriers need capabilities a test process does not have.
 
 - **A restart that gave up left the panel and the watchdog believing there was
   a peer.** Every transport's `Restart` has a branch it takes when the tunnel is
-  shutting down — rebuilding a run from a finished context would bind the ports
-  the run replacing it is about to ask for — and that branch returned *before*
+  shutting down â€” rebuilding a run from a finished context would bind the ports
+  the run replacing it is about to ask for â€” and that branch returned *before*
   the two lines that clear the status and the published peer, because those sit
   on the path that carries on.
 
@@ -2826,7 +2850,7 @@ raw-socket carriers need capabilities a test process does not have.
   to exit and a snapshot about to go stale. The transport fallback chain makes
   it reachable: the chain cancels a candidate's context and the process *keeps
   running*, so the snapshot carries a fresh timestamp and a connected peer for a
-  tunnel that is mid-rotation with nothing connected at all — and the watchdog
+  tunnel that is mid-rotation with nothing connected at all â€” and the watchdog
   reads that and calls it healthy. Fixed on all fourteen transports.
 
 
@@ -2835,7 +2859,7 @@ raw-socket carriers need capabilities a test process does not have.
   persists it, v1.8.1 fixed it there for exactly the reason recorded in that
   release, and Health Check tells an operator whose machine is wide to go and run
   Optimize. Then the engine's start-up tuning set it straight back to
-  `1024 65535` — on every tunnel, on every start.
+  `1024 65535` â€” on every tunnel, on every start.
 
   A server could be optimized, pass its own health check, and be wide again the
   moment anything restarted, with nothing anywhere saying so. The range is
@@ -2847,20 +2871,20 @@ raw-socket carriers need capabilities a test process does not have.
 - **A connection limit leaked a slot on every pairing timeout, on four of the
   seven reverse transports.** Each of these reserves a slot the moment it accepts
   a forwarded connection, deliberately, so a refused connection is refused before
-  it costs anything — and the handler goroutine gives the slot back when the
+  it costs anything â€” and the handler goroutine gives the slot back when the
   transfer ends. The pairing timeout is the one path where that goroutine never
   runs: the client waited three seconds for a tunnel connection, none arrived,
   and the connection was closed without ever reaching a handler.
 
   `tcp` and `quic` freed the slot there. `tcpmux`, `wsmux`, `kcp` and `ws` did
   not, so a tunnel with `max_connections` set lost a slot to every timeout and
-  eventually refused everything — with a limit that read correctly in the config
+  eventually refused everything â€” with a limit that read correctly in the config
   and a panel showing no connections at all. The shape is identical in all six,
   which is why they are now checked together rather than one at a time.
 
 - **Exporting a backup from the panel returned 404.** The panel is served under
   one unguessable path segment and answers nothing outside it, and every address
-  it asks for carries that path — except the one it navigates to rather than
+  it asks for carries that path â€” except the one it navigates to rather than
   fetches. Both Download buttons pointed at the root of the origin. The backup is
   what an operator is told to take before an update.
 
@@ -2872,7 +2896,7 @@ raw-socket carriers need capabilities a test process does not have.
   here.
 
 - **The `udp` transport counted no traffic at all.** Not a number that was
-  wrong — a number that was absent. Neither counter appeared in either of its
+  wrong â€” a number that was absent. Neither counter appeared in either of its
   files, because it never hands out a `net.Conn` for the wrapper the other
   transports use to go around, and nothing had been written for the case. A udp
   tunnel carrying gigabytes read `0 B in, 0 B out` in the panel, in the CLI, in
@@ -2881,7 +2905,7 @@ raw-socket carriers need capabilities a test process does not have.
 
   Proved live at the time: 200 datagram round trips carried, both counters still
   zero at both ends. The end-to-end test named "traffic is counted on every
-  transport" lists six and udp is not among them — it cannot be, because that
+  transport" lists six and udp is not among them â€” it cannot be, because that
   test forwards a TCP echo backend through the shared harness. So the one
   transport with no coverage was the one transport with no counters. It has its
   own test now, on a datagram path.
@@ -2902,7 +2926,7 @@ raw-socket carriers need capabilities a test process does not have.
   restarting for, and that condition cannot be false: the constructor installs a
   cancel function before any of that code can run, and every restart installs
   another. So the guard was open in exactly the case it was written to close. A
-  tunnel coming down — a reload, a stop, a restart already in flight — has
+  tunnel coming down â€” a reload, a stop, a restart already in flight â€” has
   several goroutines fail at once, and each one logged an error and queued
   another restart of a transport that was already going away.
 
@@ -2912,7 +2936,7 @@ raw-socket carriers need capabilities a test process does not have.
 
 - **Client control writes had no deadline.** A write into a peer that has
   stopped reading fills the kernel's send buffer and then blocks until the
-  retransmit timer gives up — around fifteen minutes on Linux defaults. The
+  retransmit timer gives up â€” around fifteen minutes on Linux defaults. The
   server grew a bounded write for precisely that failure; the client kept
   writing unbounded, on the shutdown notice, which stalls a restart for that
   whole window, and on the RTT probe, which runs on a timer forever and so
@@ -2922,7 +2946,7 @@ raw-socket carriers need capabilities a test process does not have.
 - **The pairing timeout could not fire in the case it exists for.** An accepted
   client connection waits three seconds for a tunnel connection to carry it. The
   check sat at the top of the pairing loop and the loop then blocked on the
-  tunnel channel — so it only ran when a tunnel connection arrived, and a
+  tunnel channel â€” so it only ran when a tunnel connection arrived, and a
   connection that arrived is one that did not need timing out. With a pool that
   had run dry the client was held open with nobody waiting on it: the browser
   sat there until it gave up on its own, the slot it took against
@@ -2936,7 +2960,7 @@ raw-socket carriers need capabilities a test process does not have.
 
 - **A mux session that failed could deadlock its own handle loop.** Putting a
   connection back on the local queue was a blocking send, made from inside the
-  goroutine that drains that very queue — and in the mux transports there is one
+  goroutine that drains that very queue â€” and in the mux transports there is one
   such goroutine per session, so the one making the send is frequently the only
   one running. A full queue was then a goroutine waiting for itself: the tunnel
   stopped for good, with every socket still open and nothing in the log to say
@@ -2944,14 +2968,14 @@ raw-socket carriers need capabilities a test process does not have.
   which is what the accept path already did with the same channel.
 
   The same path never gave back the mux slot it took, so a session that failed
-  to send the address `mux_session` times stopped taking connections at all —
-  the same stall through a different channel — and leaked the stream it could
+  to send the address `mux_session` times stopped taking connections at all â€”
+  the same stall through a different channel â€” and leaked the stream it could
   not use.
 
 - **Any refresh interval above 24 hours read back as "disabled".** The schedule
   is written as a cron line, and the form written for intervals over a day was
   not one the reader matched, so `GetIntervalHours` answered 0. The job was
-  installed, cron had it, and the tunnels were refreshed on it — while the menu,
+  installed, cron had it, and the tunnels were refreshed on it â€” while the menu,
   the Telegram bot and the web panel all agreed Auto Refresh was off. An
   operator who set 48 hours saw it off the next time they looked, set it again,
   and ended up with the same job written twice.
@@ -2961,9 +2985,9 @@ raw-socket carriers need capabilities a test process does not have.
 
 - **The Settings rail showed values that were never true.** The markup is lifted
   from the approved design preview, so the five subtitles under it arrived as
-  sample text: "1.7.6 available", "Port 8443 · Let's Encrypt", "2FA on · 2
+  sample text: "1.7.6 available", "Port 8443 آ· Let's Encrypt", "2FA on آ· 2
   devices" on a panel that has no two-factor at all, and "Yesterday 03:00".
-  Those are not placeholders that look like placeholders — they are specific,
+  Those are not placeholders that look like placeholders â€” they are specific,
   plausible claims about this machine.
 
   They were rewritten from real data only when there was some, and skipping the
@@ -2973,7 +2997,7 @@ raw-socket carriers need capabilities a test process does not have.
   Panel access line read a field the stats payload has never carried, so it was
   always undefined; it comes from the endpoint that knows the port and the
   certificate. The footer's "the two marked with a dot differ from the default"
-  described a drawing — nothing on that screen marks anything with a dot.
+  described a drawing â€” nothing on that screen marks anything with a dot.
 
 - **The direct tunnel form never asked for its suggested values.**
   `/api/direct/defaults` answers with a subnet nothing on the machine is using,
@@ -2993,8 +3017,8 @@ raw-socket carriers need capabilities a test process does not have.
 
 - **Startup validation never ran for a direct tunnel's carrier.** `pck` and
   `xdi` were reverse transports once and their checks still gated on
-  `[server]`/`[client]` naming one. Both are direct-tunnel carriers now — which
-  is what the setup wizard writes — so an `[l3]` config naming one went past
+  `[server]`/`[client]` naming one. Both are direct-tunnel carriers now â€” which
+  is what the setup wizard writes â€” so an `[l3]` config naming one went past
   every check: no Linux check, no root check, no validation of `pck_flags`,
   `pck_gateway_mac` or `pck_interface`, and not a word about iptables. The
   difference that makes is between "run as root, or grant CAP_NET_RAW with this
@@ -3004,7 +3028,7 @@ raw-socket carriers need capabilities a test process does not have.
 
 - **A `wss` tunnel that was not told where its certificate is now gets one.** It
   went through the file loader with two empty filenames and failed at startup
-  with `open : no such file or directory` — a message with no subject, naming
+  with `open : no such file or directory` â€” a message with no subject, naming
   nothing. The direct engine has always generated a throwaway certificate in
   exactly this case, said so in the log, and worked, so the same configuration
   produced a working tunnel on one engine and a refusal on the other. Both use
@@ -3014,7 +3038,7 @@ raw-socket carriers need capabilities a test process does not have.
   peer with it: the token is the credential, and TLS is on the wire to look like
   TLS to whatever is in between. A certificate nobody validates serves that
   exactly as well whoever signed it. A configured certificate that cannot be
-  read is still an error — an operator who supplied a path is entitled to hear
+  read is still an error â€” an operator who supplied a path is entitled to hear
   that it is wrong.
 
 - **The SOCKS proxy's accept loop can no longer burn a core.** A bare `continue`
@@ -3027,7 +3051,7 @@ raw-socket carriers need capabilities a test process does not have.
   now rather than two.
 
 - **The last bytes of a stream are no longer dropped.** A `Read` may return what
-  it has along with the error that ended the stream — `io.Reader` says so
+  it has along with the error that ended the stream â€” `io.Reader` says so
   plainly, and says the bytes come first. The relay returned on the error and
   discarded them, so a connection whose final read carries the tail of a
   response and EOF in one call loses that tail, silently, on a path that
@@ -3037,7 +3061,7 @@ raw-socket carriers need capabilities a test process does not have.
 
 - **Installing a scheduled job can no longer delete every other job on the
   machine.** Reading the crontab answered "there is no crontab" and "the crontab
-  could not be read" with the same nil, and the new crontab was built from it —
+  could not be read" with the same nil, and the new crontab was built from it â€”
   which is a crontab containing exactly one line, ours. Any transient failure of
   `crontab -l` turned scheduling an auto-refresh into replacing the machine's
   crontab: the operator's backups, their certificate renewals, their own
@@ -3048,20 +3072,20 @@ raw-socket carriers need capabilities a test process does not have.
 - **The `ws` transport reports its connection pool.** The pool is allowed to
   outgrow its configured size, which from outside is indistinguishable from a
   leak, so every pooled transport publishes what it has, what it is aiming for
-  and what it was asked for. `ws` did not — so on a `ws` or `wss` tunnel the
+  and what it was asked for. `ws` did not â€” so on a `ws` or `wss` tunnel the
   panel's pool card was not empty or zero, it was absent.
 
 - **The panel's background probe can be stopped.** It looped on a ticker with
   nothing else to select on, so nothing short of ending the process could stop
-  it. A process-lifetime singleton, so not a leak — but a panel that has shut
+  it. A process-lifetime singleton, so not a leak â€” but a panel that has shut
   its listener down went on dialling the fleet, and a test that started one left
   it running for the rest of the suite.
 
 - **A tunnel no longer hangs a handshake waiting for Let's Encrypt.** Issuance
   happens inside a handshake, and the client talking to the CA had no timeout at
-  all. A CA that is unreachable in the way that matters — a route that accepts
+  all. A CA that is unreachable in the way that matters â€” a route that accepts
   the connection and then says nothing, which is the normal condition on the
-  networks this runs on — left that handshake open for as long as the kernel
+  networks this runs on â€” left that handshake open for as long as the kernel
   kept the socket, with the peer waiting on it and the fallback certificate
   never reached, because nothing had returned an error yet. Each request to the
   CA is bounded, and so is the handshake's wait for the whole attempt; past it
@@ -3069,9 +3093,9 @@ raw-socket carriers need capabilities a test process does not have.
 
 - **`install.sh` could not build from source.** It pinned Go 1.24.5 and accepted
   any toolchain from 1.24 up, while `go.mod` requires 1.26.0. The build runs with
-  `GOTOOLCHAIN=local` on purpose — the networks this installer targets frequently
+  `GOTOOLCHAIN=local` on purpose â€” the networks this installer targets frequently
   cannot reach the toolchain downloader, and a build that silently tries to fetch
-  a compiler is a build that hangs — and with that set, a Go older than the `go`
+  a compiler is a build that hangs â€” and with that set, a Go older than the `go`
   line does not fall back to anything, it refuses.
 
   So building from source could not succeed on any machine, and that is the path
@@ -3080,7 +3104,7 @@ raw-socket carriers need capabilities a test process does not have.
   reads the version from `go.mod` now, rather than carrying a second copy of it
   that drifts.
 
-## v1.8.1 — 2026-09-13
+## v1.8.1 â€” 2026-09-13
 
 Memory and descriptor fixes across the reverse transports, and the bugs found
 while proving them.
@@ -3088,7 +3112,7 @@ while proving them.
 The `udp` transport reserved a 100,000-datagram queue for every connection it
 saw. A
 Go channel allocates its whole buffer the moment it is made, so that was 2.3 MB
-committed per connection before a single byte had been forwarded — and a pooled
+committed per connection before a single byte had been forwarded â€” and a pooled
 connection may never forward one. A tunnel sitting idle with a pool of 64 held
 145 MB of a 153 MB heap; two hundred short-lived flows carrying six hundred
 packets between them took it past a gigabyte. The queue is 256 now, the depth
@@ -3098,7 +3122,7 @@ same tunnel: idle went from 153 MB to 4.6 MB, the 200-flow run from 1067 MB to
 
 Underneath that was a smaller leak no amount of waiting cleared. The first run's
 channels were fields on the transport, and a restart built fresh channels for
-the new run without ever replacing those fields — so the first run's queue, and
+the new run without ever replacing those fields â€” so the first run's queue, and
 every connection still parked in it, stayed reachable for the life of the
 process. It showed as 145 MB still held with no client connected and the run
 torn down, released only by restarting the server.
@@ -3109,14 +3133,14 @@ serve them exit, and a heap that reached 1067 MB under load came back to 151 MB
 on its own. What was wrong was the size of what each connection reserved, and
 one run's worth of it that was never let go.
 
-That second fault was not unique to `udp`. The same shape — `Start` taking the
+That second fault was not unique to `udp`. The same shape â€” `Start` taking the
 first run's channels from fields on the transport, and `Restart` building fresh
-channels without ever replacing those fields — is in `tcp`, `ws` and `quic` too,
+channels without ever replacing those fields â€” is in `tcp`, `ws` and `quic` too,
 and there what it holds is sockets rather than bytes. On `tcp` the pool of idle
 tunnel connections waits in that channel to be paired, so the whole idle pool is
 what gets pinned: with a pool of 64, the server still held 64 open descriptors
 after the client had gone and the run had been torn down, and a forced garbage
-collection did not release them — an unreachable connection is closed by its
+collection did not release them â€” an unreachable connection is closed by its
 finalizer, but these were still reachable from the struct. It is a one-shot cost
 rather than one that grows with every restart, and it scales with
 `connection_pool`, so it is eight descriptors on the default rather than
@@ -3132,7 +3156,7 @@ teardown to pin. They are left as they are.
 ### Added
 
 - **Packet loss and round trip from the panel to every managed server.** The
-  bottom of a server card repeated the login it was reached with — the user, an
+  bottom of a server card repeated the login it was reached with â€” the user, an
   at sign and the address, all of which are already on the card or in the form
   behind it. The panel runs on the Iran side and every managed server sits at
   the far end of the route that matters, so that space now says how the route is
@@ -3144,20 +3168,20 @@ teardown to pin. They are left as they are.
 
   A probe that gets no reply is reported as unknown rather than as total loss.
   ICMP is blocked outright on plenty of hosts and inside plenty of containers,
-  and ping cannot tell that from a server dropping every packet — both come back
+  and ping cannot tell that from a server dropping every packet â€” both come back
   as 100% loss, and printing that would put a confident, wrong figure on a card
   whose server is working perfectly.
 
 - **The server card was redesigned around what it says.** It carried a street
-  map — texture behind an address, and honest in its own note about knowing
-  nothing of where the server was — on a card tall enough that a fleet of four
+  map â€” texture behind an address, and honest in its own note about knowing
+  nothing of where the server was â€” on a card tall enough that a fleet of four
   did not fit on a screen, which is the one thing that page is for. The drawing
   and the pointer tilt are gone, and the identity is one line (address, place,
   version, uptime) instead of four blocks. The shell stays the tunnel card's,
   since the two are what this panel is made of and they are never on screen
   together.
 
-  The height that saved was spent again, on purpose, by the gauge below — so the
+  The height that saved was spent again, on purpose, by the gauge below â€” so the
   card ends this release taller than the one it replaced rather than shorter.
   What it is not is taller *and* carrying a drawing that measures nothing, which
   is the trade the map failed.
@@ -3165,7 +3189,7 @@ teardown to pin. They are left as they are.
 - **The server card's ground is a gauge.** Two rings of dots sit behind it: the
   outer one is the processor, the inner one memory, and the lit share of each
   ring is the share of that resource in use. The processor figure is repeated in
-  the middle of the ring that draws it, so the card can be read across a room —
+  the middle of the ring that draws it, so the card can be read across a room â€”
   a fleet page of mostly dark rings is a fleet with headroom, and a full bright
   one is the server that is about to become somebody's evening.
 
@@ -3184,14 +3208,14 @@ teardown to pin. They are left as they are.
 - **A server that cannot be reached says so in red.** The status dot was the
   same grey for "unreachable" as for "not asked yet", so a server that had
   dropped off the network looked like one the page simply had not got to.
-  Reachable is the ok colour, unreachable is the error one, and "checking" —
-  which is the card drawn from what was written down before anyone asked — stays
+  Reachable is the ok colour, unreachable is the error one, and "checking" â€”
+  which is the card drawn from what was written down before anyone asked â€” stays
   neutral, because it is claiming nothing.
 
 - **A tunnel card says which window its chart covers, and how far the tunnel
   moved across it.** The chart was always the last twelve minutes and never said
-  so. It now carries the window it is drawing — live, the past 24 hours, 7 days
-  or 30 — chosen per card and remembered, with a trend figure in the header for
+  so. It now carries the window it is drawing â€” live, the past 24 hours, 7 days
+  or 30 â€” chosen per card and remembered, with a trend figure in the header for
   how much the window moved end to end.
 
   The unit follows the window and has to. Live and 24 hours are rates, which is
@@ -3208,7 +3232,7 @@ teardown to pin. They are left as they are.
   arrived keeps drawing the live one rather than emptying the card.
 
   The trend is deliberately not in the tunnel's own colour. That colour is the
-  tunnel's state and nothing else — it was the direction of the traffic once,
+  tunnel's state and nothing else â€” it was the direction of the traffic once,
   which meant the same green stood for "carrying more" on a tunnel that was
   down. The arrow carries the direction; the colour stays out of it.
 
@@ -3223,7 +3247,7 @@ teardown to pin. They are left as they are.
 - **A forwarded port can name the local address it binds to, on every reverse
   transport.** `85.11.12.13:443=127.0.0.1:2053` pins that listener to one IP
   instead of to every interface, so a multi-homed server can carry the control
-  channel on one public address and the exposed ports on another — including
+  channel on one public address and the exposed ports on another â€” including
   when both want the same port number, which bound to the wildcard is the same
   socket and fails with `address already in use`. `bind_addr` takes the same
   form for the control channel itself.
@@ -3231,14 +3255,14 @@ teardown to pin. They are left as they are.
   A single port already accepted an address; what is new is that a **range** may
   carry one too, and that any of it is written down. The form was documented
   only for the direct and layer-3 tunnels, both of which describe it as
-  "identical to the reverse tunnel" — a reference to a page that did not exist.
+  "identical to the reverse tunnel" â€” a reference to a page that did not exist.
   There is one now: [Port mappings](docs/port-mappings.md), linked from the docs
   index, the CLI reference and both tunnel pages.
 
   Worth stating plainly, because the request that prompted this expected more of
   it: binding does **not** fix asymmetric routing on a host with two NICs. An
   accepted socket already replies from the address the request arrived on,
-  whatever the listener was bound to — what breaks there is the egress route
+  whatever the listener was bound to â€” what breaks there is the egress route
   lookup, which is a kernel routing decision and needs `ip rule` and a per-NIC
   table regardless.
 
@@ -3246,7 +3270,7 @@ teardown to pin. They are left as they are.
 
 - **Updating now repairs the kernel tuning an older version wrote.** Nothing
   rewrites `/etc/sysctl.d/99-backpack.conf` after it is first written, so a
-  value this program wrote and later regretted outlived every update — which is
+  value this program wrote and later regretted outlived every update â€” which is
   what kept `ip_local_port_range = 1024 65535` on servers tuned before the fix
   below, however many versions they installed afterwards. An update now
   re-applies the tuning, with the values this version believes in.
@@ -3259,7 +3283,7 @@ teardown to pin. They are left as they are.
 
 - **Health Check now reports a widened ephemeral port range.** Updating does not
   rewrite `/etc/sysctl.d/99-backpack.conf`, so a server set up before the fix
-  below still carries `1024 65535` and has no way to know — the symptom appears
+  below still carries `1024 65535` and has no way to know â€” the symptom appears
   weeks later on a service that cannot bind its own port. Health Check reads the
   live range and says so, with the one action that fixes it.
 
@@ -3267,15 +3291,15 @@ teardown to pin. They are left as they are.
   machine.** It set `net.ipv4.ip_local_port_range` to `1024 65535`, on the
   reasoning that more ephemeral ports means more concurrent connections. What it
   also means is that any outgoing connection can be given a port a service owns
-  — and a port held that way cannot be bound by the service that owns it.
+  â€” and a port held that way cannot be bound by the service that owns it.
 
   Reported from the field as a panel node that would not start: its ports are
   62050 and 62051, which sit above the kernel's own range (`32768 60999`) and
   inside the widened one. It was intermittent, appeared weeks after install, and
   cleared when Backpack was stopped, because what held the port was one of its
   outgoing connections. Measured here: an outgoing socket given 62055 makes the
-  later `listen` fail with "address already in use", and `ss -tlnp` — the
-  command anyone runs to find the culprit — shows nothing at all, because the
+  later `listen` fail with "address already in use", and `ss -tlnp` â€” the
+  command anyone runs to find the culprit â€” shows nothing at all, because the
   holder is a connection rather than a listener.
 
   The range is the kernel's own again. Twenty-eight thousand ephemeral ports
@@ -3286,7 +3310,7 @@ teardown to pin. They are left as they are.
   tunnel port that does fall inside the range cannot be taken either.
 
 - **The filled area under a tunnel's chart outlined itself in white.** It drew a
-  line down the right of the chart, across the bottom and back up the left —
+  line down the right of the chart, across the bottom and back up the left â€”
   which read as an axis, and was not one: it is the closing edge of the filled
   shape, traced because the shape was being stroked at all.
 
@@ -3301,7 +3325,7 @@ teardown to pin. They are left as they are.
   Every listener in the reverse transports answered a failed bind with
   `logger.Fatalf`, which is `os.Exit(1)`. The unit these run under carries
   `Restart=always` and `RestartSec=3`, so an occupied port did not stop the
-  tunnel — it put it in a three-second crash loop: bind, die, restart, bind,
+  tunnel â€” it put it in a three-second crash loop: bind, die, restart, bind,
   die. From the far end that reads as a tunnel connecting and dropping every few
   seconds for no stated reason.
 
@@ -3311,10 +3335,10 @@ teardown to pin. They are left as they are.
 
       [FATAL] failed to listen on :62050: bind: address already in use
 
-  A forwarded port that cannot be bound is now reported and skipped — the tunnel
+  A forwarded port that cannot be bound is now reported and skipped â€” the tunnel
   and its other ports are unaffected. The tunnel's own port is retried instead,
   backing off from two seconds to thirty, because the two things that actually
-  hold it — a previous instance still shutting down, and the port in TIME_WAIT —
+  hold it â€” a previous instance still shutting down, and the port in TIME_WAIT â€”
   both clear on their own. A port mapping that cannot be parsed is reported and
   ignored rather than ending the process, and a certificate that cannot be set
   up stops that listener with an explanation instead of the process.
@@ -3339,7 +3363,7 @@ teardown to pin. They are left as they are.
   nothing unprompted, so there is no inbound signal to time out on; the only
   liveness check is the heartbeat write, and a one-byte write into a
   dead-but-unreset socket lands in the send buffer and reports success. The
-  client does keep a read deadline, so it notices in seconds, re-dials — and was
+  client does keep a read deadline, so it notices in seconds, re-dials â€” and was
   refused, because a control channel was still set.
 
   A second claim that proves the token now adopts the tunnel by rebuilding the
@@ -3356,8 +3380,8 @@ teardown to pin. They are left as they are.
 
 - **A managed server's processor reading was arithmetic, not a measurement.**
   The card jumped between 0%, 100% and 50% on every poll while the machine sat
-  idle. `sysstat.Get` reads the processor with a zero interval — the delta since
-  the last call in the same process — which is right for the panel and the
+  idle. `sysstat.Get` reads the processor with a zero interval â€” the delta since
+  the last call in the same process â€” which is right for the panel and the
   monitor, both of which are long-lived and call it on a timer. A managed server
   is read by `backpack node exec`, which starts, answers one question and exits:
   there is no previous call, so the only delta available is the one since the
@@ -3368,7 +3392,7 @@ teardown to pin. They are left as they are.
   instantaneous reading was already correct and is on a hot path.
 
 - **The fleet page rebuilt every card four times a minute.** The grid already
-  reconciled — a card whose content had not changed was meant to be left alone —
+  reconciled â€” a card whose content had not changed was meant to be left alone â€”
   and was defeated by what it compared: the signature was built from the
   server's whole `info` object and from `lastSeen`, so the processor moving by a
   percent and the timestamp moving by six seconds meant no signature ever
@@ -3391,7 +3415,7 @@ teardown to pin. They are left as they are.
 - **The Overview's daily traffic strip froze on the day it was first drawn.**
   The month of per-day totals was read once and then never again: the guard
   deciding whether to fetch tested the fetched value itself, so the first
-  success stopped every later attempt for as long as the tab lived — and the
+  success stopped every later attempt for as long as the tab lived â€” and the
   panel is a PWA, so tabs live for days. The total above the strip kept rising
   the whole time, because that figure is recomputed from the metrics files on
   every four-second poll and never went through this path at all, which is what
@@ -3401,18 +3425,18 @@ teardown to pin. They are left as they are.
   signature is built from the totals so new data is actually drawn.
 
 - **The panel reported the wrong country, city and network operator for the
-  server.** The public address came solely from an echo service — ipify and the
-  like — which answers a different question: where this host's *outbound*
+  server.** The public address came solely from an echo service â€” ipify and the
+  like â€” which answers a different question: where this host's *outbound*
   traffic appears to come from. That matches the server's own address on an
   ordinary VPS and parts company behind NAT, on a multi-homed box whose default
   route is not the interface users arrive on, and most sharply on a server that
   routes its own traffic through another tunnel, where the echo returns the far
   end of that tunnel. The geo lookup then ran on that address, so Location and
-  ISP inherited the error — one report had its server listed in Baku, on an
+  ISP inherited the error â€” one report had its server listed in Baku, on an
   operator it has no relationship with.
 
   The machine's own interfaces are asked first now, and only a host holding no
-  globally routable address of its own — the genuine NAT case — falls back to
+  globally routable address of its own â€” the genuine NAT case â€” falls back to
   the echo. Where several public addresses are held, the one a server tunnel is
   bound to wins, since that is the address clients are told to reach. Carrier
   grade NAT (100.64.0.0/10) is excluded along with the private ranges, because
@@ -3422,13 +3446,13 @@ teardown to pin. They are left as they are.
 
   The panel also says which of the two sources it used, and marks Location, ISP
   and IPv4 as inferred when they rest on the echo rather than on an address this
-  machine holds — the three are one answer, and presenting a guess among them as
+  machine holds â€” the three are one answer, and presenting a guess among them as
   a finding is what made this worth reporting rather than worth checking.
 
 - **A port range refused to start when it named a bind address.**
   `10.0.0.5:443-450` died at startup with "invalid start port in range". Every
   transport tested for `-` before it looked for a host, so the whole string
-  reached `strconv.Atoi` and failed — and each of the seven had its own copy of
+  reached `strconv.Atoi` and failed â€” and each of the seven had its own copy of
   that parsing, the same forty lines seven times over, so the bug was in all of
   them and a fix had to be made in all of them. They share one helper now, which
   splits the host off before it reads the ports; the change removes about two
@@ -3439,8 +3463,8 @@ teardown to pin. They are left as they are.
   which is the conflict the bind address exists to avoid.
 
 - **A layer-3 tunnel with `paths` set came up and carried nothing.** Any value
-  above one — the option spreads the udp carrier over several sockets, for a
-  route that shapes per flow — produced a tunnel that completed its handshake,
+  above one â€” the option spreads the udp carrier over several sockets, for a
+  route that shapes per flow â€” produced a tunnel that completed its handshake,
   logged an established session at both ends, and moved no data at all.
 
   The merge layer hands one stable address upward rather than each path's own,
@@ -3448,7 +3472,7 @@ teardown to pin. They are left as they are.
   dialling side knows that address when it is built; the listening side has
   nobody to report yet and was passing nil. The tunnel learns where its peer is
   from the address that arrives with a packet, and its outbound pump drops
-  everything while that is unset — so the handshake, which replies per path,
+  everything while that is unset â€” so the handshake, which replies per path,
   worked, and nothing else did. The listening side now pins the first address it
   sees and reports that.
 
@@ -3458,12 +3482,12 @@ teardown to pin. They are left as they are.
 
 - **The `udp` transport reserved 2.3 MB for every connection it saw.** The
   payload queue was 100,000 datagrams deep, allocated in full the moment a
-  connection appeared, whether or not it ever carried traffic. It is 256 now —
+  connection appeared, whether or not it ever carried traffic. It is 256 now â€”
   deep enough to hold a session's opening packets while the flow waits to be
   paired, which is what dropping there would cost, and bounded so a peer that
   floods a stalled flow cannot grow the process without limit.
 
-- **A restart never released the first run's queue — on `udp`, `tcp`, `ws` and
+- **A restart never released the first run's queue â€” on `udp`, `tcp`, `ws` and
   `quic`.** `Start` took its channels from fields on the transport that
   `Restart` did not replace. It builds its own generation now on all four,
   exactly as `Restart` already did, and those channels and the usage monitor are
@@ -3472,19 +3496,19 @@ teardown to pin. They are left as they are.
   sockets that only a server restart freed.
 
 - **A tunnel connection that failed a single write was lost rather than
-  replaced.** The error path left the connection's mutex locked for good — the
+  replaced.** The error path left the connection's mutex locked for good â€” the
   keepalive takes it with `TryLock`, so that connection could never be pinged
-  again — and left it in the active table with its queue never closed. It is
+  again â€” and left it in the active table with its queue never closed. It is
   unlocked and dropped whole now, so the next one is tried.
 
 - **Cleanup could remove a newer flow recorded under the same address.** Both
   teardown paths deleted by key without checking the entry was still theirs. A
   peer that came back under an address that had just been reused had its new
   flow deleted from the table while nothing closed it, so every later datagram
-  from it was filed against a queue no goroutine reads — the same stale-entry
+  from it was filed against a queue no goroutine reads â€” the same stale-entry
   failure the timeout path is careful to avoid. Both paths check identity now.
 
-## v1.8.0 — 2026-09-09
+## v1.8.0 â€” 2026-09-09
 
 > Tagged v1.7.7.5 and v1.7.8 while it was being tested; this is the release.
 
@@ -3492,7 +3516,7 @@ teardown to pin. They are left as they are.
 Managed servers are reached over SSH now, and the panel that drives them is the
 only panel. Those are the same change told twice. The old node model was an
 agent Backpack installed on the far server, listening on a port of its own,
-speaking a protocol of its own — and it was the reason adding a server took
+speaking a protocol of its own â€” and it was the reason adding a server took
 minutes, reported three tunnels where there was one, and built tunnels that did
 not carry traffic. What it was really doing was reimplementing, badly, something
 every one of these servers already runs. So it is gone: a server is added with
@@ -3517,8 +3541,8 @@ claimed against what was true.
 ### Changed
 
 - **Managed servers speak SSH.** Adding one asks for the four things an SSH
-  login needs — address, port (22 unless yours differs), username (usually
-  root) and password — and the host key is trusted on first use and pinned
+  login needs â€” address, port (22 unless yours differs), username (usually
+  root) and password â€” and the host key is trusted on first use and pinned
   after. Backpack installs itself on the far server over that connection,
   reports its version, system and uptime on the server card, and upgrades it
   from the panel with one click when a release lands. **The node agent, its
@@ -3549,11 +3573,11 @@ claimed against what was true.
 
 - **The release workflow published two archives however many were built.** It
   listed them by name, so an architecture added to the build would be produced
-  and then left on the runner — no failure, just an asset the release page never
+  and then left on the runner â€” no failure, just an asset the release page never
   carried and an update that 404s on those machines.
 
 - **A refusal that has one remedy now offers it.** Both measurements a tunnel
-  can have — the link test and the speed test — need the server holding its
+  can have â€” the link test and the speed test â€” need the server holding its
   other end, and both refuse when the panel does not know which server that is.
   The refusal said to go and link it; the action was two screens away, and
   knowing it exists at all was the hard part. The message carries the button
@@ -3561,7 +3585,7 @@ claimed against what was true.
   rewording the prose cannot quietly take the button away.
 
 - **A KCP tunnel's startup notes were printed once per pooled session.** They
-  describe the run, not the connection, but they were emitted from the dial —
+  describe the run, not the connection, but they were emitted from the dial â€”
   and a KCP client dials a whole pool. So every reconnect printed the parameters
   and the FEC advice fifteen times in the same second, on a tunnel that was
   already in trouble, burying the one line that said why it had reconnected.
@@ -3570,26 +3594,26 @@ claimed against what was true.
 - **"No heartbeat within the keepalive period" said less than it knew.** It
   reads as one missed beat. The window is one and a half keepalives and the
   server sends on a shorter timer, so reaching it means several in a row were
-  lost — a path dropping packets, not a slow server. It says so, with the
+  lost â€” a path dropping packets, not a slow server. It says so, with the
   figure, and points at FEC first on a tunnel that has it.
 
 - **The panel's Logs never opened.** Every Logs button answered "404 page not
   found", on both ends of every tunnel, and the viewer sat on "Reading" for a
-  request that had already failed — which is also why logs looked stale, why
+  request that had already failed â€” which is also why logs looked stale, why
   switching to another server showed nothing, and why what had been on screen
   disappeared. One cause: the logs call built its own URL and asked for it at
   the root of the origin, which is the one address the panel does not answer.
 
 - **"too many segments" was explained wrongly, and confidently.** The log
   explainer matched the phrase and nothing else, so it told an operator on
-  1.7.7.5 to "update to 1.7.5 or later" — install something older than what they
-  were running — and reported a failing layer-3 read on a TCP reverse tunnel,
+  1.7.7.5 to "update to 1.7.5 or later" â€” install something older than what they
+  were running â€” and reported a failing layer-3 read on a TCP reverse tunnel,
   which has no layer-3 read. An explanation now has to say what must be true of
   the tunnel and the version before it is offered, and when nothing fits, the
   panel says nothing.
 
 - **The Add form did not send the preset it was showing.** One button carries
-  `on` in the markup, so the form opens with Balance visibly chosen — but the
+  `on` in the markup, so the form opens with Balance visibly chosen â€” but the
   choice was only recorded when somebody pressed one. Accepting what was on
   screen wrote a tunnel with no preset at all, and the edit dialog then read an
   empty value and fell back to whichever option the preview was drawn with. The
@@ -3623,20 +3647,20 @@ claimed against what was true.
 
 - **Five more architectures: 386, s390x, and ARM v5, v6 and v7.** The releases
   carried amd64 and arm64 only. The three 32-bit ARM variants are built and
-  named apart because they are not interchangeable — a v7 binary on a v5 board
-  is an illegal instruction, not a slow one — and each build is stamped with the
+  named apart because they are not interchangeable â€” a v7 binary on a v5 board
+  is an illegal instruction, not a slow one â€” and each build is stamped with the
   variant it was compiled for, because `runtime.GOARCH` says "arm" for all
   three and a binary that could not tell them apart would ask for an asset no
   release publishes. `install.sh` reads the variant from `uname -m`, falling
   back to `/proc/cpuinfo` and then to v6, which runs on v6 and v7 both.
 
 - **Real-time processor and memory on each server card.** Read on that machine
-  when the panel asks — nothing here can see another server's processor — and
+  when the panel asks â€” nothing here can see another server's processor â€” and
   coloured at 75% and 90%.
 
 - **The link test runs on the server that can take it.** It measures the path a
   tunnel dials out over, and only the dialling end has one; an Iran panel holds
-  the listening half of every reverse tunnel, so it refused — while holding a
+  the listening half of every reverse tunnel, so it refused â€” while holding a
   root shell on the machine that could have answered. When the tunnel is linked
   to a managed server, the panel asks that server and labels the reading with
   where it was taken.
@@ -3648,14 +3672,14 @@ claimed against what was true.
 
 - **Every traffic figure on the overview was computed from a formatted string.**
   "1.2 TB" parsed back as 1.2, so totals across tunnels were arithmetic on
-  numbers that had lost their units — the all-time traffic, the per-tunnel
+  numbers that had lost their units â€” the all-time traffic, the per-tunnel
   shares and the split between directions were all wrong together, and
   consistently wrong, which is why they looked right. The API sends the raw byte
   counts beside the formatted ones now, and the panel computes with those.
 
 - **The open-file-limit health check measured the panel, not the tunnels.** It
   read the limit of whichever process happened to answer, reported 1024, and
-  told the operator to run Optimize and reboot — which changed nothing, because
+  told the operator to run Optimize and reboot â€” which changed nothing, because
   the tunnel services carried no LimitNOFILE at all. It reads the limit of the
   tunnel's own process now, and the unit files set one.
 
@@ -3665,8 +3689,8 @@ claimed against what was true.
   connection is now named as one.
 
 - **A layer-3 tunnel whose far side has nothing listening now says so.** Every
-  signal an operator can see said the tunnel was healthy — a session on both
-  ends, a completed MTU probe, clean pings, rekeys on schedule — and all of it
+  signal an operator can see said the tunnel was healthy â€” a session on both
+  ends, a completed MTU probe, clean pings, rekeys on schedule â€” and all of it
   was true; the service behind the forwarded port simply was not there. That
   failure was logged at debug, so the log was silent about the one thing that
   was wrong. It is a warning now, repeated at most once a minute, and the
@@ -3687,14 +3711,14 @@ claimed against what was true.
 
 - **A tunnel could be held down by a peer that stopped reading, until somebody
   restarted it by hand.** The server writes one byte at a time on its control
-  channel — a heartbeat, a request for a pool connection — and those writes had
+  channel â€” a heartbeat, a request for a pool connection â€” and those writes had
   no bound. A write lands in the kernel's send buffer and returns; when the path
   to the client goes and the buffer fills, it blocks until the kernel stops
   retransmitting, which is around fifteen minutes on Linux defaults. For that
   whole window the server still believed it had a control channel, so it refused
   every attempt by the client to establish a new one ("a control channel is
   already established"), could not ask for pool connections because the request
-  reached nobody, and dropped every user connection with the queue full —
+  reached nobody, and dropped every user connection with the queue full â€”
   thousands of lines a second. Nothing it could do would recover it. Control
   writes are bounded at ten seconds now, on all seven transports: past that the
   channel is treated as gone, the transport restarts, and the client's next
@@ -3702,7 +3726,7 @@ claimed against what was true.
 
 - **"the queue is full, dropping a client from ..." named the wrong machine.**
   It printed the local address of the accepted connection, so every one of those
-  lines carried the server's own address and the forwarded port — which reads as
+  lines carried the server's own address and the forwarded port â€” which reads as
   the server connecting to itself, and sends anyone debugging it in the opposite
   direction from the problem. It names the client now.
 
@@ -3712,7 +3736,7 @@ claimed against what was true.
 
 - **The "Random" button no longer offered a random forwarded port.** It sat
   beside Forwarded ports as well as Tunnel port, and asks the server for a port
-  that is free *on this machine* — right for the port this side binds, and the
+  that is free *on this machine* â€” right for the port this side binds, and the
   opposite of right for a forwarded one, which the field's own hint says goes to
   the same port on the kharej machine. A port chosen for being free here is by
   construction one nothing is listening on there, so the button could only build
@@ -3722,7 +3746,7 @@ claimed against what was true.
 
 - **A tunnel delivering into nothing no longer reads as healthy.** When the
   service on the far machine is not listening, every connection crosses a
-  working tunnel and dies one hop past the end of it — and every reading the
+  working tunnel and dies one hop past the end of it â€” and every reading the
   panel had said so: control channel up, peer connected, counters moving, all
   true. The client records the failing last hop in its metrics snapshot now
   instead of only logging it, the far end reports it to the panel over the same
@@ -3733,7 +3757,7 @@ claimed against what was true.
 
 - **A server already running an older Backpack is upgraded, not refused.**
   Adding one reached it, found a Backpack that did not understand the panel's
-  command, and reported it as a server that could not be reached — printing the
+  command, and reported it as a server that could not be reached â€” printing the
   far machine's own help into the add form, which told the operator to run
   `backpack node setup`, the flow this release removes. Every server in an
   existing fleet is in that state the day the panel is upgraded, so this was the
@@ -3754,21 +3778,21 @@ claimed against what was true.
 
 - **Every redirect the panel sends lands inside the panel.** Handlers below the
   base-path wrapper see the path with the prefix already removed, so a Location
-  built from one — `/login`, `/` — pointed at the root of the origin, which is
+  built from one â€” `/login`, `/` â€” pointed at the root of the origin, which is
   now the one place the panel does not answer. Opening the panel bounced to a
   404 and there was no way in at all. Signing in, signing out and the old
   `/panel/` address all carry the prefix now.
 
 - **A four-part version is compared on all four parts.** Versions were read as
-  three numbers, so `1.7.7.5` parsed as `[1 7 7]` — the fourth component fell
-  inside the last split and was dropped — and was therefore indistinguishable
+  three numbers, so `1.7.7.5` parsed as `[1 7 7]` â€” the fourth component fell
+  inside the last split and was dropped â€” and was therefore indistinguishable
   from `1.7.7`. Nothing could see a point release as an update: not the CLI's
   check, not the panel's banner, and not the **Upgrade to** button on a managed
   server's card, because all three ask the same function.
 
 - **Update from a file you downloaded yourself.** The download is the step most
-  likely to fail on the networks this project exists for — the mirrors help and
-  do not always work. **Update → Install from a downloaded file** takes the
+  likely to fail on the networks this project exists for â€” the mirrors help and
+  do not always work. **Update â†’ Install from a downloaded file** takes the
   release archive from `/root` instead: fetch
   `backpack_linux_<arch>.tar.gz` from the releases page on any machine that can
   reach GitHub, `scp` it over, and choose it. The menu line says what it found,
@@ -3779,13 +3803,13 @@ claimed against what was true.
   verified against `SHA256SUMS` when one is beside it, a restore point taken
   first, every service restarted and health-checked, and rolled back on its own
   if a tunnel does not come back. The archive is deleted once the new version is
-  running and healthy — and left alone when it is not, because it is the thing
+  running and healthy â€” and left alone when it is not, because it is the thing
   you would retry from.
 
 - **A tunnel that already exists can be linked to the server holding its other
-  end.** Everything the fleet does for a tunnel — carrying an edit across,
+  end.** Everything the fleet does for a tunnel â€” carrying an edit across,
   starting and stopping both halves together, reading the far server's journal,
-  standing the speed test's receiver up over there — is gated on a record of
+  standing the speed test's receiver up over there â€” is gated on a record of
   where that other half lives, and that record could only ever be written at the
   moment the panel built both ends at once. So a tunnel made any other way, or
   made before its server joined the fleet, was permanently outside it: **this is
@@ -3793,7 +3817,7 @@ claimed against what was true.
   was added.** The tunnel's own menu links it now, and unlinks it again.
 
   The match is demonstrated rather than guessed. A reverse client dials its
-  server's host and port, and that port is the one the server binds — so a
+  server's host and port, and that port is the one the server binds â€” so a
   tunnel on the far machine aimed at this one, on this tunnel's port, is this
   tunnel's other end whatever either of them is called. Those are marked; the
   rest are offered unmarked and never claimed. Nothing is linked without the
@@ -3805,7 +3829,7 @@ claimed against what was true.
 
 - **Deleting a tunnel can now remove the far end too, as its own question.** It
   never crossed before, on the reasoning that a delete here is not consent to
-  one there — which is right, and unchanged. What changed is that the panel asks
+  one there â€” which is right, and unchanged. What changed is that the panel asks
   the second question instead of leaving the operator to go and do it by hand:
   a separate dialog, after this end is settled, naming the other machine, with
   the safe answer under the cursor and under Enter. Saying nothing still leaves
@@ -3816,7 +3840,7 @@ claimed against what was true.
 - **The panel is served under an unguessable path, and answers nowhere else.**
   A panel on a known port at `/` is found by the sweeps within hours of being
   started and answers login attempts from strangers from then on. It now lives
-  under a random 14-character segment — `http://your-ip:7777/x7Kq2p9wRt4mNs/` —
+  under a random 14-character segment â€” `http://your-ip:7777/x7Kq2p9wRt4mNs/` â€”
   and every other address on that port, `/` and `/login` included, is a plain
   404 that says nothing about a panel being there.
 
@@ -3828,15 +3852,15 @@ claimed against what was true.
   Panel** screen, shown on the panel's own Panel access settings, and written to
   the journal when the panel starts.
 
-  **Web Panel → Panel path** shows the address and moves it: a new random one
+  **Web Panel â†’ Panel path** shows the address and moves it: a new random one
   (for the day the old one ends up in a chat or a screenshot), one you choose,
   or back to the root for anyone who wants the panel found by a port scan.
 
 - **A managed server could put script into the panel.** The panel lists a
   server's tunnels by reading that server's config directory, and those names
-  are filenames — on Linux anything but `/` and NUL is legal in one. The name
+  are filenames â€” on Linux anything but `/` and NUL is legal in one. The name
   went into a confirmation dialog that assigned it to `innerHTML`, and the
-  panel's own policy allowed inline script, so `<img src=x onerror=…>` as a
+  panel's own policy allowed inline script, so `<img src=x onerror=â€¦>` as a
   filename on a fleet member ran in the operator's session, on the origin that
   holds every other server's root password. The Add-a-server flow rendered it
   with no click at all. Three things stop it now, each holding on its own: the
@@ -3847,7 +3871,7 @@ claimed against what was true.
 
 - **The panel's Content-Security-Policy no longer allows inline script.**
   `script-src` carried `'unsafe-inline'`, which is what made an injected
-  attribute executable — the policy permitted exactly what it exists to stop. It
+  attribute executable â€” the policy permitted exactly what it exists to stop. It
   names a per-response nonce instead. The panel's view templates carry inline
   `onclick` from the preview they were drawn as, and none of it ever reaches the
   document; the two pages that do ship an inline script are handed the nonce.
@@ -3863,40 +3887,40 @@ claimed against what was true.
   anything useful in their current state.
 
 - **The on/off switch on managed servers**, which guarded a listener that no
-  longer exists — the panel dials out, so with no servers in the fleet it does
+  longer exists â€” the panel dials out, so with no servers in the fleet it does
   nothing at all, and turning "nothing at all" off could only ever be in the way.
 
 - **The classic dashboard** (internal/webui/assets/dashboard.html) and the 57
-  tests that pinned its markup. What those guarded about the rebuilt panel — the
+  tests that pinned its markup. What those guarded about the rebuilt panel â€” the
   setup and edit forms matching the structures they post into, field by field in
-  both directions — is guarded there instead.
+  both directions â€” is guarded there instead.
 
-## v1.7.6 — 2026-09-03
+## v1.7.6 â€” 2026-09-03
 
 IP spoofing was a reverse transport that could not work, and this release makes
 it a direct-tunnel carrier that does. A reverse tunnel is a control channel plus
 a pool of connections, each its own session, and a forged-source packet carries
-nothing a receiver can tell those sessions apart by — every one of them arrives
+nothing a receiver can tell those sessions apart by â€” every one of them arrives
 at the same address, the session layer keys on that address, and each new
 session closed the one before it. The tunnel reported itself connected and
 carried nothing. The direct tunnel has one session, which is the shape the
 carrier can actually serve. The same fault, from the same cause, is fixed in
 xDi. And the carrier picked up the two things it was missing against the tool it
 was modelled on: error correction, and several sockets. Everything below was
-proven end to end — a real tunnel over real sockets moving real traffic — not
+proven end to end â€” a real tunnel over real sockets moving real traffic â€” not
 just unit tested.
 
 The direct tunnel also gained three carriers and lost a choice. QUIC carries the
 tunnel in real QUIC datagrams, so a path sees HTTP/3; ICMP is offered again; and
 SNI spoofing sends a TLS hello naming a domain the route allows, so a box that
 classifies by server name lets the rest through. The encapsulation is GRE and
-only GRE — two of them were a way for the ends to disagree, and a pair that did
+only GRE â€” two of them were a way for the ends to disagree, and a pair that did
 came up, reported a peer, logged nothing and carried nothing.
 
 And the new panel stopped being a drawing. It was built from a preview, and a
 preview draws controls rather than making them work: this release fixes
 thirty-six faults found by clicking every control on every screen against a real
-server — a running tunnel shown as stopped, an edit that could not be saved, a
+server â€” a running tunnel shown as stopped, an edit that could not be saved, a
 certificate section that refused every mode, invented figures presented as
 readings. Its second source of data is gone with them, because somewhere for
 made-up numbers to come from is what let so many of them survive.
@@ -3908,23 +3932,23 @@ made-up numbers to come from is what let so many of them survive.
   instead: a direct tunnel on the spoof carrier, which forwards the same ports
   over the same forged packets. The wizard offers it under **Direct**, and the
   panel builds and edits it in full. **This is a breaking change** for anyone
-  running a reverse spoof tunnel — which could not have been carrying traffic,
-  for the reason above — so rebuild it as a direct one. Relay mode
+  running a reverse spoof tunnel â€” which could not have been carrying traffic,
+  for the reason above â€” so rebuild it as a direct one. Relay mode
   (`spoof_mode`, `spoof_pipe`) went with the reverse transport: a direct tunnel
   is a private network, so WireGuard and the like are routed over it rather than
   piped through it.
 
 - **xDi tells its sessions apart by the ICMP identifier.** It had the same
-  collapse as reverse spoof — every session of a tunnel identical on the wire,
+  collapse as reverse spoof â€” every session of a tunnel identical on the wire,
   so the listener folded them onto one entry and closed each as the next
   arrived. The identifier the protocol has for exactly this was being derived
   from the token, so it was the same for every session; it is drawn per session
-  now. **A breaking wire change for xDi** — both ends must run this version — but
+  now. **A breaking wire change for xDi** â€” both ends must run this version â€” but
   since the transport could not carry traffic before, there is nothing to lose.
 
 ### Added
 
-- **QUIC as a direct carrier.** A real QUIC session — real TLS 1.3, ALPN `h3` —
+- **QUIC as a direct carrier.** A real QUIC session â€” real TLS 1.3, ALPN `h3` â€”
   carrying the tunnel in RFC 9221 datagrams. It is the only obfuscated carrier
   that needs no root, and it is not imitating HTTP/3: it is HTTP/3's transport.
   Datagrams rather than a stream, because a layer-3 tunnel carries IP packets
@@ -3935,18 +3959,18 @@ made-up numbers to come from is what let so many of them survive.
   filter that decides by server name reads it and stops looking. The technique is
   patterniha's, by way of therealaleph/sni-spoofing-rust. It wraps the pck
   carrier rather than changing it, and the far end drops the hello before the
-  tunnel sees it — so nothing has to be smuggled past a stranger's stack.
+  tunnel sees it â€” so nothing has to be smuggled past a stranger's stack.
 - **ICMP (`xdi`) is offered again.** It was built, tested and still running; it
   had simply been taken out of the menus.
 - **The updater can be pointed at a tunnel.** It already tried a relay after a
-  direct connection, but only one that already carried the relay port — which on
+  direct connection, but only one that already carried the relay port â€” which on
   an Iran server with working tunnels and no route to GitHub meant no relay at
   all. The CLI now names the tunnels that are up, says which would cost a restart,
   and fetches through the one chosen.
 - **A way out of two-factor from the CLI.** It is set from the panel and the code
   is delivered by the bot; when that delivery stops working the panel refuses
   every sign-in, and the setting that would fix it was behind that sign-in. Web
-  Panel → Two-factor sign-in is the way back.
+  Panel â†’ Two-factor sign-in is the way back.
 - **The watchdog says whether a tunnel came back.** It restarts one that has
   stopped carrying traffic and said so only into a file the bot read when asked.
   The half of the story an operator waits for now arrives.
@@ -3956,27 +3980,27 @@ made-up numbers to come from is what let so many of them survive.
 
 - **Managed servers.** A foreign server can register itself with a panel and be
   configured from it, so a tunnel is set up in one place instead of twice. On
-  the panel: **Servers** → turn the listener on, name the server, copy the line
-  it produces. That line **installs Backpack and enrols the server in one go** —
-  `bash <(curl -fsSL .../install.sh) node --panel <ip>:<port> --key <key>` — so
+  the panel: **Servers** â†’ turn the listener on, name the server, copy the line
+  it produces. That line **installs Backpack and enrols the server in one go** â€”
+  `bash <(curl -fsSL .../install.sh) node --panel <ip>:<port> --key <key>` â€” so
   a bare VPS is one paste rather than two steps in an order that has to be got
   right. The installer validates the arguments before it downloads anything, and
-  a server that already has Backpack can use the short `backpack node setup …`
+  a server that already has Backpack can use the short `backpack node setup â€¦`
   form the panel keeps one click away. After that **Add
-  tunnel** offers it under *The other server*, and Create builds both ends —
+  tunnel** offers it under *The other server*, and Create builds both ends â€”
   every transport and carrier, reverse or direct. Editing sends the complete
   state the tunnel should be in, so a changed MTU or transport rewrites the
   config on the far server too, with the same write-restart-and-roll-back
   protection a local edit has always had. An edit that cannot reach the server
-  is reported as exactly that — this end changed, that one did not, and which
-  one is behind — rather than as plain success. Deleting a tunnel removes it
+  is reported as exactly that â€” this end changed, that one did not, and which
+  one is behind â€” rather than as plain success. Deleting a tunnel removes it
   here only; the panel names the server that still has it. The CLI menu warns
   before editing a paired tunnel, because that process has no channel to the
   node and the change would not travel.
 
   The panel is **never given a login** for the machine. The command installs a
   local service that holds the privilege; what crosses the wire is a request to
-  perform one of four operations — apply, list, status, restart — and the node
+  perform one of four operations â€” apply, list, status, restart â€” and the node
   refuses anything else. There is deliberately no operation that runs a command,
   reads a file, or removes a tunnel. The server dials the panel rather than the
   reverse, so it opens no inbound port of its own, and the channel is a Noise
@@ -3985,8 +4009,8 @@ made-up numbers to come from is what let so many of them survive.
   revoked by **Remove**, which leaves its tunnels running. The channel is
   independent of the tunnels, so a tunnel that is down does not take away the
   way to fix it. A speed test on a tunnel whose far end is managed now starts
-  the receiver there itself — it was the last step that still needed somebody
-  on the other machine — and that sink closes itself when the run is over. A tunnel's
+  the receiver there itself â€” it was the last step that still needed somebody
+  on the other machine â€” and that sink closes itself when the run is over. A tunnel's
   card drives both ends too: start, stop and restart reach the managed server,
   because a tunnel in two places has one state and an end stopped on its own
   just leaves the other half dialling. Delete stays local by design. **New panel only.** See
@@ -3995,7 +4019,7 @@ made-up numbers to come from is what let so many of them survive.
 
 - **Error correction on the direct tunnel.** For every `fec_data` datagrams the
   tunnel sends `fec_parity` spare ones, and any `fec_parity` of a group may be
-  lost without loss — redundancy, never retransmission, which is the only thing
+  lost without loss â€” redundancy, never retransmission, which is the only thing
   a layer-3 tunnel may safely stack. Measured against a link dropping 20%, an
   application saw **3.5% loss with it on and 39% with it off**. It works over
   every carrier, both ends must set the same pair, and it is one question in the
@@ -4003,30 +4027,30 @@ made-up numbers to come from is what let so many of them survive.
 
 - **Several sockets for the UDP carrier (`paths`).** A tunnel on one socket is
   one flow, and a provider that limits each flow separately gives it one flow's
-  allowance however fast the link is. Spreading over several sockets — on
-  consecutive ports from the tunnel port — makes it several flows. Measured
+  allowance however fast the link is. Spreading over several sockets â€” on
+  consecutive ports from the tunnel port â€” makes it several flows. Measured
   against a link capped at 8 Mbit/s per flow, one socket carried **5.8 Mbit/s
   and four carried 23.6**. It is the UDP carrier only; the obfuscated carriers
   vary their source per packet already.
 
 - **Two more spoof packet profiles, `proto58` and the rest, in the menus.**
   `icmpv6`, `ipip` and `gre` existed in the engine but only a hand-edited config
-  could reach them; `proto58` — an ICMPv6 echo's protocol number carried bare,
-  which some filters leave open when they clamp ICMP and UDP — is new. All seven
+  could reach them; `proto58` â€” an ICMPv6 echo's protocol number carried bare,
+  which some filters leave open when they clamp ICMP and UDP â€” is new. All seven
   are now offered by the CLI wizard and the panel, from one shared list.
 
 - **The panel configures the spoof carrier in full.** It could create a spoof
-  tunnel and set one thing about it — the peer address — while the CLI asked
+  tunnel and set one thing about it â€” the peer address â€” while the CLI asked
   six questions. The direct form and the edit screen now carry the packet
   profile, the forged sources, Stealth, error correction and the socket count,
   each shown only for the carrier that has it.
 
 - **Reverse-path filtering is checked and offered.** A strict `rp_filter` drops
-  every forged-source packet before the tunnel sees it — the most common reason
+  every forged-source packet before the tunnel sees it â€” the most common reason
   a spoof tunnel is up, connected, and silent. Health Check now reports it per
   tunnel with the exact `sysctl` to fix it, the startup check reads the
   *effective* value (the max of `conf.all` and the receiving interface, which is
-  what the kernel applies — reading only `conf.all` missed a strict interface),
+  what the kernel applies â€” reading only `conf.all` missed a strict interface),
   and the wizard offers to relax it after a spoof setup.
 
 ### Fixed
@@ -4042,7 +4066,7 @@ made-up numbers to come from is what let so many of them survive.
   where the server wants a string.
 - **The panel could not be put behind a certificate of any kind.** The three
   options were drawn but were not controls, and Apply posted no mode at all, so
-  every attempt came back "unknown mode" — Let's Encrypt included.
+  every attempt came back "unknown mode" â€” Let's Encrypt included.
 - **A failed Let's Encrypt issuance took the panel down with it.** autocert fails
   the handshake when it has no certificate, so a domain that does not resolve
   yet, a blocked port 80 or a rejected contact address locked the operator out of
@@ -4065,7 +4089,7 @@ made-up numbers to come from is what let so many of them survive.
   reported itself as not configured.
 - **A direct tunnel with the spoof carrier could never have its far end built.**
   The producer's real address is what the listening side cannot learn for itself,
-  and it was carried only when some spoof tuning had also been set — so the
+  and it was carried only when some spoof tuning had also been set â€” so the
   ordinary case, accepting the defaults, built one end and could never build the
   other.
 - **Four lists of direct carriers.** The CLI's, the panel's, the create path's
@@ -4076,7 +4100,7 @@ made-up numbers to come from is what let so many of them survive.
   was newer than the last published release.
 - **Shutting the node hub down did not wait for it.** Closing the listeners and
   the sessions unblocks its goroutines, but one already past its read keeps
-  running — mid-handshake, or writing the fleet to disk. A caller that then took
+  running â€” mid-handshake, or writing the fleet to disk. A caller that then took
   away what those goroutines were using raced them.
 - **Test ports collided between packages on CI.** The sequence started from the
   clock in milliseconds, and `go test ./...` starts a binary per package, several
@@ -4084,15 +4108,15 @@ made-up numbers to come from is what let so many of them survive.
 
 - **The setup link was only offered on reverse tunnels.** The box that takes a
   link from the other server sat inside the reverse half of the setup form, so
-  on a direct tunnel — which is what the wizard builds — it was never on screen,
+  on a direct tunnel â€” which is what the wizard builds â€” it was never on screen,
   and the paired values had to be retyped after all. It now sits above the
   split, where it applies to both. The decoder always handled either kind; only
   the box was unreachable. *(New panel.)*
 
 
 - **The icmp spoof profile silenced ICMP on the tunnel itself.** To stop the
-  kernel answering the forged echo requests — a wasted reply per data packet, on
-  the download path — the carrier set `net.ipv4.icmp_echo_ignore_all`, which is
+  kernel answering the forged echo requests â€” a wasted reply per data packet, on
+  the download path â€” the carrier set `net.ipv4.icmp_echo_ignore_all`, which is
   per-namespace and also silenced ICMP arriving on the tunnel. A layer-3 tunnel
   is a private network people ping across, so this broke a first-class use: ping
   across an icmp-profile tunnel was 100% loss while TCP was fine. It is a
@@ -4101,12 +4125,12 @@ made-up numbers to come from is what let so many of them survive.
 
 - **The XDP fast path declined without a word.** `spoof_xdp_interface` computed
   whether the kernel program attached or fell back and then threw the answer
-  away — a loose end from the carrier's own refactor — so an operator who turned
+  away â€” a loose end from the carrier's own refactor â€” so an operator who turned
   it on had no way to learn which happened. The tunnel now logs
-  `XDP receive fast path attached to …` or `XDP receive unavailable … <reason>`
+  `XDP receive fast path attached to â€¦` or `XDP receive unavailable â€¦ <reason>`
   on start.
 
-## v1.7.5 — 2026-08-28
+## v1.7.5 â€” 2026-08-28
 
 Every fix in this release came from somebody's tunnel, and almost all of them
 turned out to be the same shape: the tunnel was broken and the system said it
@@ -4124,8 +4148,8 @@ about itself sooner. Every fix has a regression test that fails without it.
 
 - **Speed Test on the tunnel card.** The measurement existed, in the menu, over
   SSH. Now it is a button next to Start/Stop/Restart/Delete: the panel works out
-  what this tunnel can be measured through — a layer-3 tunnel across its own
-  subnet, a port forwarder through one of the mappings it already carries —
+  what this tunnel can be measured through â€” a layer-3 tunnel across its own
+  subnet, a port forwarder through one of the mappings it already carries â€”
   shows what it will displace while it runs, and draws the result on a gauge.
   Mappings that cannot carry a measurement are listed with the reason rather
   than offered and then failing.
@@ -4142,7 +4166,7 @@ about itself sooner. Every fix has a regression test that fails without it.
 
 - **Every configuration change can be undone.** `applySpec` already covered the
   loud failure: write, restart, wait, and put the old file back if the tunnel
-  does not come up. The quiet failure had no cover at all — a config that starts
+  does not come up. The quiet failure had no cover at all â€” a config that starts
   perfectly well and is simply worse leaves nothing to go back to, and half an
   hour and three edits later "what was it before I started?" has no answer
   anywhere on the machine.
@@ -4161,15 +4185,15 @@ about itself sooner. Every fix has a regression test that fails without it.
 
 - **A dead control channel took eleven and a half minutes to notice.** The
   client's read on the control channel had no deadline of its own, so a link
-  that went away without closing — the normal case for a middlebox dropping
-  state, or a route change — was left to TCP keepalive. Go's `KeepAliveConfig`
+  that went away without closing â€” the normal case for a middlebox dropping
+  state, or a route change â€” was left to TCP keepalive. Go's `KeepAliveConfig`
   with a zero `Idle` uses a 15-second default and then nine probes at 75
   seconds: 690 seconds before the read fails. For eleven and a half minutes the
   tunnel is down, the process is healthy, the panel is green, and no new
   connection can be made.
 
-  The read now carries a deadline derived from the tunnel's own keepalive —
-  half as long again, floored at 30 seconds — so a silent path is noticed within
+  The read now carries a deadline derived from the tunnel's own keepalive â€”
+  half as long again, floored at 30 seconds â€” so a silent path is noticed within
   a keepalive interval or two and the reconnect starts there. This was already
   right in two engines and wrong in the rest, which is a recurring fault of its
   own; there is now a test that reads the engine list out of the dispatch
@@ -4178,7 +4202,7 @@ about itself sooner. Every fix has a regression test that fails without it.
 - **The client blamed the server's version for a broken path.** One closed
   handshake made it announce that the server was running an older release and
   fall back, which sent people to upgrade a server that was already current
-  while the real fault — a connection closed in transit — went unexamined. The
+  while the real fault â€” a connection closed in transit â€” went unexamined. The
   fallback now needs two unanswered attempts, and says both things it can be.
 
 - **A second tunnel could be created that had no chance of working.** From a
@@ -4187,11 +4211,11 @@ about itself sooner. Every fix has a regression test that fails without it.
   others in the same chat had it too.
 
   Both ends have a version of this and neither was refused. On the Iran side,
-  two tunnels binding the same port — the second cannot bind and dies, which at
+  two tunnels binding the same port â€” the second cannot bind and dies, which at
   least appears in its own log. On the kharej side, two tunnels dialling the
   same server and port, which is worse: both start perfectly well, the server
   hands its single control channel to whichever arrived first, and the second is
-  refused for as long as it runs. It is easy to do by accident — copy the tunnel
+  refused for as long as it runs. It is easy to do by accident â€” copy the tunnel
   that works, change the name, forget that the port belongs to the other end as
   much as to this one.
 
@@ -4200,8 +4224,8 @@ about itself sooner. Every fix has a regression test that fails without it.
   as the same bind; two clients reaching different servers on the same port
   number do not.
 
-- **A refused handshake said nothing at all.** A server that rejects a client —
-  wrong token, or a control channel already held by somebody else — used to
+- **A refused handshake said nothing at all.** A server that rejects a client â€”
+  wrong token, or a control channel already held by somebody else â€” used to
   close the connection, which is indistinguishable from a network failure. The
   client retried forever and logged `EOF`, and the server logged the real reason
   at debug, where nobody was looking.
@@ -4209,7 +4233,7 @@ about itself sooner. Every fix has a regression test that fails without it.
   The refusal now carries its reason to the client, which prints it and stops
   guessing: `the token does not match the server's` or `the server already has a
   control channel from somebody else`. The server logs it at warn rather than
-  debug. This is backwards-compatible in both directions — an old client sees
+  debug. This is backwards-compatible in both directions â€” an old client sees
   the same closed connection it always did.
 
   The scope is the transports where the fault was reported and where the
@@ -4222,7 +4246,7 @@ about itself sooner. Every fix has a regression test that fails without it.
   ESTABLISHED long after the peer has gone, which is the exact condition the
   watchdog exists to catch. Engines now report whether they actually hold a
   control channel, and the watchdog believes that in preference to the socket.
-  The report is a tri-state — connected, disconnected, or has not said — because
+  The report is a tri-state â€” connected, disconnected, or has not said â€” because
   during an upgrade an engine that has not been taught to report must not be
   read as reporting "down".
 
@@ -4232,8 +4256,8 @@ about itself sooner. Every fix has a regression test that fails without it.
   three minutes: twenty separate lines are indistinguishable from twenty
   unrelated incidents across a week, and nobody reads that list and concludes
   the tunnel is flapping. Which matters, because flapping is how several real
-  faults present — a path that drops full-sized packets, a liveness deadline set
-  too tight — and all of them look from outside like a tunnel that mostly works,
+  faults present â€” a path that drops full-sized packets, a liveness deadline set
+  too tight â€” and all of them look from outside like a tunnel that mostly works,
   which is worse than one that is plainly down because nobody investigates.
   Repeated restarts inside an hour are now reported once, as one condition. The
   restarting itself is unchanged.
@@ -4244,7 +4268,7 @@ about itself sooner. Every fix has a regression test that fails without it.
   it back.
 
   The drawer animates its height and cleans up when `transitionend` fires. Edit
-  collapses its drawers while the form is still `display:none` — and an element
+  collapses its drawers while the form is still `display:none` â€” and an element
   with no boxes runs no transitions, so nothing ever started, nothing ever
   ended, and the cleanup that clears the height never ran. The drawer was left
   hidden *and* pinned to a height, which is the state that wedges it.
@@ -4264,7 +4288,7 @@ about itself sooner. Every fix has a regression test that fails without it.
   state every segment is out of state, and dropping out-of-state TCP is the
   first thing a stateful firewall does. The tunnel comes up, the sockets are
   healthy, and nothing crosses. Segments now carry `SYN`, which is the packet
-  that starts a connection and which a stateful device has nothing to reject —
+  that starts a connection and which a stateful device has nothing to reject â€”
   as the spoof-tunnel reference sends. Receivers ignore the flags entirely, so
   this interoperates with a peer of any version.
 
@@ -4273,19 +4297,19 @@ about itself sooner. Every fix has a regression test that fails without it.
   buffer that was never read. It is now `IPPROTO_RAW`: send-only by definition.
 
   And the sequence number advanced by the payload length plus one, leaving a
-  one-byte hole in the sequence space on every segment — visible to anything
+  one-byte hole in the sequence space on every segment â€” visible to anything
   that follows a flow, and not what a real sender does. IP IDs were sequential
   for the same reason and are now random.
 
-- **The direct tunnel stalled and had to be restarted by hand — on some servers
+- **The direct tunnel stalled and had to be restarted by hand â€” on some servers
   and not others.** That pattern is the signature of a path MTU problem rather
   than a fault in the tunnel: the connection establishes, small packets pass,
   and the first full-sized segment is dropped by a link that cannot carry it and
   cannot say so. The socket stays ESTABLISHED throughout, which is why it looks
   like a hang rather than a failure.
 
-  The TCP maximum segment size is now clamped on every direct connection — the
-  edge dial, the accepted connection and the websocket path alike — so segments
+  The TCP maximum segment size is now clamped on every direct connection â€” the
+  edge dial, the accepted connection and the websocket path alike â€” so segments
   are sized to what the path takes. `mss` is exposed for the paths where the
   default is still too large.
 
@@ -4295,7 +4319,7 @@ about itself sooner. Every fix has a regression test that fails without it.
   `reading from bp0: too many segments` and tore itself down every few seconds.
   Two symptoms, one wrong assumption.
 
-  Turning on the kernel's segmentation offload — the batching added in v1.7.4 —
+  Turning on the kernel's segmentation offload â€” the batching added in v1.7.4 â€”
   changed what a read returns. It is no longer packets the kernel built to fit
   this interface. It is one run of up to 64 KB, split for us into the segments
   the *sending* side chose, whose size came from the sender's path and has
@@ -4309,8 +4333,8 @@ about itself sooner. Every fix has a regression test that fails without it.
 
   The second is the same assumption at the other end of the scale. When the
   kernel coalesces many small packets, one run can split into more segments than
-  there are buffers, and the library says so. That is a short read — the packets
-  that fit are perfectly good — but the pump took any error from the device as
+  there are buffers, and the library says so. That is a short read â€” the packets
+  that fit are perfectly good â€” but the pump took any error from the device as
   the device having failed, so a condition that costs a few packets cost the
   whole tunnel, over and over, for as long as the traffic causing it kept
   flowing. It is now handled as what it is, reported once a minute rather than
@@ -4320,12 +4344,12 @@ about itself sooner. Every fix has a regression test that fails without it.
   its goroutines and then discarded their error if the context had ended, so a
   port it could not take produced a forwarder that returned nil and forwarded
   nothing. Bind failures are now returned and logged with the address that
-  failed. This surfaced as a test that looked flaky and was not — twice this
+  failed. This surfaced as a test that looked flaky and was not â€” twice this
   release, an intermittent failure turned out to be a real fault plus a test
   port allocator that checked a port was free and then raced another test to
   bind it. The allocator is now shared and issues each port once.
 
-## v1.7.4 — 2026-08-23
+## v1.7.4 â€” 2026-08-23
 
 Almost all of this release came from the field: tunnels that dropped every so
 often and had to be restarted by hand, a certificate that would not issue, a
@@ -4339,7 +4363,7 @@ regression test that fails without it.
   from wireguard-go's `tun` package, which turns on the kernel's segmentation
   offload: one read can return a whole 64 KB run of a single TCP stream, already
   split into MTU-sized packets, for the cost of one syscall. The session and
-  peer lookups moved out of the per-packet path with it — both take the state
+  peer lookups moved out of the per-packet path with it â€” both take the state
   lock, and it was being taken twice per packet for values that change every two
   minutes. Everything above the device is unchanged: the addresses, the MTU, the
   queue, the queueing discipline and the MSS clamp still go through `ip`.
@@ -4348,7 +4372,7 @@ regression test that fails without it.
   to answer "No full IP tunnel found on this server." and stop, which is true
   and useless: the menu offers the entry to everybody and most tunnels forward
   ports. A layer-3 tunnel is still measured across its private subnet; a port
-  forwarder is now measured through one of the mappings it already carries — the
+  forwarder is now measured through one of the mappings it already carries â€” the
   side that exposes the ports connects to one on its own loopback, the side that
   holds the backends puts the sink where that mapping points. What travels is a
   real forwarded connection over the real transport, which is the thing being
@@ -4358,7 +4382,7 @@ regression test that fails without it.
   backend uses, so that service is down for the length of the measurement. The
   receiver checks the port is free, says plainly what it is about to displace,
   and refuses to start on top of something. Mappings that cannot carry a
-  measurement — a backend on another machine, one load-balanced across several —
+  measurement â€” a backend on another machine, one load-balanced across several â€”
   are listed with the reason instead of being offered and then failing.
 
 ### Fixed
@@ -4366,7 +4390,7 @@ regression test that fails without it.
 - **A layer-3 tunnel never came back after its device or carrier failed.** The
   restart loop was in place and correct, and it was never reached. `Run` waits
   for its goroutines, and the handshake and MTU-probe loops watched the caller's
-  context — which outlives every generation of the tunnel — so when the pumps
+  context â€” which outlives every generation of the tunnel â€” so when the pumps
   stopped, those two carried on running against a carrier that had already been
   closed, holding `Run` inside its wait forever. Nothing was reopened, while the
   handshake loop logged a retry every few seconds and made it look like the
@@ -4382,7 +4406,7 @@ regression test that fails without it.
   kcp-go tells peers apart by address alone, so two carriers sharing a port
   arrive as one peer, and a packet claiming a new conversation on an existing
   entry closes the old one. The allocator was a counter taken modulo a 128-port
-  span and it never came back down, so carrier 128 was handed carrier 0's port —
+  span and it never came back down, so carrier 128 was handed carrier 0's port â€”
   and carrier 0 is the control channel. A pool dialling every sixteen seconds,
   which is what the logs from the field showed, walks the whole span in about
   thirty-four minutes. Restarting the process worked because it started the
@@ -4394,7 +4418,7 @@ regression test that fails without it.
 
 - **The startup notes told operators to match a number that does not have to
   match.** Every KCP-family tunnel printed `both ends MUST match MTU and FEC or
-  the tunnel never connects` on every start, healthy or not — the only line on a
+  the tunnel never connects` on every start, healthy or not â€” the only line on a
   clean startup that sounds like a fault, so people went looking for one. Half
   of it was untrue: `SetMtu` sizes only the segments this end sends and a
   receiver parses whatever arrives, so the two ends may run different values
@@ -4419,14 +4443,14 @@ regression test that fails without it.
   and a browser offers `h2` before `http/1.1`. Our own server pins `http/1.1` and
   so never took the `h2` on offer; a CDN terminates the TLS itself and has no
   such instruction, took it, and answered the websocket upgrade with an HTTP/2
-  SETTINGS frame — which the HTTP/1.1 parser reported as
+  SETTINGS frame â€” which the HTTP/1.1 parser reported as
   `malformed HTTP response "\x00\x00\x12\x04..."`. A websocket cannot be
   carried over HTTP/2 at all, so offering it was the fault. The offer is now
   narrowed to what the client can actually speak.
 
 - **Let's Encrypt certificates were never obtained.** Two faults, and either
   alone is enough. `autocert` identifies the certificate to serve by the name in
-  the ClientHello and refuses outright when there is none — and a tunnel's
+  the ClientHello and refuses outright when there is none â€” and a tunnel's
   remote address is normally the server's IP, which a client dials without
   sending a name. Every handshake was refused before an issuance was ever
   attempted. A handshake that carries no name is now answered with the one
@@ -4435,14 +4459,14 @@ regression test that fails without it.
   And issuance was lazy: nothing was requested until a handshake asked, so a
   failure surfaced only as a broken connection on whoever happened to arrive,
   with nothing at all on the server. The certificate is now fetched at startup
-  and the answer — issued, or the exact reason not — goes in the tunnel's own
+  and the answer â€” issued, or the exact reason not â€” goes in the tunnel's own
   log. Nothing was wrong with Let's Encrypt.
 
 - **The control-channel handshake was too tight for a lossy path.** On a path
   that drops a packet the wait is not a round trip but a round trip plus however
   long TCP takes to retransmit: a second, then three, then seven. The `udp`
   transport allowed two seconds for the whole exchange on both ends, so one lost
-  packet failed it — the client closed, backed off and dialled again, and the
+  packet failed it â€” the client closed, backed off and dialled again, and the
   tunnel churned without ever reporting a disconnection. Every transport now
   uses the same named budget, generous for the same reason: failing fast here
   costs a full redial, which is far more than waiting would have.
@@ -4458,7 +4482,7 @@ regression test that fails without it.
 
 - **One end of a datagram tunnel showed offline while the other showed online**,
   with traffic flowing the whole time. The panel asked the socket table, which
-  can only see carriers that leave a socket behind — plain `kcp`, `udp` and
+  can only see carriers that leave a socket behind â€” plain `kcp`, `udp` and
   `quic` dial a connected UDP socket the kernel names a peer for, but `xdi`
   rides in ICMP, `pck` builds its own TCP segments through a packet socket and
   `spoof` sends from a raw one. Only the listening side wrote down what it knew.
@@ -4470,15 +4494,15 @@ regression test that fails without it.
   than the gap to the next, at which point the requests overlap, each overlap
   adds another journalctl, and the load climbs on its own until the tab is
   closed. A journal read is now shared: whoever asks while one is running waits
-  for it, and a result stands for two seconds — so the cost is bounded however
+  for it, and a result stands for two seconds â€” so the cost is bounded however
   many panels are open. The page also refuses to overlap its own requests and
   stops asking while its tab is hidden.
 
 - **The panel forked `systemctl` once per tunnel per poll.** "Is this unit
   running" is the question it asks most: once per tunnel every four seconds for
   the system card, again every six for the tunnel list, each one a process and a
-  round trip to systemd. The answer is now shared for two seconds — well inside
-  both intervals, so nothing is less live — and anything that starts, stops or
+  round trip to systemd. The answer is now shared for two seconds â€” well inside
+  both intervals, so nothing is less live â€” and anything that starts, stops or
   restarts a unit clears it, so a button press is reflected at once.
 
 - **Editing a direct tunnel in the panel opened the reverse editor.** The server
@@ -4487,30 +4511,30 @@ regression test that fails without it.
   a direct tunnel does not have. Every box came up blank, the transport picker
   offered the wrong transports, and saving posted an empty edit that restarted
   the tunnel having changed nothing. Direct tunnels now get their own editor,
-  showing what can be changed and naming — read-only — the carrier, addresses
+  showing what can be changed and naming â€” read-only â€” the carrier, addresses
   and side that are settled when the tunnel is made.
 
 - **Speed Test's receiver killed the whole CLI.** The screen said "Press Ctrl+C
   when the other end reports its result" and installed no handler for it, so the
-  interrupt took Go's default and ended the program — menu, tunnel list and
+  interrupt took Go's default and ended the program â€” menu, tunnel list and
   whatever else was in progress. It now stops the sink and returns to the menu,
   as every other screen that asks for Ctrl+C already did. A receiver that times
   out waiting for a sender says so, rather than being indistinguishable from one
   that finished.
 
 - **The ICMP carrier allocated twice per packet**, once to frame the payload and
-  once to read one — both now come from a pool, as the pck carrier's already
+  once to read one â€” both now come from a pool, as the pck carrier's already
   did.
 
-## v1.7.3 — 2026-08-19
+## v1.7.3 â€” 2026-08-19
 
 ### Added
 
 - **Direct tunnelling: Iran dials out instead of waiting to be dialled.**
 
   A reverse tunnel needs kharej to reach a port on Iran. Where that inbound
-  connection cannot be made — a provider that filters connections arriving from
-  abroad, a port blocked in one direction only — the tunnel never comes up, even
+  connection cannot be made â€” a provider that filters connections arriving from
+  abroad, a port blocked in one direction only â€” the tunnel never comes up, even
   though the user-facing ports on Iran are perfectly fine. A direct tunnel turns
   it around: Iran reaches out, which is the ordinary direction and the one a
   filter is least likely to touch. The ports do not move. Iran still exposes
@@ -4520,23 +4544,23 @@ regression test that fails without it.
   packets, so the two servers get a point-to-point link over which anything can
   be routed, plus the same `ports = [...]` forwarding a reverse tunnel has. The
   packets are framed as **GRE and sealed in a Noise session**, then handed to
-  one of three carriers — `pck` (raw TCP segments with no socket a firewall can
+  one of three carriers â€” `pck` (raw TCP segments with no socket a firewall can
   hold), `udp`, or `spoof` (a forged source address).
 
   This is not the kernel's GRE. Kernel GRE travels as bare IP protocol 47:
   unencrypted, unmistakable, and removed by one firewall rule. Backpack writes
-  the same header — RFC 2784, with the RFC 2890 key — and then encrypts it and
+  the same header â€” RFC 2784, with the RFC 2890 key â€” and then encrypts it and
   hides it inside a carrier, so there is no protocol 47 to block. The cost is
   that it talks only to Backpack.
 
-  **Menu → Setup Iran** (or **Setup Kharej**) **→ Direct**. Linux only: it needs
+  **Menu â†’ Setup Iran** (or **Setup Kharej**) **â†’ Direct**. Linux only: it needs
   `/dev/net/tun` and root.
 
 - **The MTU is measured, not guessed.**
 
   The MTU is the one setting on a layer-3 tunnel that cannot be derived from the
   configuration, and the one that fails worst when it is wrong: set it too high
-  and the tunnel comes up, answers every health check, carries ping and SSH —
+  and the tunnel comes up, answers every health check, carries ping and SSH â€”
   and stalls every download and every TLS handshake, because the packets that
   matter are the large ones and they are dropped out on the path with nothing
   coming back to say so.
@@ -4558,14 +4582,14 @@ regression test that fails without it.
   the SYN of every TCP connection leaving the interface, on both chains and both
   address families, so nothing has to be discovered.
 
-- **Performance presets for a full IP tunnel** — Balance, Turbo and Aggressive.
+- **Performance presets for a full IP tunnel** â€” Balance, Turbo and Aggressive.
   They tune the queue between the kernel and the tunnel and the carrier's socket
   buffers. All three queue with `fq_codel`, which is what lets a deep queue
   absorb a burst without becoming latency: it drops when packets start waiting,
   so the sender backs off before the queue turns into jitter.
 
-- **Speed Test** (Manage → Speed Test). Measures what a tunnel actually carries,
-  end to end — encapsulation, encryption, carrier and path together. Link Test
+- **Speed Test** (Manage â†’ Speed Test). Measures what a tunnel actually carries,
+  end to end â€” encapsulation, encryption, carrier and path together. Link Test
   next door measures latency, jitter and loss and says nothing about throughput,
   and finding out used to mean `dd | nc` on both servers by hand.
 
@@ -4575,7 +4599,7 @@ regression test that fails without it.
   offering different things.
 
 - **The kharej side refuses to dial a cloud metadata service.** The origin dials
-  whatever address the stream names — that is the design, and it is why changing
+  whatever address the stream names â€” that is the design, and it is why changing
   the forwarded ports touches only one machine. Private addresses stay allowed,
   because forwarding to a backend on kharej's own network is a documented use.
   The metadata addresses are the exception: they answer credentials to anything
@@ -4585,20 +4609,20 @@ regression test that fails without it.
 ### Added (documentation)
 - **A `tutorial/` folder: a step-by-step setup walkthrough for every transport.**
   The docs said what each setting *is*; nothing said what to type, in what order,
-  to get a working tunnel. Each page now walks the wizard question by question —
-  the answer to give and the reason for it — for TCP, TCP Mux, Stealth, PCK, UDP,
+  to get a working tunnel. Each page now walks the wizard question by question â€”
+  the answer to give and the reason for it â€” for TCP, TCP Mux, Stealth, PCK, UDP,
   KCP+FEC, QUIC, the WebSocket pair, xDi and IP Spoofing, plus
   [before you start](tutorial/before-you-start.md) (roles, token, port mapping,
   firewall), [adding UDP to a tunnel](tutorial/udp-forwarding.md) and
   [behind a panel](tutorial/behind-a-panel.md). Every page ends with a Persian
   summary, as does every page under `docs/`.
-- **[docs/ip-spoofing.md](docs/ip-spoofing.md) — the spoof carrier documented
+- **[docs/ip-spoofing.md](docs/ip-spoofing.md) â€” the spoof carrier documented
   setting by setting**, including the ones no menu asks about: which settings
   must match the peer and which are local, every fingerprint and evasion knob
   with its config key and its cost, and how to drive the two-node tester.
 - **[docs/cli-menu.md](docs/cli-menu.md) rewritten as a complete reference.** It
   was a summary that had fallen behind the menu; it now covers every option in
-  every menu — both setup wizards prompt by prompt, all twelve Manage entries,
+  every menu â€” both setup wizards prompt by prompt, all twelve Manage entries,
   the Edit screens for each role and transport, and the whole **Fine Tune**
   block, which was documented nowhere.
 - **[docs/install.md](docs/install.md)**, holding the offline and manual install
@@ -4607,26 +4631,26 @@ regression test that fails without it.
 ### Changed
 
 - **"Setup Server" and "Setup Client" are now "Setup Iran" and "Setup Kharej".**
-  The old names were already a little confusing — in a reverse tunnel the Iran
-  machine is the server — and with a direct tunnel they become actively wrong,
+  The old names were already a little confusing â€” in a reverse tunnel the Iran
+  machine is the server â€” and with a direct tunnel they become actively wrong,
   because there the Iran machine is the one that dials. Geography is the part
   that does not change with the direction. Each entry asks reverse or direct
   first, and the rest of the wizard follows from that answer.
 
 - **A tunnel card shows two badges instead of one.** It used to print the
-  internal name — `l3/pck` — because there was a single field where there were
+  internal name â€” `l3/pck` â€” because there was a single field where there were
   always two facts: which way the tunnel was built, and what carries it. Now it
-  reads **DIRECT · PCK**, and the direction badge takes the theme's accent
+  reads **DIRECT آ· PCK**, and the direction badge takes the theme's accent
   colour rather than one of its own.
 
 - **The direct wizard asks one question about how the tunnel travels.** It used
   to ask what kind of tunnel, then how to wrap the packets. Both have a single
   sensible answer now, so both are gone; the carriers are offered in the order
-  worth trying them — PCK, UDP, Spoof.
+  worth trying them â€” PCK, UDP, Spoof.
 
 - **`nodelay` is on in every direct preset.** The engine calls
   `SetNoDelay(cfg.Nodelay)`, so leaving the key unset did not leave the socket
-  alone — it turned Nagle *on*, over Go's own default of off. On a tunnel where
+  alone â€” it turned Nagle *on*, over Go's own default of off. On a tunnel where
   one mux session carries every connection, that delays every stream at once.
 
 ### Changed (documentation)
@@ -4634,13 +4658,13 @@ regression test that fails without it.
   like a file server rather than a program.** The decoy existed so a probe would
   see a website instead of a tunnel, and for one server it worked. Across the
   fleet it did the opposite: every Backpack on earth returned byte-identical
-  bytes — the same trimmed page, `Server: nginx`, and nothing else. No
+  bytes â€” the same trimmed page, `Server: nginx`, and nothing else. No
   `Last-Modified`, no `ETag`, no `Accept-Ranges`, the same `Content-Length`
   everywhere. One internet-wide scan for that exact response enumerated every
   Backpack server there is, no token and no probing required; a camouflage
   everybody wears identically is a uniform.
 
-  Each install now derives its own identity from **its tunnel token** — which
+  Each install now derives its own identity from **its tunnel token** â€” which
   real distro nginx version it claims to be (and whether that build prints its
   version at all), when its `index.html` was written, and the `ETag` computed
   from that date and the page size in nginx's own format, so the three can never
@@ -4651,17 +4675,17 @@ regression test that fails without it.
   keeps its identity across restarts, as a real file on a real disk does.
 
   The responses themselves are a file server's now: `/` is served with the full
-  static-file header set and honours conditional and range requests — a probe
-  that hands back the `ETag` gets a `304`, not another `200` — and **every other
+  static-file header set and honours conditional and range requests â€” a probe
+  that hands back the `ETag` gets a `304`, not another `200` â€” and **every other
   path gets nginx's own `404`**, the tunnel's `/channel` included. Serving the
   welcome page on every path was the older behaviour and was a tell twice over:
   no static site answers `200` for arbitrary paths, and the tunnel path was only
   unremarkable next to the equally wrong `200` that every other path got. Being
   a `404` among `404`s hides it properly. Nothing to configure, and the two ends
-  do not have to agree on any of it — the client never looks at the decoy.
+  do not have to agree on any of it â€” the client never looks at the decoy.
 - **The README is an introduction again.** It had grown into a manual: install,
   offline install, quick start, the full feature list and a link farm. What is
-  left is what a first-time reader needs — what it is, how it works, install,
+  left is what a first-time reader needs â€” what it is, how it works, install,
   the five-minute quick start, a transport table pointing at the walkthroughs,
   and the highlights (the long list is still there, folded away). Everything else
   moved into `docs/` or `tutorial/`. `README_FA.md` follows the same shape.
@@ -4670,7 +4694,7 @@ regression test that fails without it.
 
 Everything below is a direct-tunnel fault found while running one on real
 servers between Iran and abroad. They are listed because several presented as
-the same thing — "the tunnel is up and nothing works" — and each had a different
+the same thing â€” "the tunnel is up and nothing works" â€” and each had a different
 cause.
 
 - **A tunnel whose two ends wrapped packets differently came up and carried
@@ -4682,14 +4706,14 @@ cause.
   Both interfaces showed zero packets received. Nothing logged above debug.
 
   The encapsulation now travels in the handshake, encrypted and authenticated
-  with everything else, and a mismatch is refused **by name on both ends** —
+  with everything else, and a mismatch is refused **by name on both ends** â€”
   including a GRE key mismatch, which fails in exactly the same silent way. An
   older peer that announces nothing is not judged, so an upgrade cannot take a
   working pair down.
 
 - **The panel showed the Iran side offline while the tunnel was carrying
   traffic.** The dialling side runs a liveness probe the listening side does
-  not, and the probe was a TCP connect — chosen because the transport was not
+  not, and the probe was a TCP connect â€” chosen because the transport was not
   recognised as a datagram one. `l3/pck` never matched the bare names the check
   compared against, so the panel dialled a carrier that has no socket to dial by
   design, read the inevitable refusal as the tunnel being down, and overrode a
@@ -4705,7 +4729,7 @@ cause.
 - **A session was never retired.** `rejectAfterTime` was documented as the point
   a session stops being usable and was only ever applied to the replaced and
   pending ones, so a tunnel whose peer had gone away held its last session for
-  as long as the process lived — and with it the peer in the metrics file, so
+  as long as the process lived â€” and with it the peer in the metrics file, so
   the panel showed "peer connected" for a tunnel that had been down for hours.
 
 - **Health Check told you to restore from a backup.** Its per-tunnel checks went
@@ -4722,13 +4746,13 @@ cause.
   from, so the card showed nothing for a tunnel moving real data.
 
 - **A rekey was logged as a new connection.** The dialling side rekeys every two
-  minutes by design, and every one printed "session ... established" — which
+  minutes by design, and every one printed "session ... established" â€” which
   read, quite reasonably, as a tunnel dropping and redialling every two minutes,
   and was reported as exactly that.
 
 - **The MSS clamp was never installed.** The whole command was kept in one list
-  and the verb was written over index 2 — which held the chain — so every
-  invocation came out as `iptables -t mangle -A -o bp0 …` with no chain at all.
+  and the verb was written over index 2 â€” which held the chain â€” so every
+  invocation came out as `iptables -t mangle -A -o bp0 â€¦` with no chain at all.
   iptables refused all of them and the refusal was logged at debug level, so the
   clamp was absent from every machine it was meant to protect while the code
   that built it passed its tests: they inspected the rule description, never the
@@ -4744,7 +4768,7 @@ cause.
   direct renderer wrapped strings in quotes by hand; a backslash is an escape
   character in a TOML basic string exactly as it is in a Go one. The failure was
   either a file that did not load or, worse, one that loaded a *different* token
-  — and a mismatched token is answered with silence by design, so it presents as
+  â€” and a mismatched token is answered with silence by design, so it presents as
   a blocked port.
 
 - **Editing a direct tunnel silently deleted settings it never showed.** The
@@ -4754,7 +4778,7 @@ cause.
   carried whole.
 
 - **Pressing 0 to leave the layer-3 editor changed a setting.** The kharej side
-  is offered fewer entries, so its indices were shifted up to compensate — and
+  is offered fewer entries, so its indices were shifted up to compensate â€” and
   the shift was applied to the "go back" answer too, which landed on the UDP
   toggle and restarted the tunnel.
 
@@ -4784,14 +4808,14 @@ cause.
   side.
 
 - **Two layer-3 tunnels on one host collided.** The wizard offered every tunnel
-  the same interface name and the same `10.10.0.1/30` — on the same screen that
+  the same interface name and the same `10.10.0.1/30` â€” on the same screen that
   suggested running more than one between the same two servers.
 
 - **Server setup asks about UDP forwarding in the main flow, and its firewall
   advice now matches the answer.** v1.7.2 made forwarded UDP opt-in again, for
   the QUIC reason below, but left the setup wizard describing the old default:
   after the exposed ports it still announced "These ports carry UDP as well as
-  TCP" and told you to run `ufw allow <port>/udp` — on a tunnel that had just
+  TCP" and told you to run `ufw allow <port>/udp` â€” on a tunnel that had just
   been created with `accept_udp = false`. The only place to turn UDP on during
   setup was a question inside "Fine-tune the advanced settings by hand", which
   defaults to *no*, so a fresh install never saw it. The result was reported as
@@ -4801,19 +4825,19 @@ cause.
   on screen to explain the difference.
 
   The question is now asked in the main server flow, right after the exposed
-  ports it applies to, with the trade named on both sides — yes for
+  ports it applies to, with the trade named on both sides â€” yes for
   Xray/Shadowsocks UDP, WireGuard, DNS and games; no for a plain web or proxy
   tunnel, whose browser QUIC would otherwise crowd out the TCP forwards. The
   firewall line that follows then names only the protocol the tunnel actually
   carries, and says where to change it later. The default is unchanged: still
   off. See [docs/forwarded-udp.md](docs/forwarded-udp.md).
 
-## v1.7.2 — 2026-08-14
+## v1.7.2 â€” 2026-08-14
 
 ### Added
 - **A Throughput preset, for `udp + kcp + fec` only.** Balance, Turbo and
   Aggressive are all gaming profiles: they differ in how much headroom they buy,
-  but every one of them spends bandwidth to hold the ping steady — immediate
+  but every one of them spends bandwidth to hold the ping steady â€” immediate
   ACKs, a 10 ms tick, and enough parity to repair a loss rather than wait a round
   trip for the retransmit. That is the right trade for a game and the wrong one
   for a download, and no tuning inside those three fixes it, because the cost is
@@ -4822,7 +4846,7 @@ cause.
   32 MB per-stream buffer, so one stream can fill a long fat path (~210 Mbit/s at
   200 ms round trip, against ~105 on Aggressive). Measured end to end on
   loopback it carries roughly twice what Aggressive does. It is offered on the
-  plain `kcp` transport alone — the other KCP carriers (xdi, spoof, pck) build
+  plain `kcp` transport alone â€” the other KCP carriers (xdi, spoof, pck) build
   their packets by hand and pay a syscall per datagram, so bandwidth is not what
   they are for, and on a TCP transport every knob it changes belongs to the
   kernel rather than to this process. Choosing it elsewhere is refused with a
@@ -4832,29 +4856,29 @@ cause.
 - **Multi-exit failover with health scoring.** A client with more than one server
   address can now steer traffic to the healthiest one on its own. A scoring loop
   measures every exit every few seconds and ranks it by
-  `rtt + 2·jitter + 20·loss%` — the weighting that puts a steady 90 ms exit ahead
-  of a 60 ms one that stutters — then keeps new connections on the best exit,
-  with hysteresis (a challenger must be ≥15% better for three checks running)
+  `rtt + 2آ·jitter + 20آ·loss%` â€” the weighting that puts a steady 90 ms exit ahead
+  of a 60 ms one that stutters â€” then keeps new connections on the best exit,
+  with hysteresis (a challenger must be â‰¥15% better for three checks running)
   so the choice does not flap. It is the piece that turns a plain fallback list
   into the multi-exit gaming behaviour, and it steps off an exit as it *degrades*
   rather than only when it dies. Opt-in per tunnel (`health_failover`), asked at
   setup when a tunnel has backup addresses, and it overrides load balancing
   (steering to one best exit is the opposite of spreading across all of them).
-  **Manage → Exit Health** is the manual companion: it scores and ranks every
+  **Manage â†’ Exit Health** is the manual companion: it scores and ranks every
   address on demand and offers to pin the healthiest as the primary.
-- **Game Latency Test (Manage → Game Latency Test).** Estimates the in-game ping
+- **Game Latency Test (Manage â†’ Game Latency Test).** Estimates the in-game ping
   a player would feel through this exit without anyone installing a game or a
   config. It pings the nearest edge of popular game publishers (Dota 2, CS2,
   Valorant, PUBG, Fortnite and more) from the abroad server, measures the
   exit-to-game leg, adds the hub-to-exit tunnel leg where a TCP tunnel makes it
   measurable, and rates the result with a typical player last mile folded in.
   Test one game, every game through an exit, or a custom host. The endpoint list
-  is bundled but editable (`/etc/backpack/game-endpoints.list`) — publishers move
+  is bundled but editable (`/etc/backpack/game-endpoints.list`) â€” publishers move
   addresses, and many game servers filter ICMP, both of which the tool says
   plainly rather than guessing around.
 - **FEC recommendation in the Link Test.** After measuring loss, the test now
-  names the exact parity ratio to run on a KCP link — the setting that most
-  decides how a lossy route feels — sized so the parity always clears the loss
+  names the exact parity ratio to run on a KCP link â€” the setting that most
+  decides how a lossy route feels â€” sized so the parity always clears the loss
   with burst headroom (10:5 at a few percent, 8:8 in the teens, 4:8 past 20%).
   On the CLI it offers to apply the ratio and, on a switch to KCP, sets it as
   part of the switch; the web panel shows it alongside the transport pick. Both
@@ -4864,36 +4888,36 @@ cause.
 - **KCP sessions run in stream mode, which is worth 5-7% on every preset.**
   kcp-go leaves stream mode off by default, and nothing here turned it on. Off,
   every write becomes its own segment and the last one goes out part-empty
-  however few bytes it holds — so a tunnel carrying SMUX, whose frames are a
+  however few bytes it holds â€” so a tunnel carrying SMUX, whose frames are a
   header plus whatever the application happened to write, spent a share of every
   packet on padding. On, a short write is appended to the segment already queued
   until that segment is full. What rides on these sessions is a byte stream, so
   message boundaries were never meaningful, and `SetWriteDelay(false)` still
-  flushes on the next tick — it costs no latency. Measured at 5-7% more
+  flushes on the next tick â€” it costs no latency. Measured at 5-7% more
   throughput on Balance, Turbo, Aggressive and Throughput alike.
 - **Aggressive is now genuinely maximal in everything that does not cost ping.**
-  Socket buffers 16 → 32 MB and the per-stream mux buffer 8 → 16 MB, so flow
+  Socket buffers 16 â†’ 32 MB and the per-stream mux buffer 8 â†’ 16 MB, so flow
   control stops being what limits a transfer and a full window can land in one
   burst without the kernel dropping its tail. The KCP window deliberately stays
   at 2048: with congestion control off the window *is* the queue, and a deeper
-  queue is exactly the bufferbloat a gaming preset exists to prevent — wanting a
+  queue is exactly the bufferbloat a gaming preset exists to prevent â€” wanting a
   bigger one is wanting the new Throughput profile. Worst-case memory is
-  unchanged at 16 × 32 MB.
+  unchanged at 16 أ— 32 MB.
 - **UDP + KCP is now "UDP + KCP + FEC", a low-latency gaming transport.** The
   transport was already running gaming-grade ARQ on Turbo and Aggressive; it is
-  now tuned that way throughout and named for what it is. Every preset — Balance
-  included — runs the same latency-first ARQ (NoDelay, a 10 ms tick, Resend=2,
+  now tuned that way throughout and named for what it is. Every preset â€” Balance
+  included â€” runs the same latency-first ARQ (NoDelay, a 10 ms tick, Resend=2,
   KCP's own congestion window off, immediate ACKs) and carries **FEC by
   default**: Balance 10:2, Turbo 10:3, Aggressive 10:4. Send/receive windows are
   pulled back to near the bandwidth-delay product (512 / 1024 / 2048 packets)
-  so that, with congestion control off, buffering — and therefore ping — stays
+  so that, with congestion control off, buffering â€” and therefore ping â€” stays
   bounded instead of ballooning under a large window. The trade is deliberate:
   a little peak throughput for a steadier ping, which is what a game needs.
   Existing tunnels keep their on-disk numbers until a preset is re-applied.
 
 ### Added
-- **TCP + PCK — a TCP transport that does not use the kernel's TCP stack.**
-  Setup → TCP → TCP + PCK. Linux, root, and both ends must be on it.
+- **TCP + PCK â€” a TCP transport that does not use the kernel's TCP stack.**
+  Setup â†’ TCP â†’ TCP + PCK. Linux, root, and both ends must be on it.
 
   The problem it is for is the one where a plain TCP tunnel connects and then
   dies, stalls or is throttled, and nothing in any log says why. The cause in
@@ -4911,7 +4935,7 @@ cause.
   **It forges nothing.** The source address is the machine's real one and the
   ports are real, so replies route normally and none of the proving that
   [IP Spoofing](docs/transports.md) needs applies here. What does not exist is
-  the connection — no handshake, no socket, no kernel state on either host —
+  the connection â€” no handshake, no socket, no kernel state on either host â€”
   while the segments carry what a real one's do: timestamps on every one,
   sequence and acknowledgement numbers that track the bytes actually exchanged, a
   normal window, DSCP marking, and a flag pattern the operator can vary. Those
@@ -4926,20 +4950,20 @@ cause.
   `pck_gateway_mac` keys exist only to correct a wrong guess on an unusual host.
 
   Two firewall rules are installed on start and removed on stop: one dropping the
-  kernel's RSTs for the tunnel's port — the kernel is not listening there, so it
+  kernel's RSTs for the tunnel's port â€” the kernel is not listening there, so it
   answers every arriving segment with one, and to a stateful device in between
-  that RST is the connection ending — and one keeping the pseudo-flows out of
+  that RST is the connection ending â€” and one keeping the pseudo-flows out of
   conntrack. They are tagged `backpack-pck-<port>`. Without `iptables` the tunnel
   runs and is unreliable, and says so at startup. The client's source port is
   derived from the token rather than picked at random, so a reconnect reuses the
   rule instead of adding one. See [docs/tcp-pck.md](docs/tcp-pck.md).
 
 ### Changed
-- **Forwarded UDP is opt-in again — off unless you turn it on.** v1.7.1 made a
+- **Forwarded UDP is opt-in again â€” off unless you turn it on.** v1.7.1 made a
   forwarded port carry UDP as well as TCP by default, to fix Xray/Shadowsocks
   UDP working nowhere. That default caused a worse problem than it solved. A
   browser's QUIC is UDP on port 443, so a plain web tunnel silently began
-  carrying every QUIC flow the browser opened — and each forwarded UDP flow
+  carrying every QUIC flow the browser opened â€” and each forwarded UDP flow
   holds a pooled tunnel connection for as long as it lives. On the
   connection-pooled transports (`ws`, `wss`, and the mux family) a browser's
   many long-lived QUIC connections to a site drained the pool the TCP forwards
@@ -4948,50 +4972,50 @@ cause.
   QUIC-heavy, was the usual casualty; Telegram, which is TCP, was fine.
 
   So `accept_udp` is off by default once more, as it was before v1.7.1. New
-  tunnels carry TCP only; turn UDP on — Edit → Fine Tune → *Forward UDP…*, or
-  `accept_udp = true` — for the tunnels that genuinely need it (a VPN, a game,
+  tunnels carry TCP only; turn UDP on â€” Edit â†’ Fine Tune â†’ *Forward UDPâ€¦*, or
+  `accept_udp = true` â€” for the tunnels that genuinely need it (a VPN, a game,
   an Xray/Shadowsocks inbound). **An existing tunnel created on v1.7.1 has
   `accept_udp = true` written in its config and keeps forwarding UDP until you
-  turn it off** — that is the fix for the symptom above if you are hitting it.
+  turn it off** â€” that is the fix for the symptom above if you are hitting it.
   See [docs/forwarded-udp.md](docs/forwarded-udp.md).
 
 - **The spoof transport's ICMP and UDP profiles now match the reference spoof
-  transports on the wire — and carry the payload bare.** They used to borrow
+  transports on the wire â€” and carry the payload bare.** They used to borrow
   xdi's framing: every datagram went out with a 5-byte tag+direction prefix in
   front of the KCP packet, and the ICMP profile split the two directions into
   Echo Request (client) and Echo Reply (server). The reference transports do
-  neither — an ICMP packet is a plain Echo Request in both directions, a UDP
+  neither â€” an ICMP packet is a plain Echo Request in both directions, a UDP
   packet is a plain datagram, and the payload sits directly inside the L4 header
   with nothing added. What authenticates a packet as the tunnel's is the same
   thing that always did: the encryption above it, whose key comes from the
   token, plus the L4 port (UDP/TCP) or echo identifier (ICMP) that the kernel
   filter already matched on. The tag was redundant with the cipher; the
-  direction byte's job — discarding the kernel's automatic Echo Reply — is now
+  direction byte's job â€” discarding the kernel's automatic Echo Reply â€” is now
   done by keeping only Echo Requests, since both ends send them.
 
   **This is a breaking wire change: both ends must run this version.** A spoof
   tunnel with one end on the old framing and the other on the new one will not
   pass traffic. The effective MTU also grows by five bytes (the dropped prefix),
   which both ends compute identically. The `tcp` profile is unframed by the same
-  change. The xdi transport is untouched — it still carries its own framing,
+  change. The xdi transport is untouched â€” it still carries its own framing,
   which is what lets several xdi tunnels share one host's ICMP socket.
 
 ### Fixed
 - **"Diagnose relay" failed at the last step even when the relay was working.**
   The final check fetched `https://api.telegram.org/`, which is not an API
-  endpoint — it redirects to the documentation site at `core.telegram.org` — and
+  endpoint â€” it redirects to the documentation site at `core.telegram.org` â€” and
   Go's HTTP client follows redirects by default. The relay only rewrites the dial
   for `api.telegram.org`, so the redirected request left the Iran server
   directly, where `core.telegram.org` resolves to the filtering blackhole
   (`10.10.34.36`) and times out. The tool then reported
   `dial tcp 10.10.34.36:443: i/o timeout` and blamed the relay for a failure it
-  had caused itself — one line after proving the relay carried a TLS connection
+  had caused itself â€” one line after proving the relay carried a TLS connection
   to Telegram. It now calls `getMe`, a real endpoint that does not redirect, with
   redirects refused outright, and reads Telegram's own answer.
 - **A bad bot token reported itself as a network fault.** `telegram API returned
   status 401` is the one error that cannot be the tunnel's doing: the request
-  reached Telegram and Telegram answered. It now says so — that the token was
-  rejected, that the relay is fine, and to get a fresh one from @BotFather —
+  reached Telegram and Telegram answered. It now says so â€” that the token was
+  rejected, that the relay is fine, and to get a fresh one from @BotFather â€”
   and quotes Telegram's own description of any other refusal instead of showing
   a bare status number. "Diagnose relay" checks the token as part of the same
   request, so an invalid one is named at the step it belongs to.
@@ -5001,7 +5025,7 @@ cause.
 - **A data race on the logger's level, on every transport.** Both the client and
   the server hand one logger to all of their transports, and a transport's
   `Restart` saved the current level before quieting the log with
-  `level := logger.Level` — reading the field directly. logrus does not treat
+  `level := logger.Level` â€” reading the field directly. logrus does not treat
   that field as plain memory: `SetLevel` stores it with `atomic.StoreUint32` and
   every log call loads it with `atomic.LoadUint32`. A direct read is therefore an
   unsynchronised read racing an atomic write, which is a data race by definition
@@ -5014,7 +5038,7 @@ cause.
   every connection a client opened sent from the *same* port. kcp-go's listener
   demultiplexes sessions purely on the sender's address
   (`l.sessions[addr.String()]`), and its rule for a packet announcing a new
-  conversation on an existing entry is to close that entry — so each pool
+  conversation on an existing entry is to close that entry â€” so each pool
   connection closed the session before it, the control channel included. The
   tunnel spent its life in a loop: control channel up, pool dials, control
   channel dead, `read from control channel: timeout`, restart. Aggressive made it
@@ -5024,30 +5048,30 @@ cause.
   kernel-RST rules cover the range in one set and are reference-counted, so a
   pool of sixteen no longer installs sixteen sets of iptables rules.
 - **The pck send path allocated 4.2 KB per packet.** It built each frame a layer
-  at a time — TCP, then IPv4, then Ethernet — allocating three times and copying
+  at a time â€” TCP, then IPv4, then Ethernet â€” allocating three times and copying
   the payload three times for every datagram. This carrier pays that per packet
   and cannot amortise it the way UDP does, because kcp-go only reaches for its
   batching write path when the socket is a real `*net.UDPConn`. Frames are now
-  assembled in place into a pooled buffer: 628 ns → 296 ns and 4224 B → **zero**
+  assembled in place into a pooled buffer: 628 ns â†’ 296 ns and 4224 B â†’ **zero**
   allocations per packet, with a test asserting the result is byte for byte what
   the layered builders produced. The send socket also gets an 8 MB `SO_SNDBUF`;
   only the receive socket had one, so a burst from a full window had its tail
   refused with `EAGAIN` at exactly the busiest moment.
 - **The pck receive path allocated 64 KB per packet.** `ReadFrom` took a fresh
-  64 KiB buffer on every call, and KCP calls it once per packet — so the garbage
-  collector, not the network, was setting the pace. Pooled: 1115 ns → 44 ns.
+  64 KiB buffer on every call, and KCP calls it once per packet â€” so the garbage
+  collector, not the network, was setting the pace. Pooled: 1115 ns â†’ 44 ns.
 - **A failing accept loop could pin a CPU core at 100%.** Every transport's
   accept loop retried instantly on error. That is right for the error `Accept`
   normally returns (one connection failed the handshake, take the next) and wrong
   for the two that matter: a closed listener and an exhausted file-descriptor
   table both fail immediately and keep failing, so `continue` spun as fast as the
   CPU allowed with nothing to block on. The context check at the top did not
-  help, because the context was not cancelled — only the listener was broken, a
+  help, because the context was not cancelled â€” only the listener was broken, a
   state a tunnel restart passes through every time. Consecutive failures now back
   off geometrically to 100 ms, reset on the first success, and return at once on
   cancellation. This affected `acceptLocalConn` too, of which one runs **per
-  forwarded port**. The per-iteration `listener.Addr().String()` — built on every
-  accept regardless of log level — is gone with it.
+  forwarded port**. The per-iteration `listener.Addr().String()` â€” built on every
+  accept regardless of log level â€” is gone with it.
 - **The websocket relay used an unpooled 16 KB buffer.** The TCP relay was moved
   to a pooled 64 KB buffer for two measured reasons (a relay's cost is syscalls,
   and 16 KB took four times as many per gigabyte; and allocating per connection
@@ -5064,7 +5088,7 @@ cause.
 - **A spoof tunnel could not restart: `bind: address already in use`.** In the
   field logs, a spoof server that restarted to adopt a new client died with
   `listen udp4 0.0.0.0:58521: bind: address already in use`, and the client
-  looped on the same error. The carrier transports — spoof, xdi, and pck — hand
+  looped on the same error. The carrier transports â€” spoof, xdi, and pck â€” hand
   kcp-go a socket they open themselves, and kcp-go's `ServeConn`/`NewConn2`
   deliberately do not take ownership of a caller-provided socket: closing the
   KCP listener or session left the raw socket bound. So every restart leaked the
@@ -5080,11 +5104,11 @@ cause.
   less than the tunnel is sending, prints the exact fix: `set mss = 1208 on both
   ends`. There was nowhere to do it. The setting existed in the config format
   and in the engine, but no menu, no wizard question and no panel field ever
-  wrote it — so the one fault in this system that reports itself precisely was
+  wrote it â€” so the one fault in this system that reports itself precisely was
   also the one with no way to act on the report short of hand-editing a TOML
   file the CLI would rewrite.
 
-  It is now **Edit → TCP MSS clamp** in the menu, a question in the manual
+  It is now **Edit â†’ TCP MSS clamp** in the menu, a question in the manual
   tuning step of both setup wizards, and a field in the panel's Fine Tune
   drawer. It is offered only on the transports that carry TCP segments; a
   datagram transport is sized by its KCP MTU instead.
@@ -5093,13 +5117,13 @@ cause.
   value was accepted, written to the config and then dropped on the floor: those
   transports opened their sockets through `http.ListenAndServe` and a dialer
   that passed a hardcoded zero, so nothing ever reached `TCP_MAXSEG`. A clamp
-  applied to a wss tunnel — the transport most of these paths use — changed
+  applied to a wss tunnel â€” the transport most of these paths use â€” changed
   nothing at all, which is the worse failure of the two, because the config then
   agrees with you. All four now build their listener and their dials with the
   tunnel's own options, as the `tcp` and `tcpmux` transports already did.
 
   Two smaller things came with it. The clamp survives a preset change, in the
-  menu and in the panel both — it describes the path, not how hard the tunnel is
+  menu and in the panel both â€” it describes the path, not how hard the tunnel is
   being pushed, and resetting it with the rest of the tuning would have silently
   undone the fix. And the check no longer prints a number the tunnel would
   refuse: on a path below the 576 bytes IPv4 requires, no clamp helps, so it
@@ -5110,7 +5134,7 @@ cause.
   wrote the check as `port > 1 && port < 65535`. A mapping of `1=127.0.0.1:80`
   or `65535=127.0.0.1:80` therefore failed that test, fell through to the branch
   that treats the left-hand side as a complete address, and was handed to the
-  listener as the literal string `1` — which does not resolve, so the forward
+  listener as the literal string `1` â€” which does not resolve, so the forward
   never came up while the config it came from was perfectly valid.
 
   All seven server transports had their own copy of that expression. They now
@@ -5120,14 +5144,14 @@ cause.
   *Thanks to [@dr-hoseyn](https://github.com/dr-hoseyn), who raised this in
   [#12](https://github.com/AminMGMT/BackPack/pull/12). We reviewed that pull
   request, finished it and improved on it, and what shipped here is the
-  result — the shared helper trims its input and states the bound as an
+  result â€” the shared helper trims its input and states the bound as an
   inclusive range, so the edge the report was about is the one the code now
   reads as valid.*
 
 - **A forwarded port with an empty backend list took the client down.** A port
   can name several backends separated by a pipe. The pool decided it had a list
-  to balance by looking for that pipe in the target — not by looking at what was
-  on either side of it — so a target like `||`, which parses to no backends at
+  to balance by looking for that pipe in the target â€” not by looking at what was
+  on either side of it â€” so a target like `||`, which parses to no backends at
   all, still built a group with an empty list. The round-robin then indexed it
   with `next % 0` and the process panicked. The target comes off the tunnel, not
   out of this side's config, so what it contains is not this process's to assume.
@@ -5139,8 +5163,8 @@ cause.
   without limit, and the goroutines went on dialling backends nothing was
   routing to long after the generation that created them had stopped. The map
   is now bounded and evicts the list used longest ago, and the health checks run
-  from the pick that needs them — at most one pass at a time, at most one per
-  interval — so an abandoned list finishes its current pass and then costs
+  from the pick that needs them â€” at most one pass at a time, at most one per
+  interval â€” so an abandoned list finishes its current pass and then costs
   nothing. A backend that recovers while no traffic is flowing is noticed on the
   next connection instead of within ten seconds, which is the moment the answer
   begins to matter.
@@ -5156,9 +5180,9 @@ cause.
 - **A `udp`, `kcp` or `quic` tunnel could fail to come back from a config
   reload: `bind: address already in use`.** Before starting the new run, the
   reload waits for the old one's ports to come free, and the only honest way to
-  ask that is to try to bind them. It asked with `net.Listen("tcp", …)` whatever
+  ask that is to try to bind them. It asked with `net.Listen("tcp", â€¦)` whatever
   the transport was. For a datagram transport that is the wrong question: the
-  TCP port of that number was free — nothing had ever bound it — while the
+  TCP port of that number was free â€” nothing had ever bound it â€” while the
   previous run's UDP socket was still open. The wait returned at once, the new
   listener raced the socket that was actually still there, and lost.
 
@@ -5169,7 +5193,7 @@ cause.
   packets from the run still shutting down. Their teardown is the transport's
   own, and the reload waits only for the web port alongside them. While in
   there, each address also got its own settling budget instead of sharing one
-  across the list — a slow tunnel port used to spend the web port's wait as
+  across the list â€” a slow tunnel port used to spend the web port's wait as
   well, and the web port, the one that shuts down gracefully and genuinely needs
   waiting for, was the one that then got none.
 
@@ -5187,15 +5211,15 @@ cause.
   idle one it is the whole problem: neither Read returns until the peer sends
   something, and on a connection nobody is using, neither ever does. The tunnel
   stopped, the generation was replaced, and the connections from the previous
-  one stayed open — with their descriptors, their goroutines and their share of
-  the connection quota — for as long as the process ran.
+  one stayed open â€” with their descriptors, their goroutines and their share of
+  the connection quota â€” for as long as the process ran.
 
   Both directions now run independently, so cancellation is seen while both are
   blocked, and both ends are closed on the way out, which is the only thing that
   interrupts a blocked Read. The handler also waits for the second copy before
   returning rather than leaving it to finish on its own: the caller releases its
   connection quota at that point, so nothing belonging to that connection may
-  still be running. One consequence worth stating plainly — the relay now ends
+  still be running. One consequence worth stating plainly â€” the relay now ends
   as soon as *either* direction does, where it used to wait for both. That is
   what the close is for, and it is what every other relay in this project does,
   but a protocol that half-closes and then expects a reply on the other
@@ -5203,7 +5227,7 @@ cause.
 
   *Thanks to [@dr-hoseyn](https://github.com/dr-hoseyn), who raised this in
   [#18](https://github.com/AminMGMT/BackPack/pull/18). We reviewed that pull
-  request, finished it and improved on it, and what shipped here is the result —
+  request, finished it and improved on it, and what shipped here is the result â€”
   the waiting and closing is one shared routine both handlers call rather than
   the same dozen lines written out twice, so the two relays cannot drift apart
   on the behaviour this fix is about.*
@@ -5211,7 +5235,7 @@ cause.
 - **The monitor page was served to the whole internet without a password, and
   now defaults to loopback.** `web_port` opened a page that reports the host's
   CPU, memory, disk, swap and network counters, the tunnel's status and total
-  traffic, and — with the sniffer on — the usage of every forwarded port. It
+  traffic, and â€” with the sniffer on â€” the usage of every forwarded port. It
   has never had authentication of any kind, and it was bound to every
   interface. On a server with a public address that is a live readout of the
   machine handed to anything that connects, with the port number as the only
@@ -5226,7 +5250,7 @@ cause.
 
   **This changes where an existing tunnel's monitor page answers.** If you open
   it over the network today, set `web_bind = "0.0.0.0"` to have it back exactly
-  as it was — the key is written into every config that has a `web_port`, so it
+  as it was â€” the key is written into every config that has a `web_port`, so it
   is there to find and edit, and unlike a hand-added setting it survives the
   next time the menu or the panel rewrites the file. A single address works too
   (`web_bind = "10.0.0.5"`), for serving it on a private network and nowhere
@@ -5235,7 +5259,7 @@ cause.
   The page itself got the boundaries it never had: `GET` and `HEAD` only,
   unknown paths answered as missing instead of rendering the dashboard,
   `no-store` and the usual hardening headers on every response, and header,
-  read, write and idle timeouts on the server — without which a handful of
+  read, write and idle timeouts on the server â€” without which a handful of
   connections that open and go quiet hold their goroutines for as long as the
   process lives. Two handlers that logged a failure and returned an empty `200`
   now return a `500`, so a monitor that cannot collect stats says so rather
@@ -5247,20 +5271,20 @@ cause.
   the pull request bound the page to loopback outright, with nothing an
   operator could do about it. Anyone watching that page from another machine
   would have lost it on upgrade with no way back, so it is a default here
-  rather than a rule — `web_bind`, carried through the config writer and the
+  rather than a rule â€” `web_bind`, carried through the config writer and the
   edit path so the CLI and the panel cannot silently drop it.*
 
 - **Turning profiling off, or reloading a tunnel that has it on, left the old
   listener holding the port.** `pprof = true` started the endpoint with
   `http.ListenAndServe`, which serves the process-wide default mux and returns
-  only on failure — so there was no server to shut down and no way to know when
+  only on failure â€” so there was no server to shut down and no way to know when
   it had. Disabling profiling in the config did not close the socket that was
   already open, and a reload built the next generation while the previous one
   still had 127.0.0.1:6060; if that generation wanted profiling too, it raced
   the port and lost.
 
   Profiling is now an explicit server tied to the generation's context, with
-  its handlers named one by one rather than inherited from the default mux —
+  its handlers named one by one rather than inherited from the default mux â€”
   which matters because that mux is shared with every package in the build that
   registers something in an `init` function, and anything there was reachable
   on the profiling port without a decision being made. `Start` does not return
@@ -5271,7 +5295,7 @@ cause.
   [#29](https://github.com/AminMGMT/BackPack/pull/29). We reviewed that pull
   request, finished it and improved on it, and what shipped here is the result:
   the read and write deadlines it put on the profiling server are gone, because
-  a CPU profile is a thirty-second response by default and a trace is longer —
+  a CPU profile is a thirty-second response by default and a trace is longer â€”
   deadlines there would have cut off the one thing the port exists for. The
   header timeout and the header-size cap, which a slow client runs into and a
   profile never does, are what remain.*
@@ -5279,19 +5303,19 @@ cause.
 - **An interrupted backup left a truncated archive under a name that said it
   was whole.** The archive was written straight to its final path, so a backup
   cut short by a full disk, a reboot or a killed process left a partial file
-  called `backpack-backup-….tar.gz` — which the retention policy then counted
+  called `backpack-backup-â€¦.tar.gz` â€” which the retention policy then counted
   as one of the ten kept, and a restore accepted as far as the point it stopped.
 
   Worse, the write could report success over a short archive even without a
   crash. The tar writer and the gzip writer were closed by `defer`, and a
-  deferred `Close` reports to nobody — but closing them is what writes the
+  deferred `Close` reports to nobody â€” but closing them is what writes the
   archive's footer and the compressed trailer, so a failure exactly there was
   discarded and the backup was called good.
 
   Backups are now written to a temporary file beside the destination, fsynced,
   and renamed into place only once complete, so a file under the real name is
   always a whole archive. Both closes are checked and reported. Every file is
-  closed as it is archived rather than at the end of the walk — the close was
+  closed as it is archived rather than at the end of the walk â€” the close was
   deferred inside the walk callback, which meant every file in the tree stayed
   open until the last one was written, and a large enough config directory ran
   the process out of descriptors. Anything in the tree that is not a directory
@@ -5315,9 +5339,9 @@ cause.
   came from neither the backup nor from what was there before.** Restoring
   extracted straight into the live config directory, one entry at a time, as
   the archive was read. Every way an archive turns out to be bad is found
-  part-way through reading it — a truncated upload, a gzip checksum that only
+  part-way through reading it â€” a truncated upload, a gzip checksum that only
   fails at the very end, a path trying to escape the directory, a read error
-  half way — and by then some tunnels had been overwritten and some had not,
+  half way â€” and by then some tunnels had been overwritten and some had not,
   with nothing kept to put them back.
 
   The whole post-restore tree is now built in a staging directory beside the
@@ -5331,7 +5355,7 @@ cause.
   rather than by where they happen to land, so the answer does not depend on
   what is already on disk; a backslash is refused outright, since it is a
   separator where these archives can also be opened. Anything that is not a
-  file or a directory is refused — a symlink or a hard link is the standard way
+  file or a directory is refused â€” a symlink or a hard link is the standard way
   an archive reaches outside the directory it is unpacked into, and a backup of
   this system contains neither. The same path twice is refused. And there are
   ceilings on the number of entries, the size of one file and the total
@@ -5348,7 +5372,7 @@ cause.
   it swapped the config tree without first copying the current one in, so
   restoring an older archive would have deleted every file added since it was
   taken. Seeding the staging directory is what keeps the merge behaviour
-  restores have always had — and refusing, before the commit, to swap over
+  restores have always had â€” and refusing, before the commit, to swap over
   anything in the live tree that cannot be copied is what keeps that swap from
   quietly dropping something on the way through.*
 
@@ -5356,7 +5380,7 @@ cause.
   cookies were missing the attribute that keeps them off plain HTTP.** The
   rate limiter remembers one entry per source address and only ever forgot an
   address that came back, so an address that failed once and never returned
-  stayed for the life of the process — and the panel sits on a port that gets
+  stayed for the life of the process â€” and the panel sits on a port that gets
   scanned by hosts that rotate their source. The entry table is now bounded.
   Which entry it gives up matters as much as that it gives one up: an address
   is stamped when it fails, so the one that just hit the limit is the least
@@ -5367,7 +5391,7 @@ cause.
   Session and pending-login cookies now carry `Secure` when the panel is
   actually serving over TLS, so they are not sent in the clear. They stay
   `HttpOnly` and `SameSite=Lax` as before, and they are all built in one place
-  now rather than in three with slightly different flags — including the ones
+  now rather than in three with slightly different flags â€” including the ones
   that clear them, which a browser ignores unless the attributes match.
 
   Responses carry the headers the panel had none of: `X-Frame-Options`,
@@ -5375,15 +5399,15 @@ cause.
   that forbids framing, for a page that creates, edits and restarts tunnels.
   The two endpoints that run before any authentication no longer read a request
   body of any size into memory to find two short form fields in it. And the
-  listener gained a header timeout, a header-size cap and an idle timeout —
+  listener gained a header timeout, a header-size cap and an idle timeout â€”
   `ReadTimeout` and `WriteTimeout` were already set; these are what a
   connection that opens and then says nothing runs into.
 
   *Thanks to [@dr-hoseyn](https://github.com/dr-hoseyn), who raised this in
   [#23](https://github.com/AminMGMT/BackPack/pull/23). We reviewed that pull
   request, finished it and improved on it, and what shipped here is the result:
-  `Secure` is set on evidence of TLS — this connection, or a panel configured
-  for HTTPS — and never on `X-Forwarded-Proto`, which anyone can send and which
+  `Secure` is set on evidence of TLS â€” this connection, or a panel configured
+  for HTTPS â€” and never on `X-Forwarded-Proto`, which anyone can send and which
   on a plain-HTTP panel would have logged its owner in and then treated every
   request after that as a stranger's. The origin checks it added to mutating
   endpoints are not here either: `SameSite=Lax` already keeps cookies off
@@ -5392,8 +5416,8 @@ cause.
   covered.*
 
 - **A single empty WebSocket frame could stop a `ws`, `wss`, `wsmux` or
-  `wssmux` tunnel dead.** The control channel carries one-byte signals —
-  heartbeat, open a channel, closed — and all four read loops went straight to
+  `wssmux` tunnel dead.** The control channel carries one-byte signals â€”
+  heartbeat, open a channel, closed â€” and all four read loops went straight to
   `msg[0]` on whatever arrived. That is correct for every frame either end of
   this tunnel has ever sent, and fatal for one it has not: indexing an empty
   frame panics, and the panic takes the process with it. The control channel is
@@ -5406,9 +5430,9 @@ cause.
   *Thanks to [@dr-hoseyn](https://github.com/dr-hoseyn), who raised this in
   [#22](https://github.com/AminMGMT/BackPack/pull/22). We reviewed that pull
   request and took the part of it that fixes the crash. The rest of it changes
-  how live tunnels behave — read limits on the tunnel connections, a shorter
+  how live tunnels behave â€” read limits on the tunnel connections, a shorter
   handshake timeout, and replacing the deliberate `IdleTimeout: -1` on the
-  WebSocket listeners with a write and idle deadline — and those are throughput
+  WebSocket listeners with a write and idle deadline â€” and those are throughput
   and stability questions to answer with measurements on a real link, not
   alongside a crash fix. Its response to a malformed frame is also not ours:
   the pull request closes the control channel and restarts the transport, which
@@ -5421,27 +5445,27 @@ cause.
   counters, sleeps a whole second so a rate can be worked out, and then walks
   the process table to count connections. The dashboard polls on a timer, so a
   page left open on two screens meant two of those, each holding a goroutine
-  asleep for a second and each doing the walk again — and anything scraping the
+  asleep for a second and each doing the walk again â€” and anything scraping the
   endpoint faster multiplied it from there, on the page that exists to report
   how the host is doing.
 
   A collection is now shared: whoever arrives while one is running waits for it
   and gets its result, and a result stays good for two seconds. The tunnel's
   own status and traffic total are refreshed on the way out, so the two figures
-  that describe the tunnel are still live — only the part that was slow to get
+  that describe the tunnel are still live â€” only the part that was slow to get
   is reused. A failure is not cached, so a host that could not be read a moment
   ago is asked again rather than reported as broken for the next two seconds.
 
   Two crashes went with it. The CPU sample comes back as an empty slice rather
-  than an error when the kernel has nothing to give — briefly at boot, and
-  where the counter has not moved — and indexing it took the whole tunnel down
+  than an error when the kernel has nothing to give â€” briefly at boot, and
+  where the counter has not moved â€” and indexing it took the whole tunnel down
   over a number on a status page; the same was true of the network counters.
   Both are checked now.
 
   The tunnel's traffic total was written by the save loop and read by the stats
   endpoint with nothing between them, on a plain integer. It is atomic now, and
   published once at the end of a save rather than zeroed and added back a port
-  at a time — which is what let a poll land mid-rebuild and report the tunnel
+  at a time â€” which is what let a poll land mid-rebuild and report the tunnel
   as having carried nothing. The usage file is serialised too: the save is a
   read-modify-write, it runs on a timer in its own goroutine, and a save slower
   than the tick used to be joined by the next one, with whichever finished last
@@ -5451,8 +5475,8 @@ cause.
 
   *Thanks to [@dr-hoseyn](https://github.com/dr-hoseyn), who raised this in
   [#25](https://github.com/AminMGMT/BackPack/pull/25). We reviewed that pull
-  request; the largest thing in it — the shared tunnel-status string, rewritten
-  by transports while the stats endpoint read it — had already been fixed here
+  request; the largest thing in it â€” the shared tunnel-status string, rewritten
+  by transports while the stats endpoint read it â€” had already been fixed here
   since, so what shipped is the rest of it, reviewed and finished. The
   accounting lock is deliberately not the one the cache and the file use:
   traffic is accounted once per read on every forwarded connection, so putting
@@ -5467,13 +5491,13 @@ cause.
   port and carried on. What was still answering on 80 was the *old* manager,
   belonging to a generation that had been torn down, with the configuration and
   cache directory it was built with rather than the ones now in force. Renewal
-  then depended on TLS-ALPN, which only works when the tunnel is on 443 — off
+  then depended on TLS-ALPN, which only works when the tunnel is on 443 â€” off
   443 it simply stopped, silently, and the first anyone would know is a
   certificate expiring ninety days later.
 
   There is now one responder for the life of the process, started once and
-  pointed at whichever manager is current. It holds no state of its own —
-  everything a challenge needs lives in the manager — so a reload only has to
+  pointed at whichever manager is current. It holds no state of its own â€”
+  everything a challenge needs lives in the manager â€” so a reload only has to
   swap the pointer. A port that cannot be taken is still reported and survived
   rather than fatal: a tunnel on 443 validates over TLS-ALPN and needs no
   responder at all.
@@ -5482,19 +5506,19 @@ cause.
   [#21](https://github.com/AminMGMT/BackPack/pull/21). We reviewed that pull
   request and took the problem it identified rather than its solution. It
   builds a registry with reference-counted leases, a retry loop and a scheme
-  for sharing the challenge port between separate processes — several hundred
+  for sharing the challenge port between separate processes â€” several hundred
   lines, on the path where a mistake means no certificate and where Let's
   Encrypt's rate limits punish finding out the hard way. One process runs one
   tunnel here, so the fix that matters is one listener that survives a reload,
   and that is about forty lines. The responder also gained the header and idle
   timeouts every other listener in this project has.*
 
-## v1.7.1 — 2026-08-10
+## v1.7.1 â€” 2026-08-10
 
 Two halves. The web panel stops being a window and becomes a way to work: it
 creates, edits and drives tunnels itself, so the CLI is a choice rather than the
 only door. The other half is the UDP side of the engine: the three transports
-that carry their data in datagrams — udp, kcp (and xdi, which is kcp over ICMP) —
+that carry their data in datagrams â€” udp, kcp (and xdi, which is kcp over ICMP) â€”
 plus quic, which joins them.
 
 ### Fixed
@@ -5508,7 +5532,7 @@ plus quic, which joins them.
   A forwarded port opened a TCP listener and nothing else. Datagrams were
   refused by the kernel; nothing was logged, so the port looked healthy and half
   of it silently was not there. There *was* an `accept_udp` setting, but it was
-  off by default, undocumented, and honoured only by the plain `tcp` transport —
+  off by default, undocumented, and honoured only by the plain `tcp` transport â€”
   the management layer deleted it from the config whenever the transport was
   anything else. So on `tcpmux`, `ws`, `wss`, `wsmux`, `wssmux`, `kcp` or
   `quic`, which is most tunnels, forwarded UDP could not be turned on at all.
@@ -5516,14 +5540,14 @@ plus quic, which joins them.
   It now works everywhere, and it is on by default: expose `443` and the tunnel
   listens on 443/tcp and 443/udp both. Each source address becomes a flow that
   is paired, limited, counted and torn down by exactly the code that already
-  does it for a TCP connection — a datagram flow is handed to the transport
+  does it for a TCP connection â€” a datagram flow is handed to the transport
   wearing the same shape, so there is no second implementation to drift. The
   flow is marked in the target address rather than in a new header byte, which
   is why this needed no change to any transport's framing. Datagrams are
   length-prefixed, so a packet that goes in as one message comes out as one
   message of the same size.
 
-  **Open the port for UDP in your firewall** — `ufw allow 443/udp` — TCP is not
+  **Open the port for UDP in your firewall** â€” `ufw allow 443/udp` â€” TCP is not
   enough, and it is the first thing to check if this still does not work. Both
   ends must be on v1.7.1: a client that predates it logs a resolve error for the
   UDP flow and carries TCP as before. `accept_udp = false` still turns it off
@@ -5533,7 +5557,7 @@ plus quic, which joins them.
 
   Three faults in the old path went with it. A source address whose flow could
   not be started was recorded anyway and never removed, so one full channel
-  blackholed that peer until the service was restarted — the signature being
+  blackholed that peer until the service was restarted â€” the signature being
   "UDP worked, then stopped, and a restart fixes it". The client leaked a
   goroutine and a file descriptor per flow, forever, so a busy client eventually
   ran out of descriptors and stopped accepting anything. And congestion was
@@ -5545,7 +5569,7 @@ plus quic, which joins them.
 
 - **The `udp` transport could silence a peer permanently.** The same fault, in
   the one place the rewrite above does not reach. A forwarded flow that waits
-  more than three seconds for a tunnel connection is given up on — which happens
+  more than three seconds for a tunnel connection is given up on â€” which happens
   whenever the pool is briefly empty, and always happens when traffic arrives
   before the client has finished connecting. Giving up removed the flow from
   service but left its source address in the table, and nothing else ever
@@ -5560,7 +5584,7 @@ plus quic, which joins them.
 
   Worth saying plainly, though: the `udp` transport carries datagrams with no
   retransmission, no ordering and no error correction, so on a lossy or
-  throttled route it will still do far worse than **UDP + KCP** — and since this
+  throttled route it will still do far worse than **UDP + KCP** â€” and since this
   release you do not need it to forward a UDP service at all. Any transport
   does that now.
 
@@ -5570,7 +5594,7 @@ plus quic, which joins them.
   created, edited and restarted from the CLI over SSH. That corner now holds
   **Add Tunnel** and **Restart all**.
 
-  Add Tunnel asks which side this machine is — Iran (server) or kharej (client) —
+  Add Tunnel asks which side this machine is â€” Iran (server) or kharej (client) â€”
   and then asks the setup wizard's own questions, in the wizard's own order:
   transport family, transport, name, tunnel port, forwarded ports, token,
   performance preset, Fine Tune, IPv6 and PROXY protocol. The port fields carry a
@@ -5581,7 +5605,7 @@ plus quic, which joins them.
   Every card gained an **Edit** button beside Logs and Details, and a row of
   **Start / Stop / Restart / Delete** beneath them. Edit changes the server
   address, the transport, the tunnel port, the forwarded ports, the preset and
-  the advanced settings — all of it applied in one write and one restart, and
+  the advanced settings â€” all of it applied in one write and one restart, and
   reverted to the previous config if the tunnel does not come back up.
 
   None of this is a second implementation. The transport and preset menus are
@@ -5604,7 +5628,7 @@ plus quic, which joins them.
 ### Fixed
 - **A client that restarted on its own left a dead tunnel behind, on every
   datagram transport.** The server accepted exactly one control channel claim per
-  run. When the client restarted — a crash, a service restart, an edit — it
+  run. When the client restarted â€” a crash, a service restart, an edit â€” it
   re-dialed with a fresh claim, and the server discarded it as a duplicate,
   because as far as that run was concerned it already had a control channel.
 
@@ -5622,14 +5646,14 @@ plus quic, which joins them.
 - **UDP sockets kept the kernel's default buffers, whatever `so_rcvbuf` and
   `so_sndbuf` said.** The settings were honoured on the TCP transports and
   ignored on udp, on both ends. The kernel default is small enough that a
-  datagram flood — a speed test, a busy game server — overruns it, and the
+  datagram flood â€” a speed test, a busy game server â€” overruns it, and the
   packets it cannot hold are dropped before any goroutine reads them, which
   looked like the tunnel stalling under load. Every UDP socket the transport
   opens is now sized to the configured value.
 
 - **One bad forwarding target took down the whole udp client.** A target address
   that would not resolve, or a UDP dial that failed, called `Fatalf` and killed
-  the process — every other tunnelled port with it. A failed dial also fell
+  the process â€” every other tunnelled port with it. A failed dial also fell
   through and dereferenced the nil connection one line later. Both now drop the
   one flow and let the rest of the tunnel carry on.
 
@@ -5641,10 +5665,10 @@ plus quic, which joins them.
 
 - **`proxy`, `local_addr`, `interface` and `so_mark` were accepted on quic and
   silently ignored.** They apply to the TCP dialer, which a quic tunnel does not
-  use for anything — not even its control channel, which is a QUIC stream. They
+  use for anything â€” not even its control channel, which is a QUIC stream. They
   are now refused at load time on quic, as they already were on udp, kcp and xdi.
 
-## v1.7.0 — 2026-08-04
+## v1.7.0 â€” 2026-08-04
 
 This one started from a report that the tunnel worked on most servers and not on
 some, with no error that said why. Chasing it down found several separate causes
@@ -5653,12 +5677,12 @@ that decides whether a connection is allowed to exist at all.
 
 **Upgrade the server first, then the clients.** Three things now settle
 themselves between the two ends rather than being assumed, and all three fall
-back to the old behaviour when one end is older — but a new server with old
+back to the old behaviour when one end is older â€” but a new server with old
 clients is the combination that degrades most gracefully.
 
 ### Fixed
 - **A wss tunnel could not sit behind a TLS-terminating reverse proxy.** The wss
-  credential is a proof bound to the client's TLS session — which stops an
+  credential is a proof bound to the client's TLS session â€” which stops an
   intermediary that terminated the TLS from replaying it, and also stops a
   *legitimate* one, like an NGINX reverse proxy in front of the server, because
   the proxy holds a different session and the bound proof can never match. There
@@ -5677,11 +5701,11 @@ clients is the combination that degrades most gracefully.
   monitor bound `127.0.0.1:1080` unconditionally, as a fallback for tunnels
   written before the relay port was derived from the token. On a machine that
   also runs a panel or an xray SOCKS inbound on 1080, backpack boots first, wins
-  the port, and the other service quietly loses it — the panel's nodes drop after
+  the port, and the other service quietly loses it â€” the panel's nodes drop after
   a reboot, and the only way anyone found to clear it was to uninstall backpack.
   It now binds 1080 only when a tunnel actually still maps to it, and leaves it
-  alone otherwise. Nothing that uses the derived port — every current tunnel, and
-  every fresh install — touches 1080 at all.
+  alone otherwise. Nothing that uses the derived port â€” every current tunnel, and
+  every fresh install â€” touches 1080 at all.
 
 - **A tunnel would connect and then carry nothing, for any client that dials out
   from more than one address.** The server accepted a pool connection only if its
@@ -5697,14 +5721,14 @@ clients is the combination that degrades most gracefully.
   client too old to present one still works, on the old rule, with a warning
   saying so.
 
-- **On some kernels the tunnel could not open a single socket.** Every socket —
-  outgoing connections included — asked for `SO_REUSEPORT`, and a kernel or
+- **On some kernels the tunnel could not open a single socket.** Every socket â€”
+  outgoing connections included â€” asked for `SO_REUSEPORT`, and a kernel or
   container that refuses the option failed the dial or the listen outright. It is
   no longer asked for at all.
 
   Where it *worked* it was worse. `SO_REUSEPORT` is a deliberate request to let
   another process bind the same port, so a leftover process from a crash or an
-  upgrade no longer collided with "address already in use" — it quietly took a
+  upgrade no longer collided with "address already in use" â€” it quietly took a
   share of the arriving connections, and the client's control channel and its
   pool ended up on different processes.
 
@@ -5715,8 +5739,8 @@ clients is the combination that degrades most gracefully.
   connection is now handled in its own goroutine.
 
 - **Only the first address a server name resolved to was ever tried.** A name
-  with several A records — the ordinary way to publish more than one route to
-  the same machine — was resolved to a single address and that address dialled
+  with several A records â€” the ordinary way to publish more than one route to
+  the same machine â€” was resolved to a single address and that address dialled
   forever. If it was the filtered one, the tunnel never connected while every
   other record sat there working. Every resolved address is now tried in turn,
   with IPv4 and IPv6 raced as usual.
@@ -5727,8 +5751,8 @@ clients is the combination that degrades most gracefully.
   new configuration reload it fought the run replacing it for its own ports.
 
 - **The control channel gave up after two seconds.** That has to cover a round
-  trip plus whatever the server takes to answer, and on a long or lossy path — the
-  ordinary case here, not the exceptional one — a single retransmitted SYN can eat
+  trip plus whatever the server takes to answer, and on a long or lossy path â€” the
+  ordinary case here, not the exceptional one â€” a single retransmitted SYN can eat
   most of it. It is fifteen seconds now; failing fast bought nothing, because
   failing means backing off and dialling again.
 
@@ -5749,7 +5773,7 @@ clients is the combination that degrades most gracefully.
   Only the connections that reach the server go through it; the dial to the local
   backend never can, by construction rather than by rule. Not available on the
   `udp` and `kcp` transports, whose data is carried in datagrams a TCP proxy
-  cannot relay — configuring it there is refused at startup rather than half
+  cannot relay â€” configuring it there is refused at startup rather than half
   working.
 
 - **Choose which way out of a multi-homed machine the tunnel leaves by.** On a
@@ -5758,16 +5782,16 @@ clients is the combination that degrades most gracefully.
   instead, in increasing order of what they need from the system:
 
   ```toml
-  local_addr = "192.0.2.10"   # bind the source address — needs no privilege
-  interface  = "eth1"          # pin to a device — Linux, needs CAP_NET_RAW
-  so_mark    = 100             # fwmark for `ip rule` — Linux, needs CAP_NET_ADMIN
+  local_addr = "192.0.2.10"   # bind the source address â€” needs no privilege
+  interface  = "eth1"          # pin to a device â€” Linux, needs CAP_NET_RAW
+  so_mark    = 100             # fwmark for `ip rule` â€” Linux, needs CAP_NET_ADMIN
   ```
 
   Any of these that is configured and cannot be applied fails the connection,
   rather than being logged and skipped. They were asked for by name, and a tunnel
   that quietly ignored "leave by eth1" would send traffic out the wrong link
   while reporting itself healthy. Like the proxy, none of it touches the dial to
-  the local backend, and none of it is available on the datagram transports —
+  the local backend, and none of it is available on the datagram transports â€”
   configuring it there is refused at startup.
 
 - **Editing a tunnel's configuration file now takes effect on its own.** The file
@@ -5780,20 +5804,20 @@ clients is the combination that degrades most gracefully.
 - **Stealth records carry random padding.** Encryption settles what is in a
   record and says nothing about how big it is, and record sizes are one of the
   few things left for an observer to work with. Each record now carries a random
-  amount of filler, inside the encryption — both the length and the filler are
+  amount of filler, inside the encryption â€” both the length and the filler are
   under the AEAD, so all that reaches the wire is a record whose length moved.
 
 - **A new experimental transport, `xdi`, tunnels inside ICMP echo.** It is for
-  the one network where UDP and TCP are filtered but ICMP is not — the tunnel
+  the one network where UDP and TCP are filtered but ICMP is not â€” the tunnel
   rides in ping packets, which such a network is unwilling to drop because ping
   is how it proves itself reachable. It is the KCP transport with its packets in
   echo requests and replies instead of UDP datagrams; everything above the packet
-  layer — the reliability, the error correction, the encryption — is identical,
+  layer â€” the reliability, the error correction, the encryption â€” is identical,
   so the `aggressive` preset drives it to the same throughput as KCP.
 
   ICMP has no ports, so a raw ICMP socket receives every ping the host sees.
-  Several `xdi` tunnels on one machine stay out of each other's way — and out of
-  the way of stray pings and the kernel's own automatic replies — by a session
+  Several `xdi` tunnels on one machine stay out of each other's way â€” and out of
+  the way of stray pings and the kernel's own automatic replies â€” by a session
   tag derived from each tunnel's token: a packet without this tunnel's tag is not
   this tunnel's packet, and is dropped without a second look.
 
@@ -5811,7 +5835,7 @@ clients is the combination that degrades most gracefully.
   zero_copy = true
   ```
 
-  Nothing about it reaches the wire, so the two ends need not agree — it can be
+  Nothing about it reaches the wire, so the two ends need not agree â€” it can be
   enabled on one side, or on one tunnel, while everything else keeps the path it
   has always used. It applies only to the plain `tcp` transport on Linux, and
   only where the tunnel has no bandwidth limit; anything else silently keeps the
@@ -5819,8 +5843,8 @@ clients is the combination that degrades most gracefully.
   five minutes, because "enabled" and "in effect" are not the same thing.
 
 - **Health Check answers the two questions a tunnel could not answer about
-  itself.** How much of the pool is really there — a control channel with none
-  behind it looks healthy from every other angle while forwarding nothing — and
+  itself.** How much of the pool is really there â€” a control channel with none
+  behind it looks healthy from every other angle while forwarding nothing â€” and
   whether the path can carry a full-sized packet. The second one is measured
   rather than assumed: where a network drops oversized packets without returning
   an ICMP message, TCP never finds out, so the handshake and the heartbeats
@@ -5832,7 +5856,7 @@ clients is the combination that degrades most gracefully.
 - **`mux_version` is negotiated rather than assumed.** smux has no version
   negotiation of its own: every frame carries the number, and the first frame
   whose number is not what the reader expects tears the session down. Because the
-  control channel is not muxed, a disagreement did not look like a failure — the
+  control channel is not muxed, a disagreement did not look like a failure â€” the
   tunnel connected and carried nothing.
 
   Leaving `mux_version` out (or at `0`) now has the server settle it on the
@@ -5844,24 +5868,24 @@ clients is the combination that degrades most gracefully.
   were 16 KB, freshly allocated per direction per connection. A relay's cost is
   syscalls, and the buffer size sets how many a gigabyte takes.
 
-## v1.6.5 — 2026-08-01
+## v1.6.5 â€” 2026-08-01
 
 The panel is checked from a phone more often than from a desktop, so it installs
-as one now. Getting there needed a certificate, which needed a terminal — that
+as one now. Getting there needed a certificate, which needed a terminal â€” that
 is a Settings screen too. And the release before this one shipped a broken brace
 that quietly emptied the Health Check.
 
 ### Fixed
 - **Health Check and Alerts came up empty.** Both write their rows and then ask
   the page to re-translate itself, and `applyLang` assigns `textContent` to
-  every element marked `data-i18n` — including the containers those rows had
+  every element marked `data-i18n` â€” including the containers those rows had
   just been written into. The results were overwritten by the placeholder the
   markup shipped with, in the same tick they arrived. The hostname in the header
   was being reset the same way between polls.
 - **The accent picker multiplied.** A merge had joined `function relang(){` to
   the comment that opened the accent section, so the closing brace ended up
-  sixty lines further down and the whole block — the palette, the swatch builder
-  and a GitHub request — became the body of a function called on every render.
+  sixty lines further down and the whole block â€” the palette, the swatch builder
+  and a GitHub request â€” became the body of a function called on every render.
   Six swatches became twelve, then eighteen, depending on how many panels you
   had opened. It also meant none of it ran on page load.
 - **Settings toggle labels sat under their switch instead of beside it.**
@@ -5869,7 +5893,7 @@ that quietly emptied the Health Check.
   never applied inside Settings. Invisible while the control was a small
   checkbox; obvious once it became a 40px switch.
 - **Location and ISP were usually blank.** The public address was resolved once,
-  behind a `sync.Once`, and the panel starts from systemd at boot — often before
+  behind a `sync.Once`, and the panel starts from systemd at boot â€” often before
   the network is up. One failed lookup then stuck for the life of the process,
   and the geo lookup that depends on it never had anything to work with. Both
   are now refreshed in the background, retried while incomplete, and never block
@@ -5879,14 +5903,14 @@ that quietly emptied the Health Check.
 
 ### Added
 - **Install the panel as an app.** A service worker, a proper manifest and real
-  bitmap icons — including a maskable one for Android and a PNG for iOS, which
+  bitmap icons â€” including a maskable one for Android and a PNG for iOS, which
   ignores SVG for a home-screen icon. On a phone or tablet the panel offers to
   add itself once: one tap where the browser supports it, the Share-menu steps
-  on iOS where it does not. The worker caches nothing on purpose — this is a
+  on iOS where it does not. The worker caches nothing on purpose â€” this is a
   live dashboard behind a login, and a cached reading of a server is a wrong one
-  — so it exists for installability and answers a failed page load with an
+  â€” so it exists for installability and answers a failed page load with an
   offline card.
-- **Panel certificate, in the panel.** Settings → Panel access → Certificate,
+- **Panel certificate, in the panel.** Settings â†’ Panel access â†’ Certificate,
   with the same three choices as the CLI. Let's Encrypt is only offered when it
   could actually succeed: the panel checks that the domain resolves to this
   server and that a validation route exists (port 443 for TLS-ALPN, or a free
@@ -5897,15 +5921,15 @@ that quietly emptied the Health Check.
 ### Changed
 - **Total traffic is the sum of the tunnels**, not the machine's interface
   counters. It is now exactly the total of what the cards show, rather than a
-  larger figure including ssh, apt and the panel itself — and it survives a
+  larger figure including ssh, apt and the panel itself â€” and it survives a
   reboot, which the interface counters do not. Up and down speed still come from
   the interface: that answers what the box is doing now.
 - **The health pass probes tunnels concurrently.** Sequentially, a client tunnel
   whose server is down cost the full four-second timeout each, and enough of
-  them ran past the panel's 30-second write timeout — cutting off the response
+  them ran past the panel's 30-second write timeout â€” cutting off the response
   mid-flight.
 
-## v1.6.3 — 2026-07-29
+## v1.6.3 â€” 2026-07-29
 
 The panel gets a clear-out. The header carried six facts nobody reads twice,
 the tile row carried eight figures to answer four questions, and the menu would
@@ -5915,14 +5939,14 @@ the panel can serve itself over HTTPS.
 ### Fixed
 - **A server card never showed its own tunnel port.** The field was declared,
   documented, and never once assigned, so every card printed a dash where the
-  port belongs — the one number on a card that cannot be found anywhere else on
+  port belongs â€” the one number on a card that cannot be found anywhere else on
   the page.
 - **The menu would not close when you clicked away from it.** Its backdrop asked
   to cover the viewport and covered only the header, because the header carries
   a backdrop-filter and a filtered element becomes the containing block for
   anything positioned against the viewport inside it. Nothing about the CSS
   looked wrong. The menu and its backdrop live outside the header now, which
-  also fixes the full-width sheet on phones — mispositioned by the same trap,
+  also fixes the full-width sheet on phones â€” mispositioned by the same trap,
   and not previously noticed.
 - **A connection limit leaked a slot on every timeout.** A forwarded connection
   that waited more than three seconds to be paired was closed without releasing
@@ -5931,17 +5955,17 @@ the panel can serve itself over HTTPS.
   fill up permanently. Tunnels with no limit were never affected.
 
 ### Added
-- **Pick the accent colour.** Six of them — Ember (the CLI's own, and the
-  default), Pomegranate, Saffron, Pistachio, Turquoise and Frost — in Settings
+- **Pick the accent colour.** Six of them â€” Ember (the CLI's own, and the
+  default), Pomegranate, Saffron, Pistachio, Turquoise and Frost â€” in Settings
   beside Language. Every coloured thing in the panel derives from one variable,
   so a theme is that variable and nothing else, and the login screen follows the
   same choice: it is the first thing anyone sees, and a sign-in page in a colour
   the panel does not use reads as a different product.
-- **HTTPS for the web panel**, under Web Panel → Certificate in the CLI. A
+- **HTTPS for the web panel**, under Web Panel â†’ Certificate in the CLI. A
   self-signed certificate works anywhere, including on the bare IP most of these
   panels live on, and the browser warns once. With a domain that resolves here
   and port 80 reachable, Let's Encrypt issues one browsers trust and renews it
-  on its own — the certificate is resolved per handshake, so a reissue lands
+  on its own â€” the certificate is resolved per handshake, so a reissue lands
   without restarting the panel. Off by default, and it stays off on upgrade:
   turning it on changes the address people have bookmarked, so it is a
   deliberate act rather than something an update does to you.
@@ -5960,17 +5984,17 @@ the panel can serve itself over HTTPS.
   when a server is set up and then almost never again, which does not earn a
   permanent strip across the top of every screen.
 - **The tile row went from eight to four**: download, upload, one total, and the
-  running version. In and out were two tiles answering half a question each —
+  running version. In and out were two tiles answering half a question each â€”
   "how much has this machine moved" is the question, so it is one figure now.
   Load and the tunnel count were already on screen elsewhere, and the congestion
   algorithm is a setup detail, so it joined the rest of the machine's facts in
   the menu.
 - **A tunnel's status is a ring around its whole card**, drawn inside the edge,
   instead of a bar down one side. The same three pixels, now describing the card
-  they belong to, breathing on the status dot's rhythm — identical duration and
+  they belong to, breathing on the status dot's rhythm â€” identical duration and
   identical keyframes, so the two read as one signal rather than two things
   blinking near each other.
-- **Traffic on a card is one line** — `↓ 203.5 GiB  ↑ 13.0 GiB  Σ 216.6 GiB` —
+- **Traffic on a card is one line** â€” `â†“ 203.5 GiB  â†‘ 13.0 GiB  خ£ 216.6 GiB` â€”
   with the glyphs quiet and the figures bright. Dropping the label and the
   pairing slash bought the total, which is what most people were adding up in
   their head.
@@ -5981,14 +6005,14 @@ the panel can serve itself over HTTPS.
 No config, wire protocol, or tunnel behaviour changes. Updating replaces the
 binary.
 
-## v1.6.1 — 2026-07-27
+## v1.6.1 â€” 2026-07-27
 
 A hotfix. Tunnels updated to v1.6.0 came up, held a good ping, and then carried
 nothing: sites and applications would not open through them.
 
 ### Fixed
 - **Forwarded connections stopped carrying data.** v1.6.0 added a zero-copy path
-  to the forwarded relay — between two ordinary sockets, the kernel moved the
+  to the forwarded relay â€” between two ordinary sockets, the kernel moved the
   bytes itself instead of them passing through this process. It is reverted. The
   relay is byte-for-byte the loop the upstream project uses, which is the
   behaviour proven on real tunnels; the optimisation was worth CPU on the plain
@@ -6001,7 +6025,7 @@ nothing: sites and applications would not open through them.
   it did.
 - **A connection limit leaked a slot on every timeout.** A forwarded connection
   that waited more than three seconds for a tunnel connection to pair with was
-  closed without releasing the slot it took when it was accepted — only the
+  closed without releasing the slot it took when it was accepted â€” only the
   handler frees that, and the handler never runs for a connection that timed
   out. On a tunnel with `max_connections` set, the limit filled up permanently
   until it would accept nothing at all. Tunnels with no limit configured were
@@ -6011,17 +6035,17 @@ nothing: sites and applications would not open through them.
 No config, wire protocol, or tunnel behaviour changes. Updating replaces the
 binary.
 
-## v1.6.0 — 2026-07-27
+## v1.6.0 â€” 2026-07-27
 
 A release about being told the truth. The panel now says what it actually
-knows — which language you read in, whether BBR is really in effect, what the
-connection pool is doing and why — and four things that quietly lied or quietly
+knows â€” which language you read in, whether BBR is really in effect, what the
+connection pool is doing and why â€” and four things that quietly lied or quietly
 span are fixed.
 
 ### Fixed
 - **A datagram tunnel stayed green after its client was stopped.** Stopping a
   KCP or UDP tunnel from the far end left the Iran panel showing it online,
-  while the peer address and the ping both disappeared — the two halves of the
+  while the peer address and the ping both disappeared â€” the two halves of the
   same card disagreeing. They came from different places: the peer is written
   by the transport, which knew, and the state came from the socket table, which
   cannot know. A UDP listener is one unconnected socket that keeps no record of
@@ -6032,19 +6056,19 @@ span are fixed.
   knowing nobody is there, so a tunnel that has only just started is not shown
   as down before it has written anything.
 - **The reconnect loop could spin without pausing.** Two of the control-channel
-  dialer's error paths — the token write and the read deadline after it —
+  dialer's error paths â€” the token write and the read deadline after it â€”
   returned to the top of the loop without waiting. Both sit *after* a
   successful dial, so they were reached exactly when a server accepts a
   connection and then drops it: a route filtered mid-handshake, a stateful
   firewall closing a half-open connection, a tunnel service restarting on the
   other side. In that state the client redialled as fast as the kernel would
-  open sockets — pegged CPU, a flood of connections that looks like a scan, and
+  open sockets â€” pegged CPU, a flood of connections that looks like a scan, and
   a log filling at the same rate. Every retry now backs off, and a test walks
   all six transports to keep it that way.
 - **The bot's own relay was listed among your forwarded ports.** The mapping the
   Telegram bot adds for itself appeared in the panel as
   `127.0.0.1:28583=api.telegram.org:443`, reading like something you had
-  configured and could tidy away — and tidying it away stopped the bot for a
+  configured and could tidy away â€” and tidying it away stopped the bot for a
   reason that looked unrelated to the bot. The panel had its own idea of what a
   relay mapping looks like, and it knew only the oldest of the three shapes.
   There is one definition now, and the relay has its own small section showing
@@ -6056,21 +6080,21 @@ span are fixed.
   with instead of reaching into the run that replaced it. The race detector is
   clean across the suite.
 - The header menu opened *behind* the tunnel cards. Its z-index was never the
-  problem — the header makes its own stacking context, so the number only ever
+  problem â€” the header makes its own stacking context, so the number only ever
   ranked things inside it.
 
 ### Added
 - **Persian, throughout.** The panel and the Telegram bot can both be read in
   Persian, chosen separately: the person reading the bot is not always the
   person reading the panel. Choosing Persian flips the layout right to left,
-  and Latin runs — addresses, ports, tokens, log lines — are pinned
+  and Latin runs â€” addresses, ports, tokens, log lines â€” are pinned
   left-to-right inside it, because `127.0.0.1:8080` reordered on screen is
   worse than untranslated text. Anything not yet translated falls back to
   English rather than to a blank. Nothing is downloaded: the panel uses the
   reader's own system fonts, so it looks the same on a server with no internet.
 - **The panel says whether BBR actually took effect.** Every socket asks the
   kernel for BBR and ignores the answer, because a kernel without it should not
-  cost anyone a connection — but that means the request can quietly do nothing,
+  cost anyone a connection â€” but that means the request can quietly do nothing,
   on a tunnel whose presets were tuned expecting it. The answer is read back and
   shown, and says plainly when the kernel does not have it.
 - **What the connection pool is doing.** The pool is allowed to grow past the
@@ -6078,10 +6102,10 @@ span are fixed.
   The details panel now shows the live count against the configured one, and the
   throughput that grew it.
 - **A visible notice when a release is out**, with the version you are on, and
-  the fact that updating replaces only the binary — tunnels and configs are
+  the fact that updating replaces only the binary â€” tunnels and configs are
   kept. The Telegram bot announces it too, once per version.
 - The built-in proxy appears in the panel when it is enabled, and says so when
-  it is enabled but not running — a tunnel forwarding a port to a dead proxy
+  it is enabled but not running â€” a tunnel forwarding a port to a dead proxy
   looks healthy from every other angle while refusing every connection.
 
 ### Changed
@@ -6089,13 +6113,13 @@ span are fixed.
   icons became one labelled menu. OS, location and ISP moved into it: they are
   read once when a server is set up and essentially never again.
 - **Settings is five collapsed groups instead of eight flat sections**, one open
-  at a time. The panel port and the panel password are one group now — both
+  at a time. The panel port and the panel password are one group now â€” both
   answer "how do I get into this panel" and used to sit at opposite ends of the
-  list — and restore points moved under Update, which is what makes them.
+  list â€” and restore points moved under Update, which is what makes them.
 - **The panel is responsive.** It had no breakpoints at all; on a phone the menu
   is now a sheet across the top rather than a dropdown opening below the fold.
 - **The plain TCP transport relays without copying through user space** where it
-  can — between two ordinary sockets the kernel moves the bytes itself. Traffic
+  can â€” between two ordinary sockets the kernel moves the bytes itself. Traffic
   is still counted while it flows rather than at the end, and a bandwidth cap
   keeps the old path, because a capped connection has to be paced.
 
@@ -6103,7 +6127,7 @@ span are fixed.
 Nothing in this release changes a config file, the wire protocol, or the
 behaviour of a tunnel that already exists. Updating replaces the binary.
 
-## v1.5.5 — 2026-07-23
+## v1.5.5 â€” 2026-07-23
 
 A monitoring release: the web panel grows from a live snapshot into something
 that remembers, and two bugs that made a KCP tunnel look broken are fixed.
@@ -6111,11 +6135,11 @@ that remembers, and two bugs that made a KCP tunnel look broken are fixed.
 ### Fixed
 - **Real client IP over KCP dropped every forwarded connection.** With the
   real-client-IP option on, the server prepends a PROXY protocol v2 header to
-  each connection — and to build it, the code cast the *outbound* tunnel
+  each connection â€” and to build it, the code cast the *outbound* tunnel
   connection to a TCP address. On the datagram transports that connection is a
   UDP socket, so the cast failed, the header was never written, and the
   connection was closed before a byte moved. The tunnel connected, the control
-  channel came up, and then nothing crossed it — the log filled with
+  channel came up, and then nothing crossed it â€” the log filled with
   `destination connection address is not a TCP address`. The header now takes
   its destination from the forwarded listener the client actually connected to,
   which is a TCP address on every transport, so KCP (and raw UDP) carry the
@@ -6125,7 +6149,7 @@ that remembers, and two bugs that made a KCP tunnel look broken are fixed.
 - **KCP and UDP client tunnels showed as offline in the panel, with no ping.**
   The panel probed a client tunnel by opening a TCP connection to the server's
   port. A KCP or UDP server listens on a *UDP* port, so that probe always
-  failed — and the panel then marked a working tunnel offline and showed no
+  failed â€” and the panel then marked a working tunnel offline and showed no
   latency. The datagram transports are now judged by the same socket check the
   watchdog uses (never by a TCP probe), and their latency comes from a
   best-effort ICMP ping that can be blank without ever implying the tunnel is
@@ -6137,32 +6161,32 @@ that remembers, and two bugs that made a KCP tunnel look broken are fixed.
   a 24-hour speed chart, per-day totals for the week, and an **uptime
   percentage** for the last day and week. The history is sampled every five
   minutes by the monitoring service and kept for a month, so it survives a
-  panel restart — the sparkline answers "what is happening now", this answers
+  panel restart â€” the sparkline answers "what is happening now", this answers
   "what happened this week".
 - **Health Check in the panel** (the bell-and-graph button): the same screen as
-  the CLI's Health Check — server tuning, the monitor service, the panel, and
-  every tunnel — with a ✓ / ! / ✗ and a plain-language fix per item, read-only.
-- **Link Test in the panel** (**Details → Link Test**): measures latency, jitter
+  the CLI's Health Check â€” server tuning, the monitor service, the panel, and
+  every tunnel â€” with a âœ“ / ! / âœ— and a plain-language fix per item, read-only.
+- **Link Test in the panel** (**Details â†’ Link Test**): measures latency, jitter
   and packet loss to the server over TCP and recommends a transport, the same
   as the CLI. It runs on a client tunnel, where there is a server to measure.
-- **Alerts view** (the bell): what the monitoring service has fired — the
+- **Alerts view** (the bell): what the monitoring service has fired â€” the
   conditions active right now and the recent messages, the same source as the
   Telegram alerts. A dot on the bell marks a live alert. Alerts are now recorded
   even when the Telegram bot is not configured, and the watchdog writes a line
   here every time it restarts a dropped tunnel.
 - **Fuller tunnel Details.** Traffic in and out, uptime, performance preset,
   per-tunnel limits, the certificate (self-signed or Let's Encrypt, with its
-  expiry), PROXY protocol, and the failover/backup addresses — all read from
+  expiry), PROXY protocol, and the failover/backup addresses â€” all read from
   the tunnel's own config and metrics.
 - **The panel warns when the monitor is down**, and shows a notice when a newer
-  release is out — both from the background check, so nothing on the display
+  release is out â€” both from the background check, so nothing on the display
   path waits on the network.
 - **Prometheus metrics** at `/metrics` (system, per-tunnel traffic and state,
   and the KCP link-quality counters), reachable with a read-only access token
-  minted under **Settings → Remote access** — for anyone running Grafana across
+  minted under **Settings â†’ Remote access** â€” for anyone running Grafana across
   several servers.
 - **Weekly automatic backup**, taken by the monitoring service into the standard
-  backups folder and pruned like a manual one — **Settings → Backup**.
+  backups folder and pruned like a manual one â€” **Settings â†’ Backup**.
 - **Restore points are listed in the panel** (**Settings**), read-only; a
   rollback stays a CLI decision because it replaces the running binary.
 - **Login hardening.** Five failed logins from one address earn a ten-minute
@@ -6171,16 +6195,16 @@ that remembers, and two bugs that made a KCP tunnel look broken are fixed.
   with the address; and **Settings** lists signed-in devices with a per-device
   revoke and "sign out everywhere".
 - **The panel is installable as an app** (a web manifest and icon), so it can be
-  added to a phone's home screen — the usual way this dashboard gets checked.
+  added to a phone's home screen â€” the usual way this dashboard gets checked.
 - **Release channel and log tools in the panel**: switch stable/beta under
-  **Settings → Update**, and filter the log drawer with ERROR/WARN lines
+  **Settings â†’ Update**, and filter the log drawer with ERROR/WARN lines
   highlighted.
 
-## v1.5.0 — 2026-07-18
+## v1.5.0 â€” 2026-07-18
 
 ### Added
 - **New transport: TCP + Stealth.** A TCP tunnel wrapped in an encrypted record layer
-  (Noise, NNpsk0) that has **no handshake to fingerprint** — on the wire it is
+  (Noise, NNpsk0) that has **no handshake to fingerprint** â€” on the wire it is
   two short bursts of what looks like random data, followed by an encrypted
   stream that looks the same. There is no TLS ClientHello and no recognisable
   protocol for deep packet inspection to match against, which is the failure
@@ -6190,30 +6214,30 @@ that remembers, and two bugs that made a KCP tunnel look broken are fixed.
   key of its own, and because that key is mixed in from the very first message,
   a peer without the token cannot produce a message the server will accept: it
   is dropped with no reply, so a probe or a port scan finds a dead port rather
-  than a service to fingerprint. It carries TCP like the plain transport — PROXY
-  protocol, per-tunnel limits and metrics all apply — with slightly more CPU for
-  the encryption. Pick it under **Setup → Stealth**, or switch an existing tunnel
+  than a service to fingerprint. It carries TCP like the plain transport â€” PROXY
+  protocol, per-tunnel limits and metrics all apply â€” with slightly more CPU for
+  the encryption. Pick it under **Setup â†’ Stealth**, or switch an existing tunnel
   to it from **Edit**. Reach for it where filtering is heavy; TCP Mux or WSS
   remain the lighter choice on an open route.
 - **WSS and WSS Mux now send a browser TLS fingerprint.** A WSS tunnel is meant
-  to look like ordinary HTTPS, and at the HTTP layer it already did — a real
+  to look like ordinary HTTPS, and at the HTTP layer it already did â€” a real
   User-Agent, a plausible path. But the TLS ClientHello underneath was Go's, and
   Go's ClientHello has a fingerprint of its own (its cipher list, its curves, the
   order of its extensions) that filtering can pick out even when everything above
   looks right. The handshake now carries the fingerprint of a current Chrome
   build instead, so it blends into ordinary browser traffic. Nothing above TLS
-  changes, and trust is unchanged — the certificate is still not verified,
+  changes, and trust is unchanged â€” the certificate is still not verified,
   because the tunnel authenticates with its token. It applies automatically to
   every wss/wssmux tunnel; there is nothing to configure. (Where **Stealth**
   looks like nothing, this looks like a browser.)
-- **New transport: UDP + KCP** — a reliable, retransmitting protocol inside UDP
+- **New transport: UDP + KCP** â€” a reliable, retransmitting protocol inside UDP
   datagrams, with **forward error correction**: for every 10 packets it sends 3
   (or 4) parity packets, so losses are repaired instantly instead of waiting a
   full round trip for a retransmit. This is the transport to use when the route
   loses packets and TCP keeps backing off. Datagrams are encrypted with a key
   derived from the tunnel token.
 
-  KCP runs over UDP. **If your provider filters UDP it will not help** — test
+  KCP runs over UDP. **If your provider filters UDP it will not help** â€” test
   before committing to it.
 - **Real client IP (PROXY protocol v2).** The service behind the tunnel normally
   sees every connection as coming from the tunnel itself, so a VPN panel counts
@@ -6221,21 +6245,21 @@ that remembers, and two bugs that made a KCP tunnel look broken are fixed.
   on prefixes each forwarded connection with a PROXY protocol v2 header carrying
   the user's real IP and port. Available on TCP, TCP Mux, KCP, WS Mux and WSS Mux
   (the plain websocket and raw UDP transports have nowhere to put it). **Off by
-  default, and the backend must be set to accept it first** — otherwise it reads
+  default, and the backend must be set to accept it first** â€” otherwise it reads
   the header as traffic and every connection breaks.
 - **Performance presets: Balance, Turbo and Aggressive**, applied to every
   transport instead of the old yes/no "Best Performance" question.
-  - **Balance** — light on CPU and RAM, for a small or shared VPS.
-  - **Turbo** — the recommended default. **It is byte-for-byte identical to the
+  - **Balance** â€” light on CPU and RAM, for a small or shared VPS.
+  - **Turbo** â€” the recommended default. **It is byte-for-byte identical to the
     old Best Performance preset**, so upgrading changes nothing about an
     existing tunnel.
-  - **Aggressive** — maximum throughput and noticeably more CPU.
+  - **Aggressive** â€” maximum throughput and noticeably more CPU.
 
-  A tunnel's preset can be changed later from **Edit → Change performance
+  A tunnel's preset can be changed later from **Edit â†’ Change performance
   preset**. Configs written before this release carry no preset field and are
   left exactly as they are.
-- **Link Test** (**Manage → Link Test**): measures latency, jitter and packet
-  loss to the far server over TCP (never ICMP — many networks on this route drop
+- **Link Test** (**Manage â†’ Link Test**): measures latency, jitter and packet
+  loss to the far server over TCP (never ICMP â€” many networks on this route drop
   ping while carrying tunnel traffic fine), then **recommends a transport** and
   explains why: KCP when the link loses packets, TCP Mux when it is jittery or
   clean, WSS when nothing answers at all. It also derives **liveness timers**
@@ -6245,20 +6269,20 @@ that remembers, and two bugs that made a KCP tunnel look broken are fixed.
   were only spares. With balancing on, the tunnel's data connections are spread
   over all of them at once, so a single throttled route slows only its own share
   of the traffic. The control channel stays pinned to one address, since it is
-  what identifies the peer. **Every address must reach the same server** — a
+  what identifies the peer. **Every address must reach the same server** â€” a
   second IP of it, another of its ports, or a CDN edge in front of it.
-- **Setup menus are grouped by transport family** — TCP, UDP and WebSocket —
+- **Setup menus are grouped by transport family** â€” TCP, UDP and WebSocket â€”
   so the choice is made in two short steps instead of one long list.
 
 - **Per-tunnel limits.** A cap on simultaneous forwarded connections and a cap
   on total throughput, for when several services or customers share one link and
-  none of them should be able to take all of it. Both off by default —
-  **Edit → Limits**.
+  none of them should be able to take all of it. Both off by default â€”
+  **Edit â†’ Limits**.
 - **Structured JSON logging** (`log_format = "json"`), for anyone feeding these
   logs to a collector or a script. The default stays human-readable, since the
   usual reader is a person running `journalctl`.
 - **You get told when a new version is out.** The CLI shows a line under the
-  logo — and marks the Update entry — as soon as a newer release exists, and the
+  logo â€” and marks the Update entry â€” as soon as a newer release exists, and the
   Telegram bot messages you once per version.
 
   The check runs in the background and its answer is cached on disk, so nothing
@@ -6268,8 +6292,8 @@ that remembers, and two bugs that made a KCP tunnel look broken are fixed.
   erasing it. The "already announced" mark is stored on disk too, so restarting
   the panel does not re-announce a version you have already been told about, and
   the notice clears itself once the update is applied. Switch it off under
-  **Telegram Bot → Alerts**.
-- **Telegram alerts.** The bot no longer only answers when asked — it messages
+  **Telegram Bot â†’ Alerts**.
+- **Telegram alerts.** The bot no longer only answers when asked â€” it messages
   you on its own when the processor, memory or disk crosses a threshold, and
   when a tunnel goes down or comes back. Every alert has a matching recovery
   message, because knowing a problem started is only half of it.
@@ -6283,8 +6307,8 @@ that remembers, and two bugs that made a KCP tunnel look broken are fixed.
 
   Defaults: processor 85%, memory 85%, disk 90%, tunnel up/down on, checked
   every 60s, repeated at most every 30 minutes. Existing installs get these on
-  upgrade — a bot that never warns you is the thing being fixed — and all of it
-  is editable under **Telegram Bot → Alerts**, where 0 turns a threshold off.
+  upgrade â€” a bot that never warns you is the thing being fixed â€” and all of it
+  is editable under **Telegram Bot â†’ Alerts**, where 0 turns a threshold off.
   Alerts are watched by the backpack-monitor service (see below), which runs
   independently of the web panel.
 - **The Telegram bot reports much more.** Alongside Status it now has **System**
@@ -6292,13 +6316,13 @@ that remembers, and two bugs that made a KCP tunnel look broken are fixed.
   (per-tunnel state, including whether the peer is really connected rather than
   just whether systemd is happy), **Metrics** (traffic, packet loss and FEC
   repairs) and **Alerts**. Everything is reachable both as a button and as a
-  command — `/status`, `/system`, `/tunnels`, `/metrics`, `/alerts`, `/webui`,
-  `/help` — and the two share one implementation, so they cannot drift apart.
-- **Let's Encrypt certificates for wss and wssmux** (**Edit → Certificate**).
+  command â€” `/status`, `/system`, `/tunnels`, `/metrics`, `/alerts`, `/webui`,
+  `/help` â€” and the two share one implementation, so they cannot drift apart.
+- **Let's Encrypt certificates for wss and wssmux** (**Edit â†’ Certificate**).
   Self-signed stays the default, because it works on a bare IP and most setups
   have no domain.
 
-  The reason to want a real one is not encryption — the client is Backpack's own
+  The reason to want a real one is not encryption â€” the client is Backpack's own
   code and does not verify the certificate either way. It is how the connection
   looks from outside: genuine HTTPS on port 443 is never self-signed, so a
   self-signed certificate is a distinguishing mark on a route where being
@@ -6307,22 +6331,22 @@ that remembers, and two bugs that made a KCP tunnel look broken are fixed.
 
   Validation works over the tunnel's own listener when it is on port 443
   (TLS-ALPN), so usually nothing extra needs opening; otherwise an HTTP-01
-  responder runs on port 80. Renewal is automatic and needs no restart — the
+  responder runs on port 80. Renewal is automatic and needs no restart â€” the
   listener asks for the current certificate per handshake rather than holding
   the one it started with. The CLI checks that the domain resolves to this
   server before saving, so a typo is caught while the old certificate is still
   in place rather than after a restart.
-- **Tunnel Metrics** (**Manage → Tunnel Metrics**): traffic and connection
-  counts per tunnel, and for KCP the numbers that actually explain a slow link —
+- **Tunnel Metrics** (**Manage â†’ Tunnel Metrics**): traffic and connection
+  counts per tunnel, and for KCP the numbers that actually explain a slow link â€”
   retransmits, lost and duplicated segments, and **how many packets forward
   error correction repaired**. That last one is the direct answer to "is KCP
   earning its overhead on my route?"
 - **Release channels.** The updater can follow **stable** (default) or **beta**,
   so pre-releases can be tested without being pushed to everyone. Switch under
-  **Update → Release channel**.
+  **Update â†’ Release channel**.
 - **Downloaded releases are checksum-verified.** The installer and the updater
   both check the asset's SHA-256 against the published `SHA256SUMS` before
-  installing it, and **refuse to install anything they cannot verify** — see
+  installing it, and **refuse to install anything they cannot verify** â€” see
   *Security* below.
 - **The Telegram bot picks its own way out, and re-picks it when that breaks.**
   Reaching Telegram from Iran means going out through a tunnel, and choosing
@@ -6330,23 +6354,23 @@ that remembers, and two bugs that made a KCP tunnel look broken are fixed.
   **Automatic** by default: the bot forwards through whichever tunnel is up, and
   when that tunnel goes down it moves to the next live one on its own. A specific
   tunnel can still be pinned if you want one.
-- **Relay diagnosis** (**Telegram Bot → Diagnose**). When the bot cannot reach
-  Telegram, the error it surfaces is whatever the HTTP client saw — usually a
-  bare `EOF` — and that names the wrong machine. The chain has five links across
-  two servers. This walks them in order — bot configured, relay tunnel chosen,
-  that tunnel up, relay port open, the peer's own internet, Telegram itself —
+- **Relay diagnosis** (**Telegram Bot â†’ Diagnose**). When the bot cannot reach
+  Telegram, the error it surfaces is whatever the HTTP client saw â€” usually a
+  bare `EOF` â€” and that names the wrong machine. The chain has five links across
+  two servers. This walks them in order â€” bot configured, relay tunnel chosen,
+  that tunnel up, relay port open, the peer's own internet, Telegram itself â€”
   and stops at the first one that is actually wrong. When something other than
   Telegram answers on the relay port, it reads the reply and **says what that
   was** (an HTTP server, an SSH server, a stale SOCKS proxy, or nothing at all)
   instead of reporting a failed handshake.
 - **Backup import and export from the web panel** (**Settings**), alongside the
   CLI. Configs can be pulled down and pushed back without SSH.
-- **Telegram setup from the web panel** (**Settings**) — token, admin ID, alert
+- **Telegram setup from the web panel** (**Settings**) â€” token, admin ID, alert
   thresholds and relay choice, all previously CLI-only.
 - **Setup checks the address you give it.** Before saving a client tunnel it
   resolves the server address and warns about the two things that silently break
   a tunnel that looks correctly configured: an address that resolves into a
-  **CDN** (matched against published IP ranges, not reverse DNS — Cloudflare's
+  **CDN** (matched against published IP ranges, not reverse DNS â€” Cloudflare's
   addresses carry no PTR record naming it), and a domain carrying **both an A
   and an AAAA record**, where the tunnel may connect over IPv6 and fail if IPv6
   does not reach the server or the port is only open for IPv4. That second one
@@ -6355,7 +6379,7 @@ that remembers, and two bugs that made a KCP tunnel look broken are fixed.
 ### Changed
 - **Monitoring is now its own service, independent of the web panel.** The
   watchdog, the Telegram bot and the alerts used to run inside the panel
-  process, which made the panel a dependency of monitoring — backwards. Stopping
+  process, which made the panel a dependency of monitoring â€” backwards. Stopping
   the panel, or the panel crashing, or turning it off because you only wanted
   the CLI, silently stopped dropped tunnels being restarted and stopped every
   alert. Nothing visibly broke; it just quietly stopped watching, which is the
@@ -6363,12 +6387,12 @@ that remembers, and two bugs that made a KCP tunnel look broken are fixed.
 
   They now run as `backpack-monitor.service`, which depends on nothing but the
   machine being up and restarts itself if it dies. Existing installs pick it up
-  automatically — the CLI installs it on launch and the updater installs it as
-  part of an update — so there is nothing to do by hand. **Health Check** reports
+  automatically â€” the CLI installs it on launch and the updater installs it as
+  part of an update â€” so there is nothing to do by hand. **Health Check** reports
   on it, and says plainly that dropped tunnels will not be restarted if it is
   down.
 - **The web panel now has one fixed theme, matching the CLI.** The accent is the
-  same red-orange used by the menu, and the colour picker is gone — the panel and
+  same red-orange used by the menu, and the colour picker is gone â€” the panel and
   the terminal should look like one product rather than two. The CPU, RAM, disk
   and swap gauges follow that accent instead of a green-amber-red scale;
   **green now means exactly one thing, a tunnel that is up**, with amber for one
@@ -6383,32 +6407,32 @@ that remembers, and two bugs that made a KCP tunnel look broken are fixed.
   Sign out moved to the bottom of **Settings**, and Support is pinned to the
   bottom-right corner so it stays put while the page scrolls.
 - **The Telegram bot's messages were rewritten.** **Status** leads with the
-  things that answer "is it working" — flag, preset, ports, traffic — **System**
+  things that answer "is it working" â€” flag, preset, ports, traffic â€” **System**
   was cut to the numbers worth reading on a phone, and the Tunnels and Metrics
   sections were removed rather than kept as walls of text. `/help` lists what the
   bot can actually do, and a **Backup** button pulls the configs down through
-  Telegram. Internal plumbing — the relay port, the SOCKS port, the API host —
+  Telegram. Internal plumbing â€” the relay port, the SOCKS port, the API host â€”
   no longer appears anywhere in a message.
 - Building from source now requires **Go 1.24 or newer**; the installer checks
   for this and installs a suitable toolchain if needed. Installing from a
-  release asset is unaffected — it is a prebuilt binary.
+  release asset is unaffected â€” it is a prebuilt binary.
 
 ### Security
 - **WSS/WSS Mux now serve a decoy website to anything that is not a tunnel.** A
   WSS tunnel is meant to be indistinguishable from an ordinary HTTPS site, but
   answering a browser, a scanner or an active probe with a `401` or a blank close
-  gives it away. Every request that is not a genuine tunnel connection — a
-  WebSocket upgrade, on a tunnel path, with a valid credential — is now answered
+  gives it away. Every request that is not a genuine tunnel connection â€” a
+  WebSocket upgrade, on a tunnel path, with a valid credential â€” is now answered
   with a plausible "Welcome to nginx!" page (`200`, `Server: nginx`), so the
   server looks like a normal website. Built in and always on; nothing to
   configure. Combined with the Let's Encrypt certificate and the Chrome TLS
   fingerprint, the server presents as a real HTTPS website to anyone probing it.
 - **The WSS credential is bound to the TLS session instead of being sent.** WSS
-  and WSS Mux dial with the certificate unverified — the tunnel trusts its token,
+  and WSS Mux dial with the certificate unverified â€” the tunnel trusts its token,
   not a CA, and the certificate is often self-signed. That is fine against a
   passive observer but leaves a gap against an active one: on a path the operator
   does not control, something can present its own certificate, terminate the TLS,
-  and read the bearer token the client sends next — which is all an impostor
+  and read the bearer token the client sends next â€” which is all an impostor
   needs. So the token is no longer sent. Each side derives RFC 5705 keying
   material from its own side of the TLS session, and the client proves it holds
   the token by sending `HMAC(token, keying material)`. A man in the middle that
@@ -6420,7 +6444,7 @@ that remembers, and two bugs that made a KCP tunnel look broken are fixed.
 - **The Telegram relay port now listens on loopback only.** The bot reaches
   Telegram by having a server tunnel forward a local port straight to
   `api.telegram.org:443`. That mapping was written as a bare port number, which
-  binds every interface — so the port was reachable from the internet on the
+  binds every interface â€” so the port was reachable from the internet on the
   Iran server's public address, and nothing authenticates a forwarded connection
   (the tunnel token guards the tunnel's own channel, not the ports it exposes).
   Anyone who found the port had a free, unauthenticated TCP relay to Telegram
@@ -6429,8 +6453,8 @@ that remembers, and two bugs that made a KCP tunnel look broken are fixed.
   hidden from every port listing, so nobody was going to spot it.
 
   New tunnels bind `127.0.0.1`. **Existing tunnels are migrated automatically**
-  the next time the bot resolves its relay — the mapping is rewritten and the
-  tunnel restarted — because it is not visible for you to fix by hand.
+  the next time the bot resolves its relay â€” the mapping is rewritten and the
+  tunnel restarted â€” because it is not visible for you to fix by hand.
 - **Updates now refuse to install an archive they cannot verify.** The checksum
   published with a release was checked when it was available and skipped with a
   warning when it was not, and the warning was discarded entirely by the web
@@ -6438,7 +6462,7 @@ that remembers, and two bugs that made a KCP tunnel look broken are fixed.
   is now an error instead: the update stops and points at the offline install.
 - **Third-party GitHub proxies were removed from downloads and updates.** The
   archive and its `SHA256SUMS` travelled through the same proxy, so a proxy
-  serving a modified binary could serve a matching checksum with it — the
+  serving a modified binary could serve a matching checksum with it â€” the
   verification proved nothing in exactly the situation that made a proxy get
   used. Downloads now go direct to GitHub or through the tunnel relay, both of
   which terminate TLS at GitHub. A server that can reach neither installs
@@ -6450,11 +6474,11 @@ that remembers, and two bugs that made a KCP tunnel look broken are fixed.
   mapping by the fixed port 1080, but the port has been derived from the tunnel
   token since it stopped colliding with whatever else was already on 1080. No
   mapping written since then matched, so the relay was never offered and the
-  updater was left with a direct connection to GitHub — precisely what a server
+  updater was left with a direct connection to GitHub â€” precisely what a server
   in Iran does not have. Both forms are now recognised.
 - **Traffic counts read zero on every transport except KCP.** Tunnel Metrics
   showed real numbers for KCP and nothing at all for TCP, TCP Mux, WebSocket and
-  the rest. KCP was the only one being counted, and not by Backpack — the KCP
+  the rest. KCP was the only one being counted, and not by Backpack â€” the KCP
   library keeps its own counters, so those numbers arrived for free while nobody
   had ever counted the others. Bytes are now counted on every transport.
 - **Traffic totals reset to zero whenever a tunnel restarted.** They lived only
@@ -6473,11 +6497,11 @@ that remembers, and two bugs that made a KCP tunnel look broken are fixed.
   tunnel was carrying traffic the whole time.
 
   The watchdog already handled this correctly. The panel got it wrong because it
-  was answering the same question with its own separate code — so both now go
+  was answering the same question with its own separate code â€” so both now go
   through one function, and the panel cannot drift away from it again.
 - **"connection refused" now says what to do about it.** When the far side
   cannot reach the service it forwards to, the log used to read
-  `local dialer: dial tcp <nil>->127.0.0.1:4545: connect: connection refused` —
+  `local dialer: dial tcp <nil>->127.0.0.1:4545: connect: connection refused` â€”
   accurate, and almost useless. It does not say which of the two machines the
   fault is on, that the tunnel itself worked, or what to check. The reasonable
   conclusion is that the tunnel is broken, and the reasonable next step is to
@@ -6493,10 +6517,10 @@ that remembers, and two bugs that made a KCP tunnel look broken are fixed.
 - **Setup now shows what the far side must be listening on.** The port mapping
   is entered on the Iran server but describes something on the kharej one, and
   that indirection is where it goes wrong. After entering the ports, setup
-  prints each one resolved — `443 → 127.0.0.1:443` — so a bare port is concrete
+  prints each one resolved â€” `443 â†’ 127.0.0.1:443` â€” so a bare port is concrete
   before the tunnel is built rather than a mystery afterwards.
 - **pprof listened on every interface.** When the profiling endpoint was
-  enabled in a tunnel config it bound `0.0.0.0`, unauthenticated — and a pprof
+  enabled in a tunnel config it bound `0.0.0.0`, unauthenticated â€” and a pprof
   heap dump contains whatever is in memory, including the tunnel token, which is
   all an attacker needs to connect. It is now bound to loopback; reach it with
   `ssh -L 6060:127.0.0.1:6060`. It is off by default and the CLI never enables
@@ -6504,24 +6528,24 @@ that remembers, and two bugs that made a KCP tunnel look broken are fixed.
 - **Config files could be read while half written.** Backpack runs as several
   processes and they share these files: the CLI writes them, the panel and the
   monitor read them on a timer. A plain write truncates first, so a reader
-  landing in that window saw an empty file — read as "the bot is not
+  landing in that window saw an empty file â€” read as "the bot is not
   configured", which for the monitor is a cycle with no alerts. They are now
   written to a temporary file and renamed into place, which is atomic.
 - **An update left the monitor running the old binary.** The service unit does
   not change between versions, only the binary it points at, so the
-  install-if-missing check correctly found nothing to do — and `systemctl start`
+  install-if-missing check correctly found nothing to do â€” and `systemctl start`
   does nothing to a service that is already running. The update and rollback
   paths now restart it explicitly, and the post-update health check judges it,
   so a version whose monitor cannot start is rolled back instead of kept.
 - **A SOCKS5 reply was parsed without checking for a short read.** The bound
   address at the end of the handshake was consumed with the error discarded. It
   never failed there; it failed afterwards, when the caller read the leftover
-  bytes as the start of its own response — a Telegram request returning garbage
+  bytes as the start of its own response â€” a Telegram request returning garbage
   rather than an honest connection error.
 - **A data race on the control channel, in every transport.** The field was
   written by the handshake goroutine and read by the accept loop, the heartbeat
   and the restart path with no synchronisation, so a reader could observe a
-  stale or half-published value — the accept loop refusing connections it should
+  stale or half-published value â€” the accept loop refusing connections it should
   have allowed. On the client side `Restart()` replaced the context, the control
   channel, the usage monitor and the counters while the previous generation's
   goroutines were still reading them. Both are now published behind a lock, and
@@ -6542,7 +6566,7 @@ that remembers, and two bugs that made a KCP tunnel look broken are fixed.
   implying the tunnel is down.
 - **Health Check no longer reports a false failure on UDP transports.** A TCP
   connect cannot test a UDP port, so that check now says so rather than showing
-  a ✗ for a working tunnel.
+  a âœ— for a working tunnel.
 
 ### Notes
 - **QUIC was built, tested on a real Iran route, and removed.** It never
@@ -6551,77 +6575,77 @@ that remembers, and two bugs that made a KCP tunnel look broken are fixed.
   silently fails. The UDP menu offers UDP and UDP + KCP.
 - **Compression was considered and deliberately left out.** Almost everything
   these tunnels carry is already encrypted (VPN or TLS traffic), which does not
-  compress — enabling it would burn CPU for no gain while appearing to be a
+  compress â€” enabling it would burn CPU for no gain while appearing to be a
   speed feature.
 
 
-## v1.4.0 — 2026-07-18
+## v1.4.0 â€” 2026-07-18
 
 ### Added
 - **Automatic failover to backup server addresses.** A client tunnel can hold a
   list of extra server addresses (a second IP, a different port, a CDN edge).
-  When the main address stops answering — a filtered IP, a blocked port — the
+  When the main address stops answering â€” a filtered IP, a blocked port â€” the
   client rotates to the next one automatically until something connects, and all
   data connections follow it. Set it during **Setup Client** or later from
-  **Manage → Manage Tunnels → Edit → Backup server addresses**.
+  **Manage â†’ Manage Tunnels â†’ Edit â†’ Backup server addresses**.
 - **Safe updates with automatic rollback.** Every update first saves a **restore
   point** (the binary plus every config), installs the release, then health-checks
   the panel and all tunnels. If anything fails to come back up it restores the
   previous version by itself. Restore points are also listed under
-  **Update → Restore points** so you can roll back on demand.
+  **Update â†’ Restore points** so you can roll back on demand.
 - **Safe edits.** Changing a port, address or transport keeps the previous config,
   verifies the tunnel actually came back up, and **reverts automatically** if it
-  did not — reporting the reason from the log (e.g. "address already in use").
+  did not â€” reporting the reason from the log (e.g. "address already in use").
   A bad edit can no longer leave a dead tunnel and a lost config behind.
-- **Change transport on an existing tunnel** (tcp ↔ tcpmux ↔ udp ↔ ws ↔ wss ↔
-  wsmux ↔ wssmux) without recreating it: the name, token and forwarded ports stay
+- **Change transport on an existing tunnel** (tcp â†” tcpmux â†” udp â†” ws â†” wss â†”
+  wsmux â†” wssmux) without recreating it: the name, token and forwarded ports stay
   as they are, mux settings are filled in, and a TLS certificate is generated
   automatically when switching to wss/wssmux.
-- **Health Check** (**Manage → Health Check**): one screen that checks the server
+- **Health Check** (**Manage â†’ Health Check**): one screen that checks the server
   (BBR, queue discipline, socket buffers, open-file limit, binary, root, systemd),
   the web panel (service, port, firewall hint) and every tunnel (state, listening
   port, port syntax, real TCP reachability, TLS certificate expiry, token
-  strength) — with a ✓ / ! / ✗ per item and a plain-language fix for each problem.
-- **File Locations** (**Manage → File Locations**): every config, service, backup
-  and certificate path with a ✓/✗ so you can see what is installed and where.
+  strength) â€” with a âœ“ / ! / âœ— per item and a plain-language fix for each problem.
+- **File Locations** (**Manage â†’ File Locations**): every config, service, backup
+  and certificate path with a âœ“/âœ— so you can see what is installed and where.
 
 ### Changed
-- Reachability is measured over **TCP, never ICMP** — networks that drop ping no
+- Reachability is measured over **TCP, never ICMP** â€” networks that drop ping no
   longer look "offline" when the tunnel port works fine.
 - Backups are pruned to the newest 10 archives, and restore points to the newest
   5, so neither can fill the disk.
 
 
 
-## v1.3.0 — 2026-07-14
+## v1.3.0 â€” 2026-07-14
 
 ### Added
 - **Edit tunnel ports from the CLI.** Every tunnel now has an **Edit** action
-  (Manage → Manage Tunnels → tunnel → Edit): change the **tunnel (control)
+  (Manage â†’ Manage Tunnels â†’ tunnel â†’ Edit): change the **tunnel (control)
   port**, the **forwarded ports** (server) or the **server address** (client).
   Changes rewrite the config and restart the tunnel automatically; the hidden
   Telegram/SOCKS relay mapping is preserved.
-- **Change the web-panel port** from the CLI (Web Panel → Change panel port)
-  and from the panel itself (Settings → Panel port, with auto-redirect).
+- **Change the web-panel port** from the CLI (Web Panel â†’ Change panel port)
+  and from the panel itself (Settings â†’ Panel port, with auto-redirect).
 - **Release-based install & updates.** `install.sh` now installs the prebuilt
   `backpack_linux_amd64.tar.gz` / `backpack_linux_arm64.tar.gz` release assets
   into **`/root/BackPack`**, and the in-app **Update** detects newer versions
-  from GitHub releases and installs them — trying **direct → tunnel SOCKS relay
-  → public mirrors**, so it works from Iran without Go or git on the server.
-  Works for old clone-based installs too: run Update once from ≤ v1.2.0 (final
+  from GitHub releases and installs them â€” trying **direct â†’ tunnel SOCKS relay
+  â†’ public mirrors**, so it works from Iran without Go or git on the server.
+  Works for old clone-based installs too: run Update once from â‰¤ v1.2.0 (final
   git pull + rebuild) and every update after that comes from the releases.
 - **Backups folder.** Backups now live in **`/root/BackPack/backups`** by
   default, and Restore lists the archives there so you just pick one.
 - Port entries are **validated** before they reach a config (`443`, `400-450`,
-  `443=1.1.1.1:443`, …) — a bad entry used to crash-loop the tunnel service.
+  `443=1.1.1.1:443`, â€¦) â€” a bad entry used to crash-loop the tunnel service.
   Tunnel names are validated too.
 
 ### Changed
 - **CLI restyled and reorganized.** Three-color theme (red / white / gray),
   a gray description beside **every** menu option, and a cleaner layout:
-  Setup Server, Setup Client, Manage (tunnels · status · restart all · auto
+  Setup Server, Setup Client, Manage (tunnels آ· status آ· restart all آ· auto
   refresh), Backup & Restore, Web Panel, Optimize, Telegram Bot, Update,
-  Uninstall, Exit. The big status header is gone — the panel link & login code
+  Uninstall, Exit. The big status header is gone â€” the panel link & login code
   now live inside the **Web Panel** section.
 - **The web panel is monitoring-only** (recommended on the IRAN server): live
   system metrics, tunnel state/ping/logs. Tunnel creation/management, Telegram,
@@ -6629,7 +6653,7 @@ that remembers, and two bugs that made a KCP tunnel look broken are fixed.
   panel port and password. Support stays.
 - **Telegram bot defaults to the tunnel relay.** Configuration now asks which
   tunnel to relay through (a random SOCKS5 relay port is added to it), since
-  Iran servers can't reach Telegram directly; “direct” remains available for
+  Iran servers can't reach Telegram directly; â€œdirectâ€‌ remains available for
   kharej-side setups.
 - Watchdog client health-check now matches the peer IP (not just the port), so
   an unrelated outbound connection can no longer mask a dropped tunnel.
@@ -6641,14 +6665,14 @@ that remembers, and two bugs that made a KCP tunnel look broken are fixed.
 
 
 
-## v1.2.0 — 2026-07-13
+## v1.2.0 â€” 2026-07-13
 
 ### Added
 - **Full backup & restore.** Bundle every tunnel (with its token), the web-panel
   password, Telegram settings, TLS certificates, per-tunnel metadata and the
-  auto-refresh schedule into a single portable `.tar.gz` — from the CLI
-  (**Backup & Restore**) or the web panel (**Settings → Backup &
-  restore**) — and restore it on any server. Restore re-registers and starts
+  auto-refresh schedule into a single portable `.tar.gz` â€” from the CLI
+  (**Backup & Restore**) or the web panel (**Settings â†’ Backup &
+  restore**) â€” and restore it on any server. Restore re-registers and starts
   every tunnel, brings the panel back up, and restores the schedule. The archive
   extractor is hardened against path traversal, and the machine-specific
   `install_path` is never overwritten on the target host.
@@ -6666,6 +6690,6 @@ that remembers, and two bugs that made a KCP tunnel look broken are fixed.
   the value is now redacted on both the server and client sides.
 
 ### Notes
-- No new dependencies — the binary still builds from the Go standard library
+- No new dependencies â€” the binary still builds from the Go standard library
   plus the existing modules, so one-click updates keep working on restricted
   (e.g. Iran) networks.

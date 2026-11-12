@@ -185,4 +185,4 @@ KCP و QUIC، فالبک هنگام شکست اتصال را حفظ می‌کن�
 
 ---
 
-*Last verified against Backpack v1.24.0*
+*Last verified against Backpack v1.25.0*

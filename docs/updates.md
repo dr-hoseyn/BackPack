@@ -124,4 +124,4 @@ endpoint سلامت HTTP روی پورت فورواردشدهٔ هر تونل ت
 
 ---
 
-*Last verified against Backpack v1.24.0*
+*Last verified against Backpack v1.25.0*

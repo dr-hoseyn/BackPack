@@ -89,5 +89,5 @@ deployment capacity still needs measurements on the actual two hosts and path.
 
 </div>
 
-*Last verified against Backpack v1.24.0 (2026-11-11). The UDP/mux audit above was measured on 2026-11-10.
+*Last verified against Backpack v1.25.0 (2026-11-11). The UDP/mux audit above was measured on 2026-11-10.
 Link-only measurements: 2026-10-18. Engine measurements: candidate d4b6fe1e, 2026-10-22.*

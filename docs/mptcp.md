@@ -38,4 +38,4 @@ It does not alter the runner host's sysctls or routing.
 
 </div>
 
-*Last verified against Backpack v1.24.0, 2026-11-11.*
+*Last verified against Backpack v1.25.0, 2026-11-11.*
