@@ -4,8 +4,53 @@ import (
 	"bytes"
 	"io"
 	"net"
+	"sync"
 	"testing"
 )
+
+func TestConcurrentTrafficIsExactWhileRelaysRemainOpen(t *testing.T) {
+	const workers, chunks, chunkSize = 8, 1000, 64
+	beforeIn, beforeOut := Traffic()
+	var running sync.WaitGroup
+	checkpoint := make(chan struct{}, workers)
+	resume := make(chan struct{})
+	for range workers {
+		running.Go(func() {
+			r := CountedConn(readOnly{r: bytes.NewReader(make([]byte, chunks*chunkSize))})
+			w := CountedConn(writeOnly{w: io.Discard})
+			var buf [chunkSize]byte
+			for i := range chunks {
+				if i == chunks/2 {
+					checkpoint <- struct{}{}
+					<-resume
+				}
+				if _, err := io.ReadFull(r, buf[:]); err != nil {
+					t.Error(err)
+					return
+				}
+				if _, err := w.Write(buf[:]); err != nil {
+					t.Error(err)
+					return
+				}
+				AddBytes(3, 7) // message-based transports share the same counters
+			}
+		})
+	}
+	check := func(completed uint64) {
+		t.Helper()
+		in, out := Traffic()
+		if in-beforeIn != completed*(chunkSize+3) || out-beforeOut != completed*(chunkSize+7) {
+			t.Errorf("traffic delta = %d/%d after %d chunks", in-beforeIn, out-beforeOut, completed)
+		}
+	}
+	for range workers {
+		<-checkpoint
+	}
+	check(workers * chunks / 2)
+	close(resume)
+	running.Wait()
+	check(workers * chunks)
+}
 
 // Traffic counting wraps the tunnel connection, so a read is data arriving from
 // the peer and a write is data leaving for it. Only the tunnel side is wrapped:

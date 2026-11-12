@@ -55,22 +55,22 @@ func TestHostOfStripsPort(t *testing.T) {
 	}
 }
 
-// Under steering, Current()/Next() follow the preferred index, and a failed dial
-// (Rotate) steps off it so a dead exit is not dialled forever.
-func TestSteeringFollowsPreferredAndRotatesOff(t *testing.T) {
+// On a shared route, scoring steers control and data together. A failed dial
+// can still rotate them off that route.
+func TestHealthSteeringFollowsPreferredAndRotatesOff(t *testing.T) {
 	e := NewEndpoints("a:1", "b:1", "c:1")
 	e.steer.Store(true)
-	e.preferred.Store(1) // prefer "b:1"
+	e.applyHealthScores(t.Context(), &healthChoice{}, []EndpointScore{{}, {Reachable: true, Score: 1}, {}}, nil, nil)
 
 	if e.Current() != "b:1" || e.Next() != "b:1" {
 		t.Fatalf("steering should pin b:1, got Current=%q Next=%q", e.Current(), e.Next())
 	}
-	// A failed dial rotates to the next endpoint even though preferred was set.
+	// A failed dial advances both control and data to the next endpoint.
 	if got := e.Rotate(); got != "c:1" {
 		t.Fatalf("Rotate under steering = %q, want c:1", got)
 	}
-	if e.Current() != "c:1" {
-		t.Fatalf("Current after rotate = %q, want c:1", e.Current())
+	if e.Current() != "c:1" || e.Next() != "c:1" {
+		t.Fatalf("routes after rotate = %q and %q, want c:1", e.Current(), e.Next())
 	}
 }
 

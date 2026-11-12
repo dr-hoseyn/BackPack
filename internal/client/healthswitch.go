@@ -5,26 +5,16 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/backpack/backpack/config"
 	"github.com/backpack/backpack/internal/utils/network"
 )
 
-// ICMP proves host reachability, not that a datagram tunnel answers its port.
-// Keep a working KCP/QUIC/UDP control channel on its selected backup rather
-// than interrupting users to revisit a pingable, blackholed primary. Ordinary
-// dial-failure rotation remains enabled for every transport.
-func startHealthSteering(ctx context.Context, tr config.TransportType, endpoints *network.Endpoints, interval time.Duration, log func(string)) func() {
-	endpoints.SetSpread(false)
-	if !tcpPortTransport(tr) {
-		if log != nil {
-			log("health-based address switching requires a TCP tunnel-port probe; datagram dial-failure failover remains enabled")
-		}
-		return func() {}
-	}
+// Run one scorer for the chain. A transport without a tunnel-port probe
+// suspends scoring until a probe-capable transport takes over.
+func startHealthSteering(ctx context.Context, endpoints *network.Endpoints, interval time.Duration, log func(string)) func() {
 	healthCtx, cancel := context.WithCancel(ctx)
 	stopped := endpoints.EnableHealthSteering(healthCtx, interval, log)
 	if log != nil {
-		log(fmt.Sprintf("automatic health failover enabled across %d endpoints", endpoints.Len()))
+		log(fmt.Sprintf("automatic health failover configured across %d endpoints", endpoints.Len()))
 	}
 	return func() { cancel(); <-stopped }
 }

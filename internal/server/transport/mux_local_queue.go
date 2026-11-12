@@ -38,9 +38,11 @@ type muxQueueWaiter struct {
 	prev, next *muxQueueWaiter // linked only while waiting on a balanced queue
 }
 
-func (w *muxQueueWaiter) isClosed() bool {
+func (w *muxQueueWaiter) isClosed() bool { return muxCarrierClosed(w.done) }
+
+func muxCarrierClosed(done <-chan struct{}) bool {
 	select {
-	case <-w.done:
+	case <-done:
 		return true
 	default:
 		return false
@@ -329,16 +331,20 @@ func (q *muxLocalQueue) pop() (LocalTCPConn, bool) {
 }
 
 func (q *muxLocalQueue) popFor(waiter *muxQueueWaiter) (LocalTCPConn, bool) {
+	return q.popForSession(waiter, nil)
+}
+
+func (q *muxLocalQueue) popForSession(waiter *muxQueueWaiter, done <-chan struct{}) (LocalTCPConn, bool) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	if waiter != nil {
 		q.removeWaiter(waiter)
-		// A worker may already have consumed its notification when the
-		// carrier closes. Leave the user queued for a live replacement.
-		if waiter.isClosed() {
-			q.notify()
-			return LocalTCPConn{}, false
-		}
+	}
+	// Retain the shared-channel guard as well as balanced waiter ownership.
+	// Closure after notification must leave the user's FIFO position intact.
+	if muxCarrierClosed(done) || (waiter != nil && waiter.isClosed()) {
+		q.notify()
+		return LocalTCPConn{}, false
 	}
 	entry := q.entries.Front()
 	if entry == nil {

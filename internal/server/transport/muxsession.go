@@ -172,7 +172,7 @@ func (m muxSession) run(session *smux.Session) {
 	for {
 		// A worker can start after its owner was replaced. Do not take a new
 		// user's connection when cancellation and the queue are both ready.
-		if m.ctx.Err() != nil {
+		if m.ctx.Err() != nil || session.IsClosed() {
 			return
 		}
 		// +1 for mux connection counter
@@ -217,7 +217,7 @@ func (m muxSession) run(session *smux.Session) {
 			continue
 
 		case <-ready:
-			incomingConn, ok := m.local.popFor(waiter)
+			incomingConn, ok := m.local.popForSession(waiter, session.CloseChan())
 			if !ok {
 				<-counter
 				continue

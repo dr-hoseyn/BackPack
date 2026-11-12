@@ -63,6 +63,9 @@ func TestEveryTransportStarts(t *testing.T) {
 			if r == nil {
 				t.Fatalf("%s produced no transport", tr)
 			}
+			if _, ok := r.(interface{ WaitStopped() }); !ok {
+				t.Fatalf("%s cannot join its workers on shutdown", tr)
+			}
 			if got := reflect.TypeOf(r).String(); got != typeName {
 				t.Fatalf("%s produced %s, want %s", tr, got, typeName)
 			}

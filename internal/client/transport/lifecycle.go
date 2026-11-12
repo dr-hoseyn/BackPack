@@ -74,6 +74,24 @@ func (l *lifecycle) publish(ctx context.Context, cancel context.CancelFunc) {
 // Running reports whether a control channel is up.
 func (l *lifecycle) Running() bool { return connected(l.status.get()) }
 
+// WaitStopped joins this transport after its owner cancels it. A fallback or
+// reload must not publish its replacement while old pool dials and streams are
+// still winding down. Serialize with Restart so the generation being joined
+// cannot be replaced underneath the wait.
+func (l *lifecycle) WaitStopped() {
+	<-l.parentctx.Done()
+	l.restartMutex.Lock()
+	defer l.restartMutex.Unlock()
+	// Preserve the control loop's bounded goodbye/packet flush. Closing the
+	// control socket before joining can discard KCP's queued farewell.
+	l.state.seal()
+	l.state.Wait()
+	l.state.CloseConn()
+	l.status.set("")
+	metrics.ClearPool()
+	metrics.ClearPeer()
+}
+
 // restart ends the running generation and, unless the whole tunnel is shutting
 // down, starts the next. teardown closes what the transport holds besides the
 // control channel (optional); reset clears the transport's own per-generation
