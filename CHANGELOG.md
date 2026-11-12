@@ -1,5 +1,29 @@
 # Changelog
 
+## v1.25.0 — 2026-11-12
+
+- Keep address health selection scoped to the active carrier and preserve
+  queued users when a mux carrier closes during admission.
+- Reduce forwarded UDP receive allocations and bound backend-list parsing
+  without changing datagram payloads, peer isolation or backend selection.
+- Reduce contention between live upload and download counters and allocations
+  for canonical WSSMux control frames. Preserve payload framing and encryption.
+- Keep WS/WSS load counters current during fragmented transfers.
+- Preserve immediate mux replies and buffered stream tails with smux v1.5.59.
+- Join client workers before reload or transport fallback while preserving
+  the control-channel goodbye, including queued KCP output.
+- Prefer ready WSSMux carriers without measured TCP backpressure, using FIFO
+  readiness order to preserve fair admission for fresh and quiet users.
+
+<div dir="rtl">
+
+مصرف حافظه و تخصیص‌های مسیر UDP و پیام‌های کنترلی WSSMux کمتر شده و انتخاب
+مسیر سالم، پذیرش اتصال‌های صف‌شده و تحویل پاسخ و انتهای داده‌های mux اصلاح
+شده‌اند. توقف کلاینت پیش از تعویض ترنسپورت کامل می‌شود و پیام پایان KCP حفظ
+می‌شود. زمان‌بندی WSSMux کانال‌های آماده با فشار کمتر را ترجیح می‌دهد.
+
+</div>
+
 ## v1.24.0 — 2026-11-11
 
 - Remove persistent traffic totals, volume quotas, per-port usage logs and their

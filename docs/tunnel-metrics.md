@@ -30,4 +30,4 @@ temporary list does not grow with the total number of open sockets.
 
 ---
 
-*Last verified against Backpack v1.24.0*
+*Last verified against Backpack v1.25.0*

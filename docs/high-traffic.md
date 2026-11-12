@@ -203,4 +203,4 @@ CPU مصرف نکند. مقدار قبلی آن برای بازگردانی ذخ
 
 </div>
 
-*Last verified against Backpack v1.24.0*
+*Last verified against Backpack v1.25.0*
