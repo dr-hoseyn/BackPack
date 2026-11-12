@@ -40,6 +40,10 @@ import (
 // chain polls it and never blocks on it.
 type Attempt struct {
 	Settled func() bool
+	// WaitStopped joins the candidate after its context is cancelled. A
+	// candidate that can prove teardown needs no fixed settling delay. When
+	// absent, retain the existing grace period for callers such as listeners.
+	WaitStopped func()
 }
 
 // Starter launches one candidate under ctx. Cancelling ctx must tear it down.
@@ -156,10 +160,15 @@ func (c *Chain) Run(ctx context.Context, sweep bool, start Starter) {
 // attempt runs one candidate and returns when it is time to try another.
 func (c *Chain) attempt(parent context.Context, name string, window time.Duration, start Starter) {
 	ctx, cancel := context.WithCancel(parent)
+	var at Attempt
 	// Cancelling is not instant: the candidate's listeners have to notice and
 	// let go of their ports before the next candidate asks for them.
 	defer func() {
 		cancel()
+		if at.WaitStopped != nil {
+			at.WaitStopped()
+			return
+		}
 		if len(c.candidates) > 1 {
 			select {
 			case <-time.After(c.teardown):
@@ -168,7 +177,7 @@ func (c *Chain) attempt(parent context.Context, name string, window time.Duratio
 		}
 	}()
 
-	at := start(ctx, name)
+	at = start(ctx, name)
 	if at.Settled == nil {
 		// Nothing to watch — the caller does not distinguish states, so this
 		// candidate owns the tunnel until the whole thing stops.
