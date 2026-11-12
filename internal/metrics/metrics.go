@@ -14,6 +14,7 @@ import (
 
 	"github.com/backpack/backpack/internal/app"
 	"github.com/xtaci/kcp-go/v5"
+	"golang.org/x/sys/cpu"
 )
 
 // Snapshot is one reading of a tunnel's counters.
@@ -328,9 +329,21 @@ func Read(dir, name string) (Snapshot, error) {
 }
 
 // In-memory progress counters for adaptive pools and live stall detection.
+// Relay readers and writers update different directions concurrently. Keep
+// those atomics off each other's cache lines, including unrelated globals;
+// otherwise an upload invalidates the cache line used by a download. Padding
+// is process-wide and architecture-sized, never per connection or per byte.
+// Updates remain immediately visible: buffering them would delay pool/stall
+// decisions on long-lived streams.
+type trafficCounter struct {
+	_ cpu.CacheLinePad
+	atomic.Uint64
+	_ cpu.CacheLinePad
+}
+
 var (
-	bytesIn  atomic.Uint64
-	bytesOut atomic.Uint64
+	bytesIn  trafficCounter
+	bytesOut trafficCounter
 )
 
 // CountedConn wraps a tunnel connection so its traffic is recorded.
