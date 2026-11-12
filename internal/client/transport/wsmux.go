@@ -341,7 +341,12 @@ func (c *WsMuxTransport) handleSession(tunnelConn *websocket.Conn, mux network.W
 // backend is how this transport's users reach the local service. See
 // backend.go.
 func (c *WsMuxTransport) backend() backendOpts {
+	frameSize := 0
+	if c.config.Mode == config.WSSMUX {
+		frameSize = c.smuxConfig.MaxFrameSize
+	}
 	return backendOpts{
+		relayFrame:  frameSize,
 		dialTimeout: c.config.DialTimeOut,
 		keepAlive:   c.config.KeepAlive,
 		rcvBuf:      0,

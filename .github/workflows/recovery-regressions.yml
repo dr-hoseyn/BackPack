@@ -36,7 +36,7 @@ jobs:
       - name: Verify TLS record boundaries, bytes and legacy framing
         run: >-
           go test -race ./internal/utils/network ./internal/utils/handlers
-          -run '^Test(WebSocketTLS|WebSocketRelay|WSMuxBinaryStreamAndLegacyCompatibility|WSMuxHeaderOnlyAndPayloadFramesKeepTheirBytes)'
+          -run '^Test(WebSocketTLS|WebSocketRelay|AdaptiveRelayFramed|WSMuxBinaryStreamAndLegacyCompatibility|WSMuxHeaderOnlyAndPayloadFramesKeepTheirBytes)'
           -count=3 -v -timeout 2m
       - name: Build the same workload on the PR base and candidate
         run: |

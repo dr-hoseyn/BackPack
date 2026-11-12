@@ -107,6 +107,7 @@ type muxSession struct {
 	// takes; they are read from the config once rather than per stream.
 	proxyProtocol bool
 	sniffer       bool
+	relayFrame    int // WSSMux send frame size; zero for other carriers
 
 	limits   *limiter
 	log      *logrus.Logger
@@ -312,7 +313,7 @@ func (m muxSession) run(session *smux.Session) {
 				defer m.limits.release()
 				handlers.TCPConnectionHandler(m.ctx, m.proxyProtocol && !isUDPFlow(incomingConn.conn),
 					incomingConn.conn, metrics.CountedConn(stream), m.log, m.usage,
-					localForwardPort(incomingConn.conn), m.sniffer)
+					localForwardPort(incomingConn.conn), m.sniffer, handlers.RelayReadFrames{From: m.relayFrame})
 				m.add(m.streams, -1)
 				select {
 				case activity <- struct{}{}:

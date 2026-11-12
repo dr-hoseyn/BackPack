@@ -395,7 +395,12 @@ func (s *WsMuxTransport) tlsSettings() network.TLSSettings {
 // Its context is the seated client's, so the session ends with the client that
 // opened it rather than with the generation — which now outlives its clients.
 func (s *WsMuxTransport) session(g *wsMuxGen, owner context.Context) muxSession {
+	frameSize := 0
+	if s.config.Mode == config.WSSMUX {
+		frameSize = s.smuxConfig.MaxFrameSize
+	}
 	return muxSession{
+		relayFrame:    frameSize,
 		ctx:           owner,
 		local:         g.localChannel,
 		usage:         g.usageMonitor,

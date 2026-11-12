@@ -11,6 +11,12 @@ buffer. Plain WS and custom frame sizes already clear of a record boundary
 retain their existing sizes. These are send-side ceilings; stored configuration,
 receive windows, encryption and application byte order stay unchanged.
 
+Large TCP reads into WSSMux are capped at a whole number of its effective
+frames (for example 65504 bytes for two 32752-byte payloads), avoiding a tiny
+third mux frame after each 64 KiB read. This policy applies only in the
+direction writing into WSSMux. It does not gather data, delay short reads,
+wrap connections or alter directional close, cancellation or pacing behavior.
+
 This avoids creating a tiny extra TLS record solely for headers. A controlled
 real-TLS test on both client/server writers with fixed record sizing verifies
 3 to 2 records for a 32 KiB mux payload, 6 to 4 at the maximum mux payload, and
