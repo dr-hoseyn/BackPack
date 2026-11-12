@@ -1,8 +1,8 @@
 # WSSMux carrier scheduling
 
 WS Mux and WSS Mux now assign a waiting user to an available carrier using
-socket congestion first, active relay count second, and least-recent use to
-break ties. Previously every session competed for the same wake-up channel,
+socket congestion first, retaining readiness order among equally healthy
+carriers. Previously every session competed for the same wake-up channel,
 so a quiet-looking session with a backed-up TCP socket could take the next
 user even when another physical session was draining normally.
 
@@ -14,18 +14,21 @@ deadline wrapper are unwrapped only to identify the observed TCP socket. All
 traffic still passes through the original TLS/WebSocket connection.
 Idle sessions are not polled. TCP Forward retains its existing 200 ms cache.
 
-Admission first checks the least occupied, least recently used carrier.
-If its pressure is zero, no other carrier can improve that nonnegative score
-or win the occupancy/recency tie-break. Only that carrier needs observation
-on this path. If it has pressure, the scheduler falls back to the full scan.
-This retains the selection ordering for fixed carrier observations while
-avoiding unnecessary TCP_INFO reads on healthy admissions. An exhaustive
-regression compares the shortcut against the full ordering across 4096
-six-carrier pressure combinations. Live slot counts and TCP state can still
-change between observations, as with the original scan.
+Admission visits carriers in their readiness order, returning the first with
+zero pressure. This preserves the healthy shared-channel wakeup ordering
+without treating quiet long-lived streams as evidence of congestion. If every
+available carrier has pressure, it selects the smallest score and retains
+readiness order for ties. The intrusive readiness list reuses the per-carrier
+waiter; it adds no allocation for each selection or wakeup. Returning after a
+successful admission moves a worker behind those already waiting.
+
+An exhaustive regression compares this early return against full
+congestion/readiness ordering across 4096 six-carrier pressure combinations.
+A separate regression checks that many quiet users do not displace an older
+healthy waiter and that redundant registration does not move a waiting worker.
 
 Other platforms, unavailable kernel counters and unsupported wrappers fall
-back to occupancy-based selection. No carrier is discarded just for having a
+back to readiness-order selection. No carrier is discarded just for having a
 high score. A recovered carrier becomes eligible again at the next sample.
 Closed sessions are excluded directly through their close notification, even
 if socket sampling returns zero. If a selected session closes after waking its

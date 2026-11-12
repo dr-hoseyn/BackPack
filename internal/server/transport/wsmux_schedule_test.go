@@ -5,36 +5,55 @@ import (
 	"testing"
 )
 
-func TestWSMuxHealthyShortcutMatchesFullCongestionOrdering(t *testing.T) {
-	// Exhaust all combinations of six carriers at four congestion levels.
-	// Occupancy and recency vary independently of pressure. The reference
-	// evaluates every carrier, including healthy candidates with many users.
+func TestWSMuxReadyOrderMatchesFullCongestionOrdering(t *testing.T) {
+	// Exhaust six carriers at four pressure levels. Occupancy/recency must
+	// not let a newer healthy waiter jump an older healthy waiter.
 	levels := [...]int{0, 1, 8, 64}
 	for state := range 4096 {
 		q := newBalancedMuxLocalQueue(1)
-		var expected, leastBusy *muxQueueWaiter
-		bestPressure, bestLoad, leastLoad, leastPressure, queries := 0, 0, 0, 0, 0
+		var expected *muxQueueWaiter
+		bestPressure, firstHealthy, queries := 0, -1, 0
 		for i := range 6 {
 			pressure := levels[(state>>(2*i))&3]
-			load := (state + 7*i) % 16
-			w := wsMuxWaiter(load, func() int { queries++; return pressure })
-			w.lastUse = uint64(i + 1)
+			w := wsMuxWaiter((state+7*i)%16, func() int { queries++; return pressure })
+			w.lastUse = uint64(6 - i)
 			q.wait(w)
-			if leastBusy == nil || load < leastLoad || (load == leastLoad && w.lastUse < leastBusy.lastUse) {
-				leastBusy, leastLoad, leastPressure = w, load, pressure
+			if firstHealthy < 0 && pressure == 0 {
+				firstHealthy = i
 			}
-			if expected == nil || pressure < bestPressure || (pressure == bestPressure &&
-				(load < bestLoad || (load == bestLoad && w.lastUse < expected.lastUse))) {
-				expected, bestPressure, bestLoad = w, pressure, load
+			if expected == nil || pressure < bestPressure {
+				expected, bestPressure = w, pressure
 			}
 		}
 		q.push(LocalTCPConn{timeCreated: 1}, nil)
 		if q.selected != expected {
-			t.Fatalf("state %d changed the full-scan carrier choice", state)
+			t.Fatalf("state %d changed congestion/readiness order", state)
 		}
-		if leastPressure == 0 && queries != 1 {
-			t.Fatalf("state %d sampled %d carriers when the best candidate was healthy", state, queries)
+		expectedQueries := 6
+		if firstHealthy >= 0 {
+			expectedQueries = firstHealthy + 1
 		}
+		if queries != expectedQueries {
+			t.Fatalf("state %d sampled %d carriers, want %d", state, queries, expectedQueries)
+		}
+	}
+}
+
+func TestWSMuxQuietUsersDoNotDisplaceAnOlderHealthyWaiter(t *testing.T) {
+	q := newBalancedMuxLocalQueue(2)
+	older, newer := wsMuxWaiter(100, nil), wsMuxWaiter(0, nil)
+	q.wait(older)
+	q.wait(newer)
+	q.wait(older) // redundant registration must not move it to the tail
+	q.push(LocalTCPConn{timeCreated: 1}, nil)
+	takeScheduledWSMux(t, q, older, 1)
+	q.wait(older) // after serving, return behind the already waiting peer
+	q.push(LocalTCPConn{timeCreated: 2}, nil)
+	takeScheduledWSMux(t, q, newer, 2)
+	q.leave(older)
+	q.leave(newer)
+	if q.head != nil || q.tail != nil {
+		t.Fatal("departed carriers retained by readiness list")
 	}
 }
 
