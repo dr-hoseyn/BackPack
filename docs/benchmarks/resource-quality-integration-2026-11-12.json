@@ -1,0 +1,239 @@
+{
+  "baseline_source": "c62ead64d0cdd785604284c170288a9362174e25",
+  "candidate_source": "b8060847b2a4196cecd782d919d4d0f0b9d2e5c3",
+  "included_prs": {
+    "65": "3cafafe1a0b7ad407ee62fbf42e4d60ef2530f25",
+    "66": "810c4e82bd6510db0b607d8fcd1dbf88cb401253",
+    "68": "4a0d35b548bb753d14fc25397e9aed1400f373ac",
+    "69": "dd14c7914a3d2342ff2faf53f2e45a7a2edc731a",
+    "70": "93a0015fd418e3204345ac770d486819a1f93e28",
+    "71": "bb24a94180de0d715fbce7efd27183685291a645"
+  },
+  "excluded_prs": [
+    67
+  ],
+  "binary_sha256": {
+    "baseline": "9914aff61749d8cf99b0058822488aa4e4f1b33c5e3a035c9fe4b0696bf68a7a",
+    "candidate": "eb0acddd14afcc303f25ce084c87c3752eca3ed43d58b964fb41bdb2c964cb6d"
+  },
+  "workload": "Both engines plus Go echo/load fixture on loopback; GOMAXPROCS=2 total, 64 silent users, 8 workers, 256 MiB request payload per run, fixed 200 Mbit/s application offered load",
+  "host": {
+    "kernel": "7.0.0-38-generic",
+    "online_cpus": 4,
+    "cpu_features": {
+      "aes": true,
+      "pclmulqdq": true,
+      "ssse3": true,
+      "sse4_1": true,
+      "avx2": true,
+      "bmi2": true
+    }
+  },
+  "date_local": "2026-11-12",
+  "timezone": "Asia/Tehran",
+  "go": "1.26.11",
+  "scope": "Composition validation of six ready PRs, excluding the draft scheduler. Combined client/server, echo backend and load generator; loopback, fixed offered load, not a WAN or maximum-throughput measurement.",
+  "functional_tests": {
+    "names": [
+      "TestTrafficIsCountedOnEveryTransport",
+      "TestWSMuxNegotiatedVersionsCarryRealTraffic",
+      "TestWSSSimpleAuthCarriesTraffic",
+      "TestForwardedUDPWorksOnEveryTransport",
+      "TestForwardedUDPPreservesDatagramBoundaries",
+      "TestForwardedUDPKeepsSourcesApart"
+    ],
+    "repetitions": 2,
+    "raw_output": "=== RUN   TestForwardedUDPWorksOnEveryTransport\n=== RUN   TestForwardedUDPWorksOnEveryTransport/tcp\n=== RUN   TestForwardedUDPWorksOnEveryTransport/tcpmux\n=== RUN   TestForwardedUDPWorksOnEveryTransport/ws\n=== RUN   TestForwardedUDPWorksOnEveryTransport/wsmux\n=== RUN   TestForwardedUDPWorksOnEveryTransport/kcp\n=== RUN   TestForwardedUDPWorksOnEveryTransport/quic\n--- PASS: TestForwardedUDPWorksOnEveryTransport (3.77s)\n    --- PASS: TestForwardedUDPWorksOnEveryTransport/tcp (0.55s)\n    --- PASS: TestForwardedUDPWorksOnEveryTransport/tcpmux (0.55s)\n    --- PASS: TestForwardedUDPWorksOnEveryTransport/ws (0.55s)\n    --- PASS: TestForwardedUDPWorksOnEveryTransport/wsmux (0.55s)\n    --- PASS: TestForwardedUDPWorksOnEveryTransport/kcp (0.85s)\n    --- PASS: TestForwardedUDPWorksOnEveryTransport/quic (0.70s)\n=== RUN   TestForwardedUDPPreservesDatagramBoundaries\n--- PASS: TestForwardedUDPPreservesDatagramBoundaries (0.56s)\n=== RUN   TestForwardedUDPKeepsSourcesApart\n--- PASS: TestForwardedUDPKeepsSourcesApart (0.56s)\n=== RUN   TestWSSSimpleAuthCarriesTraffic\n=== RUN   TestWSSSimpleAuthCarriesTraffic/wss\n=== RUN   TestWSSSimpleAuthCarriesTraffic/wssmux\n--- PASS: TestWSSSimpleAuthCarriesTraffic (1.12s)\n    --- PASS: TestWSSSimpleAuthCarriesTraffic/wss (0.56s)\n    --- PASS: TestWSSSimpleAuthCarriesTraffic/wssmux (0.56s)\n=== RUN   TestTrafficIsCountedOnEveryTransport\n=== RUN   TestTrafficIsCountedOnEveryTransport/tcp\n    traffic_test.go:62: tcp: in 524288, out 524288 for a 262144 byte round trip\n=== RUN   TestTrafficIsCountedOnEveryTransport/tcpmux\n    traffic_test.go:62: tcpmux: in 524288, out 524288 for a 262144 byte round trip\n=== RUN   TestTrafficIsCountedOnEveryTransport/kcp\n    traffic_test.go:62: kcp: in 524288, out 524288 for a 262144 byte round trip\n=== RUN   TestTrafficIsCountedOnEveryTransport/ws\n    traffic_test.go:62: ws: in 524288, out 524288 for a 262144 byte round trip\n=== RUN   TestTrafficIsCountedOnEveryTransport/wsmux\n    traffic_test.go:62: wsmux: in 524288, out 524288 for a 262144 byte round trip\n=== RUN   TestTrafficIsCountedOnEveryTransport/stealth\n    traffic_test.go:62: stealth: in 524288, out 524288 for a 262144 byte round trip\n--- PASS: TestTrafficIsCountedOnEveryTransport (3.65s)\n    --- PASS: TestTrafficIsCountedOnEveryTransport/tcp (0.55s)\n    --- PASS: TestTrafficIsCountedOnEveryTransport/tcpmux (0.56s)\n    --- PASS: TestTrafficIsCountedOnEveryTransport/kcp (0.87s)\n    --- PASS: TestTrafficIsCountedOnEveryTransport/ws (0.56s)\n    --- PASS: TestTrafficIsCountedOnEveryTransport/wsmux (0.56s)\n    --- PASS: TestTrafficIsCountedOnEveryTransport/stealth (0.56s)\n=== RUN   TestWSMuxNegotiatedVersionsCarryRealTraffic\n=== RUN   TestWSMuxNegotiatedVersionsCarryRealTraffic/wsmux/server0-client0\n=== RUN   TestWSMuxNegotiatedVersionsCarryRealTraffic/wsmux/server0-client1\n=== RUN   TestWSMuxNegotiatedVersionsCarryRealTraffic/wsmux/server1-client0\n=== RUN   TestWSMuxNegotiatedVersionsCarryRealTraffic/wsmux/server2-client0\n=== RUN   TestWSMuxNegotiatedVersionsCarryRealTraffic/wsmux/server1-client1\n=== RUN   TestWSMuxNegotiatedVersionsCarryRealTraffic/wsmux/server2-client2\n=== RUN   TestWSMuxNegotiatedVersionsCarryRealTraffic/wssmux/server0-client0\n=== RUN   TestWSMuxNegotiatedVersionsCarryRealTraffic/wssmux/server0-client1\n=== RUN   TestWSMuxNegotiatedVersionsCarryRealTraffic/wssmux/server1-client0\n=== RUN   TestWSMuxNegotiatedVersionsCarryRealTraffic/wssmux/server2-client0\n=== RUN   TestWSMuxNegotiatedVersionsCarryRealTraffic/wssmux/server1-client1\n=== RUN   TestWSMuxNegotiatedVersionsCarryRealTraffic/wssmux/server2-client2\n--- PASS: TestWSMuxNegotiatedVersionsCarryRealTraffic (6.68s)\n    --- PASS: TestWSMuxNegotiatedVersionsCarryRealTraffic/wsmux/server0-client0 (0.56s)\n    --- PASS: TestWSMuxNegotiatedVersionsCarryRealTraffic/wsmux/server0-client1 (0.56s)\n    --- PASS: TestWSMuxNegotiatedVersionsCarryRealTraffic/wsmux/server1-client0 (0.56s)\n    --- PASS: TestWSMuxNegotiatedVersionsCarryRealTraffic/wsmux/server2-client0 (0.56s)\n    --- PASS: TestWSMuxNegotiatedVersionsCarryRealTraffic/wsmux/server1-client1 (0.56s)\n    --- PASS: TestWSMuxNegotiatedVersionsCarryRealTraffic/wsmux/server2-client2 (0.56s)\n    --- PASS: TestWSMuxNegotiatedVersionsCarryRealTraffic/wssmux/server0-client0 (0.56s)\n    --- PASS: TestWSMuxNegotiatedVersionsCarryRealTraffic/wssmux/server0-client1 (0.56s)\n    --- PASS: TestWSMuxNegotiatedVersionsCarryRealTraffic/wssmux/server1-client0 (0.56s)\n    --- PASS: TestWSMuxNegotiatedVersionsCarryRealTraffic/wssmux/server2-client0 (0.56s)\n    --- PASS: TestWSMuxNegotiatedVersionsCarryRealTraffic/wssmux/server1-client1 (0.56s)\n    --- PASS: TestWSMuxNegotiatedVersionsCarryRealTraffic/wssmux/server2-client2 (0.56s)\n=== RUN   TestForwardedUDPWorksOnEveryTransport\n=== RUN   TestForwardedUDPWorksOnEveryTransport/tcp\n=== RUN   TestForwardedUDPWorksOnEveryTransport/tcpmux\n=== RUN   TestForwardedUDPWorksOnEveryTransport/ws\n=== RUN   TestForwardedUDPWorksOnEveryTransport/wsmux\n=== RUN   TestForwardedUDPWorksOnEveryTransport/kcp\n=== RUN   TestForwardedUDPWorksOnEveryTransport/quic\n--- PASS: TestForwardedUDPWorksOnEveryTransport (3.77s)\n    --- PASS: TestForwardedUDPWorksOnEveryTransport/tcp (0.55s)\n    --- PASS: TestForwardedUDPWorksOnEveryTransport/tcpmux (0.55s)\n    --- PASS: TestForwardedUDPWorksOnEveryTransport/ws (0.55s)\n    --- PASS: TestForwardedUDPWorksOnEveryTransport/wsmux (0.55s)\n    --- PASS: TestForwardedUDPWorksOnEveryTransport/kcp (0.85s)\n    --- PASS: TestForwardedUDPWorksOnEveryTransport/quic (0.70s)\n=== RUN   TestForwardedUDPPreservesDatagramBoundaries\n--- PASS: TestForwardedUDPPreservesDatagramBoundaries (0.56s)\n=== RUN   TestForwardedUDPKeepsSourcesApart\n--- PASS: TestForwardedUDPKeepsSourcesApart (0.56s)\n=== RUN   TestWSSSimpleAuthCarriesTraffic\n=== RUN   TestWSSSimpleAuthCarriesTraffic/wss\n=== RUN   TestWSSSimpleAuthCarriesTraffic/wssmux\n--- PASS: TestWSSSimpleAuthCarriesTraffic (1.12s)\n    --- PASS: TestWSSSimpleAuthCarriesTraffic/wss (0.56s)\n    --- PASS: TestWSSSimpleAuthCarriesTraffic/wssmux (0.56s)\n=== RUN   TestTrafficIsCountedOnEveryTransport\n=== RUN   TestTrafficIsCountedOnEveryTransport/tcp\n    traffic_test.go:62: tcp: in 524288, out 524288 for a 262144 byte round trip\n=== RUN   TestTrafficIsCountedOnEveryTransport/tcpmux\n    traffic_test.go:62: tcpmux: in 524288, out 524288 for a 262144 byte round trip\n=== RUN   TestTrafficIsCountedOnEveryTransport/kcp\n    traffic_test.go:62: kcp: in 524288, out 524288 for a 262144 byte round trip\n=== RUN   TestTrafficIsCountedOnEveryTransport/ws\n    traffic_test.go:62: ws: in 524288, out 524288 for a 262144 byte round trip\n=== RUN   TestTrafficIsCountedOnEveryTransport/wsmux\n    traffic_test.go:62: wsmux: in 524288, out 524288 for a 262144 byte round trip\n=== RUN   TestTrafficIsCountedOnEveryTransport/stealth\n    traffic_test.go:62: stealth: in 524288, out 524288 for a 262144 byte round trip\n--- PASS: TestTrafficIsCountedOnEveryTransport (3.65s)\n    --- PASS: TestTrafficIsCountedOnEveryTransport/tcp (0.55s)\n    --- PASS: TestTrafficIsCountedOnEveryTransport/tcpmux (0.56s)\n    --- PASS: TestTrafficIsCountedOnEveryTransport/kcp (0.87s)\n    --- PASS: TestTrafficIsCountedOnEveryTransport/ws (0.56s)\n    --- PASS: TestTrafficIsCountedOnEveryTransport/wsmux (0.56s)\n    --- PASS: TestTrafficIsCountedOnEveryTransport/stealth (0.56s)\n=== RUN   TestWSMuxNegotiatedVersionsCarryRealTraffic\n=== RUN   TestWSMuxNegotiatedVersionsCarryRealTraffic/wsmux/server0-client0\n=== RUN   TestWSMuxNegotiatedVersionsCarryRealTraffic/wsmux/server0-client1\n=== RUN   TestWSMuxNegotiatedVersionsCarryRealTraffic/wsmux/server1-client0\n=== RUN   TestWSMuxNegotiatedVersionsCarryRealTraffic/wsmux/server2-client0\n=== RUN   TestWSMuxNegotiatedVersionsCarryRealTraffic/wsmux/server1-client1\n=== RUN   TestWSMuxNegotiatedVersionsCarryRealTraffic/wsmux/server2-client2\n=== RUN   TestWSMuxNegotiatedVersionsCarryRealTraffic/wssmux/server0-client0\n=== RUN   TestWSMuxNegotiatedVersionsCarryRealTraffic/wssmux/server0-client1\n=== RUN   TestWSMuxNegotiatedVersionsCarryRealTraffic/wssmux/server1-client0\n=== RUN   TestWSMuxNegotiatedVersionsCarryRealTraffic/wssmux/server2-client0\n=== RUN   TestWSMuxNegotiatedVersionsCarryRealTraffic/wssmux/server1-client1\n=== RUN   TestWSMuxNegotiatedVersionsCarryRealTraffic/wssmux/server2-client2\n--- PASS: TestWSMuxNegotiatedVersionsCarryRealTraffic (6.70s)\n    --- PASS: TestWSMuxNegotiatedVersionsCarryRealTraffic/wsmux/server0-client0 (0.55s)\n    --- PASS: TestWSMuxNegotiatedVersionsCarryRealTraffic/wsmux/server0-client1 (0.55s)\n    --- PASS: TestWSMuxNegotiatedVersionsCarryRealTraffic/wsmux/server1-client0 (0.55s)\n    --- PASS: TestWSMuxNegotiatedVersionsCarryRealTraffic/wsmux/server2-client0 (0.56s)\n    --- PASS: TestWSMuxNegotiatedVersionsCarryRealTraffic/wsmux/server1-client1 (0.56s)\n    --- PASS: TestWSMuxNegotiatedVersionsCarryRealTraffic/wsmux/server2-client2 (0.56s)\n    --- PASS: TestWSMuxNegotiatedVersionsCarryRealTraffic/wssmux/server0-client0 (0.56s)\n    --- PASS: TestWSMuxNegotiatedVersionsCarryRealTraffic/wssmux/server0-client1 (0.56s)\n    --- PASS: TestWSMuxNegotiatedVersionsCarryRealTraffic/wssmux/server1-client0 (0.56s)\n    --- PASS: TestWSMuxNegotiatedVersionsCarryRealTraffic/wssmux/server2-client0 (0.56s)\n    --- PASS: TestWSMuxNegotiatedVersionsCarryRealTraffic/wssmux/server1-client1 (0.58s)\n    --- PASS: TestWSMuxNegotiatedVersionsCarryRealTraffic/wssmux/server2-client2 (0.56s)\nPASS\n"
+  },
+  "summary": {
+    "baseline": {
+      "echo_mbps": 200.0,
+      "cpu_seconds": 7.53,
+      "cpu_seconds_per_gib": 30.12,
+      "probe_p99_ms": 1.643,
+      "idle_heap_delta_bytes": 6759744.0,
+      "sampled_peak_rss_bytes": 137035776.0,
+      "runs": 3,
+      "verified_request_payload_bytes": 805306368.0
+    },
+    "candidate": {
+      "echo_mbps": 200.0,
+      "cpu_seconds": 7.26,
+      "cpu_seconds_per_gib": 29.04,
+      "probe_p99_ms": 1.743,
+      "idle_heap_delta_bytes": 6764448.0,
+      "sampled_peak_rss_bytes": 138895360.0,
+      "runs": 3,
+      "verified_request_payload_bytes": 805306368.0
+    }
+  },
+  "samples": [
+    {
+      "sample": 1,
+      "variant": "baseline",
+      "metrics": {
+        "idle_connections": 64.0,
+        "idle_heap_delta_bytes": 6766448.0,
+        "idle_heap_bytes": 9711264.0,
+        "idle_rss_bytes": 28274688.0,
+        "idle_goroutines": 430.0,
+        "sampled_peak_rss_bytes": 137035776.0,
+        "app_bytes": 268435456.0,
+        "echo_mbps": 200.0,
+        "cpu_seconds": 7.33,
+        "cpu_seconds_per_gib": 29.32,
+        "probe_p99_ms": 1.676,
+        "gc_cycles": 8.0,
+        "gc_pause_ms": 1.014,
+        "after_heap_bytes": 15845760.0,
+        "after_goroutines": 319.0
+      },
+      "passed": true,
+      "raw_output": "=== RUN   TestWSMuxResourceProfile\n    wssmux_resources_test.go:160: RESOURCE_IDLE connections=64 heap_delta_bytes=6766448 heap_bytes=9711264 rss_bytes=28274688 goroutines=430\n    wssmux_resources_test.go:231: RESOURCE_TARGET application_mbps=200.0\n    wssmux_resources_test.go:289: RESOURCE_PEAK sampled_peak_rss_bytes=137035776\n    wssmux_resources_test.go:298: RESOURCE_MIXED app_bytes=268435456 echo_mbps=200.0 cpu_seconds=7.330000 cpu_seconds_per_gib=29.320000 probe_p99_ms=1.676 gc_cycles=8 gc_pause_ms=1.014\n    wssmux_resources_test.go:306: RESOURCE_AFTER heap_bytes=15845760 goroutines=319\n--- PASS: TestWSMuxResourceProfile (11.41s)\nPASS\n"
+    },
+    {
+      "sample": 2,
+      "variant": "candidate",
+      "metrics": {
+        "idle_connections": 64.0,
+        "idle_heap_delta_bytes": 6764448.0,
+        "idle_heap_bytes": 9710672.0,
+        "idle_rss_bytes": 28450816.0,
+        "idle_goroutines": 430.0,
+        "sampled_peak_rss_bytes": 135766016.0,
+        "app_bytes": 268435456.0,
+        "echo_mbps": 200.0,
+        "cpu_seconds": 7.45,
+        "cpu_seconds_per_gib": 29.8,
+        "probe_p99_ms": 1.743,
+        "gc_cycles": 8.0,
+        "gc_pause_ms": 0.85,
+        "after_heap_bytes": 15484896.0,
+        "after_goroutines": 385.0
+      },
+      "passed": true,
+      "raw_output": "=== RUN   TestWSMuxResourceProfile\n    wssmux_resources_test.go:160: RESOURCE_IDLE connections=64 heap_delta_bytes=6764448 heap_bytes=9710672 rss_bytes=28450816 goroutines=430\n    wssmux_resources_test.go:231: RESOURCE_TARGET application_mbps=200.0\n    wssmux_resources_test.go:289: RESOURCE_PEAK sampled_peak_rss_bytes=135766016\n    wssmux_resources_test.go:298: RESOURCE_MIXED app_bytes=268435456 echo_mbps=200.0 cpu_seconds=7.450000 cpu_seconds_per_gib=29.800000 probe_p99_ms=1.743 gc_cycles=8 gc_pause_ms=0.850\n    wssmux_resources_test.go:306: RESOURCE_AFTER heap_bytes=15484896 goroutines=385\n--- PASS: TestWSMuxResourceProfile (11.45s)\nPASS\n"
+    },
+    {
+      "sample": 3,
+      "variant": "candidate",
+      "metrics": {
+        "idle_connections": 64.0,
+        "idle_heap_delta_bytes": 6836568.0,
+        "idle_heap_bytes": 9707944.0,
+        "idle_rss_bytes": 28332032.0,
+        "idle_goroutines": 430.0,
+        "sampled_peak_rss_bytes": 138895360.0,
+        "app_bytes": 268435456.0,
+        "echo_mbps": 200.0,
+        "cpu_seconds": 7.26,
+        "cpu_seconds_per_gib": 29.04,
+        "probe_p99_ms": 1.761,
+        "gc_cycles": 9.0,
+        "gc_pause_ms": 0.851,
+        "after_heap_bytes": 15571288.0,
+        "after_goroutines": 384.0
+      },
+      "passed": true,
+      "raw_output": "=== RUN   TestWSMuxResourceProfile\n    wssmux_resources_test.go:160: RESOURCE_IDLE connections=64 heap_delta_bytes=6836568 heap_bytes=9707944 rss_bytes=28332032 goroutines=430\n    wssmux_resources_test.go:231: RESOURCE_TARGET application_mbps=200.0\n    wssmux_resources_test.go:289: RESOURCE_PEAK sampled_peak_rss_bytes=138895360\n    wssmux_resources_test.go:298: RESOURCE_MIXED app_bytes=268435456 echo_mbps=200.0 cpu_seconds=7.260000 cpu_seconds_per_gib=29.040000 probe_p99_ms=1.761 gc_cycles=9 gc_pause_ms=0.851\n    wssmux_resources_test.go:306: RESOURCE_AFTER heap_bytes=15571288 goroutines=384\n--- PASS: TestWSMuxResourceProfile (11.40s)\nPASS\n"
+    },
+    {
+      "sample": 4,
+      "variant": "baseline",
+      "metrics": {
+        "idle_connections": 64.0,
+        "idle_heap_delta_bytes": 6757320.0,
+        "idle_heap_bytes": 9705352.0,
+        "idle_rss_bytes": 28917760.0,
+        "idle_goroutines": 430.0,
+        "sampled_peak_rss_bytes": 140054528.0,
+        "app_bytes": 268435456.0,
+        "echo_mbps": 200.0,
+        "cpu_seconds": 7.61,
+        "cpu_seconds_per_gib": 30.44,
+        "probe_p99_ms": 1.564,
+        "gc_cycles": 8.0,
+        "gc_pause_ms": 0.707,
+        "after_heap_bytes": 15712976.0,
+        "after_goroutines": 276.0
+      },
+      "passed": true,
+      "raw_output": "=== RUN   TestWSMuxResourceProfile\n    wssmux_resources_test.go:160: RESOURCE_IDLE connections=64 heap_delta_bytes=6757320 heap_bytes=9705352 rss_bytes=28917760 goroutines=430\n    wssmux_resources_test.go:231: RESOURCE_TARGET application_mbps=200.0\n    wssmux_resources_test.go:289: RESOURCE_PEAK sampled_peak_rss_bytes=140054528\n    wssmux_resources_test.go:298: RESOURCE_MIXED app_bytes=268435456 echo_mbps=200.0 cpu_seconds=7.610000 cpu_seconds_per_gib=30.440000 probe_p99_ms=1.564 gc_cycles=8 gc_pause_ms=0.707\n    wssmux_resources_test.go:306: RESOURCE_AFTER heap_bytes=15712976 goroutines=276\n--- PASS: TestWSMuxResourceProfile (11.43s)\nPASS\n"
+    },
+    {
+      "sample": 5,
+      "variant": "baseline",
+      "metrics": {
+        "idle_connections": 64.0,
+        "idle_heap_delta_bytes": 6759744.0,
+        "idle_heap_bytes": 9711424.0,
+        "idle_rss_bytes": 28360704.0,
+        "idle_goroutines": 430.0,
+        "sampled_peak_rss_bytes": 136757248.0,
+        "app_bytes": 268435456.0,
+        "echo_mbps": 200.1,
+        "cpu_seconds": 7.53,
+        "cpu_seconds_per_gib": 30.12,
+        "probe_p99_ms": 1.643,
+        "gc_cycles": 9.0,
+        "gc_pause_ms": 0.899,
+        "after_heap_bytes": 15184640.0,
+        "after_goroutines": 293.0
+      },
+      "passed": true,
+      "raw_output": "=== RUN   TestWSMuxResourceProfile\n    wssmux_resources_test.go:160: RESOURCE_IDLE connections=64 heap_delta_bytes=6759744 heap_bytes=9711424 rss_bytes=28360704 goroutines=430\n    wssmux_resources_test.go:231: RESOURCE_TARGET application_mbps=200.0\n    wssmux_resources_test.go:289: RESOURCE_PEAK sampled_peak_rss_bytes=136757248\n    wssmux_resources_test.go:298: RESOURCE_MIXED app_bytes=268435456 echo_mbps=200.1 cpu_seconds=7.530000 cpu_seconds_per_gib=30.120000 probe_p99_ms=1.643 gc_cycles=9 gc_pause_ms=0.899\n    wssmux_resources_test.go:306: RESOURCE_AFTER heap_bytes=15184640 goroutines=293\n--- PASS: TestWSMuxResourceProfile (11.39s)\nPASS\n"
+    },
+    {
+      "sample": 6,
+      "variant": "candidate",
+      "metrics": {
+        "idle_connections": 64.0,
+        "idle_heap_delta_bytes": 6754248.0,
+        "idle_heap_bytes": 9710264.0,
+        "idle_rss_bytes": 28663808.0,
+        "idle_goroutines": 430.0,
+        "sampled_peak_rss_bytes": 141983744.0,
+        "app_bytes": 268435456.0,
+        "echo_mbps": 200.0,
+        "cpu_seconds": 7.25,
+        "cpu_seconds_per_gib": 29.0,
+        "probe_p99_ms": 1.636,
+        "gc_cycles": 8.0,
+        "gc_pause_ms": 1.122,
+        "after_heap_bytes": 15801744.0,
+        "after_goroutines": 287.0
+      },
+      "passed": true,
+      "raw_output": "=== RUN   TestWSMuxResourceProfile\n    wssmux_resources_test.go:160: RESOURCE_IDLE connections=64 heap_delta_bytes=6754248 heap_bytes=9710264 rss_bytes=28663808 goroutines=430\n    wssmux_resources_test.go:231: RESOURCE_TARGET application_mbps=200.0\n    wssmux_resources_test.go:289: RESOURCE_PEAK sampled_peak_rss_bytes=141983744\n    wssmux_resources_test.go:298: RESOURCE_MIXED app_bytes=268435456 echo_mbps=200.0 cpu_seconds=7.250000 cpu_seconds_per_gib=29.000000 probe_p99_ms=1.636 gc_cycles=8 gc_pause_ms=1.122\n    wssmux_resources_test.go:306: RESOURCE_AFTER heap_bytes=15801744 goroutines=287\n--- PASS: TestWSMuxResourceProfile (11.40s)\nPASS\n"
+    }
+  ],
+  "backend_group_test": {
+    "repetitions": 3,
+    "raw_output": "=== RUN   TestBackendPoolCarriesTrafficAcrossBackends\n--- PASS: TestBackendPoolCarriesTrafficAcrossBackends (0.56s)\n=== RUN   TestBackendPoolCarriesTrafficAcrossBackends\n--- PASS: TestBackendPoolCarriesTrafficAcrossBackends (0.56s)\n=== RUN   TestBackendPoolCarriesTrafficAcrossBackends\n--- PASS: TestBackendPoolCarriesTrafficAcrossBackends (0.56s)\nPASS\n"
+  },
+  "retirement_test": {
+    "initial_users_verified": 1152,
+    "peak_physical_sessions": 16,
+    "final_physical_sessions": 8,
+    "silent_user_echo_after_retirement": "passed",
+    "per_process_fd_limit": 8192,
+    "global_limits_changed": false,
+    "raw_output": "=== RUN   TestWSMuxPoolRetiresAfterLoadWithoutDisconnectingQuietUser\n    wssmux_resources_test.go:361: RESOURCE_RETIREMENT peak_sessions=16 final_sessions=8 quiet_user=ok\n--- PASS: TestWSMuxPoolRetiresAfterLoadWithoutDisconnectingQuietUser (101.79s)\nPASS\n"
+  },
+  "local_verification": [
+    "Full network, handlers, metrics and server-transport suites passed with temporary Windows socket compile shims outside the repository.",
+    "Relevant client backend/UDP/mux regressions passed three repetitions with the same compile shims.",
+    "Linux-targeted repository-wide go vet and e2e test binary build passed."
+  ],
+  "limitations": [
+    "Three timed samples per revision on one host do not prove production no-regression or a general performance improvement.",
+    "Median p99 is 1.743 ms for the composition vs 1.643 ms for main; latency improvement or equality is not claimed.",
+    "Fixed 200 Mbit/s offered application load is not maximum tunnel capacity.",
+    "CPU, heap and RSS include both engines, the backend and load generator. They are not the cost of one production endpoint.",
+    "The resource fixture verifies 64 quiet users before load and holds them during load; its after-load counters do not verify their continuing usability. The separate retirement test verifies one silent user after actual retirement.",
+    "Post-load heap/goroutine snapshots occur before fixture cleanup and are not quiescent leak measurements.",
+    "The fixture reports p99 but not p50/p95 or exact fresh-probe count; any fresh-probe error fails the run.",
+    "No native race-enabled run or full previous-release interoperability matrix was performed.",
+    "No production services or kernel-wide policies changed. The raised FD soft limit applied only to the isolated retirement process. Temporary directories were removed on both hosts."
+  ]
+}
