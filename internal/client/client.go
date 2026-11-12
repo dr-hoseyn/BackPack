@@ -80,7 +80,7 @@ func (c *Client) Start() {
 	// Health scoring overrides round-robin spreading. The active carrier
 	// determines which dials should follow the preferred route.
 	if c.config.HealthFailover && endpoints.Len() > 1 {
-		stopHealth := startHealthSteering(c.ctx, c.config.Transport, endpoints, 5*time.Second, func(m string) { c.logger.Info(m) })
+		stopHealth := startHealthSteering(c.ctx, endpoints, 5*time.Second, func(m string) { c.logger.Info(m) })
 		defer stopHealth()
 	}
 
@@ -239,7 +239,7 @@ func (c *Client) startTransport(ctx context.Context, tr config.TransportType, en
 		if probe != nil && !dataOnly {
 			onSwitch = healthReconnect(ctx, r)
 		}
-		endpoints.SetHealthRouting(probe, onSwitch, dataOnly)
+		endpoints.SetHealthRouting(ctx, probe, onSwitch, dataOnly)
 		go r.Start()
 		return r
 	}

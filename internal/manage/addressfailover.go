@@ -20,13 +20,25 @@ func SetHealthFailover(name string, on bool, apply ...func(TunnelSpec) error) er
 	return applySpecUsing(s, apply)
 }
 
+func supportsAddressHealth(s *TunnelSpec) bool {
+	if config.HasTCPControl(config.TransportType(s.Transport)) {
+		return true
+	}
+	for _, fallback := range s.FallbackTransports {
+		if config.HasTCPControl(config.TransportType(fallback)) {
+			return true
+		}
+	}
+	return false
+}
+
 func setHealthFailover(s *TunnelSpec, on bool) error {
 	if s.Role != "client" {
 		return fmt.Errorf("automatic address failover is a client-side setting")
 	}
 	if on {
-		if !config.HasTCPControl(config.TransportType(s.Transport)) {
-			return fmt.Errorf("health-based switching requires a TCP control port; %s keeps ordinary dial-failure fallback through its backup addresses", s.Transport)
+		if !supportsAddressHealth(s) {
+			return fmt.Errorf("health-based switching requires a transport with a TCP control port in the chain")
 		}
 		clean, err := config.NormalizeFallbackAddrs(s.RemoteAddr, s.FallbackAddrs)
 		if err != nil {
@@ -52,7 +64,7 @@ func toggleHealthFailover(name string, spec TunnelSpec) {
 	tui.Info("Now     : " + onOff(spec.HealthFailover))
 	tui.Info("For IPv4 to IPv6: add [IPv6]:port in Backup Addresses first.")
 	tui.Info("All addresses must reach the same server, listening on both IP families.")
-	tui.Info("Requires a TCP control port; ping alone cannot prove a datagram tunnel is healthy.")
+	tui.Info("Runs while the active transport has a TCP control port.")
 	switch config.TransportType(spec.Transport) {
 	case config.WS, config.WSS, config.WSMUX, config.WSSMUX:
 		tui.Info("WebSocket scores steer new data connections. Update both peers to enable these probes.")

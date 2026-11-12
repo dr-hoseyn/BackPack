@@ -127,7 +127,6 @@ func (e *Endpoints) EnableHealthSteering(ctx context.Context, interval time.Dura
 		return stopped
 	}
 	e.spread.Store(false)
-	e.preferred.Store(e.idx.Load())
 	e.steer.Store(true)
 	go func() {
 		defer close(stopped)
@@ -163,10 +162,14 @@ func (e *Endpoints) steerLoop(ctx context.Context, interval time.Duration, log f
 			choice = healthChoice{candidate: -1, incumbent: -1}
 			lastPolicy = policy
 		}
-		if policy == nil || policy.probe == nil {
+		if policy == nil || policy.probe == nil || policy.ctx.Err() != nil {
 			continue
 		}
-		scores := e.measureHealth(ctx, policy.probe)
+		probeCtx, cancel := context.WithCancel(ctx)
+		stop := context.AfterFunc(policy.ctx, cancel)
+		scores := e.measureHealth(probeCtx, policy.probe)
+		stop()
+		cancel()
 		if ctx.Err() != nil {
 			return
 		}
@@ -236,7 +239,13 @@ func (h *healthChoice) choose(scores []EndpointScore, cur int) (int, bool) {
 }
 
 func (e *Endpoints) applyHealthScores(ctx context.Context, choice *healthChoice, scores []EndpointScore, policy *healthRouting, log func(string)) {
-	previous := e.preferred.Load()
+	route := &e.idx
+	action := "failover: steering"
+	if policy != nil && policy.dataOnly {
+		route = &e.preferred
+		action = "failover: steering new WebSocket data connections"
+	}
+	previous := route.Load()
 	cur := e.clampIdx(previous)
 	best, change := choice.choose(scores, cur)
 	if !change {
@@ -245,15 +254,10 @@ func (e *Endpoints) applyHealthScores(ctx context.Context, choice *healthChoice,
 	// A retired carrier's measurements cannot publish a route for the next
 	// carrier. Do not overwrite a concurrent dial's new preference either.
 	e.healthMu.Lock()
-	if ctx.Err() != nil || policy != e.health.Load() || !e.preferred.CompareAndSwap(previous, int64(best)) {
+	if ctx.Err() != nil || policy != e.health.Load() ||
+		(policy != nil && policy.ctx.Err() != nil) || !route.CompareAndSwap(previous, int64(best)) {
 		e.healthMu.Unlock()
 		return
-	}
-	action := "failover: steering"
-	if policy != nil && policy.dataOnly {
-		action = "failover: steering new WebSocket data connections"
-	} else {
-		e.idx.Store(int64(best))
 	}
 	e.healthMu.Unlock()
 	if log != nil {
