@@ -57,6 +57,28 @@ func TestWSMuxQuietUsersDoNotDisplaceAnOlderHealthyWaiter(t *testing.T) {
 	}
 }
 
+func TestWSMuxReadinessOrderSurvivesIdleChecksAndDepartures(t *testing.T) {
+	q := newBalancedMuxLocalQueue(1)
+	workers := make([]*muxQueueWaiter, 6)
+	for i := range workers {
+		workers[i] = wsMuxWaiter(i, nil)
+		q.wait(workers[i])
+	}
+	q.unwait(workers[2])
+	q.unwait(workers[4])
+	q.unwait(workers[4]) // already absent; other workers must remain linked
+	q.wait(workers[2])
+	q.leave(workers[5])
+	q.wait(workers[4])
+	for id, index := range []int{0, 1, 3, 2, 4} {
+		q.push(LocalTCPConn{timeCreated: int64(id + 1)}, nil)
+		takeScheduledWSMux(t, q, workers[index], int64(id+1))
+	}
+	if q.head != nil || q.tail != nil || len(q.waiters) != 0 {
+		t.Fatal("drained readiness queue retained departed workers")
+	}
+}
+
 func wsMuxWaiter(load int, pressure func() int) *muxQueueWaiter {
 	w := &muxQueueWaiter{ready: make(chan struct{}, 1), slots: make(chan struct{}, 128), pressure: pressure}
 	for range load + 1 { // active relays plus the opener's reserved slot
