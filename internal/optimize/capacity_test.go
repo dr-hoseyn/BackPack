@@ -2,12 +2,59 @@ package optimize
 
 import (
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+	"testing/iotest"
 )
+
+type oneShotSysctl struct {
+	value    string
+	consumed bool
+}
+
+func (r *oneShotSysctl) Read(p []byte) (int, error) {
+	if r.consumed {
+		return 0, io.EOF
+	}
+	r.consumed = true
+	return copy(p, r.value), nil
+}
+
+func TestCapacityReadsLongOneShotSysctl(t *testing.T) {
+	value := strings.Repeat("12345,", 200) + "62050\n"
+	got, err := readCapacityValue(&oneShotSysctl{value: value})
+	if err != nil || got != strings.TrimSpace(value) {
+		t.Fatalf("reservation list truncated: got %d bytes, error %v", len(got), err)
+	}
+	if _, err := ParseReservedPorts(got); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCapacityRejectsOversizedSysctl(t *testing.T) {
+	if _, err := readCapacityValue(strings.NewReader(strings.Repeat("1", 1<<20))); err == nil {
+		t.Fatal("accepted a possibly truncated sysctl value")
+	}
+}
+
+func TestCapacityCollectsShortReads(t *testing.T) {
+	value := strings.Repeat("12345,", 200) + "62050\n"
+	got, err := readCapacityValue(iotest.OneByteReader(strings.NewReader(value)))
+	if err != nil || got != strings.TrimSpace(value) {
+		t.Fatalf("short reads lost reservations: got %d bytes, error %v", len(got), err)
+	}
+}
+
+func TestCapacityPropagatesReadFailure(t *testing.T) {
+	want := errors.New("sysctl read failed")
+	if _, err := readCapacityValue(iotest.ErrReader(want)); !errors.Is(err, want) {
+		t.Fatalf("read error = %v, want %v", err, want)
+	}
+}
 
 func capacityFixture(t *testing.T) (*capacityState, *[]string) {
 	t.Helper()

@@ -18,7 +18,17 @@ func Systemctl(args ...string) (string, error) { return runSystemctl(args...) }
 // runSystemctl is what Systemctl calls; a variable so a test can record the
 // calls instead of making them.
 var runSystemctl = func(args ...string) (string, error) {
-	out, err := exec.Command("systemctl", args...).CombinedOutput()
+	cmd := exec.Command("systemctl", args...)
+	// systemctl can notify its caller's service manager. The monitor owns
+	// this socket; child commands must not send notifications on its behalf.
+	env := os.Environ()
+	cmd.Env = make([]string, 0, len(env))
+	for _, entry := range env {
+		if !strings.HasPrefix(entry, "NOTIFY_SOCKET=") {
+			cmd.Env = append(cmd.Env, entry)
+		}
+	}
+	out, err := cmd.CombinedOutput()
 	return strings.TrimSpace(string(out)), err
 }
 

@@ -95,3 +95,41 @@ func TestTCPFWDConfigDefaultsAndValidation(t *testing.T) {
 		t.Fatalf("pool above the limit was not rejected: %v", err)
 	}
 }
+
+func TestTCPFWDXMPPRejectsUnusableBufferLimits(t *testing.T) {
+	for _, server := range []bool{false, true} {
+		for _, fallback := range []bool{false, true} {
+			cfg := &config.Config{}
+			transport := config.TCPFWDXMPP
+			var fallbacks []config.TransportType
+			if fallback {
+				transport = config.TCP
+				fallbacks = []config.TransportType{config.TCPFWDXMPP}
+			}
+			if server {
+				cfg.Server = config.ServerConfig{BindAddr: "127.0.0.1:3443", Transport: transport, FallbackTransports: fallbacks, Token: "random-shared-token-for-test", Ports: []string{"443"}}
+			} else {
+				cfg.Client = config.ClientConfig{RemoteAddr: "127.0.0.1:3443", Transport: transport, FallbackTransports: fallbacks, Token: "random-shared-token-for-test"}
+			}
+			applyDefaults(cfg)
+			if server {
+				cfg.Server.MaxReceiveBuffer = 4194304
+				cfg.Server.MaxStreamBuffer = 33554432
+			} else {
+				cfg.Client.MaxReceiveBuffer = 4194304
+				cfg.Client.MaxStreamBuffer = 33554432
+			}
+			if err := validateConfig(cfg); err == nil || !strings.Contains(err.Error(), "mux_streambuffer") {
+				t.Fatalf("server=%t fallback=%t: invalid windows accepted: %v", server, fallback, err)
+			}
+			if server {
+				cfg.Server.MaxStreamBuffer = 1048576
+			} else {
+				cfg.Client.MaxStreamBuffer = 1048576
+			}
+			if err := validateConfig(cfg); err != nil {
+				t.Fatalf("server=%t fallback=%t: valid windows rejected: %v", server, fallback, err)
+			}
+		}
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -103,14 +104,35 @@ func tcpListenPorts(data string) ([]int, error) {
 	return ports, nil
 }
 
+// proc sysctl handlers can consume a value on the first read and then return
+// EOF, even if the caller's buffer was too small. os.ReadFile starts with only
+// 512 bytes for size-zero proc files, truncating long port reservations.
+func readCapacityValue(r io.Reader) (string, error) {
+	// Even all 65535 individual decimal ports fit below this bound.
+	b := make([]byte, 1<<20)
+	n, err := io.ReadFull(r, b)
+	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+		return "", err
+	}
+	if n == len(b) {
+		return "", fmt.Errorf("sysctl value exceeds capacity read bound")
+	}
+	return strings.TrimSpace(string(b[:n])), nil
+}
+
 func currentCapacity() (capacityState, error) {
 	var state capacityState
 	for key, target := range map[string]*string{"ip_local_port_range": &state.Range, "ip_local_reserved_ports": &state.Reserved} {
-		b, err := os.ReadFile(filepath.Join(procIPv4Dir, key))
+		f, err := os.Open(filepath.Join(procIPv4Dir, key))
 		if err != nil {
 			return state, err
 		}
-		*target = strings.TrimSpace(string(b))
+		value, readErr := readCapacityValue(f)
+		closeErr := f.Close()
+		if err := errors.Join(readErr, closeErr); err != nil {
+			return state, err
+		}
+		*target = value
 	}
 	for key, target := range map[string]**int{"busy_read": &state.BusyRead, "busy_poll": &state.BusyPoll} {
 		b, err := os.ReadFile(filepath.Join(procCoreDir, key))

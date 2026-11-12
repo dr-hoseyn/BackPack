@@ -738,5 +738,11 @@ func checkTCPFWD(cfg *config.Config) error {
 		cfg.Client.ConnectionPool > config.TCPFWDMaxPool {
 		return fmt.Errorf("tcpfwd connection_pool must be at most %d", config.TCPFWDMaxPool)
 	}
+	serverXMPP := cfg.Server.Transport == config.TCPFWDXMPP || slices.Contains(cfg.Server.FallbackTransports, config.TCPFWDXMPP)
+	clientXMPP := cfg.Client.Transport == config.TCPFWDXMPP || slices.Contains(cfg.Client.FallbackTransports, config.TCPFWDXMPP)
+	if serverXMPP && cfg.Server.MaxStreamBuffer > cfg.Server.MaxReceiveBuffer ||
+		clientXMPP && cfg.Client.MaxStreamBuffer > cfg.Client.MaxReceiveBuffer {
+		return fmt.Errorf("tcpfwd-xmpp mux_streambuffer must not exceed mux_recievebuffer")
+	}
 	return nil
 }
