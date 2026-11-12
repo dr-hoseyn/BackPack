@@ -27,9 +27,19 @@ type muxLocalQueue struct {
 type muxQueueWaiter struct {
 	ready    chan struct{}
 	slots    chan struct{}
+	done     <-chan struct{}
 	lastUse  uint64
 	warm     bool
 	pressure func() int
+}
+
+func muxCarrierClosed(done <-chan struct{}) bool {
+	select {
+	case <-done:
+		return true
+	default:
+		return false
+	}
 }
 
 const (
@@ -79,12 +89,18 @@ func (q *muxLocalQueue) push(local LocalTCPConn, queued func()) bool {
 // requests remain, instead of waking every session for a single connection.
 func (q *muxLocalQueue) notify() {
 	if q.waiters != nil {
+		if q.selected != nil && muxCarrierClosed(q.selected.done) {
+			q.removeWaiter(q.selected)
+		}
 		if q.selected != nil || q.closed || q.entries.Len() == 0 {
 			return
 		}
 		var bestLoad int
 		var next *muxQueueWaiter
 		for waiter := range q.waiters {
+			if muxCarrierClosed(waiter.done) {
+				continue
+			}
 			q.warmCarrier(waiter)
 			// The reserved slot is present on every eligible worker.
 			// Give the warm pair the first few streams, then use the
@@ -139,7 +155,7 @@ func (q *muxLocalQueue) waitForWarm(spareLoad int) bool {
 		return false
 	}
 	for _, warm := range q.warm {
-		if warm == nil || len(warm.slots) >= min(cap(warm.slots), spareLoad) {
+		if warm == nil || muxCarrierClosed(warm.done) || len(warm.slots) >= min(cap(warm.slots), spareLoad) {
 			continue
 		}
 		if warm.pressure != nil && len(warm.slots)+warm.pressure() >= spareLoad {
@@ -179,6 +195,12 @@ func (q *muxLocalQueue) wait(waiter *muxQueueWaiter) <-chan struct{} {
 		return q.ready
 	}
 	q.mu.Lock()
+	if muxCarrierClosed(waiter.done) {
+		q.removeWaiter(waiter)
+		q.notify()
+		q.mu.Unlock()
+		return waiter.ready
+	}
 	q.warmCarrier(waiter)
 	q.waiters[waiter] = struct{}{}
 	q.notify()
@@ -230,10 +252,21 @@ func (q *muxLocalQueue) pop() (LocalTCPConn, bool) {
 }
 
 func (q *muxLocalQueue) popFor(waiter *muxQueueWaiter) (LocalTCPConn, bool) {
+	return q.popForSession(waiter, nil)
+}
+
+// popForSession also covers transports using the shared readiness channel.
+// If closure races a consumed notification, hand the wake to a live worker
+// without moving the user to the back of the queue or restarting its budget.
+func (q *muxLocalQueue) popForSession(waiter *muxQueueWaiter, done <-chan struct{}) (LocalTCPConn, bool) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	if waiter != nil {
 		q.removeWaiter(waiter)
+	}
+	if muxCarrierClosed(done) || (waiter != nil && muxCarrierClosed(waiter.done)) {
+		q.notify()
+		return LocalTCPConn{}, false
 	}
 	entry := q.entries.Front()
 	if entry == nil {
