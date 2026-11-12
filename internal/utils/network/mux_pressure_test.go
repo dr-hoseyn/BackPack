@@ -1,10 +1,31 @@
 package network
 
 import (
+	"crypto/tls"
+	"net"
 	"testing"
 	"testing/synctest"
 	"time"
 )
+
+func TestWSMuxPressureFindsTheSocketUnderTLSAndDeadlineWrappers(t *testing.T) {
+	local, peer := net.Pipe()
+	defer local.Close()
+	defer peer.Close()
+	secure := tls.Client(local, &tls.Config{ServerName: "example.test"})
+	wrapped := &streamDeadlineConn{Conn: secure}
+	if got := tcpMuxPressureConn(wrapped); got != local {
+		t.Fatal("TLS/deadline wrappers hid the carrier's socket from congestion sampling")
+	}
+	if wrapped.Conn != secure || secure.NetConn() != local {
+		t.Fatal("sampling changed the encrypted I/O path")
+	}
+	cycle := &streamDeadlineConn{}
+	cycle.Conn = cycle
+	if tcpMuxPressureConn(cycle) != nil {
+		t.Fatal("a cyclic wrapper chain did not stop at the observation bound")
+	}
+}
 
 func TestTCPMuxPressureConfirmsBacklogAndCachesKernelSamples(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
@@ -37,6 +58,34 @@ func TestTCPMuxPressureConfirmsBacklogAndCachesKernelSamples(t *testing.T) {
 		time.Sleep(200 * time.Millisecond)
 		if got := pressure(); got >= 16 {
 			t.Fatalf("a later short burst reused old congestion: %d", got)
+		}
+	})
+}
+
+func TestWSMuxPressureDoesNotReuseAHealthySampleAcrossANewUserBurst(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		reads, delay := 0, 0
+		pressure := muxPressureSampler(func() (int, bool) {
+			reads++
+			return delay, delay > 0
+		}, 50*time.Millisecond)
+		if pressure() != 0 {
+			t.Fatal("idle socket reported congestion")
+		}
+		delay = 64
+		time.Sleep(49 * time.Millisecond)
+		pressure()
+		if reads != 1 {
+			t.Fatal("one burst repeatedly sampled the socket")
+		}
+		time.Sleep(time.Millisecond)
+		if pressure() == 0 || reads != 2 {
+			t.Fatal("new users inherited a stale healthy socket sample")
+		}
+		delay = 0
+		time.Sleep(50 * time.Millisecond)
+		if pressure() != 0 {
+			t.Fatal("a recovered socket remained penalized")
 		}
 	})
 }

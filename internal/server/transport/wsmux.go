@@ -154,7 +154,7 @@ func (s *WsMuxTransport) newGen(ctx context.Context) *wsMuxGen {
 	return &wsMuxGen{
 		ctx:            ctx,
 		tunnelChannel:  make(chan pooledMuxSession, s.config.ChannelSize),
-		localChannel:   newMuxLocalQueue(s.config.ChannelSize),
+		localChannel:   newBalancedMuxLocalQueue(s.config.ChannelSize),
 		reqNewConnChan: make(chan struct{}, s.config.ChannelSize),
 		usageMonitor:   s.usageMonitor(ctx),
 	}
@@ -304,7 +304,10 @@ func (s *WsMuxTransport) tunnelListener(g *wsMuxGen) {
 					return
 				}
 				accepted := g.seat.admitFor(g.ctx, owner, func(ctx context.Context) bool {
-					return enqueueMuxSession(g.tunnelChannel, ctx, session, floor)
+					return enqueueMuxEntry(g.tunnelChannel, pooledMuxSession{
+						Session: session, owner: ctx, idleFloor: floor,
+						pressure: network.WSMuxPressure(conn.NetConn()),
+					})
 				})
 				if !accepted {
 					s.logger.Debugf("websocket mux pool is full or its client changed, closing connection from %s", conn.RemoteAddr().String())
@@ -355,6 +358,7 @@ func (s *WsMuxTransport) handleLoop(g *wsMuxGen) {
 			}
 
 			loop := s.session(g, session.owner)
+			loop.pressure = session.pressure
 			if session.idleFloor > 0 {
 				loop.idleTimeout = 60 * time.Second
 				loop.idleRetire = func() bool {
