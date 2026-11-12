@@ -82,8 +82,11 @@ func (l *lifecycle) WaitStopped() {
 	<-l.parentctx.Done()
 	l.restartMutex.Lock()
 	defer l.restartMutex.Unlock()
-	l.state.Stop()
+	// Preserve the control loop's bounded goodbye/packet flush. Closing the
+	// control socket before joining can discard KCP's queued farewell.
+	l.state.seal()
 	l.state.Wait()
+	l.state.CloseConn()
 	l.status.set("")
 	metrics.ClearPool()
 	metrics.ClearPeer()
