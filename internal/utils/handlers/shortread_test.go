@@ -114,7 +114,7 @@ func TestTheLastBytesReachWebSocketBeforeReadError(t *testing.T) {
 			done := make(chan struct{})
 			go func() {
 				defer close(done)
-				transferTCPToWebSocket(source, server, log, nil, 0, false)
+				transferTCPToWebSocket(source, server, log, nil, 0, false, false)
 			}()
 			_ = client.SetReadDeadline(time.Now().Add(3 * time.Second))
 			kind, got, err := client.ReadMessage()

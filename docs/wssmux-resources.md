@@ -1,5 +1,31 @@
 # WSS Mux resource use
 
+## CPU cost at TLS record boundaries
+
+WSS relay reads and WSSMux's send-side frame ceiling leave room for WebSocket
+and mux headers near common 16 KiB TLS record boundaries. A 32768-byte WSSMux
+payload becomes at most 32752 bytes, and a configured 65535-byte payload becomes
+at most 65520 bytes. An ordinary WSS relay reads at most 16376 or 65528 bytes
+into its existing 16/64 KiB buffer. The full read still grows the adaptive
+buffer. Plain WS and custom frame sizes already clear of a record boundary
+retain their existing sizes. These are send-side ceilings; stored configuration,
+receive windows, encryption and application byte order stay unchanged.
+
+This avoids creating a tiny extra TLS record solely for headers. A controlled
+real-TLS test on both client/server writers with fixed record sizing verifies
+3 to 2 records for a 32 KiB mux payload, 6 to 4 at the maximum mux payload, and
+5 to 4 for a 64 KiB ordinary WSS payload. Production keeps its existing TLS
+record policy, including smaller records early in a connection. No bytes are
+gathered and no timer is added before sending a small message. Record counts
+alone do not establish a reduction in whole-process CPU or WAN latency.
+
+Recovery CI compares WSS and WSSMux against the PR base in five alternating,
+independent client/server processes. It measures process CPU seconds per GiB
+of verified data alongside goodput and fresh-user p99, with 64 idle users and
+eight bulk workers. Artifacts `wss-cpu-quality` and `wssmux-cpu-quality` contain
+the raw samples, exact commits, comparison and CPU profiles. These workloads
+measure a combined loopback process, not an isolated production server.
+
 TCP relay directions start with a pooled 16 KiB buffer. A full read grows that
 direction immediately to the existing pooled 64 KiB bulk buffer. No bytes are
 held back to gather a larger write, and no application deadline changes.

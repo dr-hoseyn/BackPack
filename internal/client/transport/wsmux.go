@@ -62,22 +62,22 @@ type WsMuxConfig struct {
 	Outbound *network.Outbound
 }
 
-func NewWSMuxClient(parentCtx context.Context, config *WsMuxConfig, logger *logrus.Logger) *WsMuxTransport {
+func NewWSMuxClient(parentCtx context.Context, cfg *WsMuxConfig, logger *logrus.Logger) *WsMuxTransport {
 	// Initialize the TcpTransport struct
 	client := &WsMuxTransport{
 		smuxConfig: &smux.Config{
-			Version:           network.ResolveStaticMuxVersion(config.MuxVersion),
+			Version:           network.ResolveStaticMuxVersion(cfg.MuxVersion),
 			KeepAliveInterval: 20 * time.Second,
 			KeepAliveTimeout:  40 * time.Second,
-			MaxFrameSize:      config.MaxFrameSize,
-			MaxReceiveBuffer:  config.MaxReceiveBuffer,
-			MaxStreamBuffer:   config.MaxStreamBuffer,
+			MaxFrameSize:      network.WSMuxFrameSize(cfg.MaxFrameSize, cfg.Mode == config.WSSMUX),
+			MaxReceiveBuffer:  cfg.MaxReceiveBuffer,
+			MaxStreamBuffer:   cfg.MaxStreamBuffer,
 		},
-		config:   config,
+		config:   cfg,
 		poolLost: make(chan struct{}, 1),
 	}
 
-	client.firstGeneration(parentCtx, logger, usageSpec{snifferLog: config.SnifferLog, sniffer: config.Sniffer})
+	client.firstGeneration(parentCtx, logger, usageSpec{snifferLog: cfg.SnifferLog, sniffer: cfg.Sniffer})
 	return client
 }
 

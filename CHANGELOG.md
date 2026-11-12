@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Leave header-sized room at common WSS/WSSMux TLS record boundaries, avoiding
+  tiny trailing records on bulk writes. Preserve immediate small writes,
+  framing, authentication, receive windows and adaptive relay-buffer growth.
 - Keep one full-sized receive buffer per L3 UDP flow, avoiding an extra
   readiness syscall and shared buffer exchange for every reply. Prefer CPU
   efficiency over reducing idle-flow memory.

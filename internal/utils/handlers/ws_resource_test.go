@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/backpack/backpack/internal/utils/network"
 	"github.com/gorilla/websocket"
 )
 
@@ -24,7 +25,7 @@ func TestWebSocketRelayCarriesBothDirectionsAndJoinsOnPeerClose(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		WSConnectionHandler(ctx, server, relay, quietLogger(), nil, 0, false)
+		WSConnectionHandler(ctx, server, relay, quietLogger(), nil, 0, false, false)
 	}()
 	defer func() {
 		cancel()
@@ -74,43 +75,50 @@ func TestWebSocketRelayCarriesBothDirectionsAndJoinsOnPeerClose(t *testing.T) {
 }
 
 func TestWebSocketRelayGrowsOnlyAfterAFullRead(t *testing.T) {
-	for _, size := range []int{0, 17, smallRelayBufferSize, 3 * relayBufferSize} {
-		t.Run(fmt.Sprint(size), func(t *testing.T) {
-			client, server := websocketPair(t)
-			payload := bytes.Repeat([]byte{0x91}, size)
-			from := &sizedReadConn{data: payload}
-			done := make(chan struct{})
-			go func() {
-				defer close(done)
-				transferTCPToWebSocket(from, server, quietLogger(), nil, 0, false)
-			}()
-			_ = client.SetReadDeadline(time.Now().Add(3 * time.Second))
-			var got []byte
-			for len(got) < size {
-				kind, chunk, err := client.ReadMessage()
-				if err != nil || kind != websocket.BinaryMessage {
-					t.Fatalf("websocket payload: kind=%d error=%v", kind, err)
+	for _, secure := range []bool{false, true} {
+		smallSize, bulkSize := smallRelayBufferSize, relayBufferSize
+		if secure {
+			smallSize = network.WebSocketTLSReadSize(smallSize)
+			bulkSize = network.WebSocketTLSReadSize(bulkSize)
+		}
+		for _, size := range []int{0, 17, smallSize - 1, smallSize, 3 * relayBufferSize} {
+			t.Run(fmt.Sprintf("secure=%t/bytes=%d", secure, size), func(t *testing.T) {
+				client, server := websocketPair(t)
+				payload := bytes.Repeat([]byte{0x91}, size)
+				from := &sizedReadConn{data: payload}
+				done := make(chan struct{})
+				go func() {
+					defer close(done)
+					transferTCPToWebSocket(from, server, quietLogger(), nil, 0, false, secure)
+				}()
+				_ = client.SetReadDeadline(time.Now().Add(3 * time.Second))
+				var got []byte
+				for len(got) < size {
+					kind, chunk, err := client.ReadMessage()
+					if err != nil || kind != websocket.BinaryMessage {
+						t.Fatalf("websocket payload: kind=%d error=%v", kind, err)
+					}
+					got = append(got, chunk...)
 				}
-				got = append(got, chunk...)
-			}
-			select {
-			case <-done:
-			case <-time.After(3 * time.Second):
-				t.Fatal("websocket sender did not stop at EOF")
-			}
-			if !bytes.Equal(got, payload) {
-				t.Fatal("adaptive websocket copy corrupted the stream")
-			}
-			if from.sizes[0] != smallRelayBufferSize {
-				t.Fatalf("quiet websocket direction retained %d bytes", from.sizes[0])
-			}
-			if size < smallRelayBufferSize && slices.Contains(from.sizes, relayBufferSize) {
-				t.Fatal("short websocket response acquired a bulk buffer")
-			}
-			if size >= smallRelayBufferSize && from.sizes[1] != relayBufferSize {
-				t.Fatal("full websocket read did not grow for bulk traffic")
-			}
-		})
+				select {
+				case <-done:
+				case <-time.After(3 * time.Second):
+					t.Fatal("websocket sender did not stop at EOF")
+				}
+				if !bytes.Equal(got, payload) {
+					t.Fatal("adaptive websocket copy corrupted the stream")
+				}
+				if from.sizes[0] != smallSize {
+					t.Fatalf("quiet websocket direction retained %d bytes", from.sizes[0])
+				}
+				if size < smallSize && slices.Contains(from.sizes, bulkSize) {
+					t.Fatal("short websocket response acquired a bulk buffer")
+				}
+				if size >= smallSize && from.sizes[1] != bulkSize {
+					t.Fatal("full websocket read did not grow for bulk traffic")
+				}
+			})
+		}
 	}
 }
 
@@ -203,7 +211,7 @@ func BenchmarkWebSocketRelaySend(b *testing.B) {
 			b.SetBytes(int64(size))
 			b.ReportAllocs()
 			b.ResetTimer()
-			transferTCPToWebSocket(from, server, logger, nil, 0, false)
+			transferTCPToWebSocket(from, server, logger, nil, 0, false, false)
 			b.StopTimer()
 			client.Close()
 			<-drained

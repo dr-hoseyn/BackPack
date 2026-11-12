@@ -10,6 +10,74 @@ permissions:
   contents: read
 
 jobs:
+  wss-cpu-quality:
+    name: ${{ matrix.transport }} CPU and verified connection quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        transport: [wss, wssmux]
+    env:
+      GOMAXPROCS: '4'
+      BP_RESOURCE_BENCHMARK: '1'
+      BP_RESOURCE_TRANSPORT: ${{ matrix.transport }}
+      BP_RESOURCE_IDLE_CONNECTIONS: '64'
+      BP_RESOURCE_ROUNDS: '16'
+      BP_RESOURCE_BASELINE_REF: ${{ github.event.pull_request.base.sha || github.event.before || 'origin/main' }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Verify TLS record boundaries, bytes and legacy framing
+        run: >-
+          go test -race ./internal/utils/network ./internal/utils/handlers
+          -run '^Test(WebSocketTLS|WebSocketRelay|WSMuxBinaryStreamAndLegacyCompatibility|WSMuxHeaderOnlyAndPayloadFramesKeepTheirBytes)'
+          -count=3 -v -timeout 2m
+      - name: Build the same workload on the PR base and candidate
+        run: |
+          set -euo pipefail
+          git worktree add --detach "$RUNNER_TEMP/wss-cpu-base" "$BP_RESOURCE_BASELINE_REF"
+          echo "BP_RESOURCE_BASELINE_SHA=$(git -C "$RUNNER_TEMP/wss-cpu-base" rev-parse HEAD)" >> "$GITHUB_ENV"
+          cp internal/e2e/wssmux_resources_test.go "$RUNNER_TEMP/wss-cpu-base/internal/e2e/"
+          go test -c -o "$RUNNER_TEMP/wss-cpu-candidate" ./internal/e2e
+          (cd "$RUNNER_TEMP/wss-cpu-base" && go test -c -o "$RUNNER_TEMP/wss-cpu-baseline" ./internal/e2e)
+      - name: Alternate five verified baseline and candidate CPU samples
+        run: |
+          set -euo pipefail
+          ulimit -n 16384
+          for sample in 1 2 3 4 5; do
+            order="baseline candidate"
+            if [ $((sample % 2)) -eq 0 ]; then order="candidate baseline"; fi
+            for kind in $order; do
+              "$RUNNER_TEMP/wss-cpu-$kind" -test.run '^TestWSMuxResourceProfile$' -test.v -test.timeout 2m \
+                | tee "$RUNNER_TEMP/wss-cpu-$kind-$sample.txt"
+            done
+          done
+          python3 .github/scripts/compare-wss-cpu.py "$RUNNER_TEMP" | tee "$RUNNER_TEMP/wss-cpu-comparison.json"
+          cat "$RUNNER_TEMP/wss-cpu-comparison.json" >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve CPU profiles outside the timed comparison
+        run: |
+          set -euo pipefail
+          for kind in baseline candidate; do
+            BP_RESOURCE_PROFILE_DIR="$RUNNER_TEMP" BP_RESOURCE_PROFILE_NAME="wss-cpu-$kind" \
+              "$RUNNER_TEMP/wss-cpu-$kind" -test.run '^TestWSMuxResourceProfile$' -test.v -test.timeout 2m \
+              > "$RUNNER_TEMP/wss-cpu-profile-$kind.txt"
+            go tool pprof -top -nodecount=30 "$RUNNER_TEMP/wss-cpu-$kind" \
+              "$RUNNER_TEMP/resource-wss-cpu-$kind-cpu.pprof" > "$RUNNER_TEMP/wss-cpu-profile-$kind-cpu.txt"
+          done
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: ${{ matrix.transport }}-cpu-quality
+          path: |
+            ${{ runner.temp }}/wss-cpu-*.txt
+            ${{ runner.temp }}/wss-cpu-comparison.json
+            ${{ runner.temp }}/resource-wss-cpu-*.pprof
   l3-udp-quality:
     name: L3 UDP and authenticated FEC CPU and quality
     runs-on: ubuntu-latest

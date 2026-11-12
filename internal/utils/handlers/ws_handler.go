@@ -8,13 +8,14 @@ import (
 
 	"github.com/backpack/backpack/internal/metrics"
 	"github.com/backpack/backpack/internal/traffic"
+	"github.com/backpack/backpack/internal/utils/network"
 	"github.com/gorilla/websocket"
 	"github.com/sirupsen/logrus"
 )
 
 // WSConnectionHandler relays between a websocket tunnel connection and a TCP
 // connection to the backend, until either side ends.
-func WSConnectionHandler(ctx context.Context, wsConn *websocket.Conn, tcpConn net.Conn, logger *logrus.Logger, usage *traffic.Usage, remotePort int, sniffer bool) {
+func WSConnectionHandler(ctx context.Context, wsConn *websocket.Conn, tcpConn net.Conn, logger *logrus.Logger, usage *traffic.Usage, remotePort int, sniffer bool, secure bool) {
 	// As in the TCP relay, cancellation must interrupt an idle read in either
 	// direction. Reuse the caller for one copy instead of keeping a third
 	// goroutine parked for the entire connection lifetime.
@@ -25,7 +26,7 @@ func WSConnectionHandler(ctx context.Context, wsConn *websocket.Conn, tcpConn ne
 		transferWebSocketToTCP(wsConn, tcpConn, logger, usage, remotePort, sniffer)
 		done <- struct{}{}
 	}()
-	transferTCPToWebSocket(tcpConn, wsConn, logger, usage, remotePort, sniffer)
+	transferTCPToWebSocket(tcpConn, wsConn, logger, usage, remotePort, sniffer, secure)
 	done <- struct{}{}
 
 	awaitRelay(ctx, done, wsConn, tcpConn)
@@ -74,15 +75,19 @@ func transferWebSocketToTCP(wsConn *websocket.Conn, tcpConn net.Conn, logger *lo
 }
 
 // transferTCPToWebSocket transfers data from a TCP connection to a WebSocket connection
-func transferTCPToWebSocket(tcpConn net.Conn, wsConn *websocket.Conn, logger *logrus.Logger, usage *traffic.Usage, remotePort int, sniffer bool) {
+func transferTCPToWebSocket(tcpConn net.Conn, wsConn *websocket.Conn, logger *logrus.Logger, usage *traffic.Usage, remotePort int, sniffer bool, secure bool) {
 	// Quiet directions retain only 16 KiB. A full read grows to the TCP
 	// relay's 64 KiB bulk buffer without delaying a short response.
 	buffer := newRelayCopyBuffer()
 	defer buffer.release()
 	for {
 		buf := *buffer.p
+		readBuf := buf
+		if secure {
+			readBuf = buf[:network.WebSocketTLSReadSize(len(buf))]
+		}
 		// Reader bytes come before its error, including a final read with EOF.
-		n, readErr := tcpConn.Read(buf)
+		n, readErr := tcpConn.Read(readBuf)
 		if n > 0 {
 			if err := wsConn.WriteMessage(websocket.BinaryMessage, buf[:n]); err != nil {
 				if errors.Is(err, websocket.ErrCloseSent) || errors.Is(err, io.EOF) {
@@ -111,7 +116,9 @@ func transferTCPToWebSocket(tcpConn net.Conn, wsConn *websocket.Conn, logger *lo
 			wsConn.Close()
 			return
 		}
-		buffer.grow(n)
+		if n == len(readBuf) {
+			buffer.grow(len(buf))
+		}
 	}
 
 }
