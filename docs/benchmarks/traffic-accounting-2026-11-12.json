@@ -1,0 +1,1060 @@
+{
+  "date_local": "2026-11-12",
+  "timezone": "Asia/Tehran",
+  "baseline_source": "c62ead64d0cdd785604284c170288a9362174e25",
+  "candidate_metrics_sha256": "a0b10f4c97a7e2e9744dd141ea488574b6730cc82ec2d0586cb98baf2ba704bc",
+  "benchmark_source_sha256": "5d0219fec96628b5cddab58b9be1d41e45154615c6c362b3f86ef6051084c6dd",
+  "environment": {
+    "os": "Windows",
+    "goarch": "amd64",
+    "go": "1.26.11",
+    "cpu": "11th Gen Intel Core i7-11370H @ 3.30GHz",
+    "physical_cores": 4,
+    "logical_processors": 8
+  },
+  "command": "go test ./internal/metrics -run '^$' -bench '^BenchmarkTrafficUpdates$' -benchmem -cpu=1,2,4,8 -count=3 -benchtime=300ms",
+  "method": [
+    "All four benchmark processes ran sequentially: baseline, candidate, candidate, baseline.",
+    "The first baseline was compiled before editing production metrics.go; the last baseline overlays the unchanged origin/main metrics.go. The benchmark source is identical.",
+    "Each RunParallel worker updates one direction per iteration. Duplex assigns alternate workers to inbound/outbound; at GOMAXPROCS=1 it is an inbound-only control.",
+    "One update records 16384 bytes and remains immediately visible to Traffic. The operation measures atomic accounting, not moving payload through a tunnel.",
+    "Architecture-sized padding uses the existing golang.org/x/sys/cpu dependency. On amd64 the two counters add 256 bytes per process, with no per-connection or per-update allocation."
+  ],
+  "limitations": [
+    "These are short microbenchmarks on one Windows host, not Linux/WAN throughput or latency measurements.",
+    "Single-direction multi-core contention remains; results vary between runs and do not establish a single-direction speedup.",
+    "Lower duplex counter overhead does not translate directly into the same percentage increase in tunnel throughput.",
+    "No perf c2c hardware cache-line tracing was performed."
+  ],
+  "reference": "https://docs.kernel.org/kernel-hacking/false-sharing.html",
+  "runs": [
+    {
+      "run": "before",
+      "measurements": [
+        {
+          "name": "inbound",
+          "iterations": 81556828,
+          "ns_per_op": 4.472,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "inbound",
+          "iterations": 76811469,
+          "ns_per_op": 4.721,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "inbound",
+          "iterations": 77321247,
+          "ns_per_op": 4.46,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "inbound-2",
+          "iterations": 28434222,
+          "ns_per_op": 12.53,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "inbound-2",
+          "iterations": 27997915,
+          "ns_per_op": 11.59,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "inbound-2",
+          "iterations": 27540200,
+          "ns_per_op": 11.37,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "inbound-4",
+          "iterations": 24302976,
+          "ns_per_op": 14.74,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "inbound-4",
+          "iterations": 25827187,
+          "ns_per_op": 14.69,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "inbound-4",
+          "iterations": 25396645,
+          "ns_per_op": 14.38,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "inbound-8",
+          "iterations": 25215204,
+          "ns_per_op": 14.29,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "inbound-8",
+          "iterations": 25467613,
+          "ns_per_op": 14.2,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "inbound-8",
+          "iterations": 25492138,
+          "ns_per_op": 14.2,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "outbound",
+          "iterations": 72147180,
+          "ns_per_op": 4.42,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "outbound",
+          "iterations": 81595647,
+          "ns_per_op": 4.343,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "outbound",
+          "iterations": 82576382,
+          "ns_per_op": 4.346,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "outbound-2",
+          "iterations": 29867090,
+          "ns_per_op": 12.19,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "outbound-2",
+          "iterations": 34838139,
+          "ns_per_op": 11.6,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "outbound-2",
+          "iterations": 27274999,
+          "ns_per_op": 11.78,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "outbound-4",
+          "iterations": 25029722,
+          "ns_per_op": 14.46,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "outbound-4",
+          "iterations": 25093578,
+          "ns_per_op": 14.57,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "outbound-4",
+          "iterations": 24886282,
+          "ns_per_op": 14.3,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "outbound-8",
+          "iterations": 25478247,
+          "ns_per_op": 14.21,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "outbound-8",
+          "iterations": 25302931,
+          "ns_per_op": 14.45,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "outbound-8",
+          "iterations": 25487626,
+          "ns_per_op": 14.25,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "duplex",
+          "iterations": 76400678,
+          "ns_per_op": 4.415,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "duplex",
+          "iterations": 72612852,
+          "ns_per_op": 4.36,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "duplex",
+          "iterations": 83391243,
+          "ns_per_op": 4.321,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "duplex-2",
+          "iterations": 29846786,
+          "ns_per_op": 10.12,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "duplex-2",
+          "iterations": 33973965,
+          "ns_per_op": 10.63,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "duplex-2",
+          "iterations": 28309453,
+          "ns_per_op": 10.97,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "duplex-4",
+          "iterations": 25837196,
+          "ns_per_op": 14.39,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "duplex-4",
+          "iterations": 24606130,
+          "ns_per_op": 14.44,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "duplex-4",
+          "iterations": 26701477,
+          "ns_per_op": 14.4,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "duplex-8",
+          "iterations": 25169368,
+          "ns_per_op": 14.15,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "duplex-8",
+          "iterations": 25468874,
+          "ns_per_op": 14.13,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "duplex-8",
+          "iterations": 25265284,
+          "ns_per_op": 14.25,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        }
+      ]
+    },
+    {
+      "run": "after",
+      "measurements": [
+        {
+          "name": "inbound",
+          "iterations": 77819329,
+          "ns_per_op": 4.402,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "inbound",
+          "iterations": 78199669,
+          "ns_per_op": 4.517,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "inbound",
+          "iterations": 83586801,
+          "ns_per_op": 4.573,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "inbound-2",
+          "iterations": 27736686,
+          "ns_per_op": 11.11,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "inbound-2",
+          "iterations": 28406848,
+          "ns_per_op": 12.65,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "inbound-2",
+          "iterations": 28599573,
+          "ns_per_op": 12.56,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "inbound-4",
+          "iterations": 24068514,
+          "ns_per_op": 14.58,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "inbound-4",
+          "iterations": 24556616,
+          "ns_per_op": 14.66,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "inbound-4",
+          "iterations": 24410254,
+          "ns_per_op": 14.38,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "inbound-8",
+          "iterations": 25448349,
+          "ns_per_op": 14.38,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "inbound-8",
+          "iterations": 25475182,
+          "ns_per_op": 14.2,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "inbound-8",
+          "iterations": 25520511,
+          "ns_per_op": 14.28,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "outbound",
+          "iterations": 76633245,
+          "ns_per_op": 4.39,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "outbound",
+          "iterations": 84204616,
+          "ns_per_op": 4.328,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "outbound",
+          "iterations": 84208556,
+          "ns_per_op": 4.367,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "outbound-2",
+          "iterations": 27858386,
+          "ns_per_op": 11.56,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "outbound-2",
+          "iterations": 30190360,
+          "ns_per_op": 12.05,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "outbound-2",
+          "iterations": 36291784,
+          "ns_per_op": 11.61,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "outbound-4",
+          "iterations": 27092112,
+          "ns_per_op": 14.21,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "outbound-4",
+          "iterations": 24619255,
+          "ns_per_op": 14.33,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "outbound-4",
+          "iterations": 24140983,
+          "ns_per_op": 14.07,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "outbound-8",
+          "iterations": 25462929,
+          "ns_per_op": 14.17,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "outbound-8",
+          "iterations": 24917632,
+          "ns_per_op": 14.37,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "outbound-8",
+          "iterations": 24682892,
+          "ns_per_op": 14.42,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "duplex",
+          "iterations": 76145352,
+          "ns_per_op": 4.514,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "duplex",
+          "iterations": 80454118,
+          "ns_per_op": 4.388,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "duplex",
+          "iterations": 83818393,
+          "ns_per_op": 4.32,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "duplex-2",
+          "iterations": 155181577,
+          "ns_per_op": 2.304,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "duplex-2",
+          "iterations": 153210004,
+          "ns_per_op": 2.269,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "duplex-2",
+          "iterations": 145647270,
+          "ns_per_op": 2.444,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "duplex-4",
+          "iterations": 60455430,
+          "ns_per_op": 5.45,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "duplex-4",
+          "iterations": 100000000,
+          "ns_per_op": 5.478,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "duplex-4",
+          "iterations": 67614522,
+          "ns_per_op": 5.13,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "duplex-8",
+          "iterations": 46267735,
+          "ns_per_op": 8.923,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "duplex-8",
+          "iterations": 52813027,
+          "ns_per_op": 8.598,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "duplex-8",
+          "iterations": 48531909,
+          "ns_per_op": 8.697,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        }
+      ]
+    },
+    {
+      "run": "after-repeat",
+      "measurements": [
+        {
+          "name": "inbound",
+          "iterations": 77008641,
+          "ns_per_op": 4.431,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "inbound",
+          "iterations": 79932500,
+          "ns_per_op": 4.604,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "inbound",
+          "iterations": 84626233,
+          "ns_per_op": 4.552,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "inbound-2",
+          "iterations": 27969420,
+          "ns_per_op": 11.36,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "inbound-2",
+          "iterations": 28556469,
+          "ns_per_op": 11.75,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "inbound-2",
+          "iterations": 38657302,
+          "ns_per_op": 11.82,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "inbound-4",
+          "iterations": 24852609,
+          "ns_per_op": 14.4,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "inbound-4",
+          "iterations": 25725861,
+          "ns_per_op": 14.48,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "inbound-4",
+          "iterations": 26526370,
+          "ns_per_op": 14.46,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "inbound-8",
+          "iterations": 25555294,
+          "ns_per_op": 14.2,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "inbound-8",
+          "iterations": 25484920,
+          "ns_per_op": 14.16,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "inbound-8",
+          "iterations": 24839577,
+          "ns_per_op": 14.25,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "outbound",
+          "iterations": 76926363,
+          "ns_per_op": 4.352,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "outbound",
+          "iterations": 84769708,
+          "ns_per_op": 4.327,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "outbound",
+          "iterations": 82771939,
+          "ns_per_op": 4.345,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "outbound-2",
+          "iterations": 34151708,
+          "ns_per_op": 9.904,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "outbound-2",
+          "iterations": 40152049,
+          "ns_per_op": 11.59,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "outbound-2",
+          "iterations": 29265436,
+          "ns_per_op": 11.6,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "outbound-4",
+          "iterations": 29533130,
+          "ns_per_op": 13.5,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "outbound-4",
+          "iterations": 29010499,
+          "ns_per_op": 13.69,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "outbound-4",
+          "iterations": 27513469,
+          "ns_per_op": 13.65,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "outbound-8",
+          "iterations": 27803306,
+          "ns_per_op": 13.29,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "outbound-8",
+          "iterations": 26103223,
+          "ns_per_op": 13.41,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "outbound-8",
+          "iterations": 27341702,
+          "ns_per_op": 13.2,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "duplex",
+          "iterations": 75490688,
+          "ns_per_op": 4.425,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "duplex",
+          "iterations": 81214609,
+          "ns_per_op": 4.361,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "duplex",
+          "iterations": 84121976,
+          "ns_per_op": 4.332,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "duplex-2",
+          "iterations": 157560748,
+          "ns_per_op": 2.293,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "duplex-2",
+          "iterations": 142929571,
+          "ns_per_op": 2.367,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "duplex-2",
+          "iterations": 152722209,
+          "ns_per_op": 2.337,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "duplex-4",
+          "iterations": 65355916,
+          "ns_per_op": 5.379,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "duplex-4",
+          "iterations": 65089611,
+          "ns_per_op": 6.011,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "duplex-4",
+          "iterations": 70487341,
+          "ns_per_op": 5.577,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "duplex-8",
+          "iterations": 61464913,
+          "ns_per_op": 9.213,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "duplex-8",
+          "iterations": 60544903,
+          "ns_per_op": 8.803,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "duplex-8",
+          "iterations": 45844104,
+          "ns_per_op": 9.367,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        }
+      ]
+    },
+    {
+      "run": "before-repeat",
+      "measurements": [
+        {
+          "name": "inbound",
+          "iterations": 84188863,
+          "ns_per_op": 4.359,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "inbound",
+          "iterations": 79713032,
+          "ns_per_op": 4.558,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "inbound",
+          "iterations": 75035954,
+          "ns_per_op": 4.526,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "inbound-2",
+          "iterations": 34016818,
+          "ns_per_op": 10.55,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "inbound-2",
+          "iterations": 30632040,
+          "ns_per_op": 10.42,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "inbound-2",
+          "iterations": 37892449,
+          "ns_per_op": 9.564,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "inbound-4",
+          "iterations": 28319919,
+          "ns_per_op": 12.54,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "inbound-4",
+          "iterations": 27397676,
+          "ns_per_op": 12.63,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "inbound-4",
+          "iterations": 27029664,
+          "ns_per_op": 12.44,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "inbound-8",
+          "iterations": 28554884,
+          "ns_per_op": 12.53,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "inbound-8",
+          "iterations": 28377739,
+          "ns_per_op": 12.46,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "inbound-8",
+          "iterations": 29181459,
+          "ns_per_op": 12.47,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "outbound",
+          "iterations": 76480209,
+          "ns_per_op": 4.455,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "outbound",
+          "iterations": 84999880,
+          "ns_per_op": 4.334,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "outbound",
+          "iterations": 79321360,
+          "ns_per_op": 4.333,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "outbound-2",
+          "iterations": 33542976,
+          "ns_per_op": 10.65,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "outbound-2",
+          "iterations": 34041265,
+          "ns_per_op": 10.71,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "outbound-2",
+          "iterations": 32560621,
+          "ns_per_op": 11.05,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "outbound-4",
+          "iterations": 28280542,
+          "ns_per_op": 12.66,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "outbound-4",
+          "iterations": 29572917,
+          "ns_per_op": 12.62,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "outbound-4",
+          "iterations": 27815980,
+          "ns_per_op": 12.72,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "outbound-8",
+          "iterations": 29139415,
+          "ns_per_op": 12.45,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "outbound-8",
+          "iterations": 28913571,
+          "ns_per_op": 12.68,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "outbound-8",
+          "iterations": 28357620,
+          "ns_per_op": 12.49,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "duplex",
+          "iterations": 77016878,
+          "ns_per_op": 4.377,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "duplex",
+          "iterations": 81993349,
+          "ns_per_op": 4.309,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "duplex",
+          "iterations": 77226703,
+          "ns_per_op": 4.35,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "duplex-2",
+          "iterations": 31071982,
+          "ns_per_op": 10.63,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "duplex-2",
+          "iterations": 33860044,
+          "ns_per_op": 9.567,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "duplex-2",
+          "iterations": 41150625,
+          "ns_per_op": 9.404,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "duplex-4",
+          "iterations": 27379964,
+          "ns_per_op": 12.77,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "duplex-4",
+          "iterations": 28917752,
+          "ns_per_op": 12.64,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "duplex-4",
+          "iterations": 27529459,
+          "ns_per_op": 12.7,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "duplex-8",
+          "iterations": 29477510,
+          "ns_per_op": 12.49,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "duplex-8",
+          "iterations": 28927744,
+          "ns_per_op": 12.45,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "duplex-8",
+          "iterations": 29000684,
+          "ns_per_op": 12.46,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        }
+      ]
+    }
+  ]
+}
