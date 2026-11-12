@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- On Linux, borrow full-sized L3 UDP reply buffers only after socket readiness;
+  idle flows no longer retain a 64 KiB receive buffer each. Bound cached buffers
+  to 32 while preserving complete datagrams, pacing and cancellation.
+- Let affordable small UDP datagrams progress while another flow waits for a
+  larger pacing quantum. Wake pacing waits when new traffic arrives; retain
+  per-flow FIFO ordering and the existing connection and bandwidth limits.
+
 ## v1.25.0 — 2026-11-12
 
 - Keep address health selection scoped to the active carrier and preserve

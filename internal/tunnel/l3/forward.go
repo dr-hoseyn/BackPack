@@ -539,13 +539,17 @@ func (f *Forwarder) pumpUDPReplies(
 		f.limiter.Release()
 	}()
 
-	buf := make([]byte, udpBufferSize)
+	waiter, err := newUDPReplyWaiter(flow.socket)
+	if err != nil {
+		flow.noteBackendReadError(flow.ctx, err)
+		return
+	}
 	for {
 		// A read deadline rather than a blocking read: it is what lets a flow
 		// whose backend never answers be reaped instead of holding a goroutine
 		// and a socket forever.
 		_ = flow.backend.SetReadDeadline(time.Now().Add(udpFlowIdle))
-		n, err := flow.backend.Read(buf)
+		buf, n, err := readUDPReply(waiter, flow.backend, &udpReplyBuffers)
 		if err != nil {
 			if flow.ctx.Err() != nil {
 				return
@@ -558,7 +562,9 @@ func (f *Forwarder) pumpUDPReplies(
 			return
 		}
 		flow.touch()
-		if _, err := local.WriteToUDPAddrPort(buf[:n], client); err != nil {
+		_, err = local.WriteToUDPAddrPort(buf[:n], client)
+		udpReplyBuffers.put(buf)
+		if err != nil {
 			return
 		}
 	}

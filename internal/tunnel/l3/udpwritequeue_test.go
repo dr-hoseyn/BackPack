@@ -1,12 +1,56 @@
 package l3
 
 import (
+	"bytes"
 	"context"
 	"net"
 	"testing"
+	"time"
 
 	"github.com/backpack/backpack/internal/tunnel/limits"
 )
+
+func TestUDPWriteQueueServesAffordableFlowBeforeWaitingForBulk(t *testing.T) {
+	q := newUDPWriteQueue()
+	bulk := &udpFlow{ctx: context.Background()}
+	light := &udpFlow{ctx: context.Background()}
+	q.enqueue(bulk, bytes.Repeat([]byte("b"), 60000))
+	q.enqueue(light, []byte("call"))
+	q.enqueue(light, []byte("next"))
+	credit := 8
+	take := func(n int) time.Duration {
+		if n > credit {
+			return time.Duration(n-credit) * time.Microsecond
+		}
+		credit -= n
+		return 0
+	}
+	for _, want := range []string{"call", "next"} {
+		flow, packet, delay := q.turnWithBudget(take)
+		if flow != light || string(packet) != want || delay != 0 {
+			t.Fatalf("small flow waited behind bulk: flow=%p packet=%q delay=%s", flow, packet, delay)
+		}
+	}
+	if flow, _, delay := q.turnWithBudget(take); flow != nil || delay <= 0 {
+		t.Fatal("exhausted budget did not pause bulk")
+	}
+	credit = 60000
+	flow, packet, delay := q.turnWithBudget(take)
+	if flow != bulk || len(packet) != 60000 || delay != 0 || credit != 0 {
+		t.Fatal("bulk did not resume intact within its budget")
+	}
+}
+
+func TestUDPWriteQueueRetriesTheEarliestAffordableDatagram(t *testing.T) {
+	q := newUDPWriteQueue()
+	for _, size := range []int{1200, 10, 40} {
+		q.enqueue(&udpFlow{ctx: context.Background()}, make([]byte, size))
+	}
+	flow, _, delay := q.turnWithBudget(func(n int) time.Duration { return time.Duration(n) * time.Millisecond })
+	if flow != nil || delay != 10*time.Millisecond || q.packets != 3 {
+		t.Fatalf("wrong retry budget or dropped packet: delay=%s packets=%d", delay, q.packets)
+	}
+}
 
 func TestUDPWriteQueueBoundsMemoryAndReleasesClosedFlows(t *testing.T) {
 	q := newUDPWriteQueue()

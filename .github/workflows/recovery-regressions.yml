@@ -10,6 +10,44 @@ permissions:
   contents: read
 
 jobs:
+  l3-udp-quality:
+    name: L3 UDP latency, idle resources and cancellation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Repeat datagram, idle buffer, deadline and fair pacing checks
+        run: >-
+          go test -race ./internal/tunnel/l3
+          -run '^Test(UDPReply|UDPWriteQueue|UDPFlowClose|ForwarderCarriesUDP|ForwarderKeepsUDPFlows|ForwarderRoutesUDPRepliesAcrossAddressFamilies|ForwarderPacesUDPAcrossFlows)'
+          -count=20 -v -timeout 3m
+      - name: Measure retained heap on 300 idle UDP flows
+        run: |
+          set -euo pipefail
+          go test ./internal/tunnel/l3 -run '^$' -bench '^BenchmarkUDPIdleReplyFlows$' -benchtime=1x -count=3 | tee "$RUNNER_TEMP/udp-idle-candidate.txt"
+          go test ./internal/tunnel/l3 -run '^$' -bench '^BenchmarkUDPForwardedReplies$' -benchmem -benchtime=200ms -count=3 | tee "$RUNNER_TEMP/udp-idle-replies-candidate.txt"
+      - name: Measure the same idle workers on the PR base
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          git worktree add --detach "$RUNNER_TEMP/udp-idle-base" "$BASE_SHA"
+          cp internal/tunnel/l3/udpflow_memory_test.go "$RUNNER_TEMP/udp-idle-base/internal/tunnel/l3/"
+          cd "$RUNNER_TEMP/udp-idle-base"
+          go test ./internal/tunnel/l3 -run '^$' -bench '^BenchmarkUDPIdleReplyFlows$' -benchtime=1x -count=3 | tee "$RUNNER_TEMP/udp-idle-base.txt"
+          go test ./internal/tunnel/l3 -run '^$' -bench '^BenchmarkUDPForwardedReplies$' -benchmem -benchtime=200ms -count=3 | tee "$RUNNER_TEMP/udp-idle-replies-base.txt"
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: l3-udp-idle-resources
+          path: ${{ runner.temp }}/udp-idle-*.txt
   udp-readiness:
     name: Direct UDP listener readiness under race scheduling
     runs-on: ubuntu-latest

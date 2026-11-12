@@ -1,5 +1,32 @@
 # Native UDP sender cost
 
+## L3 forwarded UDP idle resources and latency
+
+On Linux, each L3 UDP backend reply worker waits for socket readiness through
+Go's network poller before borrowing a full 65535-byte payload buffer. Read
+deadlines and socket close still interrupt that wait. The normal connection
+wrapper reads the packet, retaining bandwidth accounting and cancellation.
+Buffers return after the local reply write; the shared cache retains at most
+32 buffers (about 2 MiB), independent of the number of idle flows. Active reads
+can temporarily use more. This does not bound kernel socket memory, goroutines
+or connection count; configure `max_connections` to cap flows. Non-Linux builds
+retain blocking reads and do not gain the idle-buffer optimization.
+
+The outbound pacing queue checks other flows before sleeping for a large
+datagram's credit. Small messages can use available credit without overtaking
+earlier messages on their own flow. New queued traffic wakes a pacing wait.
+The queue's existing packet/byte limits and drop-newest overflow policy remain.
+
+The Recovery regressions workflow repeats IPv4/IPv6, zero-length and 60000-byte
+reply checks, pacing, deadline renewal and cleanup under the race detector.
+It compares `BenchmarkUDPIdleReplyFlows` and `BenchmarkUDPForwardedReplies`
+against the PR base and saves the results as `l3-udp-idle-resources`.
+The idle benchmark measures retained Go heap for 300 idle backend reply workers;
+the reply benchmark measures verified loopback responses and hot-path cost.
+Neither establishes WAN throughput, RSS savings or long-term uptime.
+
+## Native sender framing
+
 The sender now reuses bounded framing and encrypted wire buffers under its existing
 write mutex. Fragment headers stay local to each call; AEAD and socket writes
 consume the shared scratch before another sender can reuse it. The authenticated
