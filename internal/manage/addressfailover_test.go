@@ -61,6 +61,34 @@ func TestHealthFailoverRejectsICMPOnlyCarriersWithoutChangingTheSpec(t *testing.
 	}
 }
 
+func TestHealthFailoverCanBeEnabledWithATCPFallback(t *testing.T) {
+	s := TunnelSpec{
+		Role: "client", Transport: "kcp", RemoteAddr: "192.0.2.1:443",
+		FallbackAddrs: []string{"192.0.2.2:443"}, FallbackTransports: []string{"quic"},
+	}
+	if err := setHealthFailover(&s, true); err == nil || s.HealthFailover {
+		t.Fatal("enabled health scoring on a datagram-only chain")
+	}
+	s.FallbackTransports = append(s.FallbackTransports, "wssmux")
+	if err := setHealthFailover(&s, true); err != nil || !s.HealthFailover {
+		t.Fatalf("could not enable health scoring for the TCP fallback: %v", err)
+	}
+}
+
+func TestHealthFailoverFromSetupLinkIncludesFallbackCarriers(t *testing.T) {
+	link := ShareLink{
+		Tr: "kcp", Port: "443", Hosts: []string{"192.0.2.2"},
+		Fallbacks: []string{"quic"},
+	}
+	if s := reverseClientFromLink(link, "192.0.2.1"); s.HealthFailover {
+		t.Fatal("setup enabled scoring for a datagram-only chain")
+	}
+	link.Fallbacks = append(link.Fallbacks, "wssmux")
+	if s := reverseClientFromLink(link, "192.0.2.1"); !s.HealthFailover {
+		t.Fatal("setup did not enable scoring for a TCP fallback")
+	}
+}
+
 func TestAddressFailoverEditsUseTheSharedSafeApply(t *testing.T) {
 	previous := LoadSpec
 	defer func() { LoadSpec = previous }()
