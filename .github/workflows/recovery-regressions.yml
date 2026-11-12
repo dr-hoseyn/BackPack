@@ -43,7 +43,7 @@ jobs:
           cd "$RUNNER_TEMP/udp-idle-base"
           go test ./internal/tunnel/l3 -run '^$' -bench '^BenchmarkUDPIdleReplyFlows$' -benchtime=1x -count=3 | tee "$RUNNER_TEMP/udp-idle-base.txt"
           go test ./internal/tunnel/l3 -run '^$' -bench '^BenchmarkUDPForwardedReplies$' -benchmem -benchtime=200ms -count=3 | tee "$RUNNER_TEMP/udp-idle-replies-base.txt"
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: l3-udp-idle-resources

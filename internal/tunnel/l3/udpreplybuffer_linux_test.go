@@ -6,8 +6,10 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -73,7 +75,7 @@ func TestUDPReplyReadPreservesWholeDatagramsAndPacing(t *testing.T) {
 				}
 				pool.put(buf)
 			}
-			// The readiness peek must not bypass the bandwidth wrapper or
+			// Readiness checks must not bypass the bandwidth wrapper or
 			// consume the actual packet. Its budget is shared with other flows.
 			if wrapped.reads != 5 {
 				t.Fatal("reply reads bypassed the connection wrapper")
@@ -87,6 +89,58 @@ func TestUDPReplyReadPreservesWholeDatagramsAndPacing(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestUDPReplyConcurrentFlowsKeepPayloadsIsolated(t *testing.T) {
+	backend, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer backend.Close()
+	echoDone := make(chan struct{})
+	go func() {
+		defer close(echoDone)
+		buf := make([]byte, udpBufferSize)
+		for {
+			n, addr, err := backend.ReadFromUDPAddrPort(buf)
+			if err != nil {
+				return
+			}
+			if _, err := backend.WriteToUDPAddrPort(buf[:n], addr); err != nil {
+				return
+			}
+		}
+	}()
+	addr := fmt.Sprintf("127.0.0.1:%d", freePort(t))
+	startForwarder(t, []string{addr + "=" + backend.LocalAddr().String()}, true)
+	var workers sync.WaitGroup
+	for i := range 16 {
+		workers.Go(func() {
+			client, err := net.Dial("udp4", addr)
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			defer client.Close()
+			buf := make([]byte, 1200)
+			for seq := range 20 {
+				want := bytes.Repeat([]byte{byte(i), byte(seq)}, 600)
+				_ = client.SetDeadline(time.Now().Add(3 * time.Second))
+				if _, err := client.Write(want); err != nil {
+					t.Error(err)
+					return
+				}
+				n, err := client.Read(buf)
+				if err != nil || !bytes.Equal(buf[:n], want) {
+					t.Errorf("flow %d reply %d was lost or crossed: bytes=%d err=%v", i, seq, n, err)
+					return
+				}
+			}
+		})
+	}
+	workers.Wait()
+	backend.Close()
+	<-echoDone
 }
 
 func TestUDPReplyIdleReadersDoNotHoldPayloadBuffers(t *testing.T) {
