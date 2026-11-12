@@ -172,7 +172,11 @@ func (c *Client) Start() {
 		if r == nil {
 			return chain.Attempt{}
 		}
-		return chain.Attempt{Settled: r.Running}
+		at := chain.Attempt{Settled: r.Running}
+		if workers, ok := r.(interface{ WaitStopped() }); ok {
+			at.WaitStopped = workers.WaitStopped
+		}
+		return at
 	})
 
 	c.logger.Info("all workers stopped successfully")
