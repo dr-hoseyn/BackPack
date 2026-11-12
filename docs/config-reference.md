@@ -290,14 +290,15 @@ them both ends have to agree on. This says what exists.
 |---|---|---|
 | `accept_udp` | `bool` | AcceptUDP enables UDP alongside TCP on forwarded ports. |
 | `bandwidth_mbps` | `int` | BandwidthMbps caps forwarded traffic in Mbit/s; zero is unlimited. |
-| `id` | `uint32` | ID is the paired GRE key, VNI or pseudowire ID; zero derives one from Token. |
+| `gre_ignore_df` | `*bool` | GREIgnoreDF overrides xgre's local IPv4 DF policy. Unset defaults to true on Iran and false on Kharej; peer links recompute their own role default. |
+| `id` | `uint32` | ID is the paired GRE key, VNI or pseudowire ID; xgre accepts the full uint32 range. Zero derives one from Token. |
 | `interface` | `string` | Interface exclusively names this tunnel; empty derives a name from its secret. |
 | `lanes` | `int` | Lanes selects 1..8 parallel GRE interfaces; ECMP defaults to four. |
 | `local_addr` | `string` | LocalAddr is this endpoint's literal underlay IP address. |
 | `local_ip` | `string` | LocalIP is this endpoint's tunnel address, including its prefix length. |
 | `max_connections` | `int` | MaxConnections caps simultaneous forwarded connections; zero is unlimited. |
 | `method` | `string` | Method selects one of the standard kernel L3 or L2 tunnel methods. |
-| `mtu` | `int` | MTU is the inner interface MTU; zero takes 1380. |
+| `mtu` | `int` | MTU is the inner interface MTU; zero takes 1472 for xgre, otherwise 1380. |
 | `peer_ip` | `string` | PeerIP is the peer's tunnel address without a prefix. |
 | `port` | `int` | Port is the method's UDP port, or the reverse TCP carrier port; zero takes the method default. |
 | `ports` | `[]string` | Ports contains the Iran-side forwarded port mappings; bare targets reach PeerIP. |
@@ -580,4 +581,4 @@ them both ends have to agree on. This says what exists.
 
 ---
 
-*Generated from `config/` on 2026-11-11. Last verified against Backpack v1.25.0.*
+*Generated from `config/` on 2026-11-12. Last verified against Backpack v1.25.0.*

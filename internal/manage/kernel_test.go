@@ -115,3 +115,33 @@ func TestKernelSetupLinksMirrorEveryPairedSetting(t *testing.T) {
 		}
 	}
 }
+
+func TestXGRESetupLinkPreservesFullKeyAndLocalDFPolicy(t *testing.T) {
+	off := false
+	c, err := kernel.Resolve(config.KernelConfig{Method: "xgre", Role: "iran", LocalAddr: "192.0.2.1", RemoteAddr: "192.0.2.2", LocalIP: "10.77.80.1/30", PeerIP: "10.77.80.2", Token: strings.Repeat("x", 48), ID: 0xf1234567, GREIgnoreDF: &off})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := kernelBody(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := decode(t, body).Kernel; got.ID != c.ID || got.GREIgnoreDF == nil || *got.GREIgnoreDF {
+		t.Fatal("local edit lost key or explicit DF override")
+	}
+	raw, err := kernelLink("xgre-pair", c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	link, err := DecodeShareLink(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	peer, err := kernelFromLink(link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if peer.ID != c.ID || peer.Role != "kharej" || peer.MTU != 1472 || peer.GREIgnoreDF == nil || *peer.GREIgnoreDF {
+		t.Fatal("setup link changed the native wire profile")
+	}
+}

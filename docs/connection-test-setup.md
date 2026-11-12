@@ -70,7 +70,7 @@ coordinator.
 
 ## Kernel methods and setup
 
-The kernel phase covers all 20 methods in native and reverse modes, one at a
+The kernel phase covers all 21 methods in native and reverse modes, one at a
 time to keep unkeyed protocols and IPsec selectors independent. Each case
 creates disposable interfaces and peer routes, observes actual echoed traffic,
 measures four-stream download/upload and waits for both endpoints' teardown.

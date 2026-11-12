@@ -16,7 +16,7 @@ their current wire format and lifecycle.
 
 | Family | Methods | Requirements |
 |---|---|---|
-| IPv4 underlay, L3 | `gre`, `ipip`, `sit`, `6to4`, `6to4-gre` | Linux IP tunnel modules; `sit` carries IPv6 only |
+| IPv4 underlay, L3 | `gre`, `xgre`, `ipip`, `sit`, `6to4`, `6to4-gre` | Linux IP tunnel modules; `sit` carries IPv6 only; [xGRE profile](xgre.md) supports full-width keys |
 | IPv6 underlay, L3 | `ip6gre`, `ipip6`, `ip6ip6` | Working IPv6 underlay; `ipip6` carries IPv4, `ip6ip6` IPv6 |
 | Native encryption | `wireguard`, `xfrm-ipsec` | Kernel WireGuard plus `wg`, or strongSwan IKEv2/VICI with kernel-netlink |
 | UDP encapsulation | `fou-gre`, `gue-ipip` | Linux FOU/GUE support |
@@ -126,7 +126,7 @@ for the exact credential generation. A successful probe reports online; a
 missing interface reports offline, while a blocked/unavailable ping remains
 unknown and does not trigger a restart by itself. Health Check shows this
 distinction explicitly. The
-Connection Test now includes all 20 methods in native and reverse modes.
+Connection Test now includes all 21 methods in native and reverse modes.
 These cases run serially after the existing carriers, using fresh temporary
 interfaces and peer routes. The worker acknowledges cleanup before the next
 case; failed cleanup stops the remaining kernel phase. Missing privileges,

@@ -91,8 +91,8 @@ func Build(input config.KernelConfig) (Plan, error) {
 		}
 		args := append([]string{"type", inner, "local", local, "remote", remote}, extra...)
 		p.link(dev, args...)
-	case "gre", "fou-gre", "ecmp-lanes", "ip6gre", "xfrm-ipsec", "gretap", "ip6gretap":
-		if kind == "fou-gre" || kind == "ecmp-lanes" || kind == "xfrm-ipsec" {
+	case "gre", "xgre", "fou-gre", "ecmp-lanes", "ip6gre", "xfrm-ipsec", "gretap", "ip6gretap":
+		if kind == "xgre" || kind == "fou-gre" || kind == "ecmp-lanes" || kind == "xfrm-ipsec" {
 			kind = "gre"
 		}
 		if c.Method == "fou-gre" && !c.Reverse {
@@ -105,6 +105,12 @@ func Build(input config.KernelConfig) (Plan, error) {
 			}
 			args := append([]string{"type", kind}, base...)
 			args = append(args, "key", id(c.ID+uint32(lane)))
+			if c.Method == "xgre" {
+				args = append(args, "ttl", "255", "tos", "inherit", "nopmtudisc")
+				if *c.GREIgnoreDF {
+					args = append(args, "ignore-df")
+				}
+			}
 			if c.Method == "fou-gre" {
 				port := c.Port
 				if c.Reverse {
