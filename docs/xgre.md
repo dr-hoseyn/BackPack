@@ -74,3 +74,23 @@ on the deployed path; native GRE availability and performance vary by network.
 The normal kernel reverse option remains a Backpack-specific authenticated TCP
 carrier around this profile. Only native mode matches the observed BPP data
 plane described above.
+
+## خلاصهٔ فارسی
+
+<div dir="rtl">
+
+پروفایل `xgre` یک تونل GRE بومی روی IPv4 با کلید ۳۲بیتی است. از مسیر
+«Setup Iran → Standard Kernel L3 / L2 → xgre» آن را بساز و لینک تنظیمات سمت
+خارج را اعمال کن. برای اتصال به پیری از نرم‌افزار دیگر، مقدار واقعی کلید GRE
+را وارد کن؛ مشتق‌سازی کلید از توکن مخصوص Backpack است.
+
+MTU پیش‌فرض ۱۴۷۲ برای مسیر IPv4 با MTU برابر ۱۵۰۰ است؛ اگر مسیر کوچک‌تر است،
+MTU را متناسب کاهش بده. تنظیم `gre_ignore_df` محلی است و سمت ایران به‌طور
+پیش‌فرض فعال می‌شود. این پروفایل بومی رمزنگاری یا احراز هویت ندارد و کلید GRE
+راز امنیتی نیست. برای ترافیک حساس از پروتکل احراز هویت‌شدهٔ داخل تونل استفاده
+کن. رابط، زیرشبکه و کلید آزمایشی را از تانل فعال جدا انتخاب کن؛ تنظیمات عمومی
+مسیریابی و فایروال به‌صورت خودکار تغییر نمی‌کنند.
+
+</div>
+
+Last verified against Backpack v1.25.0 (2026-11-12).
