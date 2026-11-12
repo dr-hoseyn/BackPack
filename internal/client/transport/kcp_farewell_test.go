@@ -46,8 +46,9 @@ func TestKCPClientGoodbyeReachesServerBeforeSocketCloses(t *testing.T) {
 	}
 	loop := client.control()
 	done := make(chan struct{})
-	go func() { defer close(done); loop.run() }()
+	client.state.Go(loop.run)
 	cancel()
+	go func() { defer close(done); client.WaitStopped() }()
 
 	_ = listener.SetReadDeadline(time.Now().Add(2 * time.Second))
 	peer, err := listener.AcceptKCP()
@@ -80,8 +81,9 @@ func TestKCPClientGoodbyeCannotStallShutdown(t *testing.T) {
 	client.state.SetConn(conn)
 	loop := client.control()
 	done := make(chan struct{})
-	go func() { defer close(done); loop.run() }()
+	client.state.Go(loop.run)
 	cancel()
+	go func() { defer close(done); client.WaitStopped() }()
 	select {
 	case <-done:
 	case <-time.After(2 * time.Second):

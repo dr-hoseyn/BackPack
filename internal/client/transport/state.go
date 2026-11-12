@@ -62,6 +62,14 @@ func (s *clientState) Go(work func()) {
 }
 
 func (s *clientState) Stop() {
+	s.seal()
+	s.CloseConn()
+}
+
+// seal rejects late work while the cancelled control loop sends its goodbye.
+// The control loop bounds that send and closes the channel itself. A final
+// join closes any channel whose setup completed before the loop could start.
+func (s *clientState) seal() {
 	s.mu.Lock()
 	s.stopping = true
 	cancel := s.cancel
@@ -69,7 +77,6 @@ func (s *clientState) Stop() {
 	if cancel != nil {
 		cancel()
 	}
-	s.CloseConn()
 }
 
 func (s *clientState) Wait() { s.workers.Wait() }
