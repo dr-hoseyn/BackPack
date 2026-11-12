@@ -18,7 +18,7 @@ require (
 	github.com/shirou/gopsutil/v4 v4.26.9
 	github.com/sirupsen/logrus v1.10.2
 	github.com/xtaci/kcp-go/v5 v5.6.73
-	github.com/xtaci/smux v1.5.57
+	github.com/xtaci/smux v1.5.59
 	github.com/yosida95/uritemplate/v3 v3.0.2
 	golang.org/x/crypto v0.58.0
 	golang.org/x/net v0.61.0
@@ -34,6 +34,7 @@ require (
 	github.com/go-ole/go-ole v1.2.6 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 // indirect
+	github.com/pion/transport/v5 v5.1.4 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/power-devops/perfstat v0.0.0-20260805114148-88456608a4f6 // indirect
 	github.com/quic-go/qpack v0.6.0 // indirect
