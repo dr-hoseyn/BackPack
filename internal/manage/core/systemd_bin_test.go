@@ -30,3 +30,25 @@ func TestSystemctlRunsTheRealBinaryName(t *testing.T) {
 		t.Fatalf("Systemctl output = %q", out)
 	}
 }
+
+func TestSystemctlDoesNotInheritMonitorNotifySocket(t *testing.T) {
+	dir := t.TempDir()
+	stub := filepath.Join(dir, "systemctl")
+	if err := os.WriteFile(stub, []byte("#!/bin/sh\nprintf '%s\\n' \"notify=${NOTIFY_SOCKET-unset}\" \"marker=$BP_TEST_MARKER\" \"args=$*\"\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+	t.Setenv("NOTIFY_SOCKET", "/private/monitor-notify")
+	t.Setenv("BP_TEST_MARKER", "preserved")
+	out, err := Systemctl("show", "backpack-monitor.service")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "notify=unset\nmarker=preserved\nargs=show backpack-monitor.service"
+	if out != want {
+		t.Fatalf("child environment or arguments changed: %q", out)
+	}
+	if os.Getenv("NOTIFY_SOCKET") != "/private/monitor-notify" {
+		t.Fatal("monitor notification environment was modified")
+	}
+}
