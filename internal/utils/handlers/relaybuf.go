@@ -37,8 +37,9 @@ var smallRelayBuffers = sync.Pool{New: func() any {
 }}
 
 type relayCopyBuffer struct {
-	p        *[]byte
-	adaptive bool
+	p         *[]byte
+	adaptive  bool
+	frameSize int // optional destination frame size; never gathers data
 }
 
 func newRelayCopyBuffer() relayCopyBuffer {

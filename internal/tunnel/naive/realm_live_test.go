@@ -83,6 +83,11 @@ func TestSingRealmOfficialServiceAndDiscoveredPayload(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer h.Close()
+	// The helper's SOCKS readiness listener can precede its Realm HTTPS
+	// listener. Wait for the service under test before checking authentication.
+	if err := waitReady(ctx, realmAddr, "realm-https", nil); err != nil {
+		t.Fatal(err)
+	}
 	root := x509.NewCertPool()
 	cert, err := os.ReadFile(c.Sing.CAFile)
 	if err != nil {

@@ -89,20 +89,38 @@ func (q *udpWriteQueue) discardPending(elem *list.Element) {
 // turn charges at most a quantum to one flow, preserving each flow's FIFO.
 // Socket writes happen outside the lock so ingress never waits on pacing or I/O.
 func (q *udpWriteQueue) turn(limiter *limits.Limiter) (*udpFlow, []byte, time.Duration) {
+	return q.turnWithBudget(limiter.TryTakeBytes)
+}
+
+func (q *udpWriteQueue) turnWithBudget(take func(int) time.Duration) (*udpFlow, []byte, time.Duration) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
+	blocked := 0
+	var retry time.Duration
 	for q.active.Len() != 0 {
 		elem := q.active.Front()
 		pending := elem.Value.(*udpPendingFlow)
 		if pending.flow.ctx.Err() != nil {
 			q.discardPending(elem)
+			blocked = 0
 			continue
 		}
 		packet := pending.queue[0]
 		chunk := min(udpPaceQuantum, len(packet)-pending.charged)
-		if delay := limiter.TryTakeBytes(chunk); delay > 0 {
-			return nil, nil, delay
+		if delay := take(chunk); delay > 0 {
+			// A full quantum at the front must not make an affordable small
+			// datagram on another flow wait for those same tokens.
+			q.active.MoveToBack(elem)
+			if retry == 0 || delay < retry {
+				retry = delay
+			}
+			blocked++
+			if blocked >= q.active.Len() {
+				return nil, nil, retry
+			}
+			continue
 		}
+		blocked, retry = 0, 0
 		pending.charged += chunk
 		q.active.MoveToBack(elem)
 		if pending.charged != len(packet) {
@@ -140,6 +158,7 @@ func (q *udpWriteQueue) run(ctx context.Context, limiter *limits.Limiter, log *l
 			select {
 			case <-ctx.Done():
 			case <-timer.C:
+			case <-q.wake:
 			}
 			timer.Stop()
 			continue

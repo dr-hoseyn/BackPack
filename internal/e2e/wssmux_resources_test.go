@@ -32,6 +32,9 @@ func resourceTunnel(t *testing.T) (*tunnel, int) {
 	tunnelPort, entryPort := freePort(t), freePort(t)
 	const token = "resource-profile-token-0123456789"
 	transport := "wssmux"
+	if os.Getenv("BP_RESOURCE_TRANSPORT") == "wss" {
+		transport = "wss"
+	}
 	if os.Getenv("BP_RESOURCE_TRANSPORT") == "tcpfwd-xmpp" {
 		transport = "tcpfwd-xmpp"
 	}

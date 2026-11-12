@@ -12,7 +12,14 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-func TCPConnectionHandler(ctx context.Context, proxyProtocol bool, from net.Conn, to net.Conn, logger *logrus.Logger, usage *traffic.Usage, remotePort int, sniffer bool) {
+// RelayReadFrames aligns large source reads to whole destination frames.
+// Zero leaves normal reads intact; a short read always leaves immediately.
+type RelayReadFrames struct {
+	From int // from -> to
+	To   int // to -> from
+}
+
+func TCPConnectionHandler(ctx context.Context, proxyProtocol bool, from net.Conn, to net.Conn, logger *logrus.Logger, usage *traffic.Usage, remotePort int, sniffer bool, frames ...RelayReadFrames) {
 	stop := context.AfterFunc(ctx, func() { from.Close(); to.Close() })
 	defer stop()
 
@@ -32,11 +39,15 @@ func TCPConnectionHandler(ctx context.Context, proxyProtocol bool, from net.Conn
 	// two additional goroutines for the lifetime of every forwarded stream.
 	// Still join both copies, preserving directional EOF and quota lifetime.
 	done := make(chan struct{}, 2)
+	var sizes RelayReadFrames
+	if len(frames) != 0 {
+		sizes = frames[0]
+	}
 	go func() {
-		transferData(from, to, logger, usage, remotePort, sniffer)
+		transferDataFramed(from, to, logger, usage, remotePort, sniffer, sizes.From)
 		done <- struct{}{}
 	}()
-	transferData(to, from, logger, usage, remotePort, sniffer)
+	transferDataFramed(to, from, logger, usage, remotePort, sniffer, sizes.To)
 	done <- struct{}{}
 
 	if halfCloser(from) != nil && halfCloser(to) != nil {
@@ -82,6 +93,10 @@ func awaitRelay(ctx context.Context, done <-chan struct{}, ends ...io.Closer) {
 // Linux — falls through to the buffered copy, which is also where the fast
 // path lands if the kernel declines it.
 func transferData(from net.Conn, to net.Conn, logger *logrus.Logger, usage *traffic.Usage, remotePort int, sniffer bool) {
+	transferDataFramed(from, to, logger, usage, remotePort, sniffer, 0)
+}
+
+func transferDataFramed(from net.Conn, to net.Conn, logger *logrus.Logger, usage *traffic.Usage, remotePort int, sniffer bool, frameSize int) {
 	if spliceTransfer(from, to, logger, usage, remotePort, sniffer) {
 		countSpliced()
 		return
@@ -89,6 +104,7 @@ func transferData(from net.Conn, to net.Conn, logger *logrus.Logger, usage *traf
 	countBuffered()
 
 	buf := newRelayCopyBuffer()
+	buf.frameSize = frameSize
 	if copyBuffered(from, to, &buf, logger, usage, remotePort, sniffer) {
 		buf.release()
 	}
@@ -106,6 +122,9 @@ func transferBuffered(from net.Conn, to net.Conn, buf []byte, logger *logrus.Log
 func copyBuffered(from net.Conn, to net.Conn, buffer *relayCopyBuffer, logger *logrus.Logger, usage *traffic.Usage, remotePort int, sniffer bool) bool {
 	for {
 		buf := *buffer.p
+		if buffer.frameSize > 0 && len(buf) >= buffer.frameSize {
+			buf = buf[:len(buf)/buffer.frameSize*buffer.frameSize]
+		}
 		// Read data from the source connection
 		r, err := from.Read(buf)
 		// A Read is allowed to return bytes and an error together, and io.Reader
@@ -133,7 +152,9 @@ func copyBuffered(from net.Conn, to net.Conn, buffer *relayCopyBuffer, logger *l
 			finishDirection(from, to, err)
 			return true
 		}
-		buffer.grow(r)
+		if r == len(buf) {
+			buffer.grow(len(*buffer.p))
+		}
 	}
 }
 

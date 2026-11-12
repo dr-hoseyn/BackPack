@@ -2,11 +2,60 @@ package handlers
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"net"
 	"slices"
 	"testing"
 )
+
+func TestAdaptiveRelayFramedReadsPreservePayloadAndGrowth(t *testing.T) {
+	for _, frame := range []int{16368, 32752, 65520} {
+		for _, size := range []int{1, smallRelayBufferSize - 1, smallRelayBufferSize, 3*relayBufferSize + 17} {
+			t.Run(fmt.Sprintf("frame-%d/bytes-%d", frame, size), func(t *testing.T) {
+				payload := bytes.Repeat([]byte{byte(frame)}, size)
+				from := &sizedReadConn{data: payload}
+				to := &completedWriteConn{}
+				buffer := newRelayCopyBuffer()
+				buffer.frameSize = frame
+				if !copyBuffered(from, to, &buffer, quietLogger(), nil, 0, false) {
+					t.Fatal("framed copy lost buffer ownership")
+				}
+				defer buffer.release()
+				if !bytes.Equal(to.received, payload) {
+					t.Fatal("framed read lost a tail or changed payload")
+				}
+				first := smallRelayBufferSize
+				if first >= frame {
+					first = first / frame * frame
+				}
+				if from.sizes[0] != first {
+					t.Fatal("initial read ignored the destination frame")
+				}
+				if size >= first && from.sizes[1] != relayBufferSize/frame*frame {
+					t.Fatal("full read did not grow to whole bulk frames")
+				}
+				if size < first && len(*buffer.p) != smallRelayBufferSize {
+					t.Fatal("short response acquired a bulk buffer")
+				}
+			})
+		}
+	}
+}
+
+func TestAdaptiveRelayFramedFailedWriteKeepsQueuedBytes(t *testing.T) {
+	const frame = 16368
+	from := &sizedReadConn{data: bytes.Repeat([]byte("q"), frame+1)}
+	to := &queuedWriteConn{err: net.ErrClosed}
+	buffer := newRelayCopyBuffer()
+	buffer.frameSize = frame
+	if copyBuffered(from, to, &buffer, quietLogger(), nil, 0, false) {
+		t.Fatal("framed failed write allowed recycling its queued slice")
+	}
+	if len(to.queued) != frame || !bytes.Equal(to.queued, bytes.Repeat([]byte("q"), frame)) {
+		t.Fatal("framed failed write changed its outstanding bytes")
+	}
+}
 
 type sizedReadConn struct {
 	net.Conn

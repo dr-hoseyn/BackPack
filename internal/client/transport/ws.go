@@ -254,5 +254,5 @@ func (c *WsTransport) localDialer(tunnelCon *websocket.Conn, remoteAddr string, 
 		tunnelCon.Close()
 		return
 	}
-	handlers.WSConnectionHandler(c.state.Ctx(), tunnelCon, backend, c.logger, c.state.Usage(), port, c.config.Sniffer)
+	handlers.WSConnectionHandler(c.state.Ctx(), tunnelCon, backend, c.logger, c.state.Usage(), port, c.config.Sniffer, c.config.Mode == config.WSS)
 }

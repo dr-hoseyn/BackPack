@@ -367,7 +367,7 @@ func (s *WsTransport) handleLoop(g *wsGen) {
 						// the limit would fill up permanently.
 						defer s.limits.release()
 						handlers.WSConnectionHandler(g.ctx, c.conn, local.conn,
-							s.logger, g.usageMonitor, localForwardPort(local.conn), s.config.Sniffer)
+							s.logger, g.usageMonitor, localForwardPort(local.conn), s.config.Sniffer, s.config.Mode == config.WSS)
 					}()
 				},
 			}.run()

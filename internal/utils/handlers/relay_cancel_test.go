@@ -54,7 +54,7 @@ func TestWSRelayCancellationClosesBothEnds(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		WSConnectionHandler(ctx, wsServer, tcpRelay, quietLogger(), &traffic.Usage{}, 8080, false)
+		WSConnectionHandler(ctx, wsServer, tcpRelay, quietLogger(), &traffic.Usage{}, 8080, false, false)
 	}()
 
 	cancel()

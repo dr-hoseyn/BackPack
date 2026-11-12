@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+- Leave header-sized room at common WSS/WSSMux TLS record boundaries, avoiding
+  tiny trailing records on bulk writes. Preserve immediate small writes,
+  framing, authentication, receive windows and adaptive relay-buffer growth.
+- Keep one full-sized receive buffer per L3 UDP flow, avoiding an extra
+  readiness syscall and shared buffer exchange for every reply. Prefer CPU
+  efficiency over reducing idle-flow memory.
+- Renew uncapped UDP reply timers only after an idle deadline fires. Preserve
+  the actual last-activity expiration and full per-read pacing budgets for
+  bandwidth-limited flows.
+- Reuse separate send/receive HMAC states for authenticated FEC under the
+  existing I/O locks. Preserve directional keys, tags, forgery rejection and
+  parity recovery while removing per-shard HMAC setup and allocations.
+- Let affordable small UDP datagrams progress while another flow waits for a
+  larger pacing quantum. Wake pacing waits when new traffic arrives; retain
+  per-flow FIFO ordering and the existing connection and bandwidth limits.
+
 ## v1.25.0 — 2026-11-12
 
 - Keep address health selection scoped to the active carrier and preserve

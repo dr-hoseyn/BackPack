@@ -35,7 +35,8 @@ type backendOpts struct {
 	sndBuf int
 	mss    int
 	// sniffer records per-port usage for the panel.
-	sniffer bool
+	sniffer    bool
+	relayFrame int // optional WSSMux destination frame size
 }
 
 func (o backendOpts) context(generation context.Context) context.Context {
@@ -118,7 +119,7 @@ func (l *lifecycle) relay(user net.Conn, addr string, port int, o backendOpts) {
 		user.Close()
 		return
 	}
-	handlers.TCPConnectionHandler(o.context(l.state.Ctx()), false, metrics.CountedConn(user), backend, l.logger, l.state.Usage(), port, o.sniffer)
+	handlers.TCPConnectionHandler(o.context(l.state.Ctx()), false, metrics.CountedConn(user), backend, l.logger, l.state.Usage(), port, o.sniffer, handlers.RelayReadFrames{To: o.relayFrame})
 }
 
 // relayStream serves one user arriving on a stream that names its own target:

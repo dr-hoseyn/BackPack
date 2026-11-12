@@ -87,26 +87,26 @@ type WsMuxConfig struct {
 	BandwidthMbps int
 }
 
-func NewWSMuxServer(parentCtx context.Context, config *WsMuxConfig, logger *logrus.Logger) *WsMuxTransport {
+func NewWSMuxServer(parentCtx context.Context, cfg *WsMuxConfig, logger *logrus.Logger) *WsMuxTransport {
 	// Initialize the TcpTransport struct
 	server := &WsMuxTransport{
 		smuxConfig: &smux.Config{
-			Version:           network.ResolveStaticMuxVersion(config.MuxVersion),
+			Version:           network.ResolveStaticMuxVersion(cfg.MuxVersion),
 			KeepAliveInterval: 20 * time.Second,
 			KeepAliveTimeout:  40 * time.Second,
-			MaxFrameSize:      config.MaxFrameSize,
-			MaxReceiveBuffer:  config.MaxReceiveBuffer,
-			MaxStreamBuffer:   config.MaxStreamBuffer,
+			MaxFrameSize:      network.WSMuxFrameSize(cfg.MaxFrameSize, cfg.Mode == config.WSSMUX),
+			MaxReceiveBuffer:  cfg.MaxReceiveBuffer,
+			MaxStreamBuffer:   cfg.MaxStreamBuffer,
 		},
-		config: config,
+		config: cfg,
 		lifecycle: lifecycle{
 			parentctx: parentCtx,
 			logger:    logger,
-			usage:     usageSpec{snifferLog: config.SnifferLog, sniffer: config.Sniffer},
+			usage:     usageSpec{snifferLog: cfg.SnifferLog, sniffer: cfg.Sniffer},
 		},
 		streamCounter:  0,
 		sessionCounter: 0,
-		limits:         newLimiter(Limits{MaxConnections: config.MaxConnections, BandwidthMbps: config.BandwidthMbps}),
+		limits:         newLimiter(Limits{MaxConnections: cfg.MaxConnections, BandwidthMbps: cfg.BandwidthMbps}),
 	}
 
 	// The first run is installed the same way every later one is, so there is
@@ -297,7 +297,11 @@ func (s *WsMuxTransport) tunnelListener(g *wsMuxGen) {
 			} else if strings.HasPrefix(r.URL.Path, "/tunnel") {
 				cfg := *s.smuxConfig
 				cfg.Version = version
-				session, err := network.NewWatchedMuxSession(network.WSMuxStream(conn), &cfg, smux.Client)
+				wire := network.WSMuxStream(conn)
+				if s.config.Mode == config.WSSMUX {
+					wire = network.WSMuxAnnouncementStream(conn)
+				}
+				session, err := network.NewWatchedMuxSession(wire, &cfg, smux.Client)
 				if err != nil {
 					s.logger.Errorf("failed to create MUX session for connection %s: %v", conn.RemoteAddr().String(), err)
 					conn.Close()
@@ -395,7 +399,12 @@ func (s *WsMuxTransport) tlsSettings() network.TLSSettings {
 // Its context is the seated client's, so the session ends with the client that
 // opened it rather than with the generation — which now outlives its clients.
 func (s *WsMuxTransport) session(g *wsMuxGen, owner context.Context) muxSession {
+	frameSize := 0
+	if s.config.Mode == config.WSSMUX {
+		frameSize = s.smuxConfig.MaxFrameSize
+	}
 	return muxSession{
+		relayFrame:    frameSize,
 		ctx:           owner,
 		local:         g.localChannel,
 		usage:         g.usageMonitor,

@@ -1,5 +1,43 @@
 # Native UDP sender cost
 
+## L3 forwarded UDP CPU cost and latency
+
+Each L3 UDP backend reply worker retains a full 65535-byte receive buffer.
+This deliberately spends memory (roughly 64 KiB per flow, excluding sockets
+and other state) to avoid an extra readiness syscall and shared buffer exchange
+for every response. Configure `max_connections` to cap the number of flows.
+
+Uncapped reply reads arm one idle timer instead of resetting it per packet.
+If the timer fires while traffic in either direction keeps the flow active,
+it is renewed to the actual last activity plus the idle timeout. Socket close
+still interrupts a blocked read. Bandwidth-limited reads keep their original
+fresh per-read deadline, including the wait for shared pacing credit, so this
+timer optimization cannot prematurely cut a paced response short.
+
+Authenticated FEC reuses independent HMAC-SHA256 states and tag scratch on send
+and receive, protected by their existing direction-specific locks. The key,
+wire tag and verification rules are unchanged. Fresh reference HMAC checks,
+forgery injection across groups and simultaneous signing/verification verify
+that state reuse neither carries old message bytes nor crosses directions.
+
+The outbound pacing queue checks other flows before sleeping for a large
+datagram's credit. Small messages can use available credit without overtaking
+earlier messages on their own flow. New queued traffic wakes a pacing wait.
+The queue's existing packet/byte limits and drop-newest overflow policy remain.
+
+The Recovery regressions workflow repeats datagram integrity, concurrent flow
+isolation, pacing, timer renewal, cleanup, authentication and FEC recovery under
+the race detector. It compares `BenchmarkUDPForwardedReplies`,
+`BenchmarkAuthenticatedFEC` and `BenchmarkUDPIdleReplyFlows` against the PR base
+and saves the results as `l3-udp-fec-cpu-quality`.
+The reply benchmark reports process user+system `cpu-ns/op` as well as wall time;
+this includes its loopback client, backend and reply pump, not only a production
+server. The FEC benchmark measures authenticated framing without socket I/O.
+The idle benchmark records retained Go heap for 300 idle reply workers, exposing
+the memory tradeoff. These do not establish WAN throughput or long-term uptime.
+
+## Native sender framing
+
 The sender now reuses bounded framing and encrypted wire buffers under its existing
 write mutex. Fragment headers stay local to each call; AEAD and socket writes
 consume the shared scratch before another sender can reuse it. The authenticated
