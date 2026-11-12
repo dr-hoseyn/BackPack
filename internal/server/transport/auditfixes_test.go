@@ -232,7 +232,7 @@ func TestAUDPFlowStaysAUDPFlowUnderABandwidthCap(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer fw.close()
-	flow := newUDPFlow(fw, &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 5000}, "k")
+	flow := newUDPFlow(fw, (&net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 5000}).AddrPort())
 	lim := newLimiter(Limits{BandwidthMbps: 10})
 	if !isUDPFlow(lim.wrap(context.Background(), flow)) {
 		t.Fatal("a bandwidth cap hid that the connection is a UDP flow")
