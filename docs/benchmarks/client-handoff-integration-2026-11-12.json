@@ -1,0 +1,58 @@
+{
+  "source": "f6df17c3246afb16d3307fc78c4c3cf4a780d57f",
+  "included_prs": [
+    65,
+    66,
+    68,
+    69,
+    70,
+    71,
+    72,
+    73
+  ],
+  "excluded_prs": [
+    67
+  ],
+  "binary_sha256": {
+    "client": "ac6c8b0f78906ac17cc7b9ec6057bcf83841e3b5d1fb393b83a1029c7b1c7a1b",
+    "e2e": "192499816fd5ce4dd7f73025c0e5c16d47d77206baf5f52ebde6efebcf1565bc",
+    "transport": "281362b42eec2d0160655b943f95a345250a7ad63da7bb102424d59e997406fd"
+  },
+  "date_local": "2026-11-12",
+  "go": "1.26.11",
+  "included_source_revisions": {
+    "65": "3cafafe1a0b7ad407ee62fbf42e4d60ef2530f25",
+    "66": "810c4e82bd6510db0b607d8fcd1dbf88cb401253",
+    "68": "4a0d35b548bb753d14fc25397e9aed1400f373ac",
+    "69": "dd14c7914a3d2342ff2faf53f2e45a7a2edc731a",
+    "70": "93a0015fd418e3204345ac770d486819a1f93e28",
+    "71": "bb24a94180de0d715fbce7efd27183685291a645",
+    "72": "3b4b92b4e606dfafdecd8d11ef5f06528e83faf9",
+    "73": "b86680a"
+  },
+  "functional": {
+    "1-transport": {
+      "raw_output": "=== RUN   TestKCPClientGoodbyeReachesServerBeforeSocketCloses\n--- PASS: TestKCPClientGoodbyeReachesServerBeforeSocketCloses (0.30s)\n=== RUN   TestKCPClientGoodbyeCannotStallShutdown\n--- PASS: TestKCPClientGoodbyeCannotStallShutdown (0.40s)\n=== RUN   TestCancelledClientJoinsPoolWorkersBeforeItsOwnerReturns\n--- PASS: TestCancelledClientJoinsPoolWorkersBeforeItsOwnerReturns (0.00s)\n=== RUN   TestClientShutdownJoinsAnAlreadyRunningReconnect\n--- PASS: TestClientShutdownJoinsAnAlreadyRunningReconnect (0.02s)\n=== RUN   TestKCPClientGoodbyeReachesServerBeforeSocketCloses\n--- PASS: TestKCPClientGoodbyeReachesServerBeforeSocketCloses (0.30s)\n=== RUN   TestKCPClientGoodbyeCannotStallShutdown\n--- PASS: TestKCPClientGoodbyeCannotStallShutdown (0.40s)\n=== RUN   TestCancelledClientJoinsPoolWorkersBeforeItsOwnerReturns\n--- PASS: TestCancelledClientJoinsPoolWorkersBeforeItsOwnerReturns (0.00s)\n=== RUN   TestClientShutdownJoinsAnAlreadyRunningReconnect\n--- PASS: TestClientShutdownJoinsAnAlreadyRunningReconnect (0.02s)\n=== RUN   TestKCPClientGoodbyeReachesServerBeforeSocketCloses\n--- PASS: TestKCPClientGoodbyeReachesServerBeforeSocketCloses (0.30s)\n=== RUN   TestKCPClientGoodbyeCannotStallShutdown\n--- PASS: TestKCPClientGoodbyeCannotStallShutdown (0.40s)\n=== RUN   TestCancelledClientJoinsPoolWorkersBeforeItsOwnerReturns\n--- PASS: TestCancelledClientJoinsPoolWorkersBeforeItsOwnerReturns (0.00s)\n=== RUN   TestClientShutdownJoinsAnAlreadyRunningReconnect\n--- PASS: TestClientShutdownJoinsAnAlreadyRunningReconnect (0.02s)\n=== RUN   TestKCPClientGoodbyeReachesServerBeforeSocketCloses\n--- PASS: TestKCPClientGoodbyeReachesServerBeforeSocketCloses (0.30s)\n=== RUN   TestKCPClientGoodbyeCannotStallShutdown\n--- PASS: TestKCPClientGoodbyeCannotStallShutdown (0.40s)\n=== RUN   TestCancelledClientJoinsPoolWorkersBeforeItsOwnerReturns\n--- PASS: TestCancelledClientJoinsPoolWorkersBeforeItsOwnerReturns (0.00s)\n=== RUN   TestClientShutdownJoinsAnAlreadyRunningReconnect\n--- PASS: TestClientShutdownJoinsAnAlreadyRunningReconnect (0.02s)\n=== RUN   TestKCPClientGoodbyeReachesServerBeforeSocketCloses\n--- PASS: TestKCPClientGoodbyeReachesServerBeforeSocketCloses (0.30s)\n=== RUN   TestKCPClientGoodbyeCannotStallShutdown\n--- PASS: TestKCPClientGoodbyeCannotStallShutdown (0.40s)\n=== RUN   TestCancelledClientJoinsPoolWorkersBeforeItsOwnerReturns\n--- PASS: TestCancelledClientJoinsPoolWorkersBeforeItsOwnerReturns (0.00s)\n=== RUN   TestClientShutdownJoinsAnAlreadyRunningReconnect\n--- PASS: TestClientShutdownJoinsAnAlreadyRunningReconnect (0.02s)\nPASS\n"
+    },
+    "2-client": {
+      "raw_output": "=== RUN   TestClientStartWaitsForItsRealMuxRelayToFinish\n=== RUN   TestClientStartWaitsForItsRealMuxRelayToFinish/wsmux\n=== RUN   TestClientStartWaitsForItsRealMuxRelayToFinish/wssmux\n--- PASS: TestClientStartWaitsForItsRealMuxRelayToFinish (1.27s)\n    --- PASS: TestClientStartWaitsForItsRealMuxRelayToFinish/wsmux (0.11s)\n    --- PASS: TestClientStartWaitsForItsRealMuxRelayToFinish/wssmux (1.16s)\n=== RUN   TestClientStartWaitsForItsRealMuxRelayToFinish\n=== RUN   TestClientStartWaitsForItsRealMuxRelayToFinish/wsmux\n=== RUN   TestClientStartWaitsForItsRealMuxRelayToFinish/wssmux\n--- PASS: TestClientStartWaitsForItsRealMuxRelayToFinish (1.27s)\n    --- PASS: TestClientStartWaitsForItsRealMuxRelayToFinish/wsmux (1.11s)\n    --- PASS: TestClientStartWaitsForItsRealMuxRelayToFinish/wssmux (0.16s)\n=== RUN   TestClientStartWaitsForItsRealMuxRelayToFinish\n=== RUN   TestClientStartWaitsForItsRealMuxRelayToFinish/wsmux\n=== RUN   TestClientStartWaitsForItsRealMuxRelayToFinish/wssmux\n--- PASS: TestClientStartWaitsForItsRealMuxRelayToFinish (2.27s)\n    --- PASS: TestClientStartWaitsForItsRealMuxRelayToFinish/wsmux (1.10s)\n    --- PASS: TestClientStartWaitsForItsRealMuxRelayToFinish/wssmux (1.16s)\n=== RUN   TestClientStartWaitsForItsRealMuxRelayToFinish\n=== RUN   TestClientStartWaitsForItsRealMuxRelayToFinish/wsmux\n=== RUN   TestClientStartWaitsForItsRealMuxRelayToFinish/wssmux\n--- PASS: TestClientStartWaitsForItsRealMuxRelayToFinish (2.26s)\n    --- PASS: TestClientStartWaitsForItsRealMuxRelayToFinish/wsmux (1.11s)\n    --- PASS: TestClientStartWaitsForItsRealMuxRelayToFinish/wssmux (1.16s)\n=== RUN   TestClientStartWaitsForItsRealMuxRelayToFinish\n=== RUN   TestClientStartWaitsForItsRealMuxRelayToFinish/wsmux\n=== RUN   TestClientStartWaitsForItsRealMuxRelayToFinish/wssmux\n--- PASS: TestClientStartWaitsForItsRealMuxRelayToFinish (2.26s)\n    --- PASS: TestClientStartWaitsForItsRealMuxRelayToFinish/wsmux (1.10s)\n    --- PASS: TestClientStartWaitsForItsRealMuxRelayToFinish/wssmux (1.15s)\nPASS\n"
+    },
+    "3-e2e": {
+      "raw_output": "=== RUN   TestEveryTransportComesBackAfterTheTunnelRestarts\n=== RUN   TestEveryTransportComesBackAfterTheTunnelRestarts/tcp\n=== RUN   TestEveryTransportComesBackAfterTheTunnelRestarts/tcpmux\n=== RUN   TestEveryTransportComesBackAfterTheTunnelRestarts/ws\n=== RUN   TestEveryTransportComesBackAfterTheTunnelRestarts/wss\n12-Nov 00:23:01 [\u001b[31mERROR\u001b[0m] tunnel server dialer: context canceled\n=== RUN   TestEveryTransportComesBackAfterTheTunnelRestarts/wsmux\n=== RUN   TestEveryTransportComesBackAfterTheTunnelRestarts/wssmux\n=== RUN   TestEveryTransportComesBackAfterTheTunnelRestarts/kcp\n=== RUN   TestEveryTransportComesBackAfterTheTunnelRestarts/quic\n--- PASS: TestEveryTransportComesBackAfterTheTunnelRestarts (10.18s)\n    --- PASS: TestEveryTransportComesBackAfterTheTunnelRestarts/tcp (1.13s)\n    --- PASS: TestEveryTransportComesBackAfterTheTunnelRestarts/tcpmux (1.12s)\n    --- PASS: TestEveryTransportComesBackAfterTheTunnelRestarts/ws (1.13s)\n    --- PASS: TestEveryTransportComesBackAfterTheTunnelRestarts/wss (1.17s)\n    --- PASS: TestEveryTransportComesBackAfterTheTunnelRestarts/wsmux (1.13s)\n    --- PASS: TestEveryTransportComesBackAfterTheTunnelRestarts/wssmux (1.14s)\n    --- PASS: TestEveryTransportComesBackAfterTheTunnelRestarts/kcp (1.91s)\n    --- PASS: TestEveryTransportComesBackAfterTheTunnelRestarts/quic (1.44s)\nPASS\n"
+    },
+    "4-e2e": {
+      "raw_output": "=== RUN   TestWSSSimpleAuthCarriesTraffic\n=== RUN   TestWSSSimpleAuthCarriesTraffic/wss\n=== RUN   TestWSSSimpleAuthCarriesTraffic/wssmux\n--- PASS: TestWSSSimpleAuthCarriesTraffic (1.19s)\n    --- PASS: TestWSSSimpleAuthCarriesTraffic/wss (0.60s)\n    --- PASS: TestWSSSimpleAuthCarriesTraffic/wssmux (0.58s)\n=== RUN   TestWSMuxCarriesTrafficThroughAFramingProxy\n--- PASS: TestWSMuxCarriesTrafficThroughAFramingProxy (0.65s)\n=== RUN   TestWSMuxNegotiatedVersionsCarryRealTraffic\n=== RUN   TestWSMuxNegotiatedVersionsCarryRealTraffic/wsmux/server0-client0\n=== RUN   TestWSMuxNegotiatedVersionsCarryRealTraffic/wsmux/server0-client1\n=== RUN   TestWSMuxNegotiatedVersionsCarryRealTraffic/wsmux/server1-client0\n=== RUN   TestWSMuxNegotiatedVersionsCarryRealTraffic/wsmux/server2-client0\n=== RUN   TestWSMuxNegotiatedVersionsCarryRealTraffic/wsmux/server1-client1\n=== RUN   TestWSMuxNegotiatedVersionsCarryRealTraffic/wsmux/server2-client2\n=== RUN   TestWSMuxNegotiatedVersionsCarryRealTraffic/wssmux/server0-client0\n=== RUN   TestWSMuxNegotiatedVersionsCarryRealTraffic/wssmux/server0-client1\n=== RUN   TestWSMuxNegotiatedVersionsCarryRealTraffic/wssmux/server1-client0\n=== RUN   TestWSMuxNegotiatedVersionsCarryRealTraffic/wssmux/server2-client0\n=== RUN   TestWSMuxNegotiatedVersionsCarryRealTraffic/wssmux/server1-client1\n=== RUN   TestWSMuxNegotiatedVersionsCarryRealTraffic/wssmux/server2-client2\n--- PASS: TestWSMuxNegotiatedVersionsCarryRealTraffic (6.99s)\n    --- PASS: TestWSMuxNegotiatedVersionsCarryRealTraffic/wsmux/server0-client0 (0.57s)\n    --- PASS: TestWSMuxNegotiatedVersionsCarryRealTraffic/wsmux/server0-client1 (0.58s)\n    --- PASS: TestWSMuxNegotiatedVersionsCarryRealTraffic/wsmux/server1-client0 (0.57s)\n    --- PASS: TestWSMuxNegotiatedVersionsCarryRealTraffic/wsmux/server2-client0 (0.57s)\n    --- PASS: TestWSMuxNegotiatedVersionsCarryRealTraffic/wsmux/server1-client1 (0.58s)\n    --- PASS: TestWSMuxNegotiatedVersionsCarryRealTraffic/wsmux/server2-client2 (0.57s)\n    --- PASS: TestWSMuxNegotiatedVersionsCarryRealTraffic/wssmux/server0-client0 (0.58s)\n    --- PASS: TestWSMuxNegotiatedVersionsCarryRealTraffic/wssmux/server0-client1 (0.59s)\n    --- PASS: TestWSMuxNegotiatedVersionsCarryRealTraffic/wssmux/server1-client0 (0.60s)\n    --- PASS: TestWSMuxNegotiatedVersionsCarryRealTraffic/wssmux/server2-client0 (0.60s)\n    --- PASS: TestWSMuxNegotiatedVersionsCarryRealTraffic/wssmux/server1-client1 (0.59s)\n    --- PASS: TestWSMuxNegotiatedVersionsCarryRealTraffic/wssmux/server2-client2 (0.59s)\nPASS\n"
+    }
+  },
+  "scope": "Composition of eight recorded ready PR source revisions; draft scheduler 67 excluded. Native one-vCPU Linux host, GOMAXPROCS=1, nice priority, isolated loopback tests. Includes final seal/join/control-farewell ordering and smux 1.5.59.",
+  "local_checks": {
+    "raw_output": "ok  \tgithub.com/backpack/backpack/internal/client/transport\t14.602s\nok  \tgithub.com/backpack/backpack/internal/tunnel/chain\t0.300s\n",
+    "linux_vet": "repository-wide passed"
+  },
+  "limitations": [
+    "Functional/control-plane composition validation, not a CPU/throughput/WAN-latency or memory benchmark.",
+    "No race-enabled run or raw-socket/network-namespace transport testing was performed.",
+    "PR71 is represented by its final production control-write revision; its later documentation-only commits are not needed for this composition.",
+    "All source/archive/executable hashes were verified before execution. Isolated test files were removed; production services and global kernel policies were unchanged."
+  ]
+}
