@@ -16,7 +16,11 @@ type muxLocalQueue struct {
 	closed  bool
 	ready   chan struct{}
 	// TCP Forward keeps a small group of carriers active before using spares.
-	waiters    map[*muxQueueWaiter]struct{}
+	waiters map[*muxQueueWaiter]struct{}
+	// WebSocket mux spreads new users over healthy carriers; it must not
+	// inherit TCP Forward's preference for concentrating work on a warm pair.
+	balanced   bool
+	head, tail *muxQueueWaiter // readiness order for WebSocket carriers
 	selected   *muxQueueWaiter
 	lastUse    uint64
 	warm       [num3WarmCarriers]*muxQueueWaiter
@@ -25,13 +29,16 @@ type muxLocalQueue struct {
 }
 
 type muxQueueWaiter struct {
-	ready    chan struct{}
-	slots    chan struct{}
-	done     <-chan struct{}
-	lastUse  uint64
-	warm     bool
-	pressure func() int
+	ready      chan struct{}
+	slots      chan struct{}
+	done       <-chan struct{}
+	lastUse    uint64
+	warm       bool
+	pressure   func() int
+	prev, next *muxQueueWaiter // linked only while waiting on a balanced queue
 }
+
+func (w *muxQueueWaiter) isClosed() bool { return muxCarrierClosed(w.done) }
 
 func muxCarrierClosed(done <-chan struct{}) bool {
 	select {
@@ -51,6 +58,13 @@ const (
 
 func newMuxLocalQueue(limit int) *muxLocalQueue {
 	return &muxLocalQueue{limit: limit, ready: make(chan struct{}, 1)}
+}
+
+func newBalancedMuxLocalQueue(limit int) *muxLocalQueue {
+	q := newMuxLocalQueue(limit)
+	q.waiters = make(map[*muxQueueWaiter]struct{})
+	q.balanced = true
+	return q
 }
 
 func (q *muxLocalQueue) push(local LocalTCPConn, queued func()) bool {
@@ -89,16 +103,26 @@ func (q *muxLocalQueue) push(local LocalTCPConn, queued func()) bool {
 // requests remain, instead of waking every session for a single connection.
 func (q *muxLocalQueue) notify() {
 	if q.waiters != nil {
-		if q.selected != nil && muxCarrierClosed(q.selected.done) {
+		// Socket observation on a closed carrier can report zero pressure.
+		// Do not interpret that as a healthy path while its worker is still
+		// waking up to leave the queue.
+		if q.selected != nil && q.selected.isClosed() {
 			q.removeWaiter(q.selected)
 		}
 		if q.selected != nil || q.closed || q.entries.Len() == 0 {
 			return
 		}
+		if q.balanced {
+			if next := q.chooseReadyCarrier(); next != nil {
+				q.selected = next
+				next.ready <- struct{}{}
+			}
+			return
+		}
 		var bestLoad int
 		var next *muxQueueWaiter
 		for waiter := range q.waiters {
-			if muxCarrierClosed(waiter.done) {
+			if waiter.isClosed() {
 				continue
 			}
 			q.warmCarrier(waiter)
@@ -106,9 +130,11 @@ func (q *muxLocalQueue) notify() {
 			// Give the warm pair the first few streams, then use the
 			// rest of the pool as concurrent load builds.
 			load := len(waiter.slots) - 1
+			pressure := 0
 			if waiter.pressure != nil {
-				load += waiter.pressure()
+				pressure = waiter.pressure()
 			}
+			load += pressure
 			if !waiter.warm {
 				load += num3SpareLoad
 				if waiter.lastUse != 0 {
@@ -117,8 +143,9 @@ func (q *muxLocalQueue) notify() {
 					load -= num3SpareReuse
 				}
 			}
-			if next == nil || load < bestLoad ||
-				(load == bestLoad && waiter.lastUse < next.lastUse) {
+			// TCP Forward retains warm-carrier occupancy/recency ordering;
+			// WebSocket readiness/congestion ordering returned above.
+			if next == nil || load < bestLoad || (load == bestLoad && waiter.lastUse < next.lastUse) {
 				next, bestLoad = waiter, load
 			}
 		}
@@ -132,6 +159,32 @@ func (q *muxLocalQueue) notify() {
 	case q.ready <- struct{}{}:
 	default:
 	}
+}
+
+// Preserve the shared channel's readiness order among healthy carriers. Quiet
+// long-lived streams are not evidence that a TCP socket is busy; ranking their
+// count changed healthy scheduling and regressed fresh-user latency in controls.
+// Pressure is nonnegative, so the first zero score is already optimal. Usually
+// this observes one carrier and does not scan the rest of the pool.
+func (q *muxLocalQueue) chooseReadyCarrier() *muxQueueWaiter {
+	var next *muxQueueWaiter
+	var bestPressure int
+	for waiter := q.head; waiter != nil; waiter = waiter.next {
+		if waiter.isClosed() {
+			continue
+		}
+		pressure := 0
+		if waiter.pressure != nil {
+			pressure = waiter.pressure()
+		}
+		if pressure == 0 {
+			return waiter
+		}
+		if next == nil || pressure < bestPressure {
+			next, bestPressure = waiter, pressure
+		}
+	}
+	return next
 }
 
 func (q *muxLocalQueue) warmCarrier(waiter *muxQueueWaiter) {
@@ -155,7 +208,7 @@ func (q *muxLocalQueue) waitForWarm(spareLoad int) bool {
 		return false
 	}
 	for _, warm := range q.warm {
-		if warm == nil || muxCarrierClosed(warm.done) || len(warm.slots) >= min(cap(warm.slots), spareLoad) {
+		if warm == nil || warm.isClosed() || len(warm.slots) >= min(cap(warm.slots), spareLoad) {
 			continue
 		}
 		if warm.pressure != nil && len(warm.slots)+warm.pressure() >= spareLoad {
@@ -195,20 +248,46 @@ func (q *muxLocalQueue) wait(waiter *muxQueueWaiter) <-chan struct{} {
 		return q.ready
 	}
 	q.mu.Lock()
-	if muxCarrierClosed(waiter.done) {
+	if waiter.isClosed() {
 		q.removeWaiter(waiter)
 		q.notify()
 		q.mu.Unlock()
 		return waiter.ready
 	}
-	q.warmCarrier(waiter)
-	q.waiters[waiter] = struct{}{}
+	if !q.balanced {
+		q.warmCarrier(waiter)
+	}
+	if _, exists := q.waiters[waiter]; !exists {
+		q.waiters[waiter] = struct{}{}
+		if q.balanced {
+			waiter.prev = q.tail
+			if q.tail != nil {
+				q.tail.next = waiter
+			} else {
+				q.head = waiter
+			}
+			q.tail = waiter
+		}
+	}
 	q.notify()
 	q.mu.Unlock()
 	return waiter.ready
 }
 
 func (q *muxLocalQueue) removeWaiter(waiter *muxQueueWaiter) {
+	if _, exists := q.waiters[waiter]; exists && q.balanced {
+		if waiter.prev != nil {
+			waiter.prev.next = waiter.next
+		} else {
+			q.head = waiter.next
+		}
+		if waiter.next != nil {
+			waiter.next.prev = waiter.prev
+		} else {
+			q.tail = waiter.prev
+		}
+		waiter.prev, waiter.next = nil, nil
+	}
 	delete(q.waiters, waiter)
 	if q.selected == waiter {
 		q.selected = nil
@@ -255,16 +334,15 @@ func (q *muxLocalQueue) popFor(waiter *muxQueueWaiter) (LocalTCPConn, bool) {
 	return q.popForSession(waiter, nil)
 }
 
-// popForSession also covers transports using the shared readiness channel.
-// If closure races a consumed notification, hand the wake to a live worker
-// without moving the user to the back of the queue or restarting its budget.
 func (q *muxLocalQueue) popForSession(waiter *muxQueueWaiter, done <-chan struct{}) (LocalTCPConn, bool) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	if waiter != nil {
 		q.removeWaiter(waiter)
 	}
-	if muxCarrierClosed(done) || (waiter != nil && muxCarrierClosed(waiter.done)) {
+	// Retain the shared-channel guard as well as balanced waiter ownership.
+	// Closure after notification must leave the user's FIFO position intact.
+	if muxCarrierClosed(done) || (waiter != nil && waiter.isClosed()) {
 		q.notify()
 		return LocalTCPConn{}, false
 	}
