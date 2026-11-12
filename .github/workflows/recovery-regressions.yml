@@ -36,7 +36,7 @@ jobs:
       - name: Verify TLS record boundaries, bytes and legacy framing
         run: >-
           go test -race ./internal/utils/network ./internal/utils/handlers
-          -run '^Test(WebSocketTLS|WebSocketRelay|AdaptiveRelayFramed|WSMuxBinaryStreamAndLegacyCompatibility|WSMuxHeaderOnlyAndPayloadFramesKeepTheirBytes)'
+          -run '^Test(WebSocketTLS|WebSocketRelay|AdaptiveRelayFramed|WSMuxAnnouncement|WSMuxBinaryStreamAndLegacyCompatibility|WSMuxHeaderOnlyAndPayloadFramesKeepTheirBytes)'
           -count=3 -v -timeout 2m
       - name: Build the same workload on the PR base and candidate
         run: |
@@ -44,6 +44,7 @@ jobs:
           git worktree add --detach "$RUNNER_TEMP/wss-cpu-base" "$BP_RESOURCE_BASELINE_REF"
           echo "BP_RESOURCE_BASELINE_SHA=$(git -C "$RUNNER_TEMP/wss-cpu-base" rev-parse HEAD)" >> "$GITHUB_ENV"
           cp internal/e2e/wssmux_resources_test.go "$RUNNER_TEMP/wss-cpu-base/internal/e2e/"
+          cp internal/e2e/wssmux_churn_test.go "$RUNNER_TEMP/wss-cpu-base/internal/e2e/"
           go test -c -o "$RUNNER_TEMP/wss-cpu-candidate" ./internal/e2e
           (cd "$RUNNER_TEMP/wss-cpu-base" && go test -c -o "$RUNNER_TEMP/wss-cpu-baseline" ./internal/e2e)
       - name: Alternate five verified baseline and candidate CPU samples
@@ -70,6 +71,21 @@ jobs:
             go tool pprof -top -nodecount=30 "$RUNNER_TEMP/wss-cpu-$kind" \
               "$RUNNER_TEMP/resource-wss-cpu-$kind-cpu.pprof" > "$RUNNER_TEMP/wss-cpu-profile-$kind-cpu.txt"
           done
+      - name: Compare verified short-connection CPU and tail latency
+        env:
+          BP_WSSMUX_CHURN: '1'
+        run: |
+          set -euo pipefail
+          for sample in 1 2 3 4 5; do
+            order="baseline candidate"
+            if [ $((sample % 2)) -eq 0 ]; then order="candidate baseline"; fi
+            for kind in $order; do
+              "$RUNNER_TEMP/wss-cpu-$kind" -test.run '^TestWSMuxConnectionChurnProfile$' -test.v -test.timeout 2m \
+                | tee "$RUNNER_TEMP/wss-churn-$kind-$sample.txt"
+            done
+          done
+          python3 .github/scripts/compare-wss-churn.py "$RUNNER_TEMP" | tee "$RUNNER_TEMP/wss-churn-comparison.json"
+          cat "$RUNNER_TEMP/wss-churn-comparison.json" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -78,6 +94,8 @@ jobs:
             ${{ runner.temp }}/wss-cpu-*.txt
             ${{ runner.temp }}/wss-cpu-comparison.json
             ${{ runner.temp }}/resource-wss-cpu-*.pprof
+            ${{ runner.temp }}/wss-churn-*.txt
+            ${{ runner.temp }}/wss-churn-comparison.json
   l3-udp-quality:
     name: L3 UDP and authenticated FEC CPU and quality
     runs-on: ubuntu-latest

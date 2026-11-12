@@ -1,5 +1,29 @@
 # WSS Mux resource use
 
+## Short-connection announcements
+
+The reverse WSSMux server follows each smux stream-open header with its target
+address before relaying application data. For negotiated binary WebSockets it
+copies at most one eight-byte open header and sends it with the next mux write.
+The usual open/address pair therefore shares one WebSocket message and one TLS
+record instead of two. Interleaved controls or another open flush the previous
+header in order. No timer, application payload queue or per-session bulk buffer
+is introduced. Failed writes remain terminal, including later open attempts.
+
+This carrier is deliberately restricted to reverse WSSMux server admission.
+Generic smux users may wait for AcceptStream before writing, so their opens
+remain immediate. Legacy raw peers and the reverse client use their previous
+carriers. Both mux protocol versions keep exactly the same ordered bytes;
+peers already supporting binary framing require no new negotiation extension.
+
+`TestWSMuxConnectionChurnProfile` is an opt-in byte-verified loopback workload
+with 16 workers opening 4,096 real WSSMux connections. Recovery CI copies the
+same fixture to the baseline and alternates five independent processes,
+checking CPU per connection, completed connections per second and p99 latency.
+`BenchmarkWSMuxStreamAnnouncement` separately measures the two metadata writes
+over real TLS; its reduction in records or time is not a whole-tunnel CPU or
+WAN throughput claim.
+
 ## CPU cost at TLS record boundaries
 
 WSS relay reads and WSSMux's send-side frame ceiling leave room for WebSocket

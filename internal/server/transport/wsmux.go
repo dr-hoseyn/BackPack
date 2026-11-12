@@ -297,7 +297,11 @@ func (s *WsMuxTransport) tunnelListener(g *wsMuxGen) {
 			} else if strings.HasPrefix(r.URL.Path, "/tunnel") {
 				cfg := *s.smuxConfig
 				cfg.Version = version
-				session, err := network.NewWatchedMuxSession(network.WSMuxStream(conn), &cfg, smux.Client)
+				wire := network.WSMuxStream(conn)
+				if s.config.Mode == config.WSSMUX {
+					wire = network.WSMuxAnnouncementStream(conn)
+				}
+				session, err := network.NewWatchedMuxSession(wire, &cfg, smux.Client)
 				if err != nil {
 					s.logger.Errorf("failed to create MUX session for connection %s: %v", conn.RemoteAddr().String(), err)
 					conn.Close()
