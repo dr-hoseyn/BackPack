@@ -161,8 +161,8 @@ func (s *WsTransport) control(g *wsGen, ctx context.Context, lost func()) contro
 }
 
 // seatClient makes conn this generation's client, in place of whoever was.
-func (s *WsTransport) seatClient(g *wsGen, conn *websocket.Conn) {
-	g.seat.sit(g.ctx,
+func (s *WsTransport) seatClient(g *wsGen, conn *websocket.Conn) bool {
+	accepted := g.seat.sit(g.ctx,
 		func() { s.vacate(g) },
 		func() {
 			s.controlChannel.Set(conn)
@@ -178,6 +178,12 @@ func (s *WsTransport) seatClient(g *wsGen, conn *websocket.Conn) {
 			loop.link = controlwire.WS(conn)
 			loop.run()
 		})
+	if !accepted {
+		// HTTP no longer owns a hijacked socket. Shutdown may have raced
+		// the handler's earlier check, leaving no control loop to close it.
+		conn.Close()
+	}
+	return accepted
 }
 
 // vacate empties the seat: the client's channel is closed and forgotten, and
@@ -269,7 +275,9 @@ func (s *WsTransport) tunnelListener(g *wsGen) {
 				if g.seat.serving() {
 					s.logger.Warn("a new control channel claim arrived; adopting the new client in place")
 				}
-				s.seatClient(g, conn)
+				if !s.seatClient(g, conn) {
+					return
+				}
 				g.serving.Do(func() { s.serveGeneration(s.forwarder(g), func() { s.handleLoop(g) }) })
 
 			} else if strings.HasPrefix(r.URL.Path, "/tunnel") {
