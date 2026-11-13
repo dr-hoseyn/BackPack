@@ -45,7 +45,7 @@ jobs:
           GOMAXPROCS: '4'
         run: |
           set -euo pipefail
-          ulimit -n 262144
+          sudo prlimit --pid "$$" --nofile=262144:262144
           git worktree add --detach -- "$RUNNER_TEMP/wssmux-base" "$BASELINE_REF"
           cp internal/e2e/wssmux_scale_soak_test.go "$RUNNER_TEMP/wssmux-base/internal/e2e/"
           go test -c -o "$RUNNER_TEMP/wssmux-candidate" ./internal/e2e
