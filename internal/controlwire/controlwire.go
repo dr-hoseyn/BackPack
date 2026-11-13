@@ -36,6 +36,10 @@ import (
 // as gone, which is what it is.
 const WriteTimeout = 10 * time.Second
 
+// Signals contain one byte. Allow small malformed messages to be skipped,
+// but never accumulate an unbounded message on a control connection.
+const maxWSControlMessage = 1024
+
 // Link is one control channel, as the loop serving it sees it.
 type Link interface {
 	// Send writes one signal, bounded by WriteTimeout.
@@ -109,6 +113,7 @@ func (l wsLink) Receive() (byte, error) {
 	if l.conn == nil {
 		return 0, ErrNoChannel
 	}
+	l.conn.SetReadLimit(maxWSControlMessage)
 	messageType, msg, err := l.conn.ReadMessage()
 	if err != nil {
 		return 0, err

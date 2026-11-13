@@ -2,6 +2,7 @@ package controlwire
 
 import (
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -108,6 +109,22 @@ func TestAFrameThatIsNotASignalIsSkippable(t *testing.T) {
 	}
 	if got, err := l.Receive(); err != nil || got != 3 {
 		t.Fatalf("the signal after it = %d, %v", got, err)
+	}
+}
+
+func TestOversizedControlMessagesAreTerminal(t *testing.T) {
+	for _, kind := range []int{websocket.BinaryMessage, websocket.TextMessage} {
+		t.Run(fmt.Sprint(kind), func(t *testing.T) {
+			srv, cli := wsPair(t)
+			if err := cli.WriteMessage(kind, make([]byte, maxWSControlMessage+1)); err != nil {
+				t.Fatal(err)
+			}
+			_ = srv.SetReadDeadline(time.Now().Add(time.Second))
+			_, err := WS(srv).Receive()
+			if !errors.Is(err, websocket.ErrReadLimit) {
+				t.Fatalf("oversized control message = %v, want read limit", err)
+			}
+		})
 	}
 }
 

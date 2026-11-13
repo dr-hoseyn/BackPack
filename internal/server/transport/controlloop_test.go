@@ -54,6 +54,59 @@ func TestTheControlLoopBeatsOnTheLivenessSchedule(t *testing.T) {
 	}
 }
 
+// Successful outbound heartbeats do not prove the peer is still replying.
+func TestSilentControlPeerIsRetiredWhileWritesStillSucceed(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	client, restarts, _ := startLoop(t, ctx, func(l *controlLoop) {
+		l.readTimeout = 150 * time.Millisecond
+	})
+	// Drain every heartbeat, but never echo it. The send buffer cannot fill.
+	go func() {
+		_, _ = io.Copy(io.Discard, client)
+	}()
+	deadline := time.NewTimer(3 * time.Second)
+	defer deadline.Stop()
+	for restarts.Load() == 0 {
+		select {
+		case <-deadline.C:
+			t.Fatal("silent peer remained seated despite missing replies")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+}
+
+func TestWebSocketControlsBoundRepliesWithoutChangingWarmup(t *testing.T) {
+	ws := &WsTransport{config: &WsConfig{Heartbeat: time.Hour}}
+	mux := &WsMuxTransport{config: &WsMuxConfig{Heartbeat: time.Hour}}
+	for name, loop := range map[string]controlLoop{
+		"ws":     ws.control(&wsGen{}, t.Context(), func() {}),
+		"wssmux": mux.control(&wsMuxGen{}, t.Context(), func() {}),
+	} {
+		if loop.readTimeout != 30*time.Second || loop.idleTimeout != 0 {
+			t.Fatalf("%s: reply timeout=%s, idle timeout=%s", name, loop.readTimeout, loop.idleTimeout)
+		}
+	}
+}
+
+func TestControlRepliesRefreshTheReadDeadline(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	client, restarts, _ := startLoop(t, ctx, func(l *controlLoop) {
+		l.readTimeout = 500 * time.Millisecond
+	})
+	go func() { _, _ = io.Copy(io.Discard, client) }()
+	for i := 0; i < 8; i++ {
+		if err := utils.SendBinaryByteWithin(client, utils.SG_HB, time.Second); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if n := restarts.Load(); n != 0 {
+		t.Fatalf("responsive peer asked for %d restarts", n)
+	}
+}
+
 func TestAQueuedUserAsksTheClientForAConnection(t *testing.T) {
 	requests := make(chan struct{}, 1)
 	client, _, _ := startLoop(t, context.Background(), func(l *controlLoop) {

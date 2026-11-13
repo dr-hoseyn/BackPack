@@ -164,12 +164,13 @@ func (s *WsMuxTransport) newGen(ctx context.Context) *wsMuxGen {
 // the generation was started with. See controlLoop.
 func (s *WsMuxTransport) control(g *wsMuxGen, ctx context.Context, lost func()) controlLoop {
 	return controlLoop{
-		ctx:      ctx,
-		link:     controlwire.WS(s.controlChannel.Get()),
-		beat:     s.config.Heartbeat,
-		requests: g.reqNewConnChan,
-		log:      s.logger,
-		restart:  lost,
+		ctx:         ctx,
+		link:        controlwire.WS(s.controlChannel.Get()),
+		beat:        s.config.Heartbeat,
+		readTimeout: 3 * maxLivenessBeat,
+		requests:    g.reqNewConnChan,
+		log:         s.logger,
+		restart:     lost,
 	}
 }
 
