@@ -1,5 +1,7 @@
 name: WSSMux isolated loss investigation
 on:
+  push:
+    branches: [codex/wssmux-next-validation]
   workflow_dispatch:
     inputs:
       baseline_ref:
@@ -27,7 +29,7 @@ jobs:
           cache: true
       - name: Build identical fixtures
         run: |
-          git worktree add --detach "$RUNNER_TEMP/base" '${{ inputs.baseline_ref }}'
+          git worktree add --detach "$RUNNER_TEMP/base" '${{ inputs.baseline_ref || 'origin/codex/wssmux-integrated-validation' }}'
           cp internal/e2e/wssmux_resources_test.go "$RUNNER_TEMP/base/internal/e2e/"
           go test -c -o "$RUNNER_TEMP/candidate" ./internal/e2e
           (cd "$RUNNER_TEMP/base" && go test -c -o "$RUNNER_TEMP/baseline" ./internal/e2e)
