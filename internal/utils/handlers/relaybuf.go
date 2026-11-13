@@ -29,7 +29,7 @@ const relayBufferSize = 64 * 1024
 
 // Quiet and short-lived directions need only a small read buffer. Grow after
 // a full read, without waiting to gather data or changing connection deadlines.
-const smallRelayBufferSize = 8 * 1024
+const smallRelayBufferSize = 16 * 1024
 
 var smallRelayBuffers = sync.Pool{New: func() any {
 	b := make([]byte, smallRelayBufferSize)
