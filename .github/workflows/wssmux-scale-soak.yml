@@ -1,20 +1,17 @@
 name: WSSMux scale and sustained verification
 
 on:
+  pull_request:
+    paths:
+      - '.github/workflows/wssmux-scale-soak.yml'
+      - 'internal/e2e/wssmux_scale_soak_test.go'
+      - 'internal/server/transport/muxsession.go'
   workflow_dispatch:
     inputs:
       baseline_ref:
         description: Baseline revision to run with the identical test fixture
         required: true
         default: '6ddc79291e80e149e25bfd3b7e248eb99e39962b'
-      users:
-        description: Simultaneous quiet users (1 to 25000)
-        required: true
-        default: '1000'
-      seconds:
-        description: Churn duration per revision (60 to 7200 seconds)
-        required: true
-        default: '600'
 
 permissions:
   contents: read
@@ -22,7 +19,15 @@ permissions:
 jobs:
   soak:
     runs-on: ubuntu-latest
-    timeout-minutes: 350
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - users: 1000
+            seconds: 600
+          - users: 25000
+            seconds: 120
     steps:
       - uses: actions/checkout@v7
         with:
@@ -33,9 +38,9 @@ jobs:
           cache: true
       - name: Run identical WSSMux traffic on baseline and candidate
         env:
-          BASELINE_REF: ${{ inputs.baseline_ref }}
-          BP_WSSMUX_SOAK_USERS: ${{ inputs.users }}
-          BP_WSSMUX_SOAK_SECONDS: ${{ inputs.seconds }}
+          BASELINE_REF: ${{ inputs.baseline_ref || github.event.pull_request.base.sha }}
+          BP_WSSMUX_SOAK_USERS: ${{ matrix.users }}
+          BP_WSSMUX_SOAK_SECONDS: ${{ matrix.seconds }}
           BP_WSSMUX_SCALE_SOAK: '1'
           GOMAXPROCS: '4'
         run: |
@@ -49,7 +54,7 @@ jobs:
           git -C "$RUNNER_TEMP/wssmux-base" rev-parse HEAD > baseline-sha.log
           failed=0
           for kind in baseline candidate; do
-            if ! "$RUNNER_TEMP/wssmux-$kind" -test.run '^TestWSSMuxScaleSoak$' -test.v -test.timeout 160m | tee "scale-soak-$kind.log"; then
+            if ! "$RUNNER_TEMP/wssmux-$kind" -test.run '^TestWSSMuxScaleSoak$' -test.v -test.timeout 16m | tee "scale-soak-$kind.log"; then
               failed=1
             fi
           done
@@ -57,7 +62,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: wssmux-scale-soak
+          name: wssmux-scale-soak-${{ matrix.users }}
           path: |
             scale-soak-*.log
             *-sha.log
