@@ -75,7 +75,7 @@ jobs:
           cp internal/e2e/wssmux_resources_test.go "$RUNNER_TEMP/wssmux-base/internal/e2e/"
           go test -c -o "$RUNNER_TEMP/wssmux-candidate" ./internal/e2e
           (cd "$RUNNER_TEMP/wssmux-base" && go test -c -o "$RUNNER_TEMP/wssmux-baseline" ./internal/e2e)
-          for sample in 1 2 3; do
+          for sample in 1 2 3 4 5 6 7; do
             order="baseline candidate"
             if [ $((sample % 2)) -eq 0 ]; then order="candidate baseline"; fi
             for kind in $order; do
@@ -99,8 +99,8 @@ jobs:
                           raise SystemExit(f'Missing {tag}: {name}')
                       values.update({k: float(v) for k, v in re.findall(r'(\w+)=(-?[\d.]+)', line[1])})
                   samples.append(values)
-              if len(samples) != 3:
-                  raise SystemExit(f'Expected three {kind} samples')
+              if len(samples) != 7:
+                  raise SystemExit(f'Expected seven {kind} samples')
               reports[kind] = {key: statistics.median(s[key] for s in samples) for key in samples[0]}
           base, candidate = reports['baseline'], reports['candidate']
           print(json.dumps({
