@@ -404,19 +404,18 @@ func (s *WsMuxTransport) session(g *wsMuxGen, owner context.Context) muxSession 
 		frameSize = s.smuxConfig.MaxFrameSize
 	}
 	return muxSession{
-		cancelOnFailure: s.config.Mode == config.WSSMUX,
-		relayFrame:      frameSize,
-		ctx:             owner,
-		local:           g.localChannel,
-		usage:           g.usageMonitor,
-		reqNewConn:      g.reqNewConnChan,
-		muxCon:          s.config.MuxCon,
-		proxyProtocol:   s.config.ProxyProtocol,
-		sniffer:         s.config.Sniffer,
-		limits:          s.limits,
-		log:             s.logger,
-		streams:         &s.streamCounter,
-		sessions:        &s.sessionCounter,
+		relayFrame:    frameSize,
+		ctx:           owner,
+		local:         g.localChannel,
+		usage:         g.usageMonitor,
+		reqNewConn:    g.reqNewConnChan,
+		muxCon:        s.config.MuxCon,
+		proxyProtocol: s.config.ProxyProtocol,
+		sniffer:       s.config.Sniffer,
+		limits:        s.limits,
+		log:           s.logger,
+		streams:       &s.streamCounter,
+		sessions:      &s.sessionCounter,
 		count: func(counter *int32, delta int32) {
 			s.countGeneration(g.ctx, counter, delta)
 		},
