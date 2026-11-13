@@ -29,7 +29,7 @@ jobs:
       - name: Bound control messages and recover silent peers
         run: >-
           go test -race ./internal/controlwire ./internal/server/transport
-          -run 'TestOversizedControl|TestAFrameThatIsNotASignal|TestSilentControlPeer|TestControlReplies|TestWebSocketControl'
+          -run 'TestOversizedControl|TestAFrameThatIsNotASignal|TestSilentControlPeer|TestControlReplies|TestWebSocketControl|TestRejectedControlCandidates'
           -count=3 -timeout 2m
       - name: Authenticate before HTTP and validate real binary frames
         run: >-

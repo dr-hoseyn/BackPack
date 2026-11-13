@@ -164,7 +164,7 @@ func (s *TcpMuxTransport) start(g *tcpMuxGen) {
 
 // seatClient makes candidate this generation's client, in place of whoever was.
 func (s *TcpMuxTransport) seatClient(g *tcpMuxGen, candidate controlCandidate) {
-	g.seat.sit(g.ctx,
+	if !g.seat.sit(g.ctx,
 		func() { s.vacate(g) },
 		func() {
 			// The control channel carries one byte at a time; it is sent at
@@ -195,7 +195,9 @@ func (s *TcpMuxTransport) seatClient(g *tcpMuxGen, candidate controlCandidate) {
 			// Bind to this claim even if its goroutine starts after replacement.
 			loop.link = controlwire.Net(candidate.conn)
 			loop.run()
-		})
+		}) {
+		candidate.conn.Close()
+	}
 }
 
 // vacate empties the seat: the client's channel is closed and forgotten, and

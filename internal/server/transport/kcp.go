@@ -211,7 +211,7 @@ func (s *KcpTransport) start(g *kcpGen) {
 
 // seatClient makes control this generation's client, in place of whoever was.
 func (s *KcpTransport) seatClient(g *kcpGen, control net.Conn) {
-	g.seat.sit(g.ctx,
+	if !g.seat.sit(g.ctx,
 		func() { s.vacate(g) },
 		func() {
 			g.bye.Store(newFarewell())
@@ -229,7 +229,9 @@ func (s *KcpTransport) seatClient(g *kcpGen, control net.Conn) {
 			// Bind to this claim even if its goroutine starts after replacement.
 			loop.link = controlwire.Net(control)
 			loop.run()
-		})
+		}) {
+		control.Close()
+	}
 }
 
 // vacate empties the seat: the client's session is closed and forgotten, and
