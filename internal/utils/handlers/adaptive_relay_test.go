@@ -10,7 +10,7 @@ import (
 )
 
 func TestAdaptiveRelayFramedReadsPreservePayloadAndGrowth(t *testing.T) {
-	for _, frame := range []int{16368, 32752, 65520} {
+	for _, frame := range []int{smallRelayBufferSize - 16, 16368, 32752, 65520} {
 		for _, size := range []int{1, smallRelayBufferSize - 1, smallRelayBufferSize, 3*relayBufferSize + 17} {
 			t.Run(fmt.Sprintf("frame-%d/bytes-%d", frame, size), func(t *testing.T) {
 				payload := bytes.Repeat([]byte{byte(frame)}, size)
@@ -44,7 +44,8 @@ func TestAdaptiveRelayFramedReadsPreservePayloadAndGrowth(t *testing.T) {
 }
 
 func TestAdaptiveRelayFramedFailedWriteKeepsQueuedBytes(t *testing.T) {
-	const frame = 16368
+	// Exercise alignment in the initial buffer as well as retained ownership.
+	const frame = smallRelayBufferSize - 16
 	from := &sizedReadConn{data: bytes.Repeat([]byte("q"), frame+1)}
 	to := &queuedWriteConn{err: net.ErrClosed}
 	buffer := newRelayCopyBuffer()
