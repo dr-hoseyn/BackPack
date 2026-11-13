@@ -27,6 +27,7 @@ import (
 // builds a fresh set for the next run, so carrying them here keeps a goroutine
 // that outlives its run from reaching into the run that replaced it.
 type wsMuxGen struct {
+	demand         *wssMuxDemand
 	idleTraffic    muxIdleTraffic
 	ctx            context.Context
 	tunnelChannel  chan pooledMuxSession
@@ -128,6 +129,9 @@ func (s *WsMuxTransport) Start() {
 // replace while this run is still using it.
 func (s *WsMuxTransport) start(g *wsMuxGen) {
 	go sweepTunnelConns(g.ctx, g.tunnelChannel)
+	if g.demand != nil {
+		go g.demand.run()
+	}
 	// for  webui
 
 	s.status.set(fmt.Sprintf("Disconnected (%s)", s.config.Mode))
@@ -151,13 +155,19 @@ func (s *WsMuxTransport) startAfterRestart(ctx context.Context) {
 
 // newGen builds one generation's channels and usage monitor.
 func (s *WsMuxTransport) newGen(ctx context.Context) *wsMuxGen {
-	return &wsMuxGen{
+	g := &wsMuxGen{
 		ctx:            ctx,
 		tunnelChannel:  make(chan pooledMuxSession, s.config.ChannelSize),
 		localChannel:   newBalancedMuxLocalQueue(s.config.ChannelSize),
 		reqNewConnChan: make(chan struct{}, s.config.ChannelSize),
 		usageMonitor:   s.usageMonitor(ctx),
 	}
+	if s.config.Mode == config.WSSMUX {
+		g.demand = &wssMuxDemand{ctx: ctx, mu: &s.counterMutex,
+			streams: &s.streamCounter, sessions: &s.sessionCounter,
+			muxCon: s.config.MuxCon, requests: g.reqNewConnChan}
+	}
+	return g
 }
 
 // control is this generation's control loop, bound to the control channel
@@ -360,6 +370,9 @@ func (s *WsMuxTransport) handleLoop(g *wsMuxGen) {
 				session.Close()
 				continue
 			}
+			if g.demand != nil {
+				g.demand.arrived()
+			}
 
 			loop := s.session(g, session.owner)
 			loop.pressure = session.pressure
@@ -424,12 +437,16 @@ func (s *WsMuxTransport) session(g *wsMuxGen, owner context.Context) muxSession 
 
 // forwarder is this transport's forwarded ports for one generation.
 func (s *WsMuxTransport) forwarder(g *wsMuxGen) portForwarder {
+	queued := muxRequestForGeneration(g.ctx, &s.counterMutex, &s.streamCounter, &s.sessionCounter, s.config.MuxCon, g.reqNewConnChan, s.logger)
+	if g.demand != nil {
+		queued = g.demand.queued
+	}
 	return portForwarder{
 		expireQueued: s.session(g, g.ctx).dropLocal,
 		ctx:          g.ctx, ports: s.config.Ports, acceptUDP: s.config.AcceptUDP,
 		muxQueue: g.localChannel, limits: s.limits, listeners: &s.listeners, log: s.logger,
 		tune:   s.tuneUserConn,
-		queued: muxRequestForGeneration(g.ctx, &s.counterMutex, &s.streamCounter, &s.sessionCounter, s.config.MuxCon, g.reqNewConnChan, s.logger),
+		queued: queued,
 	}
 }
 
