@@ -45,6 +45,10 @@ jobs:
           go test -c -o "$RUNNER_TEMP/resource-candidate" ./internal/e2e
           (cd "$RUNNER_TEMP/resource-base" && go test -c -o "$RUNNER_TEMP/resource-baseline" ./internal/e2e)
       - name: Alternate five independent baseline and candidate processes
+        # The historical 15% idle-heap improvement gate targets v1.16.0.
+        # Current-main A/B results were recorded separately; continue with
+        # native profiles, retirement and lossy-path checks for that baseline.
+        if: github.event_name != 'workflow_dispatch' || inputs.baseline_ref == 'v1.16.0'
         env:
           BP_RESOURCE_BENCHMARK: '1'
         run: |
