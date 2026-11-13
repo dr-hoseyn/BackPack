@@ -71,12 +71,27 @@ jobs:
         env:
           BP_WSSMUX_COLD_BURST: '1'
           GOMAXPROCS: '4'
+          BASELINE_REF: ${{ inputs.baseline_ref }}
         run: |
-          set -o pipefail
+          set -euo pipefail
           sudo prlimit --pid "$$" --nofile=65536:65536
-          go test ./internal/e2e -run '^TestWSSMuxColdBurstProfile$' -count=3 -v -timeout 4m | tee wssmux-cold-burst.log
+          if [ -z "$BASELINE_REF" ]; then
+            go test ./internal/e2e -run '^TestWSSMuxColdBurstProfile$' -count=3 -v -timeout 4m | tee wssmux-cold-burst.log
+          else
+            git worktree add --detach -- "$RUNNER_TEMP/burst-base" "$BASELINE_REF"
+            cp internal/e2e/wssmux_cold_burst_test.go "$RUNNER_TEMP/burst-base/internal/e2e/"
+            go test -c -o "$RUNNER_TEMP/burst-candidate" ./internal/e2e
+            (cd "$RUNNER_TEMP/burst-base" && go test -c -o "$RUNNER_TEMP/burst-baseline" ./internal/e2e)
+            for sample in 1 2 3 4 5 6 7; do
+              order="baseline candidate"
+              if [ $((sample % 2)) -eq 0 ]; then order="candidate baseline"; fi
+              for kind in $order; do
+                "$RUNNER_TEMP/burst-$kind" -test.run '^TestWSSMuxColdBurstProfile$' -test.v -test.timeout 2m | tee "wssmux-burst-$kind-$sample.log"
+              done
+            done
+          fi
       - name: Compare the identical WSSMux workload against an explicit baseline
-        if: github.event_name == 'workflow_dispatch' && inputs.baseline_ref != ''
+        if: github.event_name == 'workflow_dispatch' && inputs.baseline_ref != '' && !inputs.cold_burst
         env:
           BASELINE_REF: ${{ inputs.baseline_ref }}
           GOMAXPROCS: '4'
@@ -92,7 +107,7 @@ jobs:
           cp internal/e2e/wssmux_resources_test.go "$RUNNER_TEMP/wssmux-base/internal/e2e/"
           go test -c -o "$RUNNER_TEMP/wssmux-candidate" ./internal/e2e
           (cd "$RUNNER_TEMP/wssmux-base" && go test -c -o "$RUNNER_TEMP/wssmux-baseline" ./internal/e2e)
-          for sample in 1 2 3; do
+          for sample in 1 2 3 4 5 6 7; do
             order="baseline candidate"
             if [ $((sample % 2)) -eq 0 ]; then order="candidate baseline"; fi
             for kind in $order; do
@@ -116,8 +131,8 @@ jobs:
                           raise SystemExit(f'Missing {tag}: {name}')
                       values.update({k: float(v) for k, v in re.findall(r'(\w+)=(-?[\d.]+)', line[1])})
                   samples.append(values)
-              if len(samples) != 3:
-                  raise SystemExit(f'Expected three {kind} samples')
+              if len(samples) != 7:
+                  raise SystemExit(f'Expected seven {kind} samples')
               reports[kind] = {key: statistics.median(s[key] for s in samples) for key in samples[0]}
           base, candidate = reports['baseline'], reports['candidate']
           print(json.dumps({
