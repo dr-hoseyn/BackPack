@@ -9,6 +9,11 @@ on:
         required: false
         default: ''
         type: string
+      idle_payload_bytes:
+        description: Initial payload per quiet user, to expose buffer growth thresholds
+        required: false
+        default: '1'
+        type: string
 
 permissions:
   contents: read
@@ -18,6 +23,8 @@ jobs:
     name: Framed WSS authentication and 600 Mbit capacity
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      BP_RESOURCE_IDLE_PAYLOAD_BYTES: ${{ inputs.idle_payload_bytes || '1' }}
     steps:
       - uses: actions/checkout@v7
         with:

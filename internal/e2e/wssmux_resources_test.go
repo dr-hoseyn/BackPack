@@ -108,6 +108,16 @@ func resourceTunnel(t *testing.T) (*tunnel, int) {
 
 func resourceIdleConnections(t *testing.T, tun *tunnel, count int) []net.Conn {
 	t.Helper()
+	payloadSize := 1
+	if raw := os.Getenv("BP_RESOURCE_IDLE_PAYLOAD_BYTES"); raw != "" {
+		var err error
+		payloadSize, err = strconv.Atoi(raw)
+		if err != nil || payloadSize < 1 || payloadSize > 65536 {
+			t.Fatal("invalid initial idle-user payload size")
+		}
+	}
+	payload := bytes.Repeat([]byte{0x61}, payloadSize)
+	got := make([]byte, payloadSize)
 	connections := make([]net.Conn, 0, count)
 	t.Cleanup(func() {
 		for _, c := range connections {
@@ -121,12 +131,11 @@ func resourceIdleConnections(t *testing.T, tun *tunnel, count int) []net.Conn {
 		}
 		connections = append(connections, c)
 		_ = c.SetDeadline(time.Now().Add(10 * time.Second))
-		if _, err = c.Write([]byte{0x61}); err != nil {
+		if _, err = c.Write(payload); err != nil {
 			t.Fatal(err)
 		}
-		var got [1]byte
-		if _, err = io.ReadFull(c, got[:]); err != nil || got[0] != 0x61 {
-			t.Fatalf("idle stream readiness: %x, %v", got, err)
+		if _, err = io.ReadFull(c, got); err != nil || !bytes.Equal(got, payload) {
+			t.Fatalf("idle stream readiness (%d bytes): %v", payloadSize, err)
 		}
 		_ = c.SetDeadline(time.Time{})
 	}
