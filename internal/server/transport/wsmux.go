@@ -176,7 +176,7 @@ func (s *WsMuxTransport) control(g *wsMuxGen, ctx context.Context, lost func()) 
 
 // seatClient makes conn this generation's client, in place of whoever was.
 func (s *WsMuxTransport) seatClient(g *wsMuxGen, conn *websocket.Conn) {
-	g.seat.sit(g.ctx,
+	if !g.seat.sit(g.ctx,
 		func() { s.vacate(g) },
 		func() {
 			s.controlChannel.Set(conn)
@@ -191,7 +191,9 @@ func (s *WsMuxTransport) seatClient(g *wsMuxGen, conn *websocket.Conn) {
 			// Bind to this claim even if its goroutine starts after replacement.
 			loop.link = controlwire.WS(conn)
 			loop.run()
-		})
+		}) {
+		conn.Close()
+	}
 }
 
 // vacate empties the seat: the client's channel is closed and forgotten, and
