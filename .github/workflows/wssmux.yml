@@ -9,6 +9,11 @@ on:
         required: false
         default: ''
         type: string
+      cold_burst:
+        description: Diagnose cold-start physical pool growth with 4000 users
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -37,6 +42,7 @@ jobs:
           -run '^TestAKharejMadeFromTheSetupLinkCarriesTraffic/(wss|wssmux)/simple_auth/'
           -count=1 -timeout 3m
       - name: Measure bounded-profile download capacity
+        if: ${{ !inputs.cold_burst }}
         env:
           BP_CAPACITY_BENCHMARK: '1'
           BP_WSSMUX_BOUNDED: '1'
@@ -45,6 +51,7 @@ jobs:
           set -o pipefail
           go test ./internal/e2e -run '^TestBulkProfileDownloadCapacity/wssmux$' -count=1 -v -timeout 2m | tee wssmux-capacity.log
       - name: Measure CPU, memory and new-user latency with 1000 open users
+        if: ${{ !inputs.cold_burst }}
         env:
           BP_RESOURCE_BENCHMARK: '1'
           BP_WSSMUX_BOUNDED: '1'
@@ -54,10 +61,20 @@ jobs:
           set -o pipefail
           go test ./internal/e2e -run '^TestWSMuxResourceProfile$' -count=1 -v -timeout 3m | tee wssmux-resources.log
       - name: Retain quiet users while excess sessions retire
+        if: ${{ !inputs.cold_burst }}
         env:
           BP_RESOURCE_RETIREMENT: '1'
           BP_WSSMUX_BOUNDED: '1'
         run: go test ./internal/e2e -run '^TestWSMuxPoolRetiresAfterLoadWithoutDisconnectingQuietUser$' -count=1 -v -timeout 3m
+      - name: Diagnose cold-start pool demand
+        if: inputs.cold_burst
+        env:
+          BP_WSSMUX_COLD_BURST: '1'
+          GOMAXPROCS: '4'
+        run: |
+          set -o pipefail
+          sudo prlimit --pid "$$" --nofile=65536:65536
+          go test ./internal/e2e -run '^TestWSSMuxColdBurstProfile$' -count=3 -v -timeout 4m | tee wssmux-cold-burst.log
       - name: Compare the identical WSSMux workload against an explicit baseline
         if: github.event_name == 'workflow_dispatch' && inputs.baseline_ref != ''
         env:
