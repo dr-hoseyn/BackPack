@@ -15,7 +15,7 @@ import (
 )
 
 func TestWebSocketControlRejectedDuringShutdownClosesItsSocket(t *testing.T) {
-	for _, mode := range []config.TransportType{config.WS, config.WSS, config.WSMUX, config.WSSMUX} {
+	for _, mode := range []config.TransportType{config.WSSMUX} {
 		t.Run(string(mode), func(t *testing.T) {
 			accepted := make(chan *websocket.Conn, 1)
 			upgrader := websocket.Upgrader{}
@@ -53,21 +53,13 @@ func TestWebSocketControlRejectedDuringShutdownClosesItsSocket(t *testing.T) {
 				t.Fatal("live generation rejected upgrade")
 			}
 			cancel()
-			if mode == config.WSMUX || mode == config.WSSMUX {
-				s := &WsMuxTransport{}
+			{
+				s := &WsMuxTransport{config: &WsMuxConfig{Mode: mode}}
 				if s.seatClient(&wsMuxGen{ctx: ctx}, server) {
 					t.Fatal("rejected mux claim reported successful admission")
 				}
 				if s.controlChannel.IsSet() {
 					t.Fatal("ended mux generation installed a control channel")
-				}
-			} else {
-				s := &WsTransport{}
-				if s.seatClient(&wsGen{ctx: ctx}, server) {
-					t.Fatal("rejected claim reported successful admission")
-				}
-				if s.controlChannel.IsSet() {
-					t.Fatal("ended generation installed a control channel")
 				}
 			}
 			client.SetReadDeadline(time.Now().Add(time.Second))

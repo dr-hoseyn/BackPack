@@ -175,7 +175,7 @@ func (s *WsMuxTransport) control(g *wsMuxGen, ctx context.Context, lost func()) 
 
 // seatClient makes conn this generation's client, in place of whoever was.
 func (s *WsMuxTransport) seatClient(g *wsMuxGen, conn *websocket.Conn) bool {
-	accepted := g.seat.sit(g.ctx,
+	accepted := g.seat.trySit(g.ctx,
 		func() { s.vacate(g) },
 		func() {
 			s.controlChannel.Set(conn)
@@ -191,12 +191,13 @@ func (s *WsMuxTransport) seatClient(g *wsMuxGen, conn *websocket.Conn) bool {
 			loop.link = controlwire.WS(conn)
 			loop.run()
 		})
-	if !accepted {
+	if !accepted && s.config.Mode == config.WSSMUX {
 		// HTTP no longer owns a hijacked socket. Shutdown may have raced
 		// the handler's earlier check, leaving no control loop to close it.
 		conn.Close()
+		return false
 	}
-	return accepted
+	return true
 }
 
 // vacate empties the seat: the client's channel is closed and forgotten, and

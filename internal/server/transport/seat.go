@@ -113,9 +113,14 @@ func (c *clientSeat) admitFor(genCtx, owner context.Context, accept func(context
 //
 // Every change of seat happens under one lock, vacate and install included, so
 // a loop that fails just as its replacement is seated cannot clear the new
-// client's channel. Neither may call back into the seat. A false return leaves
-// ownership with the caller, which must close a rejected upgraded socket.
-func (c *clientSeat) sit(genCtx context.Context, vacate, install func(), run func(ctx context.Context, lost func())) bool {
+// client's channel. Neither may call back into the seat.
+func (c *clientSeat) sit(genCtx context.Context, vacate, install func(), run func(ctx context.Context, lost func())) {
+	c.trySit(genCtx, vacate, install, run)
+}
+
+// trySit reports admission so WSSMux can close a rejected hijacked socket.
+// Other transports retain the existing sit contract and ownership behavior.
+func (c *clientSeat) trySit(genCtx context.Context, vacate, install func(), run func(ctx context.Context, lost func())) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if genCtx.Err() != nil {
