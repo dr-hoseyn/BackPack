@@ -108,6 +108,9 @@ type muxSession struct {
 	proxyProtocol bool
 	sniffer       bool
 	relayFrame    int // WSSMux send frame size; zero for other carriers
+	// WSSMux opts into session-local relay cancellation on data failure.
+	// Other transports keep their existing owner-context lifecycle.
+	cancelOnFailure bool
 
 	limits   *limiter
 	log      *logrus.Logger
@@ -140,8 +143,10 @@ func (m muxSession) run(session *smux.Session) {
 	// remain healthy. Its relays may be blocked writing buffered data to a
 	// user, so closing smux alone does not wake them. Cancel their own context
 	// before joining workers to release sockets, quotas and pool counters.
-	ctx, cancel := context.WithCancel(m.ctx)
-	m.ctx = ctx
+	var cancel context.CancelFunc
+	if m.cancelOnFailure {
+		m.ctx, cancel = context.WithCancel(m.ctx)
+	}
 	// The mux slot counter. Its capacity is the ceiling on streams in flight on
 	// this session: the loop blocks at the top when it is full, and every path
 	// out of a stream has to give one back or the session quietly stops taking
@@ -164,7 +169,9 @@ func (m muxSession) run(session *smux.Session) {
 	stop := context.AfterFunc(m.ctx, func() { session.Close() })
 	defer func() {
 		stop()
-		cancel()
+		if cancel != nil {
+			cancel()
+		}
 		session.Close()
 		workers.Wait()
 		if !retired {

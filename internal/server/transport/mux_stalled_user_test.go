@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/backpack/backpack/config"
 	"github.com/backpack/backpack/internal/utils"
 	"github.com/xtaci/smux"
 )
@@ -52,7 +53,7 @@ func TestMuxSessionFailureReleasesStalledUser(t *testing.T) {
 			queue := newBalancedMuxLocalQueue(1)
 			queue.push(LocalTCPConn{conn: stalled, timeCreated: nowMillis(), remoteAddr: "127.0.0.1:80"}, nil)
 			streams, sessions := int32(1), int32(1)
-			loop := muxSession{ctx: owner, local: queue, muxCon: 1, limits: limits,
+			loop := muxSession{ctx: owner, local: queue, muxCon: 1, limits: limits, cancelOnFailure: true,
 				log: quietLogger(), streams: &streams, sessions: &sessions}
 			done := make(chan struct{})
 			go func() { defer close(done); loop.run(session) }()
@@ -88,5 +89,16 @@ func TestMuxSessionFailureReleasesStalledUser(t *testing.T) {
 				t.Fatal("failed session retained counters or connection quota")
 			}
 		})
+	}
+}
+
+func TestWSSMuxSessionCancellationScope(t *testing.T) {
+	for _, mode := range []config.TransportType{config.WSMUX, config.WSSMUX} {
+		s := &WsMuxTransport{config: &WsMuxConfig{Mode: mode}, smuxConfig: smux.DefaultConfig()}
+		g := &wsMuxGen{ctx: t.Context()}
+		loop := s.session(g, g.ctx)
+		if loop.cancelOnFailure != (mode == config.WSSMUX) {
+			t.Fatalf("unexpected session cancellation policy for %s", mode)
+		}
 	}
 }
