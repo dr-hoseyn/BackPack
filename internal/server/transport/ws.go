@@ -151,18 +151,19 @@ func (s *WsTransport) newGen(ctx context.Context) *wsGen {
 // the generation was started with. See controlLoop.
 func (s *WsTransport) control(g *wsGen, ctx context.Context, lost func()) controlLoop {
 	return controlLoop{
-		ctx:      ctx,
-		link:     controlwire.WS(s.controlChannel.Get()),
-		beat:     s.config.Heartbeat,
-		requests: g.reqNewConnChan,
-		log:      s.logger,
-		restart:  lost,
+		ctx:         ctx,
+		link:        controlwire.WS(s.controlChannel.Get()),
+		beat:        s.config.Heartbeat,
+		readTimeout: 3 * maxLivenessBeat,
+		requests:    g.reqNewConnChan,
+		log:         s.logger,
+		restart:     lost,
 	}
 }
 
 // seatClient makes conn this generation's client, in place of whoever was.
 func (s *WsTransport) seatClient(g *wsGen, conn *websocket.Conn) {
-	g.seat.sit(g.ctx,
+	if !g.seat.sit(g.ctx,
 		func() { s.vacate(g) },
 		func() {
 			s.controlChannel.Set(conn)
@@ -177,7 +178,9 @@ func (s *WsTransport) seatClient(g *wsGen, conn *websocket.Conn) {
 			// Bind to this claim even if its goroutine starts after replacement.
 			loop.link = controlwire.WS(conn)
 			loop.run()
-		})
+		}) {
+		conn.Close()
+	}
 }
 
 // vacate empties the seat: the client's channel is closed and forgotten, and

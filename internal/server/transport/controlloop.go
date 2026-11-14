@@ -30,6 +30,8 @@ type controlLoop struct {
 	link        controlwire.Link
 	beat        time.Duration
 	idleTimeout time.Duration
+	// readTimeout bounds replies without changing the heartbeat warm-up.
+	readTimeout time.Duration
 	requests    <-chan struct{}
 	log         *logrus.Logger
 	// restart ends this generation and starts the next; called in its own
@@ -149,8 +151,8 @@ func (c controlLoop) read(signals chan<- byte, done <-chan struct{}) {
 	for {
 		var signal byte
 		var err error
-		if c.idleTimeout > 0 {
-			err = c.link.SetReadDeadline(time.Now().Add(c.idleTimeout))
+		if timeout := max(c.idleTimeout, c.readTimeout); timeout > 0 {
+			err = c.link.SetReadDeadline(time.Now().Add(timeout))
 		}
 		if err == nil {
 			signal, err = c.link.Receive()
