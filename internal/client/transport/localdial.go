@@ -41,6 +41,11 @@ type localDialReporter struct {
 // enough that the log still shows the problem is ongoing.
 const localDialQuiet = 30 * time.Second
 
+// Targets arrive from the peer and can change across tunnel generations. Keep
+// the suppression cache bounded instead of retaining every failed destination
+// for the process lifetime.
+const localDialMaxAddresses = 1024
+
 var localDial = &localDialReporter{last: map[string]time.Time{}}
 
 // Report logs a failed dial to the forwarded service, explaining what it means,
@@ -54,15 +59,41 @@ var localDial = &localDialReporter{last: map[string]time.Time{}}
 func (r *localDialReporter) Report(logger *logrus.Logger, addr string, err error) {
 	metrics.ReportLocalDialFailure(addr, whyLocalDialFailed(err))
 
+	now := time.Now()
 	r.mu.Lock()
-	if t, seen := r.last[addr]; seen && time.Since(t) < localDialQuiet {
+	if t, seen := r.last[addr]; seen && now.Sub(t) < localDialQuiet {
 		r.mu.Unlock()
 		return
 	}
-	r.last[addr] = time.Now()
+	if r.last == nil {
+		r.last = make(map[string]time.Time)
+	}
+	if _, seen := r.last[addr]; !seen && len(r.last) >= localDialMaxAddresses {
+		r.makeRoomLocked(now)
+	}
+	r.last[addr] = now
 	r.mu.Unlock()
 
 	logger.Error(localDialMessage(addr, err))
+}
+
+// Called only for a new address at capacity, with r.mu held. Expired entries
+// have no suppression left to preserve; otherwise evict the oldest report.
+func (r *localDialReporter) makeRoomLocked(now time.Time) {
+	var oldestAddr string
+	var oldest time.Time
+	for addr, reported := range r.last {
+		if now.Sub(reported) >= localDialQuiet {
+			delete(r.last, addr)
+			continue
+		}
+		if oldest.IsZero() || reported.Before(oldest) {
+			oldestAddr, oldest = addr, reported
+		}
+	}
+	if len(r.last) >= localDialMaxAddresses {
+		delete(r.last, oldestAddr)
+	}
 }
 
 // whyLocalDialFailed is the failure in one word, matching the three cases the
