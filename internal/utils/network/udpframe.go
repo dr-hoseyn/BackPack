@@ -55,19 +55,22 @@ func WriteDatagram(w io.Writer, payload []byte) error {
 		return fmt.Errorf("datagram of %d bytes is too large to forward", len(payload))
 	}
 	frame := GetDatagramBuffer(2 + len(payload))
-	defer PutDatagramBuffer(frame)
 	binary.BigEndian.PutUint16(frame[:2], uint16(len(payload)))
 	copy(frame[2:], payload)
-	for len(frame) > 0 {
-		n, err := w.Write(frame)
+	for pending := frame; len(pending) > 0; {
+		n, err := w.Write(pending)
 		if err != nil {
+			// A mux Write can time out while its send loop still holds this
+			// slice. Leave it immutable until that loop releases its reference;
+			// recycling here lets another flow corrupt the queued datagram.
 			return err
 		}
 		if n <= 0 {
 			return io.ErrShortWrite
 		}
-		frame = frame[n:]
+		pending = pending[n:]
 	}
+	PutDatagramBuffer(frame)
 	return nil
 }
 
