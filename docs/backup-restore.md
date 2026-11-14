@@ -150,4 +150,4 @@ Run it after any change to what the machine holds, and once before you need it.
 
 ---
 
-*Last verified against Backpack v1.25.0*
+*Last verified against Backpack v1.26.0 (2026-11-14)*

@@ -214,4 +214,4 @@ Direct → UDP → Hysteria2 یا TUIC استفاده کن؛ این حالت ب�
 
 ---
 
-*Last verified against Backpack v1.25.0, 2026-11-11.*
+*Last verified against Backpack v1.26.0 (2026-11-14)*

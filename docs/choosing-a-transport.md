@@ -65,4 +65,4 @@ Change a tunnel's transport any time from **Edit → Change transport**.
 
 ---
 
-*Last verified against Backpack v1.25.0*
+*Last verified against Backpack v1.26.0 (2026-11-14)*

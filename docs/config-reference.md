@@ -581,4 +581,4 @@ them both ends have to agree on. This says what exists.
 
 ---
 
-*Generated from `config/` on 2026-11-12. Last verified against Backpack v1.25.0.*
+*Generated from `config/` on 2026-11-12. Last verified against Backpack v1.26.0 (2026-11-14)*

@@ -502,6 +502,13 @@ onto a single session and closed one another. A direct tunnel has one session.
 
 ## WebSocket family
 
+WS/WSS and their mux variants recover the control connection after 30 seconds
+without inbound control traffic, even when outbound heartbeats still succeed.
+Control messages are limited to 1 KiB. Connections rejected during shutdown
+are closed before generation services can start. Existing configuration and
+wire formats remain compatible.
+
+
 These frame the tunnel as ordinary web traffic, which is useful where only
 HTTP/HTTPS gets through, or where you want to sit behind a CDN.
 
@@ -587,4 +594,4 @@ UDP را می‌بندد ولی ICMP را نه) و *IP Spoofing* که مبدأ �
 
 ---
 
-*Last verified against Backpack v1.25.0*
+*Last verified against Backpack v1.26.0 (2026-11-14)*

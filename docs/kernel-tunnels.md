@@ -174,4 +174,4 @@ VICI نیاز دارد. وضعیت اینترفیس به‌تنهایی اتصا
 ---
 [← Back to the docs index](README.md)
 
-*Last verified against Backpack v1.25.0*
+*Last verified against Backpack v1.26.0 (2026-11-14)*

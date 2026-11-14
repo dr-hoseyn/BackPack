@@ -67,6 +67,13 @@ The TCP relay also reuses its caller for one direction instead of keeping a
 third goroutine parked beside two copies. The existing cancellation callback
 interrupts idle reads, and both directions are joined before releasing quotas.
 
+## Failed data sessions
+
+When a mux data session fails, its users are released so fresh connections
+can progress without a tunnel restart. Silent control peers are recovered
+after 30 seconds without inbound control traffic. These fixes preserve the
+existing pool settings, framing and authentication.
+
 ## Physical session growth and retirement
 
 WS Mux and WSS Mux sample the number of sessions with actual open streams once
@@ -188,4 +195,4 @@ and a p99/throughput comparison justify a per-service setting.
 
 </div>
 
-Last verified against Backpack v1.25.0 (2026-11-11).
+Last verified against Backpack v1.26.0 (2026-11-14)
