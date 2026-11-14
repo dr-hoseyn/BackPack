@@ -596,6 +596,16 @@ type ClientConfig struct {
 	// connection_pool. Receive windows are lazy; size this together with expected
 	// active streams and mux_recievebuffer, rather than treating idle windows as RSS.
 	WSMuxMaxSessions int `toml:"wsmux_max_sessions"`
+	// WSMuxPoolDiagnostics samples local TCP pressure once per second for the
+	// ws/wss mux pool. Off avoids these extra socket observations. Occupancy
+	// diagnostics are always reported. Unsupported observations remain unknown.
+	WSMuxPoolDiagnostics bool `toml:"wsmux_pool_diagnostics"`
+	// WSMuxConservativePool is experimental and off by default. It enables local
+	// pressure diagnostics and defers throughput-driven growth after 30 seconds
+	// with a healthy empty reserve of at least connection_pool sessions. Demand
+	// growth, floor repair, stream windows and retirement are unchanged. Compare
+	// goodput and fresh-user p99 on a separate tunnel before enabling in production.
+	WSMuxConservativePool bool `toml:"wsmux_conservative_pool"`
 
 	// SkipOptz stops the engine applying its own socket and sysctl tuning at
 	// start, for a machine whose tuning is managed elsewhere.

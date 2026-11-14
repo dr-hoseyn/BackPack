@@ -98,6 +98,7 @@ type LocalServiceState struct {
 
 // PoolStats is the state of the client's connection pool.
 type PoolStats struct {
+	Mux *MuxPoolStats `json:"mux,omitempty"`
 	// Live is how many connections are open right now.
 	Live int `json:"live"`
 	// Target is the size the pool is currently aiming for, and Configured is
@@ -108,6 +109,19 @@ type PoolStats struct {
 	// Mbps is the throughput over the last interval — the signal that grows the
 	// pool, and the answer to whether it is working hard or leaking.
 	Mbps int `json:"mbps"`
+}
+
+// MuxPoolStats distinguishes physical carriers from streams. Idle means no
+// open streams, not a guarantee of congestion-free capacity. Pressure is local
+// TCP send pressure only, and is unknown when PressureObserved is zero.
+type MuxPoolStats struct {
+	Sessions                   int  `json:"sessions"`
+	ActiveSessions             int  `json:"active_sessions"`
+	IdleSessions               int  `json:"idle_sessions"`
+	Streams                    int  `json:"streams"`
+	PressureObserved           int  `json:"pressure_observed"`
+	PressuredSessions          int  `json:"pressured_sessions"`
+	ThroughputGrowthSuppressed bool `json:"throughput_growth_suppressed"`
 }
 
 // The connected peer, published by whichever transport is running. One tunnel
@@ -262,7 +276,7 @@ func (c *Collector) Snapshot() Snapshot {
 		Connected:    connected.Load(),
 	}
 	if live, target, configured, mbps := PoolState(); configured > 0 {
-		s.Pool = &PoolStats{Live: live, Target: target, Configured: configured, Mbps: mbps}
+		s.Pool = &PoolStats{Live: live, Target: target, Configured: configured, Mbps: mbps, Mux: poolMux.Load()}
 	}
 	s.LocalService = localService.Load()
 	// What this process is holding. See runtime.go for why these are here and

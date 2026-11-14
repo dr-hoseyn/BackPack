@@ -247,7 +247,9 @@ them both ends have to agree on. This says what exists.
 | `so_sndbuf` | `int` | SO_SNDBUF is the socket send buffer in bytes. 0 leaves the kernel's default. |
 | `token` | `string` | Token is the shared secret. Both ends must hold exactly the same one, and a mismatch is refused without saying so — a peer without the token learns nothing, not even that something is listening. |
 | `transport` | `TransportType` | Transport is the carrier this tunnel uses. Both ends must name the same one; see docs/transports.md for what each is for. |
+| `wsmux_conservative_pool` | `bool` | WSMuxConservativePool is experimental and off by default. It enables local pressure diagnostics and defers throughput-driven growth after 30 seconds with a healthy empty reserve of at least connection_pool sessions. Demand growth, floor repair, stream windows and retirement are unchanged. Compare goodput and fresh-user p99 on a separate tunnel before enabling in production. |
 | `wsmux_max_sessions` | `int` | WSMuxMaxSessions bounds physical ws/wss mux sessions, including pending dials. Zero keeps demand-driven growth. A nonzero limit must be at least connection_pool. Receive windows are lazy; size this together with expected active streams and mux_recievebuffer, rather than treating idle windows as RSS. |
+| `wsmux_pool_diagnostics` | `bool` | WSMuxPoolDiagnostics samples local TCP pressure once per second for the ws/wss mux pool. Off avoids these extra socket observations. Occupancy diagnostics are always reported. Unsupported observations remain unknown. |
 | `wss_allow_legacy_server` | `bool` | WSSAllowLegacyServer permits a missing server proof only with verified TLS. Off by default; prefer upgrading the server before upgrading the client. |
 | `wss_ca_file` | `string` | WSSCAFile adds trusted PEM certificates for wss/wssmux. Required for a private CA/self-signed server when simple_auth or verified legacy mode is used. |
 | `wss_http11_only` | `bool` | WSSHTTP11Only offers HTTP/1.1 on the first WSS handshake, matching a Chromium fresh-WebSocket path and avoiding an unusable h2 probe. Off keeps the existing full HTTPS preset with authenticated capability fallback. |
@@ -581,4 +583,4 @@ them both ends have to agree on. This says what exists.
 
 ---
 
-*Generated from `config/` on 2026-11-12. Last verified against Backpack v1.26.0 (2026-11-14)*
+*Generated from `config/` on 2026-11-14. Last verified against Backpack v1.26.0.*

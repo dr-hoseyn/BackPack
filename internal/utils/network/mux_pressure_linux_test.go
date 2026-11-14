@@ -11,6 +11,37 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+func TestWSMuxPressureObserverDistinguishesUnknownAndClosedSockets(t *testing.T) {
+	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	accepted := make(chan net.Conn, 1)
+	go func() { conn, _ := listener.Accept(); accepted <- conn }()
+	conn, err := net.DialTimeout("tcp4", listener.Addr().String(), time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	peer := <-accepted
+	defer peer.Close()
+	observe := WSMuxPressureObserver(conn)
+	if score, known := observe(); !known || score != 0 {
+		t.Fatalf("healthy TCP socket: %d, %v", score, known)
+	}
+	conn.Close()
+	if _, known := observe(); known {
+		t.Fatal("closed socket was reported as healthy")
+	}
+	a, b := net.Pipe()
+	defer a.Close()
+	defer b.Close()
+	if _, known := WSMuxPressureObserver(a)(); known {
+		t.Fatal("unsupported socket was reported as healthy")
+	}
+}
+
 func TestTCPFWDNUM3QueueLimitPreservesTheSocketSendBuffer(t *testing.T) {
 	listener, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {

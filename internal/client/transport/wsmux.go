@@ -46,6 +46,8 @@ type WsMuxConfig struct {
 	MaxStreamBuffer  int
 	ConnPoolSize     int
 	MaxSessions      int
+	PoolDiagnostics  bool
+	ConservativePool bool
 	Mode             config.TransportType
 	SimpleAuth       bool
 	WSS              *network.WSSClientOptions
@@ -164,20 +166,22 @@ func (c *WsMuxTransport) dialControl(ctx context.Context) (*websocket.Conn, erro
 // shared with every other client transport — see poolmaintain.go.
 func (c *WsMuxTransport) poolMaintainer() {
 	poolSizer{
-		mux:         true,
-		ctx:         c.state.Ctx(),
-		log:         c.logger,
-		size:        c.config.ConnPoolSize,
-		aggressive:  c.config.AggressivePool,
-		open:        &c.poolConnections,
-		taken:       &c.loadConnections,
-		shrink:      c.controlFlow,
-		dial:        c.tunnelDialer,
-		spawn:       c.state.Go,
-		pending:     &c.dialingConnections,
-		maxSize:     c.poolLimit(),
-		sessions:    &c.sessions,
-		sessionLost: c.poolLost,
+		mux:             true,
+		ctx:             c.state.Ctx(),
+		log:             c.logger,
+		size:            c.config.ConnPoolSize,
+		aggressive:      c.config.AggressivePool,
+		open:            &c.poolConnections,
+		taken:           &c.loadConnections,
+		shrink:          c.controlFlow,
+		dial:            c.tunnelDialer,
+		spawn:           c.state.Go,
+		pending:         &c.dialingConnections,
+		maxSize:         c.poolLimit(),
+		sessions:        &c.sessions,
+		poolDiagnostics: c.config.PoolDiagnostics || c.config.ConservativePool,
+		conservativeMux: c.config.ConservativePool,
+		sessionLost:     c.poolLost,
 	}.maintain()
 }
 
@@ -334,7 +338,11 @@ func (c *WsMuxTransport) handleSession(tunnelConn *websocket.Conn, mux network.W
 	}
 
 	established = true
-	defer c.sessions.add(session, mux.Retirement)()
+	var pressure func() (int, bool)
+	if c.config.PoolDiagnostics || c.config.ConservativePool {
+		pressure = network.WSMuxPressureObserver(tunnelConn.NetConn())
+	}
+	defer c.sessions.addObserved(session, mux.Retirement, pressure)()
 	c.serveSession(session, tunnelConn.RemoteAddr(), c.backend())
 }
 

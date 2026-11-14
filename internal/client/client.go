@@ -409,6 +409,8 @@ func (c *Client) startTransport(ctx context.Context, tr config.TransportType, en
 			SimpleAuth:       c.config.SimpleAuth,
 			WSS:              wss,
 			MaxSessions:      c.config.WSMuxMaxSessions,
+			PoolDiagnostics:  c.config.WSMuxPoolDiagnostics,
+			ConservativePool: c.config.WSMuxConservativePool,
 			AggressivePool:   c.config.AggressivePool,
 			EdgeIP:           c.config.EdgeIP,
 			MSS:              c.config.MSS,

@@ -60,6 +60,18 @@ func printSnapshot(t Tunnel, s metrics.Snapshot) {
 
 	age := time.Since(s.Taken).Round(time.Second)
 	tui.Warn(fmt.Sprintf("  Recorded %s Ago, Up %s", age, s.Uptime))
+	if p := s.Pool; p != nil {
+		tui.Info(fmt.Sprintf("  Pool          : %d live, target %d, configured %d, %d Mbit/s", p.Live, p.Target, p.Configured, p.Mbps))
+		if m := p.Mux; m != nil {
+			tui.Info(fmt.Sprintf("  Mux sessions  : %d occupied, %d empty, %d open streams", m.ActiveSessions, m.IdleSessions, m.Streams))
+			if m.PressureObserved > 0 {
+				tui.Info(fmt.Sprintf("  Local pressure: %d positive observations among %d sampled sessions", m.PressuredSessions, m.PressureObserved))
+			}
+			if m.ThroughputGrowthSuppressed {
+				tui.Info("  Pool policy   : throughput growth deferred; demand growth remains available")
+			}
+		}
+	}
 
 	if s.KCP == nil {
 		if p := s.ManagedPaths; p != nil {

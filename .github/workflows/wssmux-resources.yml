@@ -10,6 +10,14 @@ on:
         required: false
         default: v1.16.0
         type: string
+      pool_diagnostics:
+        description: Exercise opt-in local TCP pressure diagnostics on the candidate
+        default: false
+        type: boolean
+      conservative_pool:
+        description: Exercise the experimental conservative mux pool on the candidate
+        default: false
+        type: boolean
 permissions:
   contents: read
 concurrency:
@@ -22,6 +30,8 @@ jobs:
     env:
       GOMAXPROCS: '4'
       BP_RESOURCE_BASELINE_REF: ${{ inputs.baseline_ref || 'v1.16.0' }}
+      BP_WSSMUX_POOL_DIAGNOSTICS: ${{ inputs.pool_diagnostics && '1' || '' }}
+      BP_WSSMUX_CONSERVATIVE_POOL: ${{ inputs.conservative_pool && '1' || '' }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -32,10 +42,13 @@ jobs:
           cache: true
       - name: Prove buffer ownership, negotiation and idle retirement
         run: |
+          sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
+          sudo install -m 600 -o "$(id -un)" -g "$(id -gn)" /dev/null /etc/backpack.restore.lock
+          go test -race ./config ./internal/metrics ./internal/manage/tunnelspec -count=1 -timeout 2m
           go test ./internal/utils/handlers -run '^TestAdaptiveRelay' -count=5 -v -timeout 1m
           go test -race ./internal/utils/handlers ./internal/utils/network ./internal/client/transport ./internal/server/transport \
             -run '^Test(AdaptiveRelay|WSMux|MuxIdle|ConcurrentMux|MuxPool|MuxReceive|MuxSessionFailure)' -count=5 -v -timeout 3m
-          go test -race ./internal/e2e -run '^TestWSMuxNegotiatedVersionsCarryRealTraffic$' -count=2 -v -timeout 3m
+          go test -race ./internal/e2e -run '^TestWSMux(NegotiatedVersionsCarryRealTraffic|PoolDiagnosticsCarryTrafficAndPreserveQuietUsers)$' -count=2 -v -timeout 3m
       - name: Build candidate and the identical baseline measurement
         run: |
           set -euo pipefail
@@ -102,6 +115,7 @@ jobs:
               if [ $((sample % 2)) -eq 0 ]; then order="candidate baseline"; fi
               for kind in $order; do
                 sudo env GOMAXPROCS=4 BP_RESOURCE_BENCHMARK=1 BP_RESOURCE_IDLE_CONNECTIONS=16 \
+                  BP_WSSMUX_POOL_DIAGNOSTICS="$BP_WSSMUX_POOL_DIAGNOSTICS" BP_WSSMUX_CONSERVATIVE_POOL="$BP_WSSMUX_CONSERVATIVE_POOL" \
                   BP_RESOURCE_ROUNDS=2 BP_RESOURCE_NETEM=1 BP_RESOURCE_MUX_AUTO="$auto" BIN="$RUNNER_TEMP/resource-$kind" \
                   unshare --net -- bash -eu -c 'ip link set lo up; ulimit -n 16384; exec "$BIN" -test.run "^TestWSMuxResourceProfile$" -test.v -test.timeout 2m' \
                   | tee "$RUNNER_TEMP/delayed-$mode-$kind-$sample.txt"

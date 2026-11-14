@@ -79,7 +79,9 @@ type poolSizer struct {
 	// sessionLost optionally wakes floor repair before the next sizing tick.
 	sessionLost <-chan struct{}
 	// Only peers that negotiated safe retirement participate in mux shrink.
-	sessions *muxPoolSessions
+	sessions        *muxPoolSessions
+	poolDiagnostics bool
+	conservativeMux bool
 }
 
 func (p poolSizer) launch() {
@@ -105,6 +107,7 @@ func (p poolSizer) repair(target int) bool {
 // to absorb a burst while the server gives queued users only three seconds.
 func (p poolSizer) maintain() {
 	var quietSince time.Time
+	var spareGuard muxSpareGuard
 	for i := 0; i < p.size; i++ { // initial pool filling
 		p.launch()
 	}
@@ -164,8 +167,10 @@ func (p poolSizer) maintain() {
 			// the same place — through CountedConn or through AddBytes.
 			mbps := load.mbps()
 			active, tracked, canRetire := 0, 0, false
+			var muxSample muxPoolSample
 			if p.sessions != nil {
-				active, tracked, canRetire = p.sessions.snapshot()
+				muxSample = p.sessions.sample(p.poolDiagnostics || p.conservativeMux)
+				active, tracked, canRetire = muxSample.active, muxSample.total, muxSample.retirement
 			}
 			// Retain the established throughput-growth policy while users are
 			// present: fewer physical TCP paths can shift loss-recovery queues
@@ -193,13 +198,18 @@ func (p poolSizer) maintain() {
 			// carrying 240 Mbit/s" instead of leaving somebody to guess.
 			// An empty pool after failed dials needs repair, not exponential
 			// growth without demand. Otherwise a carrier outage becomes a dial storm.
+			growthMbps := mbps
+			if !spareGuard.allowThroughputGrowth(now, p.conservativeMux, muxSample, openAvg, p.size) {
+				growthMbps = 0
+			}
+			throughputSuppressed := growthMbps != mbps && !spareSession && load.wantsMore(mbps, openAvg, newPoolSize, p.size)
 			grow := newPoolSize < ceiling && ((taken > 0 && (taken+a) > openAvg*b) ||
-				(!spareSession && load.wantsMore(mbps, openAvg, newPoolSize, p.size)))
+				(!spareSession && load.wantsMore(growthMbps, openAvg, newPoolSize, p.size)))
 
 			switch {
 			case grow:
 				quietSince = time.Time{}
-				next := poolGrowthTarget(newPoolSize, ceiling, taken, b, mbps, p.mux)
+				next := poolGrowthTarget(newPoolSize, ceiling, taken, b, growthMbps, p.mux)
 				p.log.Debugf("increasing pool size: %d -> %d, avg pool conn: %d, avg load conn: %d, throughput: %d Mbit/s",
 					newPoolSize, next, openAvg, taken, mbps)
 				if p.pending == nil {
@@ -233,6 +243,16 @@ func (p poolSizer) maintain() {
 			// not launch the same missing connections twice.
 			p.repair(newPoolSize)
 			metrics.ReportPool(openAvg, newPoolSize, p.size, mbps)
+			if p.sessions != nil {
+				metrics.ReportMuxPool(&metrics.MuxPoolStats{
+					Sessions: muxSample.total, ActiveSessions: muxSample.active,
+					IdleSessions: muxSample.total - muxSample.active, Streams: muxSample.streams,
+					PressureObserved: muxSample.pressureObserved, PressuredSessions: muxSample.pressured,
+					ThroughputGrowthSuppressed: throughputSuppressed,
+				})
+			} else {
+				metrics.ReportMuxPool(nil)
+			}
 		}
 	}
 }

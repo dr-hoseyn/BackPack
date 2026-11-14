@@ -1,5 +1,51 @@
 # WSS Mux resource use
 
+## Pool occupancy and opt-in local pressure diagnostics
+
+Client mux pools now publish `pool.mux` in the existing metrics snapshot:
+`sessions`, `active_sessions`, `idle_sessions` and `streams`. A silent open
+stream occupies its physical session. Empty sessions are not necessarily
+congestion-free. Tunnel Metrics also displays these counts. Default occupancy
+sampling reuses the once-per-second pool scan and performs no extra TCP socket
+observations or per-packet work.
+
+Set `wsmux_pool_diagnostics = true` in `[client]` to additionally sample local
+TCP send pressure once per second. `pressure_observed` counts successful
+observations and `pressured_sessions` counts positive scores. An unsupported,
+closed or failed socket observation is unknown, not a healthy score. This
+observes the local sender only; it does not measure remote queues, path loss,
+new-user latency or application goodput. The option is off by default and its
+cost must be measured at production-scale session counts.
+
+`wsmux_conservative_pool = true` is a separate experimental client option,
+also off by default, that enables the pressure observations. After 30 seconds
+with at least `connection_pool` empty sessions, complete observations and no
+positive local pressure, it defers throughput-driven growth. Unknown or
+positive observations, loss of spare capacity or a mismatch between tracked
+and live sessions immediately restore the established growth decision and
+reset the observation period. `throughput_growth_suppressed` reports when a
+byte-rate growth signal was actually deferred. Direct capacity requests still
+grow the pool using the original burst policy. Floor repair, the session
+ceiling, stream windows, framing and retirement are unchanged; no existing
+session is closed by this guard. It does not shrink a pool that has already
+grown, nor suppress demand-driven growth. It is not a fix for every large pool.
+
+Local healthy samples cannot prove that fewer TCP paths preserve WAN quality.
+Keep the experimental option disabled on an occupied production tunnel until
+a separate representative tunnel passes equal-load goodput, fresh-user p99,
+CPU/GiB and failure comparisons. Neither option is enabled by presets. Client
+edits preserve explicitly selected values. Roll back the experimental policy
+by setting it to false and applying the normal client configuration procedure;
+this release does not introduce live reload or stream migration.
+
+The resource workflow accepts `pool_diagnostics` and `conservative_pool`
+dispatch inputs. Its identical public-config fixture requests these optional
+keys on both binaries; the older baseline ignores them. Existing CPU, goodput,
+fresh-user latency and lossy-path thresholds are not relaxed. A passing fixture
+does not establish that the guard activated: activation needs sustained empty
+capacity and complete local observations, and is covered separately by the
+policy regressions.
+
 ## Short-connection announcements
 
 The reverse WSSMux server follows each smux stream-open header with its target

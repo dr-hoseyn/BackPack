@@ -20,6 +20,17 @@ func WSMuxPressure(conn net.Conn) func() int {
 	return muxPressure(conn, 50*time.Millisecond)
 }
 
+// WSMuxPressureObserver is for opt-in pool diagnostics, sampled once per pool
+// tick. Unknown observations must not suppress capacity growth. It unwraps
+// only the observer's socket reference; application I/O still traverses TLS.
+func WSMuxPressureObserver(conn net.Conn) func() (score int, known bool) {
+	conn = tcpMuxPressureConn(conn)
+	return func() (int, bool) {
+		score, _, known := tcpMuxSocketPressureKnown(conn)
+		return score, known
+	}
+}
+
 func muxPressure(conn net.Conn, interval time.Duration) func() int {
 	conn = tcpMuxPressureConn(conn)
 	return muxPressureSampler(func() (int, bool) { return tcpMuxSocketPressure(conn) }, interval)

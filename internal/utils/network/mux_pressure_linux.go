@@ -64,24 +64,31 @@ func tcpMuxQueueReserve(info *unix.TCPInfo) int {
 }
 
 func tcpMuxSocketPressure(conn net.Conn) (int, bool) {
+	score, queued, _ := tcpMuxSocketPressureKnown(conn)
+	return score, queued
+}
+
+func tcpMuxSocketPressureKnown(conn net.Conn) (int, bool, bool) {
 	socket, ok := conn.(syscall.Conn)
 	if !ok {
-		return 0, false
+		return 0, false, false
 	}
 	raw, err := socket.SyscallConn()
 	if err != nil {
-		return 0, false
+		return 0, false, false
 	}
 	var pressure int
 	var queued bool
-	_ = raw.Control(func(fd uintptr) {
+	var known bool
+	err = raw.Control(func(fd uintptr) {
 		info, err := unix.GetsockoptTCPInfo(int(fd), unix.IPPROTO_TCP, unix.TCP_INFO)
 		if err == nil {
+			known = true
 			pressure = tcpMuxQueuePressure(info)
 			queued = info.Notsent_bytes != 0 || tcpMuxRetransmissionStalled(info)
 		}
 	})
-	return pressure, queued
+	return pressure, queued, known && err == nil
 }
 
 func tcpMuxQueuePressure(info *unix.TCPInfo) int {

@@ -26,6 +26,7 @@ var (
 	poolTarget     atomic.Int64 // size the pool is currently aiming for
 	poolConfigured atomic.Int64 // size the operator asked for
 	poolMbps       atomic.Int64 // throughput over the last interval
+	poolMux        atomic.Pointer[MuxPoolStats]
 )
 
 // ReportPool records the state of the connection pool. Called by the client
@@ -44,7 +45,12 @@ func ClearPool() {
 	poolTarget.Store(0)
 	poolConfigured.Store(0)
 	poolMbps.Store(0)
+	poolMux.Store(nil)
 }
+
+// ReportMuxPool publishes one immutable sample. Nil clears unsupported or stale
+// observations; callers must not mutate the sample after publication.
+func ReportMuxPool(sample *MuxPoolStats) { poolMux.Store(sample) }
 
 // PoolState returns the reported pool state.
 func PoolState() (live, target, configured, mbps int) {

@@ -64,6 +64,19 @@ func resourceTunnel(t *testing.T) (*tunnel, int) {
 			t.Fatal(err)
 		}
 	}
+	// Use public TOML keys so this fixture can still be copied to an older
+	// baseline; an old config struct ignores unknown optional keys.
+	for env, key := range map[string]string{
+		"BP_WSSMUX_POOL_DIAGNOSTICS":  "wsmux_pool_diagnostics",
+		"BP_WSSMUX_CONSERVATIVE_POOL": "wsmux_conservative_pool",
+	} {
+		if os.Getenv(env) != "" {
+			if _, err := toml.Decode(key+" = true", cli); err != nil {
+				t.Fatal(err)
+			}
+			t.Logf("requested %s", key)
+		}
+	}
 	if os.Getenv("BP_RESOURCE_NETEM") != "" {
 		seed := "42"
 		if raw := os.Getenv("BP_RESOURCE_NETEM_SEED"); raw != "" {

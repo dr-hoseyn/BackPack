@@ -1,6 +1,9 @@
 package metrics
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+)
 
 // The pool is allowed to outgrow its configured size, and from outside that is
 // indistinguishable from a leak: somebody who set 8 and counts thirty sockets
@@ -51,5 +54,30 @@ func TestClearingForgetsThePool(t *testing.T) {
 	}
 	if s := (&Collector{}).Snapshot(); s.Pool != nil {
 		t.Errorf("a cleared pool still reached the snapshot: %+v", s.Pool)
+	}
+}
+
+func TestWSMuxPoolDiagnosticsReachJSONAndClearOnDisconnect(t *testing.T) {
+	ClearPool()
+	t.Cleanup(ClearPool)
+	ReportPool(12, 12, 8, 240)
+	ReportMuxPool(&MuxPoolStats{Sessions: 12, ActiveSessions: 4, IdleSessions: 8, Streams: 500,
+		PressureObserved: 10, PressuredSessions: 2, ThroughputGrowthSuppressed: true})
+	s := (&Collector{}).Snapshot()
+	data, err := json.Marshal(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded Snapshot
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Pool == nil || decoded.Pool.Mux == nil || *decoded.Pool.Mux != *s.Pool.Mux {
+		t.Fatalf("mux sample did not survive JSON: %s", data)
+	}
+	ClearPool()
+	ReportPool(4, 4, 4, 0)
+	if s := (&Collector{}).Snapshot(); s.Pool.Mux != nil {
+		t.Fatal("old mux sample survived a disconnect into a different pool")
 	}
 }
