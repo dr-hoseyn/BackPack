@@ -141,7 +141,7 @@ func (s *TcpTransport) start(g *tcpGen) {
 
 // seatClient makes candidate this generation's client, in place of whoever was.
 func (s *TcpTransport) seatClient(g *tcpGen, candidate controlCandidate) {
-	g.seat.sit(g.ctx,
+	if !g.seat.sit(g.ctx,
 		func() { s.vacate(g) },
 		func() {
 			// Order matters: the nonce has to be in place before the control
@@ -165,7 +165,9 @@ func (s *TcpTransport) seatClient(g *tcpGen, candidate controlCandidate) {
 			// Bind to this claim even if its goroutine starts after replacement.
 			loop.link = controlwire.Net(candidate.conn)
 			loop.run()
-		})
+		}) {
+		candidate.conn.Close()
+	}
 }
 
 // vacate empties the seat: the client's channel is closed and forgotten, and

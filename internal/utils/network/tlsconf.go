@@ -294,12 +294,7 @@ func acmeTLSConfig(s TLSSettings, logf func(string, ...any)) (*tls.Config, error
 	}
 	warned := false
 	cfg.GetCertificate = func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
-		want := hello
-		if hello.ServerName == "" {
-			clone := *hello
-			clone.ServerName = s.ACMEDomain
-			want = &clone
-		}
+		want := acmeHelloForDomain(hello, s.ACMEDomain)
 		crt, err := issueWithin(issue, want, acmeHandshakeTimeout)
 		if err == nil || fallback == nil {
 			return crt, err
@@ -331,6 +326,17 @@ func acmeTLSConfig(s TLSSettings, logf func(string, ...any)) (*tls.Config, error
 	primeACMECert(m, s.ACMEDomain, fallback != nil, logf)
 
 	return cfg, nil
+}
+
+// Preserve the caller's hello: TLS can retain it beyond certificate selection.
+// Only an absent SNI falls back to the listener's configured domain.
+func acmeHelloForDomain(hello *tls.ClientHelloInfo, domain string) *tls.ClientHelloInfo {
+	if hello.ServerName != "" {
+		return hello
+	}
+	clone := *hello
+	clone.ServerName = domain
+	return &clone
 }
 
 // acmePrimeTimeout bounds the startup attempt. autocert applies five minutes of

@@ -167,7 +167,7 @@ func (s *QuicTransport) start(g *quicGen) {
 
 // seatClient makes claim this generation's client, in place of whoever was.
 func (s *QuicTransport) seatClient(g *quicGen, claim quicClaim) {
-	g.seat.sit(g.ctx,
+	if !g.seat.sit(g.ctx,
 		func() { s.vacate(g) },
 		func() {
 			g.bye.Store(newFarewell())
@@ -182,7 +182,9 @@ func (s *QuicTransport) seatClient(g *quicGen, claim quicClaim) {
 			// Bind to this claim even if its goroutine starts after replacement.
 			loop.link = controlwire.Net(claim.ctrl)
 			loop.run()
-		})
+		}) {
+		claim.ctrl.Close()
+	}
 }
 
 // vacate empties the seat: the client's connection is closed with a word to

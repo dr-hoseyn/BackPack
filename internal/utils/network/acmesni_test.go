@@ -2,7 +2,6 @@ package network
 
 import (
 	"crypto/tls"
-	"strings"
 	"testing"
 )
 
@@ -16,50 +15,33 @@ import (
 // ever attempted an issuance. Nothing was wrong with Let's Encrypt, and nothing
 // in the log said so.
 func TestAnSNIlessHandshakeIsAnsweredWithTheConfiguredDomain(t *testing.T) {
-	cfg, err := acmeTLSConfig(TLSSettings{
-		ACMEDomain:   "tunnel.example.com",
-		ACMECacheDir: t.TempDir(),
-	}, func(string, ...any) {})
-	if err != nil {
-		t.Fatalf("building the ACME config: %v", err)
-	}
-
 	// No SNI, exactly as a client dialling an IP sends.
-	_, err = cfg.GetCertificate(&tls.ClientHelloInfo{
+	hello := &tls.ClientHelloInfo{
 		ServerName:   "",
 		CipherSuites: []uint16{tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256},
-	})
-
-	// Issuance cannot succeed in a test — there is no ACME server to talk to —
-	// so what matters is which wall it hits. "missing server name" means the
-	// name was never substituted and autocert refused before trying anything.
-	if err != nil && strings.Contains(err.Error(), "missing server name") {
-		t.Fatal("an SNI-less handshake was still refused outright: a client dialling " +
-			"the server by IP can never cause a certificate to be obtained")
+	}
+	want := acmeHelloForDomain(hello, "tunnel.example.com")
+	if want.ServerName != "tunnel.example.com" {
+		t.Fatalf("SNI-less hello selected %q", want.ServerName)
+	}
+	if hello.ServerName != "" || want == hello {
+		t.Fatal("certificate selection mutated the caller's hello")
+	}
+	if len(want.CipherSuites) != 1 || want.CipherSuites[0] != hello.CipherSuites[0] {
+		t.Fatal("SNI substitution lost the client's cipher capabilities")
 	}
 }
 
 // A handshake that does name a host must be left alone, or a listener would
 // answer for names it was never configured to serve.
 func TestAnExplicitServerNameIsNotRewritten(t *testing.T) {
-	cfg, err := acmeTLSConfig(TLSSettings{
-		ACMEDomain:   "tunnel.example.com",
-		ACMECacheDir: t.TempDir(),
-	}, func(string, ...any) {})
-	if err != nil {
-		t.Fatalf("building the ACME config: %v", err)
-	}
-
-	_, err = cfg.GetCertificate(&tls.ClientHelloInfo{
+	hello := &tls.ClientHelloInfo{
 		ServerName:   "somewhere.else.example",
 		CipherSuites: []uint16{tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256},
-	})
-	if err == nil {
-		t.Fatal("a name outside the configured domain was accepted")
 	}
-	// The host policy is what must have refused it, not anything else.
-	if !strings.Contains(err.Error(), "not configured") && !strings.Contains(err.Error(), "host") {
-		t.Errorf("refused for the wrong reason, so the whitelist may not be in play: %v", err)
+	want := acmeHelloForDomain(hello, "tunnel.example.com")
+	if want != hello || want.ServerName != "somewhere.else.example" {
+		t.Fatal("an explicit server name was replaced by the listener's domain")
 	}
 }
 

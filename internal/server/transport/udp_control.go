@@ -77,7 +77,7 @@ func (s *UdpTransport) channelHandshake(g *udpGen) {
 
 // seatClient makes conn this generation's client, in place of whoever was.
 func (s *UdpTransport) seatClient(g *udpGen, conn net.Conn) {
-	g.seat.sit(g.ctx,
+	if !g.seat.sit(g.ctx,
 		func() { s.vacate(g) },
 		func() {
 			// A dead client that never sends FIN/RST — a hard kill, or a path
@@ -98,7 +98,9 @@ func (s *UdpTransport) seatClient(g *udpGen, conn net.Conn) {
 			// Bind to this claim even if its goroutine starts after replacement.
 			loop.link = controlwire.Net(conn)
 			loop.run()
-		})
+		}) {
+		conn.Close()
+	}
 }
 
 // vacate empties the seat: the client's channel is closed and forgotten, and

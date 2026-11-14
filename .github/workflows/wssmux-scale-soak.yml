@@ -1,0 +1,68 @@
+name: WSSMux scale and sustained verification
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/wssmux-scale-soak.yml'
+      - 'internal/e2e/wssmux_scale_soak_test.go'
+      - 'internal/server/transport/muxsession.go'
+  workflow_dispatch:
+    inputs:
+      baseline_ref:
+        description: Baseline revision to run with the identical test fixture
+        required: true
+        default: '6ddc79291e80e149e25bfd3b7e248eb99e39962b'
+
+permissions:
+  contents: read
+
+jobs:
+  soak:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - users: 1000
+            seconds: 600
+          - users: 25000
+            seconds: 120
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Run identical WSSMux traffic on baseline and candidate
+        env:
+          BASELINE_REF: ${{ inputs.baseline_ref || github.event.pull_request.base.sha }}
+          BP_WSSMUX_SOAK_USERS: ${{ matrix.users }}
+          BP_WSSMUX_SOAK_SECONDS: ${{ matrix.seconds }}
+          BP_WSSMUX_SCALE_SOAK: '1'
+          GOMAXPROCS: '4'
+        run: |
+          set -euo pipefail
+          sudo prlimit --pid "$$" --nofile=262144:262144
+          git worktree add --detach -- "$RUNNER_TEMP/wssmux-base" "$BASELINE_REF"
+          cp internal/e2e/wssmux_scale_soak_test.go "$RUNNER_TEMP/wssmux-base/internal/e2e/"
+          go test -c -o "$RUNNER_TEMP/wssmux-candidate" ./internal/e2e
+          (cd "$RUNNER_TEMP/wssmux-base" && go test -c -o "$RUNNER_TEMP/wssmux-baseline" ./internal/e2e)
+          git rev-parse HEAD > candidate-sha.log
+          git -C "$RUNNER_TEMP/wssmux-base" rev-parse HEAD > baseline-sha.log
+          failed=0
+          for kind in baseline candidate; do
+            if ! "$RUNNER_TEMP/wssmux-$kind" -test.run '^TestWSSMuxScaleSoak$' -test.v -test.timeout 16m | tee "scale-soak-$kind.log"; then
+              failed=1
+            fi
+          done
+          exit "$failed"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: wssmux-scale-soak-${{ matrix.users }}
+          path: |
+            scale-soak-*.log
+            *-sha.log

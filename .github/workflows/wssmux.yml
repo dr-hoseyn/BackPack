@@ -26,6 +26,11 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - name: Bound control messages and recover silent peers
+        run: >-
+          go test -race ./internal/controlwire ./internal/server/transport ./internal/utils/network
+          -run 'TestOversizedControl|TestAFrameThatIsNotASignal|TestSilentControlPeer|TestControlReplies|TestWebSocketControl|TestRejectedControlCandidates|TestAnSNIless|TestAnExplicitServerName'
+          -count=3 -timeout 2m
       - name: Authenticate before HTTP and validate real binary frames
         run: >-
           go test -race ./internal/utils/network ./internal/client/transport ./internal/server/transport ./internal/e2e
