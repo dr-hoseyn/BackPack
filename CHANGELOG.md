@@ -1,6 +1,17 @@
 # Changelog
 
-## Unreleased
+## v1.26.0 — 2026-11-14
+
+- Recover silent WS/WSS/WSSMux control peers after 30 seconds without inbound
+  control traffic, and limit control messages to 1 KiB.
+- Close control connections rejected during shutdown across transports, and
+  stop WebSocket handlers before starting services when admission is rejected.
+- Release stalled mux users when their data session fails, allowing fresh
+  connections to progress without restarting the tunnel.
+- Add control recovery, shutdown admission and WSSMux scale regression coverage.
+- Configuration and wire formats remain unchanged.
+
+
 
 - Leave header-sized room at common WSS/WSSMux TLS record boundaries, avoiding
   tiny trailing records on bulk writes. Preserve immediate small writes,
