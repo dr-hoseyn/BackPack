@@ -113,8 +113,8 @@ func (c *clientSeat) admitFor(genCtx, owner context.Context, accept func(context
 //
 // Every change of seat happens under one lock, vacate and install included, so
 // a loop that fails just as its replacement is seated cannot clear the new
-// client's channel. Neither may call back into the seat.
-// The caller retains ownership of its candidate when sit returns false.
+// client's channel. Neither may call back into the seat. A false return leaves
+// ownership with the caller, which must close a rejected upgraded socket.
 func (c *clientSeat) sit(genCtx context.Context, vacate, install func(), run func(ctx context.Context, lost func())) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
