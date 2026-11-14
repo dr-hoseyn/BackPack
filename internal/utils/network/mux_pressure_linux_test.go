@@ -30,6 +30,10 @@ func TestWSMuxPressureObserverDistinguishesUnknownAndClosedSockets(t *testing.T)
 	if score, known := observe(); !known || score != 0 {
 		t.Fatalf("healthy TCP socket: %d, %v", score, known)
 	}
+	wrapped := &muxUpgradeConn{Conn: &streamDeadlineConn{Conn: conn}}
+	if _, known := WSMuxPressureObserver(wrapped)(); !known {
+		t.Fatal("upgrade/deadline wrappers hid the TCP socket from the observer")
+	}
 	conn.Close()
 	if _, known := observe(); known {
 		t.Fatal("closed socket was reported as healthy")

@@ -47,6 +47,7 @@ jobs:
           cache: true
       - name: Prove buffer ownership, negotiation and idle retirement
         run: |
+          python3 .github/scripts/test-compare-wssmux-resources.py
           sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
           sudo install -m 600 -o "$(id -un)" -g "$(id -gn)" /dev/null /etc/backpack.restore.lock
           go test -race ./config ./internal/metrics ./internal/manage/tunnelspec -count=1 -timeout 2m

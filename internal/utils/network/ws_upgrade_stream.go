@@ -26,6 +26,10 @@ type muxUpgradeConn struct {
 	done      bool
 }
 
+// UnderlyingConn exposes socket identity to passive pressure observers. It
+// never bypasses the upgrade reader, TLS or stream deadlines on the I/O path.
+func (c *muxUpgradeConn) UnderlyingConn() net.Conn { return c.Conn }
+
 var muxUpgradeReaders = sync.Pool{New: func() any { return bufio.NewReader(nil) }}
 
 func muxUpgradeStream(conn net.Conn) net.Conn {
