@@ -46,6 +46,14 @@ does not establish that the guard activated: activation needs sustained empty
 capacity and complete local observations, and is covered separately by the
 policy regressions.
 
+When comparing these diagnostics against a current baseline, explicitly select
+`strict_pool_comparison`: this separate regression mode requires at least 98%
+of baseline goodput, CPU/GiB and idle heap within 5%, and fresh-user p99 within
+10% plus 2 ms of runner noise. It does not require the historical 15% heap
+reduction against v1.16.0. Default PR runs retain that original historical gate.
+The budgets are regression tolerances, not proof of zero degradation or a WAN
+capacity promise; retain every raw sample when evaluating a rollout.
+
 ## Short-connection announcements
 
 The reverse WSSMux server follows each smux stream-open header with its target

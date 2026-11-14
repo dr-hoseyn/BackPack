@@ -3,6 +3,8 @@ package transport
 import (
 	"context"
 	"io"
+	"os"
+	"os/exec"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
@@ -58,6 +60,18 @@ func TestWSMuxSpareGuardRequiresSustainedKnownHealthyReserve(t *testing.T) {
 }
 
 func TestWSMuxSpareGuardNeverRemovesDemandGrowth(t *testing.T) {
+	// smux pools write requests containing channels globally. A request made
+	// inside a synctest bubble cannot be reused by a later real-time test.
+	// Isolate that dependency's global pool, while still testing the real loop.
+	const helper = "BP_TEST_WSMUX_SPARE_GUARD"
+	if os.Getenv(helper) != "1" {
+		cmd := exec.Command(os.Args[0], "-test.run=^TestWSMuxSpareGuardNeverRemovesDemandGrowth$", "-test.count=1", "-test.timeout=30s")
+		cmd.Env = append(os.Environ(), helper+"=1")
+		if output, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("isolated sizing loop: %v\n%s", err, output)
+		}
+		return
+	}
 	// Run the actual sizing loop with real smux sessions. Virtual time lets the
 	// healthy reserve mature before a high byte-rate sample and a demand burst.
 	synctest.Test(t, func(t *testing.T) {

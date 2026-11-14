@@ -18,6 +18,10 @@ on:
         description: Exercise the experimental conservative mux pool on the candidate
         default: false
         type: boolean
+      strict_pool_comparison:
+        description: Compare against a current baseline without a historical heap-reduction claim (98% goodput, 5% CPU/heap budgets)
+        default: false
+        type: boolean
 permissions:
   contents: read
 concurrency:
@@ -32,6 +36,7 @@ jobs:
       BP_RESOURCE_BASELINE_REF: ${{ inputs.baseline_ref || 'v1.16.0' }}
       BP_WSSMUX_POOL_DIAGNOSTICS: ${{ inputs.pool_diagnostics && '1' || '' }}
       BP_WSSMUX_CONSERVATIVE_POOL: ${{ inputs.conservative_pool && '1' || '' }}
+      BP_WSSMUX_STRICT_POOL_COMPARISON: ${{ inputs.strict_pool_comparison && '1' || '' }}
     steps:
       - uses: actions/checkout@v7
         with:
