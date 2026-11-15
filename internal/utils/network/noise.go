@@ -242,9 +242,10 @@ type noiseConn struct {
 	// handshake time and never written again.
 	pad bool
 
-	writeMu sync.Mutex
-	send    *noise.CipherState
-	padBuf  []byte // reused plaintext buffer: length byte, payload, filler
+	writeMu  sync.Mutex
+	send     *noise.CipherState
+	writeErr error  // terminal: encrypting has already consumed this record's nonce
+	padBuf   []byte // reused plaintext buffer: length byte, payload, filler
 	// frameBuf is the record as it goes on the wire: two length bytes and then
 	// the ciphertext, built in place and reused.
 	//
@@ -260,6 +261,7 @@ type noiseConn struct {
 
 	readMu  sync.Mutex
 	recv    *noise.CipherState
+	readErr error  // terminal authentication or padding failure
 	readBuf []byte // decrypted plaintext not yet handed to the caller
 	// inBuf is the record as it comes off the wire, read and then decrypted in
 	// place. The read side had the write side's problem in reverse: a fresh
@@ -279,6 +281,9 @@ type noiseConn struct {
 func (c *noiseConn) Write(p []byte) (int, error) {
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
+	if c.writeErr != nil {
+		return 0, c.writeErr
+	}
 
 	limit := noiseMaxPayload
 	if c.pad {
@@ -296,14 +301,21 @@ func (c *noiseConn) Write(p []byte) (int, error) {
 		c.frameBuf = append(c.frameBuf[:0], 0, 0)
 		frame, err := c.send.Encrypt(c.frameBuf, nil, c.plaintext(chunk))
 		if err != nil {
+			c.writeErr = err
 			return total, err
 		}
 		c.frameBuf = frame
 		if len(frame)-noiseLenPrefix > noiseMaxFrame {
-			return total, fmt.Errorf("noise: message too large (%d bytes)", len(frame)-noiseLenPrefix)
+			c.writeErr = fmt.Errorf("noise: message too large (%d bytes)", len(frame)-noiseLenPrefix)
+			return total, c.writeErr
 		}
 		binary.BigEndian.PutUint16(frame[:noiseLenPrefix], uint16(len(frame)-noiseLenPrefix))
-		if _, err := c.Conn.Write(frame); err != nil {
+		n, err := c.Conn.Write(frame)
+		if err == nil && n != len(frame) {
+			err = io.ErrShortWrite
+		}
+		if err != nil {
+			c.writeErr = err
 			return total, err
 		}
 		total += len(chunk)
@@ -362,6 +374,9 @@ func (c *noiseConn) unpad(plain []byte) ([]byte, error) {
 func (c *noiseConn) Read(p []byte) (int, error) {
 	c.readMu.Lock()
 	defer c.readMu.Unlock()
+	if c.readErr != nil {
+		return 0, c.readErr
+	}
 
 	// A loop rather than a single attempt: a padded record can legitimately
 	// carry no payload at all, and returning (0, nil) from Read is the kind of
@@ -376,9 +391,11 @@ func (c *noiseConn) Read(p []byte) (int, error) {
 		if err != nil {
 			// A record that does not authenticate is not a short read to paper
 			// over — the stream's integrity is gone. Surface it.
-			return 0, fmt.Errorf("noise: record failed authentication: %w", err)
+			c.readErr = fmt.Errorf("noise: record failed authentication: %w", err)
+			return 0, c.readErr
 		}
 		if plain, err = c.unpad(plain); err != nil {
+			c.readErr = err
 			return 0, err
 		}
 		c.readBuf = plain
