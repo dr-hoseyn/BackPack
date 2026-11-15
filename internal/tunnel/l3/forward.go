@@ -366,16 +366,20 @@ func (f *Forwarder) noteBackend(m portmap.Mapping, err error) {
 // udpFlow is one client's conversation with a backend. UDP has no connection,
 // so a flow is recognised by its source address and ends when it goes quiet.
 type udpFlow struct {
-	backend  net.Conn
-	socket   *net.UDPConn
-	ctx      context.Context
-	pacer    *udpWriteQueue
-	member   *backendMember     // counted against it while the flow lives
-	cancel   context.CancelFunc // releases pacing when this flow closes
-	lastSeen atomic.Int64       // unix nanoseconds
+	backend   net.Conn
+	socket    *net.UDPConn
+	ctx       context.Context
+	pacer     *udpWriteQueue
+	member    *backendMember     // counted against it while the flow lives
+	cancel    context.CancelFunc // releases pacing when this flow closes
+	stopClose func() bool        // detaches the generation's socket-close callback
+	lastSeen  atomic.Int64       // unix nanoseconds
 }
 
 func (f *udpFlow) close() {
+	if f.stopClose != nil {
+		f.stopClose()
+	}
 	f.cancel()
 	if f.pacer != nil {
 		f.pacer.discard(f)
@@ -499,9 +503,13 @@ func (f *Forwarder) udpFlowFor(
 	}
 
 	flowCtx, cancelFlow := context.WithCancel(ctx)
+	// Cancellation must interrupt socket I/O before the listener reaches its
+	// deferred cleanup: an uncapped backend Write may itself be blocked. Keep
+	// one callback per flow, with no timer or callback on the packet path.
+	stopClose := context.AfterFunc(flowCtx, func() { udpConn.Close() })
 	flow := &udpFlow{
 		backend: f.limiter.Wrap(flowCtx, udpConn), socket: udpConn,
-		ctx: flowCtx, member: member, cancel: cancelFlow, pacer: pacer,
+		ctx: flowCtx, member: member, cancel: cancelFlow, stopClose: stopClose, pacer: pacer,
 	}
 	flow.touch()
 
