@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"testing"
 	"time"
 
@@ -13,32 +14,38 @@ import (
 	"github.com/xtaci/smux"
 )
 
+func muxStreamPair(t *testing.T, version int) (*smux.Stream, *smux.Stream) {
+	t.Helper()
+	client, server := tcpPair(t)
+	cfg := smux.DefaultConfig()
+	cfg.Version = version
+	sender, err := smux.Client(client, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { sender.Close() })
+	receiver, err := smux.Server(server, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { receiver.Close() })
+	stream, err := sender.OpenStream()
+	if err != nil {
+		t.Fatal(err)
+	}
+	peer, err := receiver.AcceptStream()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { stream.Close(); peer.Close() })
+	return stream, peer
+}
+
 func TestJoinPreservesMuxHalfCloseThroughWrappers(t *testing.T) {
 	for _, version := range []int{1, 2} {
 		for _, capped := range []bool{false, true} {
 			t.Run(fmt.Sprintf("v%d/capped-%t", version, capped), func(t *testing.T) {
-				client, server := tcpPair(t)
-				cfg := smux.DefaultConfig()
-				cfg.Version = version
-				sender, err := smux.Client(client, cfg)
-				if err != nil {
-					t.Fatal(err)
-				}
-				defer sender.Close()
-				receiver, err := smux.Server(server, cfg)
-				if err != nil {
-					t.Fatal(err)
-				}
-				defer receiver.Close()
-				stream, err := sender.OpenStream()
-				if err != nil {
-					t.Fatal(err)
-				}
-				peer, err := receiver.AcceptStream()
-				if err != nil {
-					t.Fatal(err)
-				}
-				defer peer.Close()
+				stream, peer := muxStreamPair(t, version)
 				user, local := tcpPair(t)
 				ctx, cancel := context.WithCancel(context.Background())
 				defer cancel()
@@ -56,7 +63,7 @@ func TestJoinPreservesMuxHalfCloseThroughWrappers(t *testing.T) {
 				if _, err := user.Write([]byte("request")); err != nil {
 					t.Fatal(err)
 				}
-				if err := user.(interface{ CloseWrite() error }).CloseWrite(); err != nil {
+				if err := user.(*net.TCPConn).CloseWrite(); err != nil {
 					t.Fatal(err)
 				}
 				request, err := io.ReadAll(peer)
@@ -81,5 +88,33 @@ func TestJoinPreservesMuxHalfCloseThroughWrappers(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestJoinMuxHalfCloseEndsWithContext(t *testing.T) {
+	for _, version := range []int{1, 2} {
+		t.Run(fmt.Sprint(version), func(t *testing.T) {
+			stream, peer := muxStreamPair(t, version)
+			user, local := tcpPair(t)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			done := make(chan struct{})
+			go func() { Join(ctx, local, metrics.CountedConn(stream)); close(done) }()
+			peer.SetReadDeadline(time.Now().Add(time.Second))
+			if err := user.(*net.TCPConn).CloseWrite(); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := io.ReadAll(peer); err != nil {
+				t.Fatalf("upload EOF did not reach mux peer: %v", err)
+			}
+			// The peer leaves its response direction open. Cancelling must
+			// release the remaining read rather than wait for a second FIN.
+			cancel()
+			select {
+			case <-done:
+			case <-time.After(time.Second):
+				t.Fatal("half-closed mux relay outlived cancellation")
+			}
+		})
 	}
 }
