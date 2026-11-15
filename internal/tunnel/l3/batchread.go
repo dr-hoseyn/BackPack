@@ -82,6 +82,9 @@ type batchWriter interface {
 
 // asBatchWriter returns the carrier's batch-send capability, or nil.
 func asBatchWriter(c DatagramCarrier) batchWriter {
+	if udp, ok := c.(*udpCarrier); ok && udp.v4 == nil && udp.v6 == nil {
+		return nil
+	}
 	bw, ok := c.(batchWriter)
 	if !ok {
 		return nil
@@ -101,6 +104,11 @@ type batchReader interface {
 
 // asBatchReader returns the carrier's batch capability, or nil.
 func asBatchReader(c DatagramCarrier) batchReader {
+	// UDP's stub methods still satisfy the interface off Linux. Advertise
+	// batching only after a real socket wrapper has been installed.
+	if udp, ok := c.(*udpCarrier); ok && udp.v4 == nil && udp.v6 == nil {
+		return nil
+	}
 	br, ok := c.(batchReader)
 	if !ok {
 		return nil
