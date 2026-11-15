@@ -10,6 +10,7 @@ import (
 	"github.com/backpack/backpack/internal/traffic"
 	"github.com/backpack/backpack/internal/utils/network"
 	"github.com/sirupsen/logrus"
+	"github.com/xtaci/smux"
 )
 
 // RelayReadFrames aligns large source reads to whole destination frames.
@@ -257,13 +258,15 @@ func relayConn(c net.Conn) net.Conn {
 	return nil
 }
 
-// TCP and QUIC both carry directional EOF without changing the tunnel wire.
+// TCP, QUIC and smux carry directional EOF without changing the tunnel wire.
 // Other transports retain their existing full-close behavior.
 func halfCloser(c net.Conn) interface{ CloseWrite() error } {
 	switch conn := relayConn(c).(type) {
 	case *net.TCPConn:
 		return conn
 	case *network.QUICStreamConn:
+		return conn
+	case *smux.Stream:
 		return conn
 	case interface {
 		CloseWrite() error
