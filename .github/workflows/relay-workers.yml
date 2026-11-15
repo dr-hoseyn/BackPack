@@ -1,0 +1,28 @@
+name: Relay worker budget
+on:
+  pull_request:
+    paths:
+      - 'internal/tunnel/bridge/**'
+      - '.github/workflows/relay-workers.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'internal/tunnel/bridge/**'
+      - '.github/workflows/relay-workers.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: relay-workers-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  relay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go test -race ./internal/tunnel/bridge -count=20 -timeout 2m

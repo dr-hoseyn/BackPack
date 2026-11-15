@@ -13,6 +13,10 @@ import (
 // Join copies both directions, preserving a TCP FIN until the response drains.
 // Streams without directional EOF retain their existing full-close behavior.
 func Join(ctx context.Context, a, b net.Conn) {
+	// Reuse the caller for one copy. Cancellation must interrupt that copy
+	// even while it is blocked in Read, before it reaches the join loop.
+	stop := context.AfterFunc(ctx, func() { a.Close(); b.Close() })
+	defer stop()
 	done := make(chan struct{}, 2)
 	aTCP, bTCP := plainTCP(a), plainTCP(b)
 	copyOne := func(dst, src net.Conn, tcp *net.TCPConn) {
@@ -25,7 +29,7 @@ func Join(ctx context.Context, a, b net.Conn) {
 		b.Close()
 	}
 	go copyOne(a, b, aTCP)
-	go copyOne(b, a, bTCP)
+	copyOne(b, a, bTCP)
 
 	finished := 0
 	for finished < 2 {
