@@ -294,10 +294,10 @@ func (s *TcpMuxTransport) tunnelPort(g *tcpMuxGen) tcpTunnelPort {
 // before it can be used, and files it as a control channel or a mux session for
 // the pool.
 func (s *TcpMuxTransport) admitTunnelConn(g *tcpMuxGen, raw net.Conn) {
+	stop := context.AfterFunc(g.ctx, func() { raw.Close() })
+	defer stop()
 	conn := raw
 	if s.config.TCPFWD {
-		stop := context.AfterFunc(g.ctx, func() { raw.Close() })
-		defer stop()
 		setup, err := network.TCPFWDXMPPServerConn(raw, s.config.Token, announceTimeout)
 		if err != nil {
 			s.logger.Debugf("tcpfwd XMPP handshake failed from %s: %v", raw.RemoteAddr(), err)
