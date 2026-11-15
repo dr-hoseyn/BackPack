@@ -1,0 +1,28 @@
+name: Direct connection cancellation
+on:
+  pull_request:
+    paths:
+      - 'internal/tunnel/direct/**'
+      - '.github/workflows/direct-cancellation.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'internal/tunnel/direct/**'
+      - '.github/workflows/direct-cancellation.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: direct-cancellation-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  cancellation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go test -race ./internal/tunnel/direct -run '^TestDirectWebSocket' -count=20 -timeout 2m
