@@ -57,9 +57,10 @@ type udpForwarder struct {
 	// target is the address on the far side, already marked as UDP.
 	target string
 
-	mu     sync.Mutex
-	flows  map[netip.AddrPort]*udpFlow
-	closed bool
+	mu        sync.Mutex
+	flows     map[netip.AddrPort]*udpFlow
+	closed    bool
+	closeOnce sync.Once
 }
 
 // newUDPForwarder binds the UDP side of a forwarded port.
@@ -100,6 +101,9 @@ func newUDPForwarder(logger *logrus.Logger, localAddr, remoteAddr string) (*udpF
 // full channel silenced that peer until the service was restarted.
 func startUDPForward(ctx context.Context, logger *logrus.Logger, localAddr, remoteAddr string,
 	admit func(conn net.Conn, target string) bool) {
+	if ctx.Err() != nil {
+		return
+	}
 
 	fw, err := newUDPForwarder(logger, localAddr, remoteAddr)
 	if err != nil {
@@ -107,12 +111,9 @@ func startUDPForward(ctx context.Context, logger *logrus.Logger, localAddr, remo
 		return
 	}
 	logger.Infof("UDP listener started successfully, listening on address: %s", fw.conn.LocalAddr())
+	defer closeListenerOnCancel(ctx, fw)()
 
 	go fw.reap(ctx)
-	go func() {
-		<-ctx.Done()
-		fw.close()
-	}()
 	fw.run(admit)
 }
 
@@ -188,17 +189,27 @@ func (fw *udpForwarder) reap(ctx context.Context) {
 }
 
 func (fw *udpForwarder) close() {
-	fw.mu.Lock()
-	fw.closed = true
-	flows := make([]*udpFlow, 0, len(fw.flows))
-	for _, f := range fw.flows {
-		flows = append(flows, f)
-	}
-	fw.mu.Unlock()
-	for _, f := range flows {
-		f.Close()
-	}
-	fw.conn.Close()
+	_ = fw.Close()
+}
+
+// Close waits for the socket and its flows, even when another closer started
+// shutdown. The listener owner must not release its port earlier than this.
+func (fw *udpForwarder) Close() error {
+	fw.closeOnce.Do(func() {
+		fw.mu.Lock()
+		fw.closed = true
+		flows := make([]*udpFlow, 0, len(fw.flows))
+		for _, f := range fw.flows {
+			flows = append(flows, f)
+		}
+		fw.mu.Unlock()
+		// Interrupt any reply writer before waiting for a flow's write lock.
+		_ = fw.conn.Close()
+		for _, f := range flows {
+			f.Close()
+		}
+	})
+	return nil
 }
 
 func (fw *udpForwarder) forget(key netip.AddrPort, f *udpFlow) {
