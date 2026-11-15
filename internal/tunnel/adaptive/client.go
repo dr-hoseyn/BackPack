@@ -175,7 +175,7 @@ func (c *ClientPaths) outbound(i int) (*network.Outbound, error) {
 	return &network.Outbound{Proxy: proxy}, nil
 }
 
-func (c *ClientPaths) dial(ctx context.Context, i int) (*net.TCPConn, error) {
+func (c *ClientPaths) dial(ctx context.Context, i int) (net.Conn, error) {
 	out, err := c.outbound(i)
 	if err != nil {
 		return nil, err
@@ -391,7 +391,11 @@ func (c *ClientPaths) forward(local net.Conn) {
 			remote.Close()
 			return
 		}
-		remote.CloseWrite()
+		writer, ok := remote.(interface{ CloseWrite() error })
+		if !ok || writer.CloseWrite() != nil {
+			local.Close()
+			remote.Close()
+		}
 	}()
 	_, downErr := io.Copy(local, remote)
 	if tcp, ok := local.(*net.TCPConn); ok {

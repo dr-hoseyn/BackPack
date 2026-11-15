@@ -120,38 +120,41 @@ func (p *ProxyConfig) String() string {
 
 // connectThrough completes the proxy handshake on an open connection to the
 // proxy, leaving it connected to target.
-func connectThrough(conn net.Conn, p *ProxyConfig, target string, timeout time.Duration) error {
+func connectThrough(conn net.Conn, p *ProxyConfig, target string, timeout time.Duration) (net.Conn, error) {
 	host, portStr, err := net.SplitHostPort(target)
 	if err != nil {
-		return fmt.Errorf("proxy: %q is not a host:port: %w", target, err)
+		return nil, fmt.Errorf("proxy: %q is not a host:port: %w", target, err)
 	}
 	port, err := strconv.Atoi(portStr)
 	if err != nil || port < 1 || port > 65535 {
-		return fmt.Errorf("proxy: target port must be between 1 and 65535")
+		return nil, fmt.Errorf("proxy: target port must be between 1 and 65535")
 	}
 
 	switch p.Scheme {
 	case "socks5":
-		return socks.NegotiateWithin(conn, p.User, p.Password, host, port, timeout)
+		if err := socks.NegotiateWithin(conn, p.User, p.Password, host, port, timeout); err != nil {
+			return nil, err
+		}
+		return conn, nil
 	case "http":
 		return httpConnect(conn, p, target, timeout)
 	}
-	return fmt.Errorf("proxy: unknown scheme %q", p.Scheme)
+	return nil, fmt.Errorf("proxy: unknown scheme %q", p.Scheme)
 }
 
 // httpConnect performs an HTTP CONNECT, which is how an ordinary web proxy is
 // asked for a raw tunnel to somewhere else.
-func httpConnect(conn net.Conn, p *ProxyConfig, target string, timeout time.Duration) error {
+func httpConnect(conn net.Conn, p *ProxyConfig, target string, timeout time.Duration) (net.Conn, error) {
 	if timeout > 0 {
 		if err := conn.SetDeadline(time.Now().Add(timeout)); err != nil {
-			return err
+			return nil, err
 		}
 		defer conn.SetDeadline(time.Time{})
 	}
 
 	req, err := http.NewRequest(http.MethodConnect, "http://"+target, nil)
 	if err != nil {
-		return fmt.Errorf("proxy: building the CONNECT request: %w", err)
+		return nil, fmt.Errorf("proxy: building the CONNECT request: %w", err)
 	}
 	// Opaque, so the request line is "CONNECT host:port HTTP/1.1" rather than a
 	// full URL — which is what a proxy expects for CONNECT and what some of
@@ -165,34 +168,41 @@ func httpConnect(conn net.Conn, p *ProxyConfig, target string, timeout time.Dura
 	}
 
 	if err := req.Write(conn); err != nil {
-		return fmt.Errorf("proxy: sending CONNECT: %w", err)
+		return nil, fmt.Errorf("proxy: sending CONNECT: %w", err)
 	}
 
 	// Bound untrusted response headers independently of the I/O deadline.
-	// The raw connection is retained, so refuse buffered tunnel bytes below
-	// rather than silently dropping them with this temporary reader.
+	// The reader may also prefetch the peer's greeting, which belongs to the
+	// tunnel and must be preserved when returning the connection.
 	const maxResponseBytes = 64 << 10
 	limited := &io.LimitedReader{R: conn, N: maxResponseBytes}
 	br := bufio.NewReader(limited)
-	resp, err := http.ReadResponse(br, req)
-	if err != nil {
-		if limited.N == 0 {
-			return fmt.Errorf("proxy: CONNECT response headers exceed %d bytes", maxResponseBytes)
+	var resp *http.Response
+	for {
+		resp, err = http.ReadResponse(br, req)
+		if err != nil {
+			if limited.N == 0 {
+				return nil, fmt.Errorf("proxy: CONNECT response headers exceed %d bytes", maxResponseBytes)
+			}
+			return nil, fmt.Errorf("proxy: reading the CONNECT response: %w", err)
 		}
-		return fmt.Errorf("proxy: reading the CONNECT response: %w", err)
+		if resp.StatusCode < 100 || resp.StatusCode >= 200 || resp.StatusCode == http.StatusSwitchingProtocols {
+			break
+		}
+		// Informational responses precede the final status. Their headers
+		// share the same total byte limit and handshake deadline.
 	}
 	// This connection is never reused for HTTP. Closing Response.Body can
 	// drain a refused response indefinitely, or consume tunnel bytes when a
 	// successful CONNECT includes Content-Length. Its owner closes the socket
 	// on failure; on success only the tunnel owns the following bytes.
 
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("proxy: CONNECT to %s refused: %s", target, resp.Status)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("proxy: CONNECT to %s refused: %s", target, resp.Status)
 	}
 	if n := br.Buffered(); n > 0 {
-		// Should not happen against a well-behaved proxy, and silently losing
-		// the first bytes of the tunnel would look like a corrupt stream.
-		return fmt.Errorf("proxy: %d bytes arrived before the tunnel started; refusing to lose them", n)
+		prefix, _ := br.Peek(n)
+		return preserveProxyPrefix(conn, prefix), nil
 	}
-	return nil
+	return conn, nil
 }
