@@ -36,7 +36,7 @@ jobs:
       - name: Verify listener ownership under coverage instrumentation
         run: go test ./internal/server -run '^TestStartDoesNotReturnUntilThePortsAreFree$' -count=50 -coverpkg=./... -timeout 2m
       - name: Verify cancellation and listener release under race scheduling
-        run: go test -race ./internal/server/transport ./internal/server -run '^Test(ListenerClose.*|CancelledListenerDoesNotBind|CancelledDuringBindClosesTheNewListener|StartDoesNotReturnUntilThePortsAreFree)$' -count=50 -timeout 3m
+        run: go test -race ./internal/server/transport ./internal/server -run '^Test(ListenerClose.*|PendingClaimsStopWithTheirGeneration|CancelledListenerDoesNotBind|CancelledDuringBindClosesTheNewListener|ForwarderShutdownReleasesTCPAndUDPTogether|StartDoesNotReturnUntilThePortsAreFree)$' -count=50 -timeout 3m
 
   builtin-carriers:
     name: Built-in carrier and encrypted coordinator regressions
