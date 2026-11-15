@@ -257,11 +257,11 @@ func (s *TcpTransport) tunnelPort(g *tcpGen) tcpTunnelPort {
 // before it can be used, and files it as a control channel or a pool
 // connection.
 func (s *TcpTransport) admitTunnelConn(g *tcpGen, raw net.Conn) {
+	stop := context.AfterFunc(g.ctx, func() { raw.Close() })
+	defer stop()
 	conn := raw
 	var expectedSignal byte
 	if s.config.TCPFWD {
-		stop := context.AfterFunc(g.ctx, func() { raw.Close() })
-		defer stop()
 		wrapped, control, err := network.TCPFWDServerConn(raw, s.config.Token, announceTimeout)
 		if err != nil {
 			s.logger.Debugf("tcpfwd handshake failed from %s: %v", raw.RemoteAddr(), err)
@@ -278,12 +278,10 @@ func (s *TcpTransport) admitTunnelConn(g *tcpGen, raw net.Conn) {
 		conn = naive.WrapDuplex(conn)
 	}
 	if s.config.Carrier != nil {
-		stop := context.AfterFunc(g.ctx, func() { raw.Close() })
 		wrapped, err := s.config.Carrier.Server(g.ctx, raw)
 		if err == nil {
 			wrapped, err = network.NoiseServerConn(wrapped, s.config.Token, 15*time.Second)
 		}
-		stop()
 		if err != nil {
 			s.logger.Debugf("carrier handshake failed: %v", err)
 			raw.Close()
