@@ -14,11 +14,27 @@ import (
 // Dial connects to targetHost:targetPort through a SOCKS5 proxy at proxyAddr,
 // authenticating with username/password.
 func Dial(proxyAddr, user, pass, targetHost string, targetPort int) (net.Conn, error) {
-	conn, err := net.DialTimeout("tcp", proxyAddr, 15*time.Second)
+	return DialContext(context.Background(), proxyAddr, user, pass, targetHost, targetPort)
+}
+
+// DialContext connects through a SOCKS5 proxy and interrupts both the dial and
+// handshake when ctx ends. Cancellation ownership ends when it returns.
+func DialContext(ctx context.Context, proxyAddr, user, pass, targetHost string, targetPort int) (net.Conn, error) {
+	if err := validateRequest(user, pass, targetHost, targetPort); err != nil {
+		return nil, err
+	}
+	dialer := net.Dialer{Timeout: 15 * time.Second}
+	conn, err := dialer.DialContext(ctx, "tcp", proxyAddr)
 	if err != nil {
 		return nil, err
 	}
-	if err := Negotiate(conn, user, pass, targetHost, targetPort); err != nil {
+	stop := context.AfterFunc(ctx, func() { conn.Close() })
+	err = Negotiate(conn, user, pass, targetHost, targetPort)
+	stopped := stop()
+	if ctx.Err() != nil {
+		err = ctx.Err()
+	}
+	if err != nil || !stopped {
 		conn.Close()
 		return nil, err
 	}
@@ -39,6 +55,9 @@ func Negotiate(conn net.Conn, user, pass, host string, port int) error {
 
 // NegotiateWithin bounds the handshake by the caller's remaining dial budget.
 func NegotiateWithin(conn net.Conn, user, pass, host string, port int, timeout time.Duration) error {
+	if err := validateRequest(user, pass, host, port); err != nil {
+		return err
+	}
 	if timeout <= 0 {
 		timeout = 20 * time.Second
 	}
@@ -79,14 +98,26 @@ func NegotiateWithin(conn net.Conn, user, pass, host string, port int, timeout t
 		if _, err := io.ReadFull(conn, ar); err != nil {
 			return err
 		}
-		if ar[1] != 0x00 {
+		if ar[0] != 0x01 || ar[1] != 0x00 {
 			return fmt.Errorf("socks5: authentication failed")
 		}
 	}
 
-	// CONNECT request (domain address type).
-	req := []byte{ver5, cmdConn, 0x00, atypHost, byte(len(host))}
-	req = append(req, host...)
+	// Numeric addresses have their own wire types; a proxy need not resolve
+	// an IPv6 literal sent as a domain name.
+	req := []byte{ver5, cmdConn, 0x00}
+	if ip := net.ParseIP(host); ip != nil {
+		if v4 := ip.To4(); v4 != nil {
+			req = append(req, atypIPv4)
+			req = append(req, v4...)
+		} else {
+			req = append(req, atypIPv6)
+			req = append(req, ip.To16()...)
+		}
+	} else {
+		req = append(req, atypHost, byte(len(host)))
+		req = append(req, host...)
+	}
 	p := make([]byte, 2)
 	binary.BigEndian.PutUint16(p, uint16(port))
 	req = append(req, p...)
@@ -98,6 +129,9 @@ func NegotiateWithin(conn net.Conn, user, pass, host string, port int, timeout t
 	head := make([]byte, 4)
 	if _, err := io.ReadFull(conn, head); err != nil {
 		return err
+	}
+	if head[0] != ver5 || head[2] != 0 {
+		return fmt.Errorf("socks5: invalid CONNECT reply header")
 	}
 	if head[1] != repOK {
 		return fmt.Errorf("socks5: connect failed (code %d)", head[1])
@@ -130,19 +164,38 @@ func NegotiateWithin(conn net.Conn, user, pass, host string, port int, timeout t
 	return nil
 }
 
+func validateRequest(user, pass, host string, port int) error {
+	if len(user) > 255 || len(pass) > 255 {
+		return fmt.Errorf("socks5: credentials must fit in 255 bytes each")
+	}
+	if (user != "" || pass != "") && (user == "" || pass == "") {
+		return fmt.Errorf("socks5: username and password must both be nonempty")
+	}
+	if host == "" || len(host) > 255 {
+		return fmt.Errorf("socks5: target host must contain 1 to 255 bytes")
+	}
+	if port < 1 || port > 65535 {
+		return fmt.Errorf("socks5: target port must be between 1 and 65535")
+	}
+	return nil
+}
+
 // HTTPClient returns an *http.Client whose connections are tunnelled through
 // the SOCKS5 proxy at proxyAddr using the given credentials.
 func HTTPClient(proxyAddr, user, pass string, timeout time.Duration) *http.Client {
 	return &http.Client{
 		Timeout: timeout,
 		Transport: &http.Transport{
-			DialContext: func(_ context.Context, _, addr string) (net.Conn, error) {
+			DialContext: func(ctx context.Context, _, addr string) (net.Conn, error) {
 				host, portStr, err := net.SplitHostPort(addr)
 				if err != nil {
 					return nil, err
 				}
-				port, _ := strconv.Atoi(portStr)
-				return Dial(proxyAddr, user, pass, host, port)
+				port, err := strconv.Atoi(portStr)
+				if err != nil {
+					return nil, err
+				}
+				return DialContext(ctx, proxyAddr, user, pass, host, port)
 			},
 		},
 	}

@@ -18,6 +18,26 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  proxy-networking:
+    name: Proxy cancellation and TCP socket tuning
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Verify SOCKS wire types, CONNECT limits, cancellation and real tunnel traffic
+        run: |
+          go test -race ./internal/socks ./internal/utils/network ./internal/e2e \
+            -run '^Test(HTTPProxyDialCancellationReleasesHandshake|SOCKS.*|ProxyValidation.*|TCPDialerMakesAtLeastOneAttempt|TCPRejectsInvalidSocketTuning|SocketControlPreservesFailures|HTTPConnect.*|TunnelThroughASocks5Proxy|LocalBackendDialNeverUsesTheProxy)$' \
+            -count=1 -timeout 3m
+      - name: Verify listener ownership under coverage instrumentation
+        run: go test ./internal/server -run '^TestStartDoesNotReturnUntilThePortsAreFree$' -count=50 -coverpkg=./... -timeout 2m
+      - name: Verify cancellation and listener release under race scheduling
+        run: go test -race ./internal/server/transport ./internal/server -run '^Test(ListenerClose.*|PendingClaimsStopWithTheirGeneration|CancelledListenerDoesNotBind|CancelledDuringBindClosesTheNewListener|ForwarderShutdownReleasesTCPAndUDPTogether|StartDoesNotReturnUntilThePortsAreFree)$' -count=50 -timeout 3m
+
   builtin-carriers:
     name: Built-in carrier and encrypted coordinator regressions
     runs-on: ubuntu-latest

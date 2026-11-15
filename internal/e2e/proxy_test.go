@@ -55,24 +55,10 @@ func (r *socksRelay) serve(c net.Conn) {
 		return
 	}
 
-	// CONNECT request. The client always sends a hostname address type.
-	req := make([]byte, 4)
-	if _, err := io.ReadFull(c, req); err != nil || req[1] != 0x01 || req[3] != 0x03 {
+	target, err := readSocksConnectTarget(c)
+	if err != nil {
 		return
 	}
-	l := make([]byte, 1)
-	if _, err := io.ReadFull(c, l); err != nil {
-		return
-	}
-	host := make([]byte, l[0])
-	if _, err := io.ReadFull(c, host); err != nil {
-		return
-	}
-	portBuf := make([]byte, 2)
-	if _, err := io.ReadFull(c, portBuf); err != nil {
-		return
-	}
-	target := net.JoinHostPort(string(host), fmt.Sprint(binary.BigEndian.Uint16(portBuf)))
 
 	up, err := net.Dial("tcp", target)
 	if err != nil {
@@ -163,24 +149,12 @@ func TestLocalBackendDialNeverUsesTheProxy(t *testing.T) {
 					return
 				}
 				c.Write([]byte{0x05, 0x00})
-				req := make([]byte, 4)
-				if _, err := io.ReadFull(c, req); err != nil {
-					return
-				}
-				l := make([]byte, 1)
-				if _, err := io.ReadFull(c, l); err != nil {
-					return
-				}
-				host := make([]byte, l[0])
-				if _, err := io.ReadFull(c, host); err != nil {
-					return
-				}
-				portBuf := make([]byte, 2)
-				if _, err := io.ReadFull(c, portBuf); err != nil {
+				target, err := readSocksConnectTarget(c)
+				if err != nil {
 					return
 				}
 				select {
-				case asked <- net.JoinHostPort(string(host), fmt.Sprint(binary.BigEndian.Uint16(portBuf))):
+				case asked <- target:
 				default:
 				}
 				c.Write([]byte{0x05, 0x01, 0x00, 0x01, 0, 0, 0, 0, 0, 0}) // refuse
@@ -221,4 +195,43 @@ func TestLocalBackendDialNeverUsesTheProxy(t *testing.T) {
 	if seen == 0 {
 		t.Skip("the client never reached the proxy, so there is nothing to check")
 	}
+}
+
+// Accept every RFC 1928 CONNECT address type, independently of how the client
+// chooses to encode its target. Both relays use the same wire parser.
+func readSocksConnectTarget(r io.Reader) (string, error) {
+	var header [4]byte
+	if _, err := io.ReadFull(r, header[:]); err != nil {
+		return "", err
+	}
+	if header[0] != 5 || header[1] != 1 || header[2] != 0 {
+		return "", fmt.Errorf("invalid SOCKS CONNECT header")
+	}
+	var address []byte
+	switch header[3] {
+	case 1:
+		address = make([]byte, net.IPv4len)
+	case 4:
+		address = make([]byte, net.IPv6len)
+	case 3:
+		var length [1]byte
+		if _, err := io.ReadFull(r, length[:]); err != nil {
+			return "", err
+		}
+		address = make([]byte, int(length[0]))
+	default:
+		return "", fmt.Errorf("unsupported SOCKS address type %d", header[3])
+	}
+	if _, err := io.ReadFull(r, address); err != nil {
+		return "", err
+	}
+	host := string(address)
+	if header[3] != 3 {
+		host = net.IP(address).String()
+	}
+	var port [2]byte
+	if _, err := io.ReadFull(r, port[:]); err != nil {
+		return "", err
+	}
+	return net.JoinHostPort(host, fmt.Sprint(binary.BigEndian.Uint16(port[:]))), nil
 }

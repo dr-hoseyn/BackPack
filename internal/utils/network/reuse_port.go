@@ -41,7 +41,7 @@ import (
 // have to retry.
 func ListenReuseControl(network, address string, s syscall.RawConn) error {
 	_ = s.Control(func(fd uintptr) {
-		_ = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_REUSEADDR, 1)
+		_ = setSocketInt(fd, syscall.SOL_SOCKET, syscall.SO_REUSEADDR, 1)
 	})
 	return nil
 }

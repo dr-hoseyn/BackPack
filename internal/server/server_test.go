@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/backpack/backpack/config"
+	"github.com/backpack/backpack/internal/testport"
 	"github.com/backpack/backpack/internal/utils"
 )
 
@@ -24,16 +25,10 @@ func testServer(cfg *config.ServerConfig) *Server {
 	return &Server{config: cfg, ctx: ctx, cancel: cancel, logger: utils.NewLogger("fatal")}
 }
 
-// freePort takes a port the kernel is not using, so two tests never fight over
-// one — the transports here really do bind.
+// Use the shared allocator: a TCP ephemeral port can already be occupied by
+// UDP, or be reassigned to an outgoing connection before a transport binds it.
 func freePort(t *testing.T) int {
-	t.Helper()
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("finding a free port: %v", err)
-	}
-	defer ln.Close()
-	return ln.Addr().(*net.TCPAddr).Port
+	return testport.Free(t)
 }
 
 func baseConfig(t *testing.T, tr config.TransportType) *config.ServerConfig {

@@ -33,14 +33,7 @@ func (s *UdpTransport) channelHandshake(g *udpGen) {
 
 	s.logger.Infof("server started successfully, listening on address: %s", listener.Addr().String())
 
-	defer listener.Close()
-
-	// Close the listener when the run ends so the blocked Accept below returns
-	// instead of holding this goroutine open past the restart that replaced it.
-	go func() {
-		<-g.ctx.Done()
-		listener.Close()
-	}()
+	defer closeListenerOnCancel(g.ctx, listener)()
 
 	// This listener keeps accepting for the whole run. The first valid claim
 	// becomes the client and starts the data side; a later one is that client
@@ -167,6 +160,8 @@ func (s *UdpTransport) acceptControlClaims(g *udpGen, listener net.Listener, cla
 // pass and answers it. It leaves the connection open on success; the caller
 // closes it when this returns false.
 func (s *UdpTransport) validControlClaim(g *udpGen, conn net.Conn) bool {
+	stop := context.AfterFunc(g.ctx, func() { conn.Close() })
+	defer stop()
 	// Set a read deadline for the token response
 	if err := conn.SetReadDeadline(time.Now().Add(controlClaimTimeout)); err != nil {
 		s.logger.Errorf("failed to set read deadline: %v", err)
@@ -175,6 +170,9 @@ func (s *UdpTransport) validControlClaim(g *udpGen, conn net.Conn) bool {
 
 	msg, transport, err := utils.ReceiveBinaryTransportString(conn)
 	if err != nil {
+		if g.ctx.Err() != nil {
+			return false
+		}
 		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 			s.logger.Warn("timeout while waiting for control channel signal")
 		} else {
