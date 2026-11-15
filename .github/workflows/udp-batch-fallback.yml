@@ -1,0 +1,39 @@
+name: UDP batch capability fallback
+on:
+  pull_request:
+    paths:
+      - 'internal/tunnel/l3/batchread*.go'
+      - 'internal/tunnel/l3/batchcapability_test.go'
+      - 'internal/tunnel/l3/multipath*.go'
+      - '.github/workflows/udp-batch-fallback.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'internal/tunnel/l3/batchread*.go'
+      - 'internal/tunnel/l3/multipath*.go'
+      - '.github/workflows/udp-batch-fallback.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: udp-batch-fallback-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  fallback:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Verify actual UDP traffic without batching
+        run: go test ./internal/tunnel/l3 -run '^Test(UDPWithoutBatchWrapperHasNoBatchCapability|MultipathReadsWithoutBatchSocket|MultipathWritesWithoutBatchSocket|ReviewedMultipath.*)$' -count=3 -timeout 2m
+      - name: Verify race safety
+        if: runner.os == 'Linux'
+        run: go test -race ./internal/tunnel/l3 -run '^Test(UDPWithoutBatchWrapperHasNoBatchCapability|MultipathReadsWithoutBatchSocket|MultipathWritesWithoutBatchSocket|ReviewedMultipath.*)$' -count=3 -timeout 2m
