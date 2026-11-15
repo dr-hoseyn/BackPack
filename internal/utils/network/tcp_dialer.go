@@ -144,8 +144,8 @@ func attemptTcpDialer(
 			// abort the dial outright wherever the kernel refused. See
 			// reuse_port.go.
 
-			// The interface and the fwmark come first and are the one thing
-			// here that can fail the dial: they were asked for by name, and a
+			// The interface and fwmark are applied first: they were asked
+			// for by name, and a
 			// connection that leaves by the wrong link is worse than one that
 			// does not leave at all. See outbound.go.
 			if err := out.outboundControl(network, address, s); err != nil {
