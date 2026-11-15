@@ -33,14 +33,7 @@ func (s *UdpTransport) channelHandshake(g *udpGen) {
 
 	s.logger.Infof("server started successfully, listening on address: %s", listener.Addr().String())
 
-	defer listener.Close()
-
-	// Close the listener when the run ends so the blocked Accept below returns
-	// instead of holding this goroutine open past the restart that replaced it.
-	go func() {
-		<-g.ctx.Done()
-		listener.Close()
-	}()
+	defer closeListenerOnCancel(g.ctx, listener)()
 
 	// This listener keeps accepting for the whole run. The first valid claim
 	// becomes the client and starts the data side; a later one is that client
