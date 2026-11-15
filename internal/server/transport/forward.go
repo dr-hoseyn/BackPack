@@ -101,6 +101,9 @@ func (f portForwarder) listen(localAddr, remoteAddr string) {
 	// Counted so a restart can wait for the port to be free again.
 	f.listeners.hold()
 	defer f.listeners.release()
+	if f.ctx.Err() != nil {
+		return
+	}
 
 	listener, err := net.Listen("tcp", localAddr)
 	if err != nil {
@@ -117,7 +120,14 @@ func (f portForwarder) listen(localAddr, remoteAddr string) {
 	// The same port number, over UDP, when the tunnel forwards UDP. Its flows
 	// travel through the tunnel exactly like TCP connections do.
 	if f.acceptUDP {
-		go startUDPForward(f.ctx, f.log, localAddr, remoteAddr, f.admitUDP)
+		udpStopped := make(chan struct{})
+		go func() {
+			defer close(udpStopped)
+			startUDPForward(f.ctx, f.log, localAddr, remoteAddr, f.admitUDP)
+		}()
+		// This listener's ownership covers its UDP sibling too. A reload
+		// must not return the TCP port while UDP is still closing.
+		defer func() { <-udpStopped }()
 	}
 
 	<-f.ctx.Done()
