@@ -53,7 +53,8 @@ result = {"scope": "combined client/server process; 1000 idle streams plus eight
           "idle_heap_reduction_percent": 100 * (1 - candidate["heap_delta_bytes"] / base["heap_delta_bytes"]),
           "cpu_per_gib_change_percent": 100 * (candidate["cpu_seconds_per_gib"] / base["cpu_seconds_per_gib"] - 1)}
 if delayed:
-    result["scope"] = f"{mode}: combined client/server process; 16 idle streams, eight bulk workers and fresh-user probes; receiver-ingress netem: 40ms each direction, 0.1% loss, 200mbit, MTU1500, TSO/GSO/GRO off, seed42"
+    seed = os.environ.get("BP_RESOURCE_NETEM_SEED", "42")
+    result["scope"] = f"{mode}: combined client/server process; 16 idle streams, eight bulk workers and fresh-user probes; receiver-ingress netem: 40ms each direction, 0.1% loss, 200mbit, MTU1500, TSO/GSO/GRO off, seed{seed}"
 print(json.dumps(result, indent=2))
 if not all(checks.values()):
     raise SystemExit("Resource/quality comparison failed; inspect the preserved samples")

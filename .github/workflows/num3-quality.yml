@@ -15,6 +15,16 @@ on:
       - '.github/scripts/compare-wssmux-resources.py'
       - '.github/workflows/num3-quality.yml'
   workflow_dispatch:
+    inputs:
+      netem_seed:
+        description: Packet loss seed for the diagnostic comparison
+        type: choice
+        default: '42'
+        options: ['42', '7', '99']
+      baseline_ref:
+        description: Baseline Git ref for a manual comparison
+        type: string
+        default: 'v1.22.0'
 permissions:
   contents: read
 concurrency:
@@ -25,7 +35,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      BASE_REF: ${{ github.event.pull_request.base.sha || 'v1.22.0' }}
+      BASE_REF: ${{ github.event.pull_request.base.sha || inputs.baseline_ref || 'v1.22.0' }}
+      BP_RESOURCE_NETEM_SEED: ${{ inputs.netem_seed || '42' }}
       GOMAXPROCS: '2'
     steps:
       - uses: actions/checkout@v7
