@@ -65,7 +65,9 @@ func echoTarget(t *testing.T) string {
 }
 
 func exchange(ctx context.Context, c *Client, target string, payload []byte) error {
-	s, err := c.DialStream(ctx, target)
+	setup, cancelSetup := context.WithCancel(ctx)
+	s, err := c.DialStream(setup, target)
+	cancelSetup() // Setup cancellation must not terminate the handed-off stream.
 	if err != nil {
 		return err
 	}
