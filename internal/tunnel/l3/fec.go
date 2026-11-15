@@ -10,6 +10,7 @@ import (
 	"hash"
 	"io"
 	"net"
+	"os"
 	"sync"
 	"time"
 
@@ -173,10 +174,14 @@ type fecCarrier struct {
 	readMu    sync.Mutex
 	readFrame []byte // receive scratch, held until the payload has been copied
 
-	recvMu  sync.Mutex
-	groups  map[uint32]*fecGroup
-	order   []uint32   // group ids in arrival order, for eviction
-	pending []fecReady // rebuilt packets waiting to be read
+	recvMu       sync.Mutex
+	groups       map[uint32]*fecGroup
+	order        []uint32   // group ids in arrival order, for eviction
+	pending      []fecReady // rebuilt packets waiting to be read
+	readDeadline time.Time  // applies to pending packets as well as the socket
+	closed       bool
+	closeOnce    sync.Once
+	closeErr     error
 }
 
 // fecReady is a rebuilt packet and the address it is attributed to.
@@ -250,10 +255,46 @@ func (c *fecCarrier) CarrierName() string {
 	return fmt.Sprintf("%s+fec%d/%d", c.below.CarrierName(), c.cfg.Data, c.cfg.Parity)
 }
 
-func (c *fecCarrier) Close() error                       { return c.below.Close() }
-func (c *fecCarrier) LocalAddr() net.Addr                { return c.below.LocalAddr() }
-func (c *fecCarrier) SetDeadline(t time.Time) error      { return c.below.SetDeadline(t) }
-func (c *fecCarrier) SetReadDeadline(t time.Time) error  { return c.below.SetReadDeadline(t) }
+func (c *fecCarrier) Close() error {
+	c.closeOnce.Do(func() {
+		c.recvMu.Lock()
+		c.closed = true
+		c.pending = nil
+		c.recvMu.Unlock()
+		// Do not take readMu: an active read may be waiting on this socket.
+		c.closeErr = c.below.Close()
+	})
+	return c.closeErr
+}
+
+func (c *fecCarrier) LocalAddr() net.Addr { return c.below.LocalAddr() }
+
+func (c *fecCarrier) SetDeadline(t time.Time) error {
+	c.recvMu.Lock()
+	defer c.recvMu.Unlock()
+	if c.closed {
+		return net.ErrClosed
+	}
+	if err := c.below.SetDeadline(t); err != nil {
+		return err
+	}
+	c.readDeadline = t
+	return nil
+}
+
+func (c *fecCarrier) SetReadDeadline(t time.Time) error {
+	c.recvMu.Lock()
+	defer c.recvMu.Unlock()
+	if c.closed {
+		return net.ErrClosed
+	}
+	if err := c.below.SetReadDeadline(t); err != nil {
+		return err
+	}
+	c.readDeadline = t
+	return nil
+}
+
 func (c *fecCarrier) SetWriteDeadline(t time.Time) error { return c.below.SetWriteDeadline(t) }
 
 // WriteTo sends p as a data shard immediately, and — when it completes a group —
@@ -371,8 +412,8 @@ func (c *fecCarrier) flushParity() {
 func (c *fecCarrier) ReadFrom(p []byte) (int, net.Addr, error) {
 	c.readMu.Lock()
 	defer c.readMu.Unlock()
-	if n, addr, ok := c.takePending(p); ok {
-		return n, addr, nil
+	if n, addr, err, ok := c.takePending(p); ok {
+		return n, addr, err
 	}
 	need := len(p) + fecOverhead + c.tagLen()
 	if cap(c.readFrame) < need {
@@ -406,8 +447,8 @@ func (c *fecCarrier) ReadFrom(p []byte) (int, net.Addr, error) {
 		if !delivered {
 			// A parity packet, or a duplicate. It may have completed a group,
 			// so check the rebuilt queue before going back to the wire.
-			if n, a, ok := c.takePending(p); ok {
-				return n, a, nil
+			if n, a, err, ok := c.takePending(p); ok {
+				return n, a, err
 			}
 			continue
 		}
@@ -416,16 +457,24 @@ func (c *fecCarrier) ReadFrom(p []byte) (int, net.Addr, error) {
 }
 
 // takePending pops one rebuilt packet, if there is one.
-func (c *fecCarrier) takePending(p []byte) (int, net.Addr, bool) {
+func (c *fecCarrier) takePending(p []byte) (int, net.Addr, error, bool) {
 	c.recvMu.Lock()
 	defer c.recvMu.Unlock()
+	if c.closed {
+		return 0, nil, net.ErrClosed, true
+	}
 	if len(c.pending) == 0 {
-		return 0, nil, false
+		return 0, nil, nil, false
+	}
+	// A recovered packet bypasses the socket, so enforce its deadline here.
+	// Leave it queued on timeout, allowing a cleared deadline to read it later.
+	if !c.readDeadline.IsZero() && !time.Now().Before(c.readDeadline) {
+		return 0, nil, os.ErrDeadlineExceeded, true
 	}
 	r := c.pending[0]
 	c.pending[0] = fecReady{}
 	c.pending = c.pending[1:]
-	return copy(p, r.data), r.addr, true
+	return copy(p, r.data), r.addr, nil, true
 }
 
 // absorb files a shard and, when a group can be completed, queues whatever it
