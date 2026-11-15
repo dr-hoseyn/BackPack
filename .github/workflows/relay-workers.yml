@@ -3,11 +3,19 @@ on:
   pull_request:
     paths:
       - 'internal/tunnel/bridge/**'
+      - 'internal/tunnel/direct/**'
+      - 'internal/tunnel/limits/**'
+      - 'internal/metrics/**'
+      - 'internal/utils/handlers/**'
       - '.github/workflows/relay-workers.yml'
   push:
     branches: [main]
     paths:
       - 'internal/tunnel/bridge/**'
+      - 'internal/tunnel/direct/**'
+      - 'internal/tunnel/limits/**'
+      - 'internal/metrics/**'
+      - 'internal/utils/handlers/**'
       - '.github/workflows/relay-workers.yml'
   workflow_dispatch:
 permissions:
@@ -26,3 +34,7 @@ jobs:
           go-version-file: go.mod
           cache: true
       - run: go test -race ./internal/tunnel/bridge -count=20 -timeout 2m
+      - name: Verify real Direct uploads completed by FIN
+        run: go test -race ./internal/tunnel/direct -run '^TestTunnelReturnsResponseAfterUploadEOF$' -count=20 -timeout 2m
+      - name: Verify both reverse mux relays preserve the response after FIN
+        run: go test -race ./internal/utils/handlers -run '^TestMuxRelaysReturnResponseAfterUploadEOF$' -count=20 -timeout 2m

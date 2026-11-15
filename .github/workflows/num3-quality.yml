@@ -11,6 +11,7 @@ on:
       - 'internal/server/transport/mux*.go'
       - 'internal/utils/network/tcpfwd*.go'
       - 'internal/utils/network/mux_pressure*.go'
+      - 'internal/utils/handlers/tcp_handler.go'
       - 'internal/e2e/wssmux_resources_test.go'
       - '.github/scripts/compare-wssmux-resources.py'
       - '.github/workflows/num3-quality.yml'
