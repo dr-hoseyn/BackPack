@@ -261,6 +261,7 @@ type noiseConn struct {
 
 	readMu  sync.Mutex
 	recv    *noise.CipherState
+	readErr error  // terminal authentication or padding failure
 	readBuf []byte // decrypted plaintext not yet handed to the caller
 	// inBuf is the record as it comes off the wire, read and then decrypted in
 	// place. The read side had the write side's problem in reverse: a fresh
@@ -268,6 +269,11 @@ type noiseConn struct {
 	// always points into inBuf, and the next record is only read once readBuf
 	// is empty, so reusing it never overwrites plaintext still owed to a caller.
 	inBuf []byte
+	// Keep framing progress across read deadlines. Retrying a timed-out read
+	// must finish this record before interpreting another header or nonce.
+	readHeader  [noiseLenPrefix]byte
+	readHeaderN int
+	readFrameN  int
 }
 
 // Write encrypts p and sends it as one or more Noise records. It honours
@@ -295,11 +301,13 @@ func (c *noiseConn) Write(p []byte) (int, error) {
 		c.frameBuf = append(c.frameBuf[:0], 0, 0)
 		frame, err := c.send.Encrypt(c.frameBuf, nil, c.plaintext(chunk))
 		if err != nil {
+			c.writeErr = err
 			return total, err
 		}
 		c.frameBuf = frame
 		if len(frame)-noiseLenPrefix > noiseMaxFrame {
-			return total, fmt.Errorf("noise: message too large (%d bytes)", len(frame)-noiseLenPrefix)
+			c.writeErr = fmt.Errorf("noise: message too large (%d bytes)", len(frame)-noiseLenPrefix)
+			return total, c.writeErr
 		}
 		binary.BigEndian.PutUint16(frame[:noiseLenPrefix], uint16(len(frame)-noiseLenPrefix))
 		n, err := c.Conn.Write(frame)
@@ -371,12 +379,15 @@ func (c *noiseConn) unpad(plain []byte) ([]byte, error) {
 func (c *noiseConn) Read(p []byte) (int, error) {
 	c.readMu.Lock()
 	defer c.readMu.Unlock()
+	if c.readErr != nil {
+		return 0, c.readErr
+	}
 
 	// A loop rather than a single attempt: a padded record can legitimately
 	// carry no payload at all, and returning (0, nil) from Read is the kind of
 	// answer callers are entitled not to expect.
 	for len(c.readBuf) == 0 {
-		frame, err := readNoiseFrameInto(c.Conn, c.inBuf)
+		frame, err := c.readFrame()
 		if err != nil {
 			return 0, err
 		}
@@ -385,9 +396,11 @@ func (c *noiseConn) Read(p []byte) (int, error) {
 		if err != nil {
 			// A record that does not authenticate is not a short read to paper
 			// over — the stream's integrity is gone. Surface it.
-			return 0, fmt.Errorf("noise: record failed authentication: %w", err)
+			c.readErr = fmt.Errorf("noise: record failed authentication: %w", err)
+			return 0, c.readErr
 		}
 		if plain, err = c.unpad(plain); err != nil {
+			c.readErr = err
 			return 0, err
 		}
 		c.readBuf = plain
@@ -396,6 +409,33 @@ func (c *noiseConn) Read(p []byte) (int, error) {
 	n := copy(p, c.readBuf)
 	c.readBuf = c.readBuf[n:]
 	return n, nil
+}
+
+// readFrame runs under readMu. Both the header and encrypted payload may be
+// split by a deadline; retain their bytes and resume on the next Read.
+func (c *noiseConn) readFrame() ([]byte, error) {
+	if c.readHeaderN < noiseLenPrefix {
+		n, err := io.ReadFull(c.Conn, c.readHeader[c.readHeaderN:])
+		c.readHeaderN += n
+		if err != nil {
+			return nil, err
+		}
+	}
+	size := int(binary.BigEndian.Uint16(c.readHeader[:]))
+	if size == 0 {
+		return nil, fmt.Errorf("noise: empty frame")
+	}
+	if cap(c.inBuf) < size {
+		c.inBuf = make([]byte, size)
+	}
+	c.inBuf = c.inBuf[:size]
+	n, err := io.ReadFull(c.Conn, c.inBuf[c.readFrameN:])
+	c.readFrameN += n
+	if err != nil {
+		return nil, err
+	}
+	c.readHeaderN, c.readFrameN = 0, 0
+	return c.inBuf, nil
 }
 
 // noiseLenPrefix is the length header in front of every record, and
