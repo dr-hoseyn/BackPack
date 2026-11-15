@@ -267,6 +267,11 @@ type noiseConn struct {
 	// always points into inBuf, and the next record is only read once readBuf
 	// is empty, so reusing it never overwrites plaintext still owed to a caller.
 	inBuf []byte
+	// Keep framing progress across read deadlines. Retrying a timed-out read
+	// must finish this record before interpreting another header or nonce.
+	readHeader  [noiseLenPrefix]byte
+	readHeaderN int
+	readFrameN  int
 }
 
 // Write encrypts p and sends it as one or more Noise records. It honours
@@ -362,7 +367,7 @@ func (c *noiseConn) Read(p []byte) (int, error) {
 	// carry no payload at all, and returning (0, nil) from Read is the kind of
 	// answer callers are entitled not to expect.
 	for len(c.readBuf) == 0 {
-		frame, err := readNoiseFrameInto(c.Conn, c.inBuf)
+		frame, err := c.readFrame()
 		if err != nil {
 			return 0, err
 		}
@@ -382,6 +387,33 @@ func (c *noiseConn) Read(p []byte) (int, error) {
 	n := copy(p, c.readBuf)
 	c.readBuf = c.readBuf[n:]
 	return n, nil
+}
+
+// readFrame runs under readMu. Both the header and encrypted payload may be
+// split by a deadline; retain their bytes and resume on the next Read.
+func (c *noiseConn) readFrame() ([]byte, error) {
+	if c.readHeaderN < noiseLenPrefix {
+		n, err := io.ReadFull(c.Conn, c.readHeader[c.readHeaderN:])
+		c.readHeaderN += n
+		if err != nil {
+			return nil, err
+		}
+	}
+	size := int(binary.BigEndian.Uint16(c.readHeader[:]))
+	if size == 0 {
+		return nil, fmt.Errorf("noise: empty frame")
+	}
+	if cap(c.inBuf) < size {
+		c.inBuf = make([]byte, size)
+	}
+	c.inBuf = c.inBuf[:size]
+	n, err := io.ReadFull(c.Conn, c.inBuf[c.readFrameN:])
+	c.readFrameN += n
+	if err != nil {
+		return nil, err
+	}
+	c.readHeaderN, c.readFrameN = 0, 0
+	return c.inBuf, nil
 }
 
 // noiseLenPrefix is the length header in front of every record, and
