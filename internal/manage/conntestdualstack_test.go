@@ -253,7 +253,8 @@ for arg in "$@"; do
   if [ "$next" = 1 ]; then cfg="$arg"; break; fi
   if [ "$arg" = -c ]; then next=1; fi
 done
-exec "$BP_DIAG_REAL_BIN" "$@" > "$BP_DIAG_LOGDIR/${cfg##*/}.log" 2>&1
+parent="${cfg%/*}"
+exec "$BP_DIAG_REAL_BIN" "$@" > "$BP_DIAG_LOGDIR/${parent##*/}-${cfg##*/}.$$.log" 2>&1
 `
 		if err := os.WriteFile(wrapper, []byte(script), 0700); err != nil {
 			t.Fatal(err)
