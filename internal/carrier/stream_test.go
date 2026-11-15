@@ -68,10 +68,13 @@ func TestStreamCarriersCarryBinaryTraffic(t *testing.T) {
 				}
 				defer raw.Close()
 				client := &Config{Mode: mode, Options: config.CarrierOptions{ServerName: "localhost", Fingerprint: browser, TLSFragment: true}}
-				c, err := client.Client(cx, raw, ln.Addr().String(), 5*time.Second)
+				setup, cancelSetup := context.WithCancel(cx)
+				defer cancelSetup()
+				c, err := client.Client(setup, raw, ln.Addr().String(), 5*time.Second)
 				if err != nil {
 					t.Fatal(err)
 				}
+				cancelSetup() // The established carrier owns its lifetime now.
 				defer c.Close()
 				c.SetDeadline(time.Now().Add(5 * time.Second))
 				payload := make([]byte, 256<<10)
