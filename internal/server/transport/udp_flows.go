@@ -29,6 +29,9 @@ func (s *UdpTransport) localListener(g *udpGen, localAddr, remoteAddr string) {
 	// port rather than sleeping and hoping. See listeners.go.
 	s.listeners.hold()
 	defer s.listeners.release()
+	if g.ctx.Err() != nil {
+		return
+	}
 
 	localUDPAddr, err := net.ResolveUDPAddr("udp", localAddr)
 	if err != nil {
