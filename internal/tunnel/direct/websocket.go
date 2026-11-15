@@ -51,6 +51,16 @@ func dialWebSocket(ctx context.Context, cfg *Config) (net.Conn, error) {
 		scheme = "wss"
 	}
 	endpoint := url.URL{Scheme: scheme, Host: cfg.Addr, Path: wsPath}
+	var stopHandshake func() bool
+	defer func() {
+		if stopHandshake != nil {
+			stopHandshake()
+		}
+	}()
+	// Gorilla's handshake deadline does not interrupt Upgrade I/O when a
+	// deadline-free parent is cancelled. Watch the parent, not Gorilla's dial
+	// context, which is cancelled internally even after a successful upgrade.
+	parentCtx := ctx
 
 	dialer := &websocket.Dialer{
 		Subprotocols:   []string{network.WSMuxBinaryProtocol},
@@ -62,6 +72,7 @@ func dialWebSocket(ctx context.Context, cfg *Config) (net.Conn, error) {
 			if err != nil {
 				return nil, err
 			}
+			stopHandshake = context.AfterFunc(parentCtx, func() { conn.Close() })
 			tuneConn(conn, cfg)
 			if cfg.Transport != TransportWSS {
 				return network.WSMuxUpgradeStream(conn), nil
@@ -106,11 +117,24 @@ func dialWebSocket(ctx context.Context, cfg *Config) (net.Conn, error) {
 
 	conn, resp, err := dialer.DialContext(ctx, endpoint.String(), header)
 	if err != nil {
+		if ctx.Err() != nil {
+			err = ctx.Err()
+		}
 		if resp != nil {
 			return nil, fmt.Errorf("direct: websocket upgrade to %s refused with %s: %w",
 				cfg.Addr, resp.Status, err)
 		}
 		return nil, fmt.Errorf("direct: websocket upgrade to %s: %w", cfg.Addr, err)
+	}
+	// The caller owns a successful connection. A callback already running
+	// cannot be detached safely, so never hand out that closing connection.
+	if stopHandshake != nil && !stopHandshake() {
+		conn.Close()
+		return nil, ctx.Err()
+	}
+	if err := ctx.Err(); err != nil {
+		conn.Close()
+		return nil, err
 	}
 
 	// Both peers choose the same framed or legacy format from the upgrade.
