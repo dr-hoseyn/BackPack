@@ -242,9 +242,10 @@ type noiseConn struct {
 	// handshake time and never written again.
 	pad bool
 
-	writeMu sync.Mutex
-	send    *noise.CipherState
-	padBuf  []byte // reused plaintext buffer: length byte, payload, filler
+	writeMu  sync.Mutex
+	writeErr error // terminal record failure, protected by writeMu
+	send     *noise.CipherState
+	padBuf   []byte // reused plaintext buffer: length byte, payload, filler
 	// frameBuf is the record as it goes on the wire: two length bytes and then
 	// the ciphertext, built in place and reused.
 	//
@@ -274,6 +275,9 @@ type noiseConn struct {
 func (c *noiseConn) Write(p []byte) (int, error) {
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
+	if c.writeErr != nil {
+		return 0, c.writeErr
+	}
 
 	limit := noiseMaxPayload
 	if c.pad {
@@ -298,7 +302,17 @@ func (c *noiseConn) Write(p []byte) (int, error) {
 			return total, fmt.Errorf("noise: message too large (%d bytes)", len(frame)-noiseLenPrefix)
 		}
 		binary.BigEndian.PutUint16(frame[:noiseLenPrefix], uint16(len(frame)-noiseLenPrefix))
-		if _, err := c.Conn.Write(frame); err != nil {
+		n, err := c.Conn.Write(frame)
+		if err == nil && n != len(frame) {
+			err = io.ErrShortWrite
+		}
+		if err != nil {
+			// Encrypt already advanced the send nonce. Even a zero-byte
+			// timeout cannot be retried as a fresh record: the peer still
+			// expects the previous nonce. End the carrier so it reconnects,
+			// and never overwrite a failed write's retained ciphertext.
+			c.writeErr = err
+			c.Conn.Close()
 			return total, err
 		}
 		total += len(chunk)
