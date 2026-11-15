@@ -87,9 +87,10 @@ jobs:
             if [ $((sample % 2)) -eq 0 ]; then order="candidate baseline"; fi
             for kind in $order; do
               sudo env GOMAXPROCS=2 BP_RESOURCE_TRANSPORT=tcpfwd-xmpp \
+                BP_RESOURCE_NETEM_SEED="$BP_RESOURCE_NETEM_SEED" \
                 BP_RESOURCE_BENCHMARK=1 BP_RESOURCE_IDLE_CONNECTIONS=16 \
                 BP_RESOURCE_ROUNDS=2 BP_RESOURCE_NETEM=1 BIN="$RUNNER_TEMP/num3-$kind" \
-                unshare --net -- bash -eu -c 'ip link set lo up; ulimit -n 16384; exec "$BIN" -test.run "^TestWSMuxResourceProfile$" -test.v -test.timeout 2m' \
+                unshare --net -- bash -eu -c 'ip link set lo up; ulimit -n 16384; printf "NETEM_SEED=%s\n" "$BP_RESOURCE_NETEM_SEED"; exec "$BIN" -test.run "^TestWSMuxResourceProfile$" -test.v -test.timeout 2m' \
                 | tee "$RUNNER_TEMP/delayed-num3-$kind-$sample.txt"
             done
           done

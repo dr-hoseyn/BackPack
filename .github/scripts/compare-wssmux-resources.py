@@ -18,6 +18,11 @@ for kind in ("baseline", "candidate"):
         if not re.fullmatch(rf"{prefix}-{kind}-\d+\.txt", path.name):
             continue
         text = path.read_text()
+        requested_seed = os.environ.get("BP_RESOURCE_NETEM_SEED")
+        if delayed and requested_seed is not None:
+            observed_seed = re.search(r"^NETEM_SEED=(\d+)$", text, re.MULTILINE)
+            if observed_seed is None or observed_seed[1] != requested_seed:
+                raise SystemExit(f"Missing or mismatched netem seed: {path}")
         if "--- PASS: TestWSMuxResourceProfile" not in text:
             raise SystemExit(f"Incomplete measurement: {path}")
         values = {}
