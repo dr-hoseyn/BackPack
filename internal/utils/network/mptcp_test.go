@@ -37,7 +37,7 @@ func TestMPTCPRequestStillTransfersToATCPOnlyPeer(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer c.Close()
-	if on, err := c.MultipathTCP(); err != nil || on {
+	if on, err := c.(*net.TCPConn).MultipathTCP(); err != nil || on {
 		t.Fatalf("TCP-only peer did not retain ordinary fallback: %v %v", on, err)
 	}
 	c.SetDeadline(time.Now().Add(3 * time.Second))
@@ -48,7 +48,7 @@ func TestMPTCPRequestStillTransfersToATCPOnlyPeer(t *testing.T) {
 	if _, err := io.ReadFull(c, b); err != nil || string(b) != "verified fallback" {
 		t.Fatalf("payload %q: %v", b, err)
 	}
-	if !strings.Contains(MPTCPStatus(c), "TCP") {
+	if !strings.Contains(MPTCPStatus(c.(*net.TCPConn)), "TCP") {
 		t.Fatal("negotiation status absent")
 	}
 	c.Close()
@@ -75,7 +75,7 @@ func TestMPTCPListenerAndDialerNegotiateWhenKernelSupportsIt(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer peer.Close()
-	got, err := c.MultipathTCP()
+	got, err := c.(*net.TCPConn).MultipathTCP()
 	if err != nil {
 		t.Fatal(err)
 	}
