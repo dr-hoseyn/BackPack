@@ -267,7 +267,8 @@ type quicCarrier struct {
 	done   chan struct{}
 
 	deadlineMu sync.Mutex
-	readAt     time.Time
+	readCtx    context.Context
+	cancelRead context.CancelFunc
 }
 
 // quicPeer is one accepted connection.
@@ -297,7 +298,8 @@ const quicMaxPeers = 16
 const quicInbox = 512
 
 func newQuicCarrier() *quicCarrier {
-	return &quicCarrier{done: make(chan struct{})}
+	ctx, cancel := context.WithCancel(context.Background())
+	return &quicCarrier{done: make(chan struct{}), readCtx: ctx, cancelRead: cancel}
 }
 
 func (c *quicCarrier) CarrierName() string { return CarrierQuic }
@@ -416,41 +418,53 @@ func (c *quicCarrier) readPeer(conn *quic.Conn) {
 }
 
 func (c *quicCarrier) ReadFrom(p []byte) (int, net.Addr, error) {
-	c.deadlineMu.Lock()
-	at := c.readAt
-	c.deadlineMu.Unlock()
-
-	if c.ln == nil {
-		// Dialling: the one connection, read directly. A context only when a
-		// deadline asks for one, so the ordinary read allocates nothing.
-		ctx, cancel := context.Background(), context.CancelFunc(func() {})
-		if !at.IsZero() {
-			ctx, cancel = context.WithDeadline(ctx, at)
+	for {
+		select {
+		case <-c.done:
+			return 0, nil, net.ErrClosed
+		default:
 		}
-		msg, err := c.conn.ReceiveDatagram(ctx)
-		cancel()
-		if err != nil {
-			if errors.Is(err, context.DeadlineExceeded) {
-				return 0, nil, os.ErrDeadlineExceeded
+		c.deadlineMu.Lock()
+		ctx := c.readCtx
+		c.deadlineMu.Unlock()
+
+		err := ctx.Err()
+		if err == nil {
+			if c.ln == nil {
+				msg, receiveErr := c.conn.ReceiveDatagram(ctx)
+				if receiveErr == nil {
+					return copy(p, msg), c.conn.RemoteAddr(), nil
+				}
+				err = receiveErr
+			} else {
+				select {
+				case d := <-c.in:
+					return copy(p, d.data), d.from, nil
+				case <-ctx.Done():
+					err = ctx.Err()
+				case <-c.done:
+					return 0, nil, net.ErrClosed
+				}
 			}
-			return 0, nil, err
 		}
-		return copy(p, msg), c.conn.RemoteAddr(), nil
-	}
-
-	var deadline <-chan time.Time
-	if !at.IsZero() {
-		t := time.NewTimer(time.Until(at))
-		defer t.Stop()
-		deadline = t.C
-	}
-	select {
-	case d := <-c.in:
-		return copy(p, d.data), d.from, nil
-	case <-deadline:
-		return 0, nil, os.ErrDeadlineExceeded
-	case <-c.done:
-		return 0, nil, net.ErrClosed
+		select {
+		case <-c.done:
+			return 0, nil, net.ErrClosed
+		default:
+		}
+		// Updating a deadline cancels the previous context to wake every
+		// pending reader. Retry against the replacement rather than returning
+		// the stale deadline's cancellation or timeout to the tunnel.
+		c.deadlineMu.Lock()
+		changed := ctx != c.readCtx
+		c.deadlineMu.Unlock()
+		if changed && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
+			continue
+		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			return 0, nil, os.ErrDeadlineExceeded
+		}
+		return 0, nil, err
 	}
 }
 
@@ -499,6 +513,10 @@ func (c *quicCarrier) Close() error {
 	c.peers = nil
 	c.mu.Unlock()
 
+	c.deadlineMu.Lock()
+	c.cancelRead()
+	c.deadlineMu.Unlock()
+
 	if c.conn != nil {
 		_ = c.conn.CloseWithError(0, "")
 	}
@@ -520,15 +538,27 @@ func (c *quicCarrier) LocalAddr() net.Addr {
 	return c.conn.LocalAddr()
 }
 
-// SetDeadline and SetReadDeadline bound the next ReceiveDatagram.
+// SetDeadline and SetReadDeadline affect both current and future reads.
+// Share one deadline context across reads, avoiding a timer per datagram.
 func (c *quicCarrier) SetDeadline(t time.Time) error {
 	return c.SetReadDeadline(t)
 }
 
 func (c *quicCarrier) SetReadDeadline(t time.Time) error {
 	c.deadlineMu.Lock()
-	c.readAt = t
-	c.deadlineMu.Unlock()
+	defer c.deadlineMu.Unlock()
+	select {
+	case <-c.done:
+		return net.ErrClosed
+	default:
+	}
+	previous := c.cancelRead
+	if t.IsZero() {
+		c.readCtx, c.cancelRead = context.WithCancel(context.Background())
+	} else {
+		c.readCtx, c.cancelRead = context.WithDeadline(context.Background(), t)
+	}
+	previous()
 	return nil
 }
 
