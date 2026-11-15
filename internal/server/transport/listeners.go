@@ -2,9 +2,23 @@ package transport
 
 import (
 	"context"
+	"io"
 	"sync"
 	"time"
 )
+
+// closeListenerOnCancel interrupts Accept when ctx ends. Its returned cleanup
+// must run before releasing listener ownership: concurrent Close calls may
+// return before the first one has released the descriptor. OnceFunc waits for
+// that one actual close, including when the cancellation callback won the race.
+func closeListenerOnCancel(ctx context.Context, listener io.Closer) func() {
+	closeOnce := sync.OnceFunc(func() { _ = listener.Close() })
+	stop := context.AfterFunc(ctx, closeOnce)
+	return func() {
+		stop()
+		closeOnce()
+	}
+}
 
 // Knowing when a transport has actually let go of its ports.
 //
