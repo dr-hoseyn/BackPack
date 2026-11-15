@@ -1,5 +1,37 @@
 # Changelog
 
+## v1.26.1 — 2026-11-15
+
+- Preserve server-first data through HTTP CONNECT proxies, accept successful
+  CONNECT replies and interim responses, and bound proxy response headers.
+- Validate proxy addresses and SOCKS replies, redact malformed proxy credentials,
+  and interrupt cancelled proxy and Direct WS/WSS connection setup promptly.
+- Wait for listener and forwarded UDP shutdown before releasing their ports;
+  stop incomplete admissions and UDP backend sockets with their tunnel generation.
+- Honor changed QUIC read deadlines and buffered FEC deadlines without adding
+  per-packet deadline allocations. Use ordinary UDP writes when batching is absent.
+- Preserve Direct and reverse mux responses after upload EOF, and reduce the
+  relay worker count while retaining cancellation and directional EOF handling.
+- Keep failed mux datagram buffers immutable until their writer releases them,
+  preventing cross-flow payload corruption after write timeouts.
+- Resume partially received Noise records after read timeouts. End failed Noise
+  writers so peers can reconnect, and keep authentication and padding errors terminal.
+- Synchronize TLS, gRPC and SSH setup cancellation with connection handoff;
+  reject HTTP carrier setup responses that arrive after cancellation.
+- Bound retained backend-failure log suppression entries across reconnects.
+- Update Go security libraries and smux FIN/receive-credit handling; retain
+  existing wire formats, presets and configuration compatibility.
+
+<div dir="rtl">
+
+پایداری اتصال از طریق پراکسی، تحویل پاسخ پس از پایان ارسال، توقف و آزادسازی
+پورت‌ها و رفتار timeout در QUIC، FEC و Noise اصلاح شده‌اند. خرابی دادهٔ UDP
+پس از timeout نوشتن برطرف شده، تعداد workerهای relay و حافظهٔ گزارش خطاها
+کاهش یافته و وابستگی‌های امنیتی به‌روز شده‌اند. قالب ارتباط و تنظیمات فعلی
+سازگار باقی می‌مانند.
+
+</div>
+
 ## v1.26.0 — 2026-11-14
 
 - Recover silent WS/WSS/WSSMux control peers after 30 seconds without inbound

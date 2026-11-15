@@ -395,6 +395,11 @@ connection per request and behaves well when a service makes many short-lived
 connections. Supports the PROXY protocol.
 
 ### TCP + Stealth
+
+Read deadlines can interrupt a record and resume after the deadline is cleared
+or extended. An encrypted write failure, authentication failure or malformed
+padding is terminal: reconnect rather than retrying the encrypted stream.
+
 A TCP tunnel wrapped in a **Noise (NNpsk0) record layer**. On the wire it is two
 short bursts that look like random bytes, followed by an encrypted stream that
 looks the same — **no TLS ClientHello, no recognisable protocol, nothing for
@@ -594,4 +599,4 @@ UDP را می‌بندد ولی ICMP را نه) و *IP Spoofing* که مبدأ �
 
 ---
 
-*Last verified against Backpack v1.26.0 (2026-11-14)*
+*Last verified against Backpack v1.26.1 (2026-11-15)*

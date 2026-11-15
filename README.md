@@ -1,5 +1,10 @@
 # dr-hoseyn fork
 
+**v1.26.1** fixes proxy handshakes, encrypted-record timeouts, UDP buffer
+ownership and tunnel shutdown. It preserves responses after upload EOF,
+reduces relay workers and updates security dependencies.
+[Release notes](CHANGELOG.md#v1261--2026-11-15).
+
 **v1.24.0** removes consumption totals, volume quotas and per-port usage logs,
 retains live adaptive-pool throughput measurements, and hardens backup, restore
 and maintenance workflows. [Release notes](CHANGELOG.md#v1240--2026-11-11) ·

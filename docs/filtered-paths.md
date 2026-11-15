@@ -108,4 +108,4 @@ TCP/UDP برقرار نشده است؛ نتیجهٔ همهٔ پروتکل‌ها
 
 ---
 
-*Last verified against Backpack v1.26.0 (2026-11-14)*
+*Last verified against Backpack v1.26.1 (2026-11-15)*
