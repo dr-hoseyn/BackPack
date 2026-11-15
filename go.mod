@@ -18,7 +18,7 @@ require (
 	github.com/shirou/gopsutil/v4 v4.26.9
 	github.com/sirupsen/logrus v1.10.2
 	github.com/xtaci/kcp-go/v5 v5.6.73
-	github.com/xtaci/smux v1.5.59
+	github.com/xtaci/smux v1.5.60
 	github.com/yosida95/uritemplate/v3 v3.0.2
 	golang.org/x/crypto v0.59.0
 	golang.org/x/net v0.62.0
