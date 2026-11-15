@@ -28,7 +28,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: num3-quality-${{ github.ref }}
+  group: num3-quality-${{ github.ref }}-${{ inputs.netem_seed || '42' }}
   cancel-in-progress: true
 jobs:
   quality:
