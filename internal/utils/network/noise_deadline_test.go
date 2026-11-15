@@ -30,9 +30,9 @@ func TestNoiseWriteErrorCannotSkipACipherNonce(t *testing.T) {
 	if ne, ok := first.(net.Error); n != 0 || !ok || !ne.Timeout() {
 		t.Fatalf("expired write: %d, %v", n, first)
 	}
-	if err := client.SetWriteDeadline(time.Time{}); err != nil {
-		t.Fatal(err)
-	}
+	// The failed carrier is closed to wake its peer; resetting a deadline may
+	// therefore fail, but later writes must still report the original failure.
+	_ = client.SetWriteDeadline(time.Time{})
 	if n, err := client.Write([]byte("next encrypted record")); n != 0 || !errors.Is(err, first) {
 		t.Fatalf("write after lost cipher nonce reported %d, %v; expected original error %v", n, err, first)
 	}

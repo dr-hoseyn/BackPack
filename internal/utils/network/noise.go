@@ -243,8 +243,8 @@ type noiseConn struct {
 	pad bool
 
 	writeMu  sync.Mutex
+	writeErr error // terminal record failure, protected by writeMu
 	send     *noise.CipherState
-	writeErr error  // terminal: encrypting has already consumed this record's nonce
 	padBuf   []byte // reused plaintext buffer: length byte, payload, filler
 	// frameBuf is the record as it goes on the wire: two length bytes and then
 	// the ciphertext, built in place and reused.
@@ -315,7 +315,12 @@ func (c *noiseConn) Write(p []byte) (int, error) {
 			err = io.ErrShortWrite
 		}
 		if err != nil {
+			// Encrypt already advanced the send nonce. Even a zero-byte
+			// timeout cannot be retried as a fresh record: the peer still
+			// expects the previous nonce. End the carrier so it reconnects,
+			// and never overwrite a failed write's retained ciphertext.
 			c.writeErr = err
+			c.Conn.Close()
 			return total, err
 		}
 		total += len(chunk)
