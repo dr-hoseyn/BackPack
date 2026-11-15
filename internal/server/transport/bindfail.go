@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"syscall"
 	"time"
@@ -130,10 +131,21 @@ func (b *listenBackoff) wait(ctx context.Context) bool {
 // trying again for as long as it is taken; ok is false only when ctx ended
 // first. Every transport binds its tunnel port this way — see listenBackoff for
 // why a taken tunnel port is waited for rather than skipped or fatal.
-func bindTunnelPort[T any](ctx context.Context, log *logrus.Logger, addr string, bind func() (T, error)) (T, bool) {
+func bindTunnelPort[T io.Closer](ctx context.Context, log *logrus.Logger, addr string, bind func() (T, error)) (T, bool) {
 	var backoff listenBackoff
 	for {
+		if ctx.Err() != nil {
+			var zero T
+			return zero, false
+		}
 		l, err := bind()
+		if ctx.Err() != nil {
+			if err == nil {
+				_ = l.Close()
+			}
+			var zero T
+			return zero, false
+		}
 		if err == nil {
 			return l, true
 		}
