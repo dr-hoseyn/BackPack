@@ -242,6 +242,24 @@ func TestBothFamiliesCarryRealTrafficThroughOneLinkInSequence(t *testing.T) {
 	if err := build.Run(); err != nil {
 		t.Fatal(err)
 	}
+	if dir := os.Getenv("BP_DIAG_LOGDIR"); dir != "" {
+		t.Setenv("BP_DIAG_REAL_BIN", bin)
+		wrapper := filepath.Join(t.TempDir(), "backpack-debug")
+		script := `#!/bin/sh
+umask 077
+cfg=""
+next=""
+for arg in "$@"; do
+  if [ "$next" = 1 ]; then cfg="$arg"; break; fi
+  if [ "$arg" = -c ]; then next=1; fi
+done
+exec "$BP_DIAG_REAL_BIN" "$@" > "$BP_DIAG_LOGDIR/${cfg##*/}.log" 2>&1
+`
+		if err := os.WriteFile(wrapper, []byte(script), 0700); err != nil {
+			t.Fatal(err)
+		}
+		bin = wrapper
+	}
 	previous, soak, binary := connTestReverse, connTestSoak, connTestBinary
 	connTestReverse = []string{"tcp", "ws", "quic", "udp"}
 	connTestSoak = 2
