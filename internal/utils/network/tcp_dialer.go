@@ -39,7 +39,7 @@ func TcpDialerVia(ctx context.Context, out *Outbound, remoteAddress string, time
 	dialAddress := out.dialAddress(remoteAddress)
 	proxy := out.proxy()
 
-	retries := retry           // Number of retries
+	retries := max(retry, 1)   // Always make at least one attempt
 	backoff := 1 * time.Second // Initial backoff duration
 
 	for i := 0; i < retries; i++ {
@@ -152,44 +152,7 @@ func attemptTcpDialer(
 				return err
 			}
 
-			var err error
-
-			if PinTCPBuffers() && SO_RCVBUF > 0 {
-				err = s.Control(func(fd uintptr) {
-					if err = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_RCVBUF, SO_RCVBUF); err != nil {
-						err = fmt.Errorf("failed to set SO_RCVBUF: %v", err)
-					}
-				})
-			}
-			if err != nil {
-				return err
-			}
-
-			if PinTCPBuffers() && SO_SNDBUF > 0 {
-				err = s.Control(func(fd uintptr) {
-					if err = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_SNDBUF, SO_SNDBUF); err != nil {
-						err = fmt.Errorf("failed to set SO_SNDBUF: %v", err)
-					}
-				})
-			}
-			if err != nil {
-				return err
-			}
-
-			// BBR per socket, so the tunnel gets it even where the system
-			// default is not BBR. Best effort — see setCongestion.
-			_ = s.Control(func(fd uintptr) { setCongestion(fd, TCPCongestion) })
-
-			// Set MSS (Maximum Segment Size)
-			if mss > 0 {
-				err = s.Control(func(fd uintptr) {
-					if err = syscall.SetsockoptInt(int(fd), syscall.IPPROTO_TCP, syscall.TCP_MAXSEG, mss); err != nil {
-						err = fmt.Errorf("failed to set MSS: %v", err)
-					}
-				})
-			}
-
-			return err
+			return configureTCPSocket(s, SO_RCVBUF, SO_SNDBUF, mss)
 
 		},
 		Timeout:         timeout, // Set the connection timeout

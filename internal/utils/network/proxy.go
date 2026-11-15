@@ -3,6 +3,7 @@ package network
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -58,7 +59,8 @@ func ParseProxy(raw string) (*ProxyConfig, error) {
 
 	u, err := url.Parse(raw)
 	if err != nil {
-		return nil, fmt.Errorf("proxy: %q is not a URL: %w", raw, err)
+		// url.Parse errors contain the original input, including credentials.
+		return nil, fmt.Errorf("proxy: invalid URL")
 	}
 
 	scheme := strings.ToLower(u.Scheme)
@@ -73,16 +75,32 @@ func ParseProxy(raw string) (*ProxyConfig, error) {
 	}
 
 	if u.Host == "" {
-		return nil, fmt.Errorf("proxy: %q names no host", raw)
+		return nil, fmt.Errorf("proxy: URL names no host")
 	}
-	if _, _, err := net.SplitHostPort(u.Host); err != nil {
-		return nil, fmt.Errorf("proxy: %q needs a port, as in socks5://127.0.0.1:1080", raw)
+	host, portText, err := net.SplitHostPort(u.Host)
+	if err != nil || host == "" {
+		return nil, fmt.Errorf("proxy: URL needs a host and port, as in socks5://127.0.0.1:1080")
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil || port < 1 || port > 65535 {
+		return nil, fmt.Errorf("proxy: port must be between 1 and 65535")
+	}
+	if (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
+		return nil, fmt.Errorf("proxy: URL must not contain a path, query or fragment")
 	}
 
 	p := &ProxyConfig{Scheme: scheme, Address: u.Host}
 	if u.User != nil {
 		p.User = u.User.Username()
 		p.Password, _ = u.User.Password()
+	}
+	if scheme == "socks5" {
+		if len(p.User) > 255 || len(p.Password) > 255 {
+			return nil, fmt.Errorf("proxy: SOCKS5 credentials must fit in 255 bytes each")
+		}
+		if (p.User != "" || p.Password != "") && (p.User == "" || p.Password == "") {
+			return nil, fmt.Errorf("proxy: SOCKS5 username and password must both be nonempty")
+		}
 	}
 	return p, nil
 }
@@ -108,8 +126,8 @@ func connectThrough(conn net.Conn, p *ProxyConfig, target string, timeout time.D
 		return fmt.Errorf("proxy: %q is not a host:port: %w", target, err)
 	}
 	port, err := strconv.Atoi(portStr)
-	if err != nil {
-		return fmt.Errorf("proxy: %q has no usable port: %w", target, err)
+	if err != nil || port < 1 || port > 65535 {
+		return fmt.Errorf("proxy: target port must be between 1 and 65535")
 	}
 
 	switch p.Scheme {
@@ -150,17 +168,23 @@ func httpConnect(conn net.Conn, p *ProxyConfig, target string, timeout time.Dura
 		return fmt.Errorf("proxy: sending CONNECT: %w", err)
 	}
 
-	// The reader is deliberately not kept. A proxy that answers 200 must send
-	// nothing further before the tunnelled bytes, so anything buffered past the
-	// response would be tunnel data — and dropping the reader would drop it.
-	// bufio only reads ahead when asked to, and ReadResponse on a CONNECT with
-	// no body stops at the header, so there is nothing held back.
-	br := bufio.NewReader(conn)
+	// Bound untrusted response headers independently of the I/O deadline.
+	// The raw connection is retained, so refuse buffered tunnel bytes below
+	// rather than silently dropping them with this temporary reader.
+	const maxResponseBytes = 64 << 10
+	limited := &io.LimitedReader{R: conn, N: maxResponseBytes}
+	br := bufio.NewReader(limited)
 	resp, err := http.ReadResponse(br, req)
 	if err != nil {
+		if limited.N == 0 {
+			return fmt.Errorf("proxy: CONNECT response headers exceed %d bytes", maxResponseBytes)
+		}
 		return fmt.Errorf("proxy: reading the CONNECT response: %w", err)
 	}
-	defer resp.Body.Close()
+	// This connection is never reused for HTTP. Closing Response.Body can
+	// drain a refused response indefinitely, or consume tunnel bytes when a
+	// successful CONNECT includes Content-Length. Its owner closes the socket
+	// on failure; on success only the tunnel owns the following bytes.
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("proxy: CONNECT to %s refused: %s", target, resp.Status)
