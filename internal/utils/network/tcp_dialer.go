@@ -17,7 +17,16 @@ import (
 // way to take either, which is what keeps that traffic off them by construction
 // rather than by remembering. Tunnel connections use TcpDialerVia.
 func TcpDialer(ctx context.Context, remoteAddress string, timeout time.Duration, keepAlive time.Duration, nodelay bool, retry int, SO_RCVBUF int, SO_SNDBUF, mss int) (*net.TCPConn, error) {
-	return TcpDialerVia(ctx, nil, remoteAddress, timeout, keepAlive, nodelay, retry, SO_RCVBUF, SO_SNDBUF, mss)
+	conn, err := TcpDialerVia(ctx, nil, remoteAddress, timeout, keepAlive, nodelay, retry, SO_RCVBUF, SO_SNDBUF, mss)
+	if err != nil {
+		return nil, err
+	}
+	// A direct dial never has proxy bytes to preserve and always stays TCP.
+	if tcp, ok := conn.(*net.TCPConn); ok {
+		return tcp, nil
+	}
+	conn.Close()
+	return nil, fmt.Errorf("direct TCP dial returned %T", conn)
 }
 
 // TcpDialerVia opens a connection to remoteAddress the way out describes: from
@@ -30,7 +39,9 @@ func TcpDialer(ctx context.Context, remoteAddress string, timeout time.Duration,
 // goes and what handshake follows differ. Anything out asks for that cannot be
 // applied fails the attempt, and the retry and backoff below cover it exactly
 // as a refused dial would be.
-func TcpDialerVia(ctx context.Context, out *Outbound, remoteAddress string, timeout time.Duration, keepAlive time.Duration, nodelay bool, retry int, SO_RCVBUF int, SO_SNDBUF, mss int) (*net.TCPConn, error) {
+// HTTP proxies may return a connection preserving prefetched tunnel bytes;
+// direct, SOCKS and header-only CONNECT dials retain their raw TCP connection.
+func TcpDialerVia(ctx context.Context, out *Outbound, remoteAddress string, timeout time.Duration, keepAlive time.Duration, nodelay bool, retry int, SO_RCVBUF int, SO_SNDBUF, mss int) (net.Conn, error) {
 	var tcpConn *net.TCPConn
 	var err error
 
@@ -53,6 +64,7 @@ func TcpDialerVia(ctx context.Context, out *Outbound, remoteAddress string, time
 			attemptCtx, cancelAttempt = context.WithTimeout(ctx, timeout)
 		}
 		tcpConn, err = attemptTcpDialer(attemptCtx, dialAddress, out, timeout, keepAlive, nodelay, SO_RCVBUF, SO_SNDBUF, mss)
+		var result net.Conn = tcpConn
 		if err == nil && proxy != nil {
 			proxyConn := tcpConn
 			stop := context.AfterFunc(attemptCtx, func() { proxyConn.Close() })
@@ -61,7 +73,7 @@ func TcpDialerVia(ctx context.Context, out *Outbound, remoteAddress string, time
 				remaining = time.Until(deadline)
 			}
 			if err = attemptCtx.Err(); err == nil {
-				err = connectThrough(tcpConn, proxy, remoteAddress, remaining)
+				result, err = connectThrough(tcpConn, proxy, remoteAddress, remaining)
 			}
 			stop()
 			if err != nil {
@@ -77,7 +89,7 @@ func TcpDialerVia(ctx context.Context, out *Outbound, remoteAddress string, time
 		cancelAttempt()
 		if err == nil {
 			// Connection successful
-			return tcpConn, nil
+			return result, nil
 		}
 
 		// If this is the last retry, return the error

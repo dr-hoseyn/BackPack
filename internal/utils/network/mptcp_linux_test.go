@@ -53,7 +53,7 @@ func TestMPTCPLiveNamespacePeer(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer c.Close()
-	if ok, err := c.MultipathTCP(); err != nil || !ok {
+	if ok, err := c.(*net.TCPConn).MultipathTCP(); err != nil || !ok {
 		t.Fatalf("MPTCP negotiation required: %v %v", ok, err)
 	}
 	if err = os.WriteFile(filepath.Join(state, "negotiated"), nil, 0600); err != nil {

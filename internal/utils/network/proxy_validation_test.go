@@ -101,7 +101,10 @@ func TestHTTPConnectDoesNotDrainResponseBodies(t *testing.T) {
 			defer proxy.Close()
 			proxy.SetDeadline(time.Now().Add(2 * time.Second))
 			done := make(chan error, 1)
-			go func() { done <- httpConnect(client, &ProxyConfig{}, "example.com:443", time.Second) }()
+			go func() {
+				_, err := httpConnect(client, &ProxyConfig{}, "example.com:443", time.Second)
+				done <- err
+			}()
 			if _, err := http.ReadRequest(bufio.NewReader(proxy)); err != nil {
 				t.Fatal(err)
 			}
@@ -131,7 +134,8 @@ func TestHTTPConnectBoundsResponseHeaders(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		defer client.Close()
-		done <- httpConnect(client, &ProxyConfig{}, "example.com:443", time.Second)
+		_, err := httpConnect(client, &ProxyConfig{}, "example.com:443", time.Second)
+		done <- err
 	}()
 	if _, err := http.ReadRequest(bufio.NewReader(proxy)); err != nil {
 		t.Fatal(err)
