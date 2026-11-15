@@ -41,10 +41,13 @@ func TestSSHCarrierPinsTheHostAndForwardsOnlyToTheRelay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := carrier.Client(cx, raw, echo.Addr().String(), time.Second)
+	setup, cancelSetup := context.WithCancel(cx)
+	defer cancelSetup()
+	c, err := carrier.Client(setup, raw, echo.Addr().String(), time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
+	cancelSetup()
 	defer c.Close()
 	c.SetDeadline(time.Now().Add(time.Second))
 	if _, err := c.Write([]byte("hello")); err != nil {

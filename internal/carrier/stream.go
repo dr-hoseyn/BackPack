@@ -58,16 +58,17 @@ func hello(name string) utls.ClientHelloID {
 	}
 }
 
-func (c *Config) Client(ctx context.Context, raw net.Conn, addr string, timeout time.Duration) (net.Conn, error) {
+func (c *Config) Client(ctx context.Context, raw net.Conn, addr string, timeout time.Duration) (result net.Conn, resultErr error) {
 	if timeout <= 0 {
 		timeout = 15 * time.Second
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	stop := context.AfterFunc(ctx, func() { raw.Close() })
-	defer stop()
-	raw.SetDeadline(time.Now().Add(timeout))
-	defer raw.SetDeadline(time.Time{})
+	finish := watchCarrierHandshake(ctx, raw)
+	defer func() { result, resultErr = finish(result, resultErr) }()
+	if err := raw.SetDeadline(time.Now().Add(timeout)); err != nil {
+		return nil, err
+	}
 	if c.Mode == config.SSH {
 		return c.ssh(raw, addr)
 	}
@@ -109,14 +110,15 @@ func (c *Config) Client(ctx context.Context, raw net.Conn, addr string, timeout 
 	return uc, nil
 }
 
-func (c *Config) Server(ctx context.Context, raw net.Conn) (net.Conn, error) {
+func (c *Config) Server(ctx context.Context, raw net.Conn) (result net.Conn, resultErr error) {
 	if c.Mode == config.SSH {
 		return raw, nil
 	} // sshd forwards to a loopback-only relay
-	raw.SetDeadline(time.Now().Add(15 * time.Second))
-	defer raw.SetDeadline(time.Time{})
-	stop := context.AfterFunc(ctx, func() { raw.Close() })
-	defer stop()
+	finish := watchCarrierHandshake(ctx, raw)
+	defer func() { result, resultErr = finish(result, resultErr) }()
+	if err := raw.SetDeadline(time.Now().Add(15 * time.Second)); err != nil {
+		return nil, err
+	}
 	if c.TLS == nil {
 		return nil, fmt.Errorf("TLS configuration is missing")
 	}
@@ -137,6 +139,38 @@ func (c *Config) Server(ctx context.Context, raw net.Conn) (net.Conn, error) {
 		return grpcServer(ctx, conn, c.Options.GRPCService)
 	}
 	return conn, nil
+}
+
+// Cancellation owns the socket only during setup. Detach and join its callback
+// before returning a carrier, including its HTTP/2 or SSH resources, to a caller.
+func watchCarrierHandshake(ctx context.Context, raw net.Conn) func(net.Conn, error) (net.Conn, error) {
+	done := make(chan struct{})
+	stop := context.AfterFunc(ctx, func() {
+		raw.Close()
+		close(done)
+	})
+	return func(conn net.Conn, err error) (net.Conn, error) {
+		if !stop() {
+			<-done
+		}
+		if err == nil {
+			err = ctx.Err()
+		}
+		if err == nil {
+			err = raw.SetDeadline(time.Time{})
+			if err == nil {
+				err = ctx.Err()
+			}
+		}
+		if err != nil {
+			raw.Close()
+			if conn != nil {
+				conn.Close()
+			}
+			return nil, err
+		}
+		return conn, nil
+	}
 }
 
 type sshConn struct {
