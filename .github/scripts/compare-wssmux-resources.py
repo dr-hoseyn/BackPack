@@ -18,6 +18,11 @@ for kind in ("baseline", "candidate"):
         if not re.fullmatch(rf"{prefix}-{kind}-\d+\.txt", path.name):
             continue
         text = path.read_text()
+        requested_seed = os.environ.get("BP_RESOURCE_NETEM_SEED")
+        if delayed and requested_seed is not None:
+            observed_seed = re.search(r"^NETEM_SEED=(\d+)$", text, re.MULTILINE)
+            if observed_seed is None or observed_seed[1] != requested_seed:
+                raise SystemExit(f"Missing or mismatched netem seed: {path}")
         if "--- PASS: TestWSMuxResourceProfile" not in text:
             raise SystemExit(f"Incomplete measurement: {path}")
         values = {}
@@ -53,7 +58,8 @@ result = {"scope": "combined client/server process; 1000 idle streams plus eight
           "idle_heap_reduction_percent": 100 * (1 - candidate["heap_delta_bytes"] / base["heap_delta_bytes"]),
           "cpu_per_gib_change_percent": 100 * (candidate["cpu_seconds_per_gib"] / base["cpu_seconds_per_gib"] - 1)}
 if delayed:
-    result["scope"] = f"{mode}: combined client/server process; 16 idle streams, eight bulk workers and fresh-user probes; receiver-ingress netem: 40ms each direction, 0.1% loss, 200mbit, MTU1500, TSO/GSO/GRO off, seed42"
+    seed = os.environ.get("BP_RESOURCE_NETEM_SEED", "42")
+    result["scope"] = f"{mode}: combined client/server process; 16 idle streams, eight bulk workers and fresh-user probes; receiver-ingress netem: 40ms each direction, 0.1% loss, 200mbit, MTU1500, TSO/GSO/GRO off, seed{seed}"
 print(json.dumps(result, indent=2))
 if not all(checks.values()):
     raise SystemExit("Resource/quality comparison failed; inspect the preserved samples")
