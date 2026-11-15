@@ -114,8 +114,18 @@ func TestQuicReadDeadlineCanBeClearedOrExtendedWhileReading(t *testing.T) {
 }
 
 func BenchmarkQuicCarrierReadWithDeadline(b *testing.B) {
+	benchmarkQuicCarrierRead(b, true)
+}
+
+func BenchmarkQuicCarrierReadWithoutDeadline(b *testing.B) {
+	benchmarkQuicCarrierRead(b, false)
+}
+
+func benchmarkQuicCarrierRead(b *testing.B, deadline bool) {
 	listener, _, _, _ := quicDeadlinePair(b)
-	listener.SetReadDeadline(time.Now().Add(time.Hour))
+	if deadline {
+		listener.SetReadDeadline(time.Now().Add(time.Hour))
+	}
 	packet := make([]byte, 1024)
 	buffer := make([]byte, len(packet))
 	from := &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 1234}
@@ -140,5 +150,19 @@ func TestQuicReadDeadlineAfterClose(t *testing.T) {
 		if _, _, err := carrier.ReadFrom(make([]byte, 1)); !errors.Is(err, net.ErrClosed) {
 			t.Fatalf("read after close = %v, want net.ErrClosed", err)
 		}
+	}
+}
+
+func TestQuicReadDeadlinePreservesQueuedPacket(t *testing.T) {
+	listener, _, remote, _ := quicDeadlinePair(t)
+	listener.in <- quicDatagram{data: []byte("queued"), from: remote}
+	listener.SetReadDeadline(time.Now().Add(-time.Second))
+	var packet [32]byte
+	if _, _, err := listener.ReadFrom(packet[:]); !errors.Is(err, os.ErrDeadlineExceeded) {
+		t.Fatalf("expired deadline returned a queued packet: %v", err)
+	}
+	listener.SetReadDeadline(time.Time{})
+	if n, _, err := listener.ReadFrom(packet[:]); err != nil || string(packet[:n]) != "queued" {
+		t.Fatalf("deadline update consumed queued data: %q, %v", packet[:n], err)
 	}
 }

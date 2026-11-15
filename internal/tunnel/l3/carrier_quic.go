@@ -419,11 +419,6 @@ func (c *quicCarrier) readPeer(conn *quic.Conn) {
 
 func (c *quicCarrier) ReadFrom(p []byte) (int, net.Addr, error) {
 	for {
-		select {
-		case <-c.done:
-			return 0, nil, net.ErrClosed
-		default:
-		}
 		c.deadlineMu.Lock()
 		ctx := c.readCtx
 		c.deadlineMu.Unlock()
@@ -437,13 +432,13 @@ func (c *quicCarrier) ReadFrom(p []byte) (int, net.Addr, error) {
 				}
 				err = receiveErr
 			} else {
+				// Close also cancels ctx. One shared wake signal avoids
+				// redundant channel checks on every packet.
 				select {
 				case d := <-c.in:
 					return copy(p, d.data), d.from, nil
 				case <-ctx.Done():
 					err = ctx.Err()
-				case <-c.done:
-					return 0, nil, net.ErrClosed
 				}
 			}
 		}
