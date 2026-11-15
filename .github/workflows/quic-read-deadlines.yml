@@ -1,0 +1,31 @@
+name: QUIC packet read deadlines
+on:
+  pull_request:
+    paths:
+      - 'internal/tunnel/l3/**'
+      - '.github/workflows/quic-read-deadlines.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'internal/tunnel/l3/**'
+      - '.github/workflows/quic-read-deadlines.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: quic-read-deadlines-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  deadlines:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Verify pending reads, concurrent readers, deadline changes and real QUIC packets
+        run: go test -race ./internal/tunnel/l3 -run '^Test(QuicReadDeadline.*|QuicCarrierMovesDatagramsBothWays|TheTunnelCarriesPacketsOverQuic)$' -count=3 -timeout 3m
+      - name: Measure timed packet reads
+        run: go test ./internal/tunnel/l3 -run '^$' -bench '^BenchmarkQuicCarrierRead(With|Without)Deadline$' -benchmem -count=3
