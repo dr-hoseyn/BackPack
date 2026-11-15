@@ -16,17 +16,28 @@ on:
       - '.github/scripts/compare-wssmux-resources.py'
       - '.github/workflows/num3-quality.yml'
   workflow_dispatch:
+    inputs:
+      netem_seed:
+        description: Packet loss seed for the diagnostic comparison
+        type: choice
+        default: '42'
+        options: ['42', '7', '99']
+      baseline_ref:
+        description: Baseline Git ref for a manual comparison
+        type: string
+        default: 'v1.22.0'
 permissions:
   contents: read
 concurrency:
-  group: num3-quality-${{ github.ref }}
+  group: num3-quality-${{ github.ref }}-${{ inputs.netem_seed || '42' }}
   cancel-in-progress: true
 jobs:
   quality:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      BASE_REF: ${{ github.event.pull_request.base.sha || 'v1.22.0' }}
+      BASE_REF: ${{ github.event.pull_request.base.sha || inputs.baseline_ref || 'v1.22.0' }}
+      BP_RESOURCE_NETEM_SEED: ${{ inputs.netem_seed || '42' }}
       GOMAXPROCS: '2'
     steps:
       - uses: actions/checkout@v7
@@ -36,6 +47,8 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - name: Verify smux FIN, half-close, v2 writes and receive tokens
+        run: go test -race github.com/xtaci/smux -run '^Test(SessionDiscardsDataAfterPeerFIN|StreamRecycleTokens.*|HalfClose.*|WriteV2.*)$' -count=20 -timeout 2m
       - name: Build both revisions with the identical NUM3 workload
         run: |
           set -euo pipefail
@@ -77,9 +90,10 @@ jobs:
             if [ $((sample % 2)) -eq 0 ]; then order="candidate baseline"; fi
             for kind in $order; do
               sudo env GOMAXPROCS=2 BP_RESOURCE_TRANSPORT=tcpfwd-xmpp \
+                BP_RESOURCE_NETEM_SEED="$BP_RESOURCE_NETEM_SEED" \
                 BP_RESOURCE_BENCHMARK=1 BP_RESOURCE_IDLE_CONNECTIONS=16 \
                 BP_RESOURCE_ROUNDS=2 BP_RESOURCE_NETEM=1 BIN="$RUNNER_TEMP/num3-$kind" \
-                unshare --net -- bash -eu -c 'ip link set lo up; ulimit -n 16384; exec "$BIN" -test.run "^TestWSMuxResourceProfile$" -test.v -test.timeout 2m' \
+                unshare --net -- bash -eu -c 'ip link set lo up; ulimit -n 16384; printf "NETEM_SEED=%s\n" "$BP_RESOURCE_NETEM_SEED"; exec "$BIN" -test.run "^TestWSMuxResourceProfile$" -test.v -test.timeout 2m' \
                 | tee "$RUNNER_TEMP/delayed-num3-$kind-$sample.txt"
             done
           done
