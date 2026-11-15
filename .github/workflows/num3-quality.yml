@@ -46,6 +46,8 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - name: Verify smux FIN, half-close, v2 writes and receive tokens
+        run: go test -race github.com/xtaci/smux -run '^Test(SessionDiscardsDataAfterPeerFIN|StreamRecycleTokens.*|HalfClose.*|WriteV2.*)$' -count=20 -timeout 2m
       - name: Build both revisions with the identical NUM3 workload
         run: |
           set -euo pipefail
