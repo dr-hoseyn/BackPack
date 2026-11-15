@@ -176,6 +176,12 @@ func (c *Client) DialStream(ctx context.Context, target string) (io.ReadWriteClo
 }
 
 func (c *Client) connect(dial context.Context, target string, rt http.RoundTripper) (io.ReadWriteCloser, error) {
+	if err := dial.Err(); err != nil {
+		return nil, err
+	}
+	if err := c.ctx.Err(); err != nil {
+		return nil, err
+	}
 	ctx, cancel := context.WithCancel(c.ctx)
 	stop := context.AfterFunc(dial, cancel)
 	pr, pw := io.Pipe()
@@ -185,10 +191,22 @@ func (c *Client) connect(dial context.Context, target string, rt http.RoundTripp
 	req.Header.Set("User-Agent", "linux backpack")
 	resp, err := rt.RoundTrip(req)
 	stop()
+	// RoundTrip can return a response concurrently with cancellation. Once
+	// detached, a successful stream must belong to its caller, not a setup
+	// callback that may already have cancelled the request's lifetime.
+	if err == nil {
+		err = dial.Err()
+		if err == nil {
+			err = ctx.Err()
+		}
+	}
 	if err != nil {
 		cancel()
 		pr.Close()
 		pw.Close()
+		if resp != nil && resp.Body != nil {
+			resp.Body.Close()
+		}
 		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
