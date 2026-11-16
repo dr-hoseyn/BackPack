@@ -113,9 +113,8 @@ type NewDirectTunnel struct {
 	// match. Zero omits it.
 	GREKey uint32 `json:"greKey"`
 
-	// MaxConnections and BandwidthMbps cap the forwarded ports (0 = unlimited).
+	// MaxConnections caps the forwarded ports (0 = unlimited).
 	MaxConnections int `json:"maxConnections"`
-	BandwidthMbps  int `json:"bandwidthMbps"`
 }
 
 // DirectCarriers is what the panel offers, in the order it offers them. It is
@@ -477,7 +476,6 @@ func (n NewDirectTunnel) spec() (l3Spec, error) {
 		Iface: freeL3Iface(), LocalIP: local, PeerIP: peer,
 		MTU:            defaultL3MTU,
 		MaxConnections: n.MaxConnections,
-		BandwidthMbps:  n.BandwidthMbps,
 	}
 	findL3Preset(strings.ToLower(strings.TrimSpace(n.Preset))).apply(&spec)
 
@@ -589,7 +587,6 @@ type DirectSettings struct {
 	AcceptUDP bool             `json:"acceptUdp"`
 
 	MaxConnections int `json:"maxConnections"`
-	BandwidthMbps  int `json:"bandwidthMbps"`
 
 	Presets []map[string]string `json:"presets,omitempty"`
 
@@ -621,7 +618,6 @@ type DirectEdit struct {
 	MTU            *int    `json:"mtu"`
 	AutoMTU        *bool   `json:"autoMtu"`
 	MaxConnections *int    `json:"maxConnections"`
-	BandwidthMbps  *int    `json:"bandwidthMbps"`
 
 	// Spoof replaces the carrier's settings wholesale, and Stealth turns the
 	// obfuscation group on or off. Both are nil unless the form sent them, on
@@ -650,14 +646,14 @@ func DirectSettingsOf(name string) (DirectSettings, error) {
 		if c.Endpoint != "" {
 			side, addr = "kharej", c.Endpoint
 		}
-		return DirectSettings{Name: name, Layer: 3, Side: side, Carrier: "awg", Addr: addr, Iface: c.Interface, LocalIP: c.Address, PeerIP: c.PeerAddress, MTU: c.MTU, Ports: strings.Join(c.Ports, ", "), AcceptUDP: c.AcceptUDP, HoldsPorts: true, MaxConnections: c.MaxConnections, BandwidthMbps: c.BandwidthMbps}, nil
+		return DirectSettings{Name: name, Layer: 3, Side: side, Carrier: "awg", Addr: addr, Iface: c.Interface, LocalIP: c.Address, PeerIP: c.PeerAddress, MTU: c.MTU, Ports: strings.Join(c.Ports, ", "), AcceptUDP: c.AcceptUDP, HoldsPorts: true, MaxConnections: c.MaxConnections}, nil
 	}
 	if cfg.Direct.Enabled() {
 		d := cfg.Direct
 		return DirectSettings{Name: name, Layer: 4, Side: directRole(d.ResolvedRole()), Carrier: orDefault(d.Transport, "tcp"),
 			Addr: d.Addr, Token: d.Token, Ports: strings.Join(d.Ports, ", "), AcceptUDP: d.AcceptUDP,
 			HoldsPorts: d.ResolvedRole() == "edge", Preset: d.Preset, Sessions: max(d.Sessions, 1), MSS: d.MSS,
-			MaxConnections: d.MaxConnections, BandwidthMbps: d.BandwidthMbps, Presets: DirectPresets(4)}, nil
+			MaxConnections: d.MaxConnections, Presets: DirectPresets(4)}, nil
 	}
 	if !cfg.L3.Enabled() {
 		return DirectSettings{}, fmt.Errorf("%q is not a direct tunnel", name)
@@ -691,7 +687,6 @@ func directSettingsFrom(name string, l config.L3Config) DirectSettings {
 
 		AcceptUDP:      l.AcceptUDP,
 		MaxConnections: l.MaxConnections,
-		BandwidthMbps:  l.BandwidthMbps,
 
 		// The kharej side has no port list at all: every target arrives on the
 		// stream that asks for it, so what is forwarded is set on Iran.
@@ -748,7 +743,7 @@ func directEditBody(name string, e DirectEdit) (string, error) {
 		if e.MTU != nil || e.AutoMTU != nil || e.Paths != nil || e.FEC != nil || e.Spoof != nil || e.Stealth != nil {
 			return "", fmt.Errorf("layer-3 settings cannot be applied to a layer-4 tunnel")
 		}
-		if d.ResolvedRole() != "edge" && (e.Ports != nil || e.AcceptUDP != nil || e.Sessions != nil || e.MSS != nil || e.Addr != nil || e.Preset != nil || e.MaxConnections != nil || e.BandwidthMbps != nil) {
+		if d.ResolvedRole() != "edge" && (e.Ports != nil || e.AcceptUDP != nil || e.Sessions != nil || e.MSS != nil || e.Addr != nil || e.Preset != nil || e.MaxConnections != nil) {
 			return "", fmt.Errorf("these settings belong to the Iran side")
 		}
 		if e.Ports != nil {
@@ -774,9 +769,6 @@ func directEditBody(name string, e DirectEdit) (string, error) {
 		}
 		if e.MaxConnections != nil {
 			d.MaxConnections = *e.MaxConnections
-		}
-		if e.BandwidthMbps != nil {
-			d.BandwidthMbps = *e.BandwidthMbps
 		}
 		if e.Preset != nil && *e.Preset != d.Preset {
 			p := findDirectPreset(strings.ToLower(strings.TrimSpace(*e.Preset)))
@@ -860,9 +852,6 @@ func applyDirectEdit(l config.L3Config, e DirectEdit) (config.L3Config, error) {
 	}
 	if e.MaxConnections != nil {
 		l.MaxConnections = *e.MaxConnections
-	}
-	if e.BandwidthMbps != nil {
-		l.BandwidthMbps = *e.BandwidthMbps
 	}
 	// The carrier's drawer, then the group over it — in that order, so a form
 	// that sends both gets the group's answer rather than whichever field the
@@ -955,7 +944,6 @@ func directSpecFrom(name string, l config.L3Config) l3Spec {
 		Ports:          l.Ports,
 		AcceptUDP:      l.AcceptUDP,
 		MaxConnections: l.MaxConnections,
-		BandwidthMbps:  l.BandwidthMbps,
 		Spoof:          l.SpoofConfig,
 		Pck:            l.PckConfig,
 	}

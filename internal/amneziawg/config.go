@@ -51,7 +51,7 @@ func (c Config) Validate() error {
 		return errors.New("interface must start with bpawg and contain at most 15 letters, digits, underscores or hyphens")
 	}
 
-	if c.MaxConnections < 0 || c.BandwidthMbps < 0 {
+	if c.MaxConnections < 0 {
 		return errors.New("forwarding limits must be nonnegative")
 	}
 	if c.PeerSetupKey != "" {

@@ -205,8 +205,8 @@ func renderL3For(l config.L3Config) string {
 		Addr: l.Addr, Token: l.Token, Iface: orDefault(l.Iface, "bp0"),
 		LocalIP: l.LocalIP, PeerIP: l.PeerIP, MTU: l.MTU, SockBuf: l.SockBuf,
 		Ports: l.Ports, AcceptUDP: l.AcceptUDP,
-		MaxConnections: l.MaxConnections, BandwidthMbps: l.BandwidthMbps,
-		Spoof: l.SpoofConfig, Pck: l.PckConfig,
+		MaxConnections: l.MaxConnections,
+		Spoof:          l.SpoofConfig, Pck: l.PckConfig,
 	}.Render()
 }
 
@@ -218,8 +218,8 @@ func renderDirectFor(d config.DirectConfig) string {
 	return directSpec{
 		Side: side, Transport: orDefault(d.Transport, "tcp"),
 		Addr: d.Addr, Token: d.Token, Ports: d.Ports, AcceptUDP: d.AcceptUDP,
-		MaxConnections: d.MaxConnections, BandwidthMbps: d.BandwidthMbps,
-		Sessions: d.Sessions, Preset: d.Preset,
+		MaxConnections: d.MaxConnections,
+		Sessions:       d.Sessions, Preset: d.Preset,
 		MuxFrameSize: d.MaxFrameSize, MuxReceiveBuffer: d.MaxReceiveBuffer,
 		MuxStreamBuffer: d.MaxStreamBuffer, Keepalive: d.Keepalive,
 		Nodelay: d.Nodelay, ServerName: d.ServerName,

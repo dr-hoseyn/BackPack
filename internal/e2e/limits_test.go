@@ -7,6 +7,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/BurntSushi/toml"
 )
 
 // TestConnectionLimitIsEnforced checks that a connection cap actually refuses
@@ -99,43 +101,21 @@ func TestNoLimitsByDefault(t *testing.T) {
 	}
 }
 
-// TestBandwidthLimitSlowsTransfer checks that a bandwidth cap has a real,
-// measurable effect. It asserts only that the transfer cannot beat the cap by
-// a wide margin — timing on a shared machine is too noisy for anything tighter,
-// and a flaky test is worse than a loose one.
-func TestBandwidthLimitSlowsTransfer(t *testing.T) {
-	if testing.Short() {
-		t.Skip("timing-based — skipped under -short")
-	}
+func TestLegacyBandwidthKeyDoesNotPaceTraffic(t *testing.T) {
 	backend := startEchoBackend(t)
-
-	tunnelPort := freePort(t)
-	entryPort := freePort(t)
+	tunnelPort, entryPort := freePort(t), freePort(t)
 	const token = "bwlimit-token-0123456789abcdefg"
-	const mbps = 8 // 1 MB/s
-
 	srvCfg := baseServerConfig("tcpmux", tunnelPort, entryPort, backend.addr, token)
-	srvCfg.BandwidthMbps = mbps
+	if _, err := toml.Decode("bandwidth_mbps = 1", srvCfg); err != nil {
+		t.Fatalf("legacy config no longer decodes: %v", err)
+	}
 	cliCfg := baseClientConfig("tcpmux", fmt.Sprintf("127.0.0.1:%d", tunnelPort), token, nil)
-
 	tun := runPair(t, srvCfg, cliCfg, entryPort, tunnelPort)
 	if err := tun.waitReady(tunnelReadyTimeout); err != nil {
-		t.Fatalf("tunnel never came up: %v", err)
+		t.Fatal(err)
 	}
-
-	// 2 MB echoed is 4 MB through the cap, so it cannot finish in under ~2s.
-	payload := randomPayload(t, 2*1024*1024)
-	start := time.Now()
-	if err := tun.roundTrip(payload); err != nil {
-		t.Fatalf("limited transfer failed: %v", err)
+	// The former 1 Mbit/s cap took over 30 seconds for this echo.
+	if err := tun.roundTrip(randomPayload(t, 2<<20)); err != nil {
+		t.Fatalf("legacy bandwidth setting prevented an ordinary transfer: %v", err)
 	}
-	elapsed := time.Since(start)
-
-	// Allow generous slack for the initial burst and scheduling noise.
-	floor := 1200 * time.Millisecond
-	if elapsed < floor {
-		t.Fatalf("2 MB round trip finished in %v with an %d Mbit/s cap — the limit is not being applied",
-			elapsed, mbps)
-	}
-	t.Logf("2 MB round trip took %v under an %d Mbit/s cap", elapsed, mbps)
 }

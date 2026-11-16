@@ -78,8 +78,6 @@ type KcpConfig struct {
 	ProxyProtocol    bool
 	// MaxConnections caps simultaneous forwarded connections (0 = unlimited).
 	MaxConnections int
-	// BandwidthMbps caps total tunnel throughput (0 = unlimited).
-	BandwidthMbps int
 
 	// KCP tuning, filled from the tunnel's performance preset.
 	MTU          int
@@ -171,7 +169,7 @@ func NewKcpServer(parentCtx context.Context, config *KcpConfig, logger *logrus.L
 			logger:    logger,
 			usage:     usageSpec{snifferLog: config.SnifferLog, sniffer: config.Sniffer},
 		},
-		limits: newLimiter(Limits{MaxConnections: config.MaxConnections, BandwidthMbps: config.BandwidthMbps}),
+		limits: newLimiter(Limits{MaxConnections: config.MaxConnections}),
 	}
 	// Route the carrier's startup diagnostics (effective FEC/MTU, and for pck the
 	// discovered egress and RST-guard status) into the tunnel log, so a tunnel

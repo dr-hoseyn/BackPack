@@ -62,8 +62,6 @@ type AWGConfig struct {
 	AcceptUDP bool `json:"accept_udp,omitempty" toml:"accept_udp,omitempty"`
 	// MaxConnections bounds forwarded connections (zero is unlimited).
 	MaxConnections int `json:"max_connections,omitempty" toml:"max_connections,omitempty"`
-	// BandwidthMbps limits forwarded traffic, independent of routed IP traffic.
-	BandwidthMbps int `json:"bandwidth_mbps,omitempty" toml:"bandwidth_mbps,omitempty"`
 	// PeerSetupKey is the generated peer identity kept only by a pair's creator
 	// for regenerating its setup link. It never appears in generic API JSON.
 	PeerSetupKey string `json:"-" toml:"peer_setup_key,omitempty"`

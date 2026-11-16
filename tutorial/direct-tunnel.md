@@ -102,7 +102,7 @@ token, ports, tuning — so nothing is in an unfamiliar place if you have set up
 a reverse tunnel before. The last question is the only one that hides anything:
 saying `n` takes the preset's tuning and leaves both caps off, which is what
 almost every tunnel wants. Saying `y` asks about session count and the
-connection and bandwidth caps; see [Limits](../docs/limits.md).
+a connection cap with `max_connections`.
 
 The wizard prints a summary, you confirm, and it writes the config and starts
 the service.

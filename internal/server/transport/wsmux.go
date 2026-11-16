@@ -83,8 +83,6 @@ type WsMuxConfig struct {
 	MSS int
 	// MaxConnections caps simultaneous forwarded connections (0 = unlimited).
 	MaxConnections int
-	// BandwidthMbps caps total tunnel throughput (0 = unlimited).
-	BandwidthMbps int
 }
 
 func NewWSMuxServer(parentCtx context.Context, cfg *WsMuxConfig, logger *logrus.Logger) *WsMuxTransport {
@@ -106,7 +104,7 @@ func NewWSMuxServer(parentCtx context.Context, cfg *WsMuxConfig, logger *logrus.
 		},
 		streamCounter:  0,
 		sessionCounter: 0,
-		limits:         newLimiter(Limits{MaxConnections: cfg.MaxConnections, BandwidthMbps: cfg.BandwidthMbps}),
+		limits:         newLimiter(Limits{MaxConnections: cfg.MaxConnections}),
 	}
 
 	// The first run is installed the same way every later one is, so there is
@@ -436,7 +434,7 @@ func (s *WsMuxTransport) forwarder(g *wsMuxGen) portForwarder {
 	return portForwarder{
 		expireQueued: s.session(g, g.ctx).dropLocal,
 		ctx:          g.ctx, ports: s.config.Ports, acceptUDP: s.config.AcceptUDP,
-		batchUDPReads: s.config.Mode == config.WSSMUX && s.config.BandwidthMbps <= 0,
+		batchUDPReads: s.config.Mode == config.WSSMUX,
 		muxQueue:      g.localChannel, limits: s.limits, listeners: &s.listeners, log: s.logger,
 		tune:   s.tuneUserConn,
 		queued: muxRequestForGeneration(g.ctx, &s.counterMutex, &s.streamCounter, &s.sessionCounter, s.config.MuxCon, g.reqNewConnChan, s.logger),

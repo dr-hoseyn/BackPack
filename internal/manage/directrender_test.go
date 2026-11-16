@@ -262,18 +262,18 @@ func TestL3EncapRoundTrips(t *testing.T) {
 func TestLimitsRoundTrip(t *testing.T) {
 	d := decode(t, directSpec{
 		Side: sideIran, Transport: "tcp", Addr: "1.2.3.4:8443", Token: "t",
-		Ports: []string{"443"}, MaxConnections: 250, BandwidthMbps: 100,
+		Ports: []string{"443"}, MaxConnections: 250,
 	}.Render())
-	if d.Direct.MaxConnections != 250 || d.Direct.BandwidthMbps != 100 {
+	if d.Direct.MaxConnections != 250 {
 		t.Fatalf("direct limits: %+v", d.Direct)
 	}
 
 	l := decode(t, l3Spec{
 		Side: sideIran, Carrier: "udp", Encap: "ipip", Addr: "1.2.3.4:9000", Token: "t",
 		Iface: "bp0", LocalIP: "10.10.0.1/30", PeerIP: "10.10.0.2", MTU: 1400,
-		Ports: []string{"443"}, MaxConnections: 64, BandwidthMbps: 50,
+		Ports: []string{"443"}, MaxConnections: 64,
 	}.Render())
-	if l.L3.MaxConnections != 64 || l.L3.BandwidthMbps != 50 {
+	if l.L3.MaxConnections != 64 {
 		t.Fatalf("l3 limits: %+v", l.L3)
 	}
 
@@ -287,10 +287,10 @@ func TestLimitsRoundTrip(t *testing.T) {
 		t.Fatalf("an uncapped tunnel wrote limit keys:\n%s", plain)
 	}
 
-	if got := limitsLabel(0, 0); got != "unlimited, unlimited" {
+	if got := limitsLabel(0); got != "unlimited" {
 		t.Fatalf("label = %q", got)
 	}
-	if got := limitsLabel(250, 100); got != "250 connections, 100 Mbit/s" {
+	if got := limitsLabel(250); got != "250 connections" {
 		t.Fatalf("label = %q", got)
 	}
 }

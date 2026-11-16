@@ -56,7 +56,7 @@ func BenchmarkUDPIdleReplyFlows(b *testing.B) {
 		var flowErr error
 		for i := range count {
 			client := netip.AddrPortFrom(netip.MustParseAddr("127.0.0.1"), uint16(10000+i))
-			if _, flowErr = f.udpFlowFor(ctx, &flows, local, client, pool, nil, &workers); flowErr != nil {
+			if _, flowErr = f.udpFlowFor(ctx, &flows, local, client, pool, &workers); flowErr != nil {
 				break
 			}
 		}
@@ -105,7 +105,7 @@ func BenchmarkUDPForwardedReplies(b *testing.B) {
 			log.SetOutput(io.Discard)
 			f := &Forwarder{log: log}
 			pool := newBackendPool([]string{backend.LocalAddr().String()})
-			flow, err := f.udpFlowFor(ctx, &flows, local, client.LocalAddr().(*net.UDPAddr).AddrPort(), pool, nil, &workers)
+			flow, err := f.udpFlowFor(ctx, &flows, local, client.LocalAddr().(*net.UDPAddr).AddrPort(), pool, &workers)
 			if err != nil {
 				cancel()
 				b.Fatal(err)
@@ -115,7 +115,7 @@ func BenchmarkUDPForwardedReplies(b *testing.B) {
 				flow.close()
 				workers.Wait()
 			}()
-			target := flow.socket.LocalAddr().(*net.UDPAddr)
+			target := flow.backend.LocalAddr().(*net.UDPAddr)
 			want := bytes.Repeat([]byte("x"), size)
 			buf := make([]byte, udpBufferSize)
 			b.SetBytes(int64(size))

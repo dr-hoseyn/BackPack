@@ -236,8 +236,8 @@ func SetProxyProtocol(name string, on bool, apply ...func(TunnelSpec) error) err
 	return applySpecUsing(s, apply)
 }
 
-// SetLimits applies per-tunnel caps. Zero means unlimited for either value.
-func SetLimits(name string, maxConns, bandwidthMbps int, apply ...func(TunnelSpec) error) error {
+// SetLimits applies the per-tunnel connection cap. Zero means unlimited.
+func SetLimits(name string, maxConns int, apply ...func(TunnelSpec) error) error {
 	s, err := LoadSpec(name)
 	if err != nil {
 		return err
@@ -245,11 +245,10 @@ func SetLimits(name string, maxConns, bandwidthMbps int, apply ...func(TunnelSpe
 	if s.Role != "server" {
 		return fmt.Errorf("limits are a server-side setting — they apply where connections arrive")
 	}
-	if maxConns < 0 || bandwidthMbps < 0 {
+	if maxConns < 0 {
 		return fmt.Errorf("a limit cannot be negative")
 	}
 	s.MaxConnections = maxConns
-	s.BandwidthMbps = bandwidthMbps
 	return applySpecUsing(s, apply)
 }
 

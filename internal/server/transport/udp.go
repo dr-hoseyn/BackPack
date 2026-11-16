@@ -88,18 +88,8 @@ type UdpConfig struct {
 	// keeps the tunnel carrying traffic under load instead of stalling.
 	SO_RCVBUF int
 	SO_SNDBUF int
-	// MaxConnections caps how many source addresses may be forwarded at once,
-	// and BandwidthMbps caps throughput across the whole tunnel. Zero means
-	// unlimited, the same as everywhere else.
-	//
-	// Both were accepted by the menu, saved into the TOML and shown in the
-	// panel, and this struct had nowhere to put them — so a udp tunnel was the
-	// one transport where a limit an operator set was silently not a limit.
-	// "Connection" is a source address here rather than a socket, because that
-	// is the only thing a connectionless protocol has that means the same
-	// thing: one peer's flow through the tunnel.
+	// MaxConnections caps simultaneous source flows; zero is unlimited.
 	MaxConnections int
-	BandwidthMbps  int
 }
 
 func NewUDPServer(parentCtx context.Context, config *UdpConfig, logger *logrus.Logger) *UdpTransport {
@@ -113,7 +103,7 @@ func NewUDPServer(parentCtx context.Context, config *UdpConfig, logger *logrus.L
 		},
 		activeConnections: map[string]*TunnelUDPConn{},
 		activeMu:          sync.Mutex{},
-		limits:            newLimiter(Limits{MaxConnections: config.MaxConnections, BandwidthMbps: config.BandwidthMbps}),
+		limits:            newLimiter(Limits{MaxConnections: config.MaxConnections}),
 	}
 
 	// The first run is installed the same way every later one is, so there is
@@ -294,28 +284,21 @@ func udpPeerKey(peer netip.AddrPort) string {
 }
 
 // deliverTunnelPayload reports whether key names an established association.
-// Pacing may wait behind all other flows sharing the bandwidth cap. Never
-// hold the association lock across that wait: disconnect/adoption must be able
-// to retire flows while this generation's listener remains alive.
 func (s *UdpTransport) deliverTunnelPayload(ctx context.Context, key string, packet []byte) bool {
 	s.activeMu.Lock()
 	conn := s.activeConnections[key]
-	s.activeMu.Unlock()
 	if conn == nil {
+		s.activeMu.Unlock()
 		return false
 	}
+	cancelled := ctx.Err() != nil
+	queued := !cancelled && enqueueUDPPayload(conn.payload, packet)
+	s.activeMu.Unlock()
 	// Even a packet dropped after arrival crossed the tunnel.
 	metrics.AddBytes(uint64(len(packet)), 0)
-	s.limits.waitBytes(ctx, len(packet))
-	s.activeMu.Lock()
-	// The wait can outlive this association. Its channel may already be
-	// closed or replaced by a new flow using the same source address.
-	if ctx.Err() != nil || s.activeConnections[key] != conn {
-		s.activeMu.Unlock()
+	if cancelled {
 		return true
 	}
-	queued := enqueueUDPPayload(conn.payload, packet)
-	s.activeMu.Unlock()
 	if queued {
 		if s.logger.IsLevelEnabled(logrus.TraceLevel) {
 			s.logger.Tracef("buffered %d bytes for existing connection %s", len(packet), key)

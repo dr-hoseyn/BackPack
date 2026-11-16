@@ -131,7 +131,6 @@ func NewForwarder(cfg Config, log *logrus.Logger) (*Forwarder, error) {
 		ready:     make(chan struct{}),
 		limiter: limits.New(limits.Config{
 			MaxConnections: cfg.MaxConnections,
-			BandwidthMbps:  cfg.BandwidthMbps,
 		}),
 	}, nil
 }
@@ -169,11 +168,6 @@ func (f *Forwarder) Run(ctx context.Context) error {
 	var wg sync.WaitGroup
 	var firstErr error
 	var errOnce sync.Once
-	var udpPacer *udpWriteQueue
-	if f.acceptUDP && f.limiter.HasBandwidthCap() {
-		udpPacer = newUDPWriteQueue()
-		wg.Go(func() { udpPacer.run(genCtx, f.limiter, f.log) })
-	}
 
 	// One count per listener, dropped as soon as that listener has finished
 	// trying to bind — whether it succeeded or not. Run cannot report
@@ -213,7 +207,7 @@ func (f *Forwarder) Run(ctx context.Context) error {
 			wg.Add(1)
 			go func(m portmap.Mapping) {
 				defer wg.Done()
-				if err := f.serveUDP(genCtx, m, binding.Done, udpPacer); err != nil && ctx.Err() == nil {
+				if err := f.serveUDP(genCtx, m, binding.Done); err != nil && ctx.Err() == nil {
 					f.log.Errorf("l3: udp forwarder for %s stopped: %v", m.Listen, err)
 					errOnce.Do(func() {
 						firstErr = err
@@ -276,7 +270,6 @@ func (f *Forwarder) handleTCP(ctx context.Context, local net.Conn, m portmap.Map
 		return
 	}
 	defer f.limiter.Release()
-	local = f.limiter.Wrap(ctx, local)
 
 	f.stats.active.Add(1)
 	defer f.stats.active.Add(-1)
@@ -367,11 +360,9 @@ func (f *Forwarder) noteBackend(m portmap.Mapping, err error) {
 // so a flow is recognised by its source address and ends when it goes quiet.
 type udpFlow struct {
 	backend   net.Conn
-	socket    *net.UDPConn
 	ctx       context.Context
-	pacer     *udpWriteQueue
 	member    *backendMember     // counted against it while the flow lives
-	cancel    context.CancelFunc // releases pacing when this flow closes
+	cancel    context.CancelFunc // cancels this flow
 	stopClose func() bool        // detaches the generation's socket-close callback
 	lastSeen  atomic.Int64       // unix nanoseconds
 }
@@ -381,9 +372,6 @@ func (f *udpFlow) close() {
 		f.stopClose()
 	}
 	f.cancel()
-	if f.pacer != nil {
-		f.pacer.discard(f)
-	}
 	_ = f.backend.Close()
 }
 
@@ -406,7 +394,7 @@ func (f *udpFlow) noteBackendReadError(ctx context.Context, err error) {
 	f.member.downUntil.Store(time.Now().Add(backendCooldown).UnixNano())
 }
 
-func (f *Forwarder) serveUDP(ctx context.Context, m portmap.Mapping, bound func(), pacer *udpWriteQueue) error {
+func (f *Forwarder) serveUDP(ctx context.Context, m portmap.Mapping, bound func()) error {
 	packetConn, err := net.ListenPacket("udp", m.Listen)
 	bound()
 	if err != nil {
@@ -444,7 +432,7 @@ func (f *Forwarder) serveUDP(ctx context.Context, m portmap.Mapping, bound func(
 			return err
 		}
 
-		flow, err := f.udpFlowFor(flowCtx, &flows, conn, client, pool, pacer, &workers)
+		flow, err := f.udpFlowFor(flowCtx, &flows, conn, client, pool, &workers)
 		if err != nil {
 			if flowCtx.Err() != nil {
 				return nil
@@ -458,10 +446,6 @@ func (f *Forwarder) serveUDP(ctx context.Context, m portmap.Mapping, bound func(
 			continue
 		}
 		flow.touch()
-		if pacer != nil {
-			pacer.enqueue(flow, buf[:n])
-			continue
-		}
 		if _, err := flow.backend.Write(buf[:n]); err != nil {
 			f.log.Debugf("l3: forwarding udp to %s: %v", m.Targets, err)
 		}
@@ -475,7 +459,6 @@ func (f *Forwarder) udpFlowFor(
 	local *net.UDPConn,
 	client netip.AddrPort,
 	pool *backendPool,
-	pacer *udpWriteQueue,
 	workers *sync.WaitGroup,
 ) (*udpFlow, error) {
 	if existing, ok := flows.Load(client); ok {
@@ -508,8 +491,8 @@ func (f *Forwarder) udpFlowFor(
 	// one callback per flow, with no timer or callback on the packet path.
 	stopClose := context.AfterFunc(flowCtx, func() { udpConn.Close() })
 	flow := &udpFlow{
-		backend: f.limiter.Wrap(flowCtx, udpConn), socket: udpConn,
-		ctx: flowCtx, member: member, cancel: cancelFlow, stopClose: stopClose, pacer: pacer,
+		backend: udpConn,
+		ctx:     flowCtx, member: member, cancel: cancelFlow, stopClose: stopClose,
 	}
 	flow.touch()
 
@@ -550,21 +533,10 @@ func (f *Forwarder) pumpUDPReplies(
 	// Keep one full buffer per flow: avoiding an extra readiness syscall and
 	// a shared buffer exchange on every reply is preferable on busy tunnels.
 	buf := make([]byte, udpBufferSize)
-	capped := f.limiter.HasBandwidthCap()
-	if !capped {
-		if err := flow.backend.SetReadDeadline(time.Now().Add(udpFlowIdle)); err != nil {
-			return
-		}
+	if err := flow.backend.SetReadDeadline(time.Now().Add(udpFlowIdle)); err != nil {
+		return
 	}
 	for {
-		// A capped read may also wait for shared pacing credit after receiving
-		// its packet. Keep its full per-read budget. Ordinary socket reads only
-		// need a timer renewal when the existing idle deadline actually fires.
-		if capped {
-			if err := flow.backend.SetReadDeadline(time.Now().Add(udpFlowIdle)); err != nil {
-				return
-			}
-		}
 		n, err := flow.backend.Read(buf)
 		if err != nil {
 			if flow.ctx.Err() != nil {
@@ -572,14 +544,12 @@ func (f *Forwarder) pumpUDPReplies(
 			}
 			var netErr net.Error
 			if errors.As(err, &netErr) && netErr.Timeout() && !flow.idle(time.Now(), udpFlowIdle) {
-				if !capped {
-					// Traffic in either direction keeps this flow alive. Re-arm
-					// to its actual last activity, rather than extending an idle
-					// conversation by another whole timeout.
-					deadline := time.Unix(0, flow.lastSeen.Load()).Add(udpFlowIdle)
-					if err := flow.backend.SetReadDeadline(deadline); err != nil {
-						return
-					}
+				// Traffic in either direction keeps this flow alive. Re-arm
+				// to its actual last activity, rather than extending an idle
+				// conversation by another whole timeout.
+				deadline := time.Unix(0, flow.lastSeen.Load()).Add(udpFlowIdle)
+				if err := flow.backend.SetReadDeadline(deadline); err != nil {
+					return
 				}
 				continue // the client is still sending; keep waiting for a reply
 			}

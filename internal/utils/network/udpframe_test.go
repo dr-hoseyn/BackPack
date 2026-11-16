@@ -2,11 +2,7 @@ package network
 
 import (
 	"bytes"
-	"context"
-	"net"
-	"time"
 
-	"github.com/backpack/backpack/internal/tunnel/limits"
 	"io"
 	"testing"
 )
@@ -161,37 +157,6 @@ func TestDatagramReceiveBuffersDoNotAllocateAfterWarmup(t *testing.T) {
 		}
 	}
 }
-
-func TestAdaptiveDatagramsKeepConnectionPacing(t *testing.T) {
-	var wire bytes.Buffer
-	for i := 0; i < 2; i++ {
-		if err := WriteDatagram(&wire, bytes.Repeat([]byte{9}, 65000)); err != nil {
-			t.Fatal(err)
-		}
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	conn := limits.New(limits.Config{BandwidthMbps: 1}).Wrap(ctx, &datagramMemoryConn{Reader: bytes.NewReader(wire.Bytes())})
-	start := time.Now()
-	var buf []byte
-	for i := 0; i < 2; i++ {
-		var err error
-		buf, err = ReadDatagramInto(conn, buf)
-		if err != nil || len(buf) != 65000 || buf[0] != 9 || buf[len(buf)-1] != 9 {
-			t.Fatalf("paced frame length=%d, error=%v", len(buf), err)
-		}
-	}
-	if time.Since(start) < 20*time.Millisecond {
-		t.Fatal("adaptive framing bypassed the connection's bandwidth limit")
-	}
-}
-
-type datagramMemoryConn struct {
-	net.Conn
-	*bytes.Reader
-}
-
-func (c *datagramMemoryConn) Read(p []byte) (int, error) { return c.Reader.Read(p) }
 
 func BenchmarkDatagramReceiveBuffer(b *testing.B) {
 	var wire bytes.Buffer

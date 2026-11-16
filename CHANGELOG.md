@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Remove the optional forwarding speed caps `bandwidth_mbps` and
+  `udp_bandwidth_mbps`. Saved configurations and setup links still load.
+  These keys are ignored on upgrade. Connection and UDP flow caps remain available.
+
 ## v1.26.1 — 2026-11-15
 
 - Preserve server-first data through HTTP CONNECT proxies, accept successful

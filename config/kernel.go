@@ -39,8 +39,6 @@ type KernelConfig struct {
 	AcceptUDP bool `toml:"accept_udp"`
 	// MaxConnections caps simultaneous forwarded connections; zero is unlimited.
 	MaxConnections int `toml:"max_connections"`
-	// BandwidthMbps caps forwarded traffic in Mbit/s; zero is unlimited.
-	BandwidthMbps int `toml:"bandwidth_mbps"`
 }
 
 func (c KernelConfig) Enabled() bool { return c.Method != "" }

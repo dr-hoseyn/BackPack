@@ -156,7 +156,7 @@ func Validate(c *config.Config) error {
 			}
 			if p.Sing.NativeUDP {
 				native := v.NativeSing()
-				if p.Sing.UDPMaxFlows != native.UDPMaxFlows || p.Sing.UDPBandwidthMbps != native.UDPBandwidthMbps {
+				if p.Sing.UDPMaxFlows != native.UDPMaxFlows {
 					return errors.New("native paths share one reverse UDP engine and must use identical local UDP limits")
 				}
 			}
@@ -202,7 +202,7 @@ func Validate(c *config.Config) error {
 		endpoints[endpoint] = true
 		if p.Sing.NativeUDP {
 			native := v.NativeSing()
-			if p.Sing.UDPMaxFlows != native.UDPMaxFlows || p.Sing.UDPBandwidthMbps != native.UDPBandwidthMbps {
+			if p.Sing.UDPMaxFlows != native.UDPMaxFlows {
 				return errors.New("native paths must use identical local UDP limits")
 			}
 		}

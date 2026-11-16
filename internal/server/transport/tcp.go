@@ -75,8 +75,6 @@ type TcpConfig struct {
 	ProxyProtocol   bool
 	// MaxConnections caps simultaneous forwarded connections (0 = unlimited).
 	MaxConnections int
-	// BandwidthMbps caps total tunnel throughput (0 = unlimited).
-	BandwidthMbps int
 	// Stealth wraps every accepted tunnel connection in the Noise record layer,
 	// so the stream has no fingerprint for deep packet inspection to match.
 	Stealth bool
@@ -95,7 +93,7 @@ func NewTCPServer(parentCtx context.Context, config *TcpConfig, logger *logrus.L
 			logger:    logger,
 			usage:     usageSpec{snifferLog: config.SnifferLog, sniffer: config.Sniffer},
 		},
-		limits: newLimiter(Limits{MaxConnections: config.MaxConnections, BandwidthMbps: config.BandwidthMbps}),
+		limits: newLimiter(Limits{MaxConnections: config.MaxConnections}),
 	}
 
 	// The first run is installed the same way every later one is, so there is

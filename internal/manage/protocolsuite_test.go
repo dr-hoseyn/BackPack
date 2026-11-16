@@ -126,6 +126,12 @@ func TestManagedAWGPairExportsOnlyTheReceivingIdentityAndPreservesItOnEdit(t *te
 	if peer.PrivateKey != b.PrivateKey || peer.PeerPublicKey != b.PeerPublicKey || peer.PrivateKey == c.PrivateKey || strings.Contains(l.AWGPeer, c.PrivateKey) || peer.PeerSetupKey != "" || peer.PresharedKey != c.PresharedKey {
 		t.Fatal("setup link exported the wrong identity")
 	}
+	legacy := l
+	legacy.AWGPeer = "{\"bandwidth_mbps\":5," + l.AWGPeer[1:]
+	legacyPeer, err := awgFromLink(legacy)
+	if err != nil || !reflect.DeepEqual(legacyPeer, peer) {
+		t.Fatalf("legacy AWG link failed: %v", err)
+	}
 	if InstallCommand(raw) != "" {
 		t.Fatal("unreleased AWG link offered an older binary")
 	}

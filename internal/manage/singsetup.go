@@ -49,7 +49,7 @@ func configureSing(n *TunnelSpec, old TunnelSpec, protocol, public, host string)
 			client.NativeUDP = tui.Confirm("Use Native Reverse UDP (Must Match Iran)", client.NativeUDP)
 		}
 		if !client.NativeUDP {
-			client.UDPMaxFlows, client.UDPBandwidthMbps = 0, 0
+			client.UDPMaxFlows = 0
 		}
 		n.SingClient = client
 		return true

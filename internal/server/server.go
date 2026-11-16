@@ -83,7 +83,7 @@ func (s *Server) Start() {
 			s.logger.Errorf("native reverse UDP target could not bind: %v", err)
 			return
 		}
-		e, err := nativeudp.StartServer(s.ctx, pc, s.config.Token, s.config.Ports, native.UDPMaxFlows, native.UDPBandwidthMbps)
+		e, err := nativeudp.StartServer(s.ctx, pc, s.config.Token, s.config.Ports, native.UDPMaxFlows)
 		if err != nil {
 			pc.Close()
 			s.logger.Errorf("native reverse UDP could not start: %v", err)
@@ -209,7 +209,6 @@ func (s *Server) startTransport(ctx context.Context, tr config.TransportType) ru
 			SO_SNDBUF:       s.config.SO_SNDBUF,
 			ProxyProtocol:   s.config.ProxyProtocol,
 			MaxConnections:  s.config.MaxConnections,
-			BandwidthMbps:   s.config.BandwidthMbps,
 			// Stealth is the TCP transport with a Noise record layer over every
 			// tunnel connection; everything else about it is identical.
 			Stealth:       tr == config.STEALTH,
@@ -253,7 +252,6 @@ func (s *Server) startTransport(ctx context.Context, tr config.TransportType) ru
 			SO_SNDBUF:        s.config.SO_SNDBUF,
 			ProxyProtocol:    s.config.ProxyProtocol,
 			MaxConnections:   s.config.MaxConnections,
-			BandwidthMbps:    s.config.BandwidthMbps,
 			MTU:              kcp.MTU,
 			Interval:         kcp.Interval,
 			Resend:           kcp.Resend,
@@ -291,7 +289,6 @@ func (s *Server) startTransport(ctx context.Context, tr config.TransportType) ru
 			SO_SNDBUF:      s.config.SO_SNDBUF,
 			ProxyProtocol:  s.config.ProxyProtocol,
 			MaxConnections: s.config.MaxConnections,
-			BandwidthMbps:  s.config.BandwidthMbps,
 		}
 
 		quicServer := transport.NewQuicServer(ctx, quicConfig, s.logger)
@@ -322,7 +319,6 @@ func (s *Server) startTransport(ctx context.Context, tr config.TransportType) ru
 			SO_SNDBUF:        s.config.SO_SNDBUF,
 			ProxyProtocol:    s.config.ProxyProtocol,
 			MaxConnections:   s.config.MaxConnections,
-			BandwidthMbps:    s.config.BandwidthMbps,
 		}
 
 		tcpMuxServer := transport.NewTcpMuxServer(ctx, tcpMuxConfig, s.logger)
@@ -351,7 +347,6 @@ func (s *Server) startTransport(ctx context.Context, tr config.TransportType) ru
 			MSS:          s.config.MSS,
 
 			MaxConnections: s.config.MaxConnections,
-			BandwidthMbps:  s.config.BandwidthMbps,
 		}
 
 		wsServer := transport.NewWSServer(ctx, wsConfig, s.logger)
@@ -385,7 +380,6 @@ func (s *Server) startTransport(ctx context.Context, tr config.TransportType) ru
 			MSS:              s.config.MSS,
 			ProxyProtocol:    s.config.ProxyProtocol,
 			MaxConnections:   s.config.MaxConnections,
-			BandwidthMbps:    s.config.BandwidthMbps,
 		}
 
 		wsMuxServer := transport.NewWSMuxServer(ctx, wsMuxConfig, s.logger)
@@ -407,7 +401,6 @@ func (s *Server) startTransport(ctx context.Context, tr config.TransportType) ru
 			// what made a udp tunnel accept a limit, save it, render it into
 			// the TOML, show it in the panel and never apply it.
 			MaxConnections: s.config.MaxConnections,
-			BandwidthMbps:  s.config.BandwidthMbps,
 		}
 
 		udpServer := transport.NewUDPServer(ctx, udpConfig, s.logger)

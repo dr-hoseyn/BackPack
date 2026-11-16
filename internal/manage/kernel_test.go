@@ -106,6 +106,12 @@ func TestKernelSetupLinksMirrorEveryPairedSetting(t *testing.T) {
 		if !reflect.DeepEqual(peer, kernel.Peer(c)) {
 			t.Fatalf("%s link lost paired settings", method.Name)
 		}
+		legacy := l
+		legacy.KernelPeer = "{\"BandwidthMbps\":5," + l.KernelPeer[1:]
+		legacyPeer, err := kernelFromLink(legacy)
+		if err != nil || !reflect.DeepEqual(legacyPeer, peer) {
+			t.Fatalf("%s legacy link failed: %v", method.Name, err)
+		}
 		if InstallCommand(raw) != "" {
 			t.Fatal("offered an older release for an unreleased link format")
 		}

@@ -379,7 +379,7 @@ func setupManagedCarrierWithProbe(s *TunnelSpec, chosen, public, host string, pr
 			if n.SingServer.NativeUDP {
 				tui.Info("Reverse UDP Uses Native Datagrams. Pair native_udp On Kharej; Outage Packets Are Dropped.")
 			} else {
-				n.SingServer.UDPMaxFlows, n.SingServer.UDPBandwidthMbps = 0, 0
+				n.SingServer.UDPMaxFlows = 0
 				tui.Info("Native Reverse UDP Is Disabled. Any Enabled UDP Forwarding Uses Reliable Streams.")
 			}
 		}

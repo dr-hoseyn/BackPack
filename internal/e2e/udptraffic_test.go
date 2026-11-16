@@ -104,12 +104,6 @@ func TestTrafficIsCountedOnTheUDPTransport(t *testing.T) {
 	t.Logf("udp: in %d, out %d for %d/%d datagrams of %d bytes", gotIn, gotOut, carried, packets, packet)
 }
 
-// max_connections and bandwidth_mbps were accepted by the menu, saved into the
-// TOML, rendered, and shown in the panel for a udp tunnel — and the struct the
-// transport was built from had nowhere to put them, so nothing was ever
-// enforced. An operator capping a shared udp tunnel got a cap that read back
-// correctly everywhere and did nothing.
-//
 // A "connection" here is a source address rather than a socket, because that is
 // the only thing a connectionless protocol has that means the same thing: one
 // peer's flow through the tunnel.

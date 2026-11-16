@@ -12,6 +12,6 @@ type DNSConfig struct {
 	// one ephemeral source port. Each endpoint may tune its sending side.
 	DNSRotate int `toml:"dns_rotate"`
 	// DNSRate caps outgoing DNS packets per second, including FEC and
-	// handshakes. Zero disables the cap. It is independent of bandwidth_mbps.
+	// handshakes. Zero disables the cap.
 	DNSRate int `toml:"dns_rate"`
 }

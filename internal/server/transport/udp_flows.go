@@ -408,7 +408,6 @@ func (s *UdpTransport) udpLocalCopy(g *udpGen, from *LocalUDPConn, to *TunnelUDP
 			// Onto the tunnel: the other half of what this transport never
 			// counted. See acceptTunnelConn for the inbound side.
 			metrics.AddBytes(0, uint64(totalWritten))
-			s.limits.waitBytes(g.ctx, totalWritten)
 
 			if s.logger.IsLevelEnabled(logrus.DebugLevel) {
 				s.logger.Debugf("forwarded %d bytes from local connection %s to tunnel", packetSize, from.addr.String())

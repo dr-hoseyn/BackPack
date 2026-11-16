@@ -87,13 +87,8 @@ type DirectConfig struct {
 	AcceptUDP bool `toml:"accept_udp"`
 
 	// MaxConnections caps how many forwarded connections may be open at once
-	// (0 = unlimited), and BandwidthMbps caps total throughput in Mbit/s
-	// (0 = unlimited). Both are enforced on the Iran side, where the users
-	// arrive, and both are off unless set.
+	// (0 = unlimited). It is enforced on the Iran side, where users arrive.
 	MaxConnections int `toml:"max_connections"`
-	// BandwidthMbps caps total throughput across this tunnel, in megabits per
-	// second. 0 is unlimited.
-	BandwidthMbps int `toml:"bandwidth_mbps"`
 
 	// Preset records the tuning profile. On Linux, throughput also enables
 	// persistent high-concurrency host tuning at startup and reload. Updating

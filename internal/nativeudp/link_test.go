@@ -179,12 +179,12 @@ func TestNativeReverseUDPForwardsIndependentFlowsAndReleasesSockets(t *testing.T
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	s, err := StartServer(ctx, socket, "private-native-udp-token-for-tests", []string{entry + "=" + backend.LocalAddr().String()}, 4, 0)
+	s, err := StartServer(ctx, socket, "private-native-udp-token-for-tests", []string{entry + "=" + backend.LocalAddr().String()}, 4)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	c, err := StartClient(ctx, cs, socket.LocalAddr(), "private-native-udp-token-for-tests", 4, 0)
+	c, err := StartClient(ctx, cs, socket.LocalAddr(), "private-native-udp-token-for-tests", 4)
 	if err != nil {
 		t.Fatal(err)
 	}

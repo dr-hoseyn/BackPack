@@ -15,7 +15,6 @@ import (
 
 	"github.com/backpack/backpack/internal/metrics"
 	"github.com/backpack/backpack/internal/tunnel/portmap"
-	"golang.org/x/time/rate"
 )
 
 const idle = 60 * time.Second
@@ -36,16 +35,14 @@ type sourceKey struct {
 	peer  netip.AddrPort
 }
 
-// Engine bounds flow count, per-flow pending datagrams and bandwidth. Outage
-// packets and over-budget packets are dropped, never retransmitted or retained
-// until a new helper process appears.
+// Engine bounds flow count and per-flow pending datagrams. Packets received
+// during an outage are dropped, without waiting for a new helper process.
 type Engine struct {
 	ctx               context.Context
 	cancel            context.CancelFunc
 	link              *Link
 	server            bool
 	max               int
-	limiter           *rate.Limiter
 	sendMu            sync.Mutex
 	sendBuf           []byte // at most maxPayload bytes, reused until Link.Write returns
 	mu                sync.Mutex
@@ -67,15 +64,15 @@ type EngineStats struct {
 	BytesOut uint64 `json:"bytes_out"`
 }
 
-func newEngine(parent context.Context, pc net.PacketConn, peer net.Addr, token string, maxFlows, mbps int) (*Engine, error) {
+func newEngine(parent context.Context, pc net.PacketConn, peer net.Addr, token string, maxFlows int) (*Engine, error) {
 	if parent.Err() != nil {
 		return nil, parent.Err()
 	}
 	if maxFlows == 0 {
 		maxFlows = 128
 	}
-	if maxFlows < 1 || maxFlows > 4096 || mbps < 0 || mbps > 100000 {
-		return nil, errors.New("native UDP limits require 1..4096 flows and 0..100000 Mbit/s")
+	if maxFlows < 1 || maxFlows > 4096 {
+		return nil, errors.New("native UDP requires 1..4096 flows")
 	}
 	ctx, cancel := context.WithCancel(parent)
 	link, err := NewLink(ctx, pc, peer, token)
@@ -91,18 +88,15 @@ func newEngine(parent context.Context, pc net.PacketConn, peer net.Addr, token s
 		return nil, err
 	}
 	e.next = binary.BigEndian.Uint64(seed[:])
-	if mbps > 0 {
-		e.limiter = rate.NewLimiter(rate.Limit(float64(mbps)*1e6/8), maxPayload*2)
-	}
 	return e, nil
 }
 
-func StartServer(parent context.Context, pc net.PacketConn, token string, ports []string, maxFlows, mbps int) (*Engine, error) {
+func StartServer(parent context.Context, pc net.PacketConn, token string, ports []string, maxFlows int) (*Engine, error) {
 	mappings, err := portmap.Expand(ports, "127.0.0.1")
 	if err != nil {
 		return nil, err
 	}
-	e, err := newEngine(parent, pc, nil, token, maxFlows, mbps)
+	e, err := newEngine(parent, pc, nil, token, maxFlows)
 	if err != nil {
 		return nil, err
 	}
@@ -127,11 +121,11 @@ func StartServer(parent context.Context, pc net.PacketConn, token string, ports 
 	return e, nil
 }
 
-func StartClient(parent context.Context, pc net.PacketConn, peer net.Addr, token string, maxFlows, mbps int) (*Engine, error) {
+func StartClient(parent context.Context, pc net.PacketConn, peer net.Addr, token string, maxFlows int) (*Engine, error) {
 	if peer == nil {
 		return nil, errors.New("native UDP client requires a fixed peer")
 	}
-	e, err := newEngine(parent, pc, peer, token, maxFlows, mbps)
+	e, err := newEngine(parent, pc, peer, token, maxFlows)
 	if err != nil {
 		return nil, err
 	}
@@ -174,10 +168,8 @@ func (e *Engine) Stats() EngineStats {
 	return EngineStats{s, flows, e.bytesIn.Load(), e.bytesOut.Load()}
 }
 
-func (e *Engine) allowed(n int) bool { return e.limiter == nil || e.limiter.AllowN(time.Now(), n) }
-
 func (e *Engine) write(id uint64, target string, p []byte) {
-	if len(p)+len(target)+10 > maxPayload || !e.allowed(len(p)) {
+	if len(p)+len(target)+10 > maxPayload {
 		e.drops.Add(1)
 		return
 	}
@@ -258,10 +250,6 @@ func (e *Engine) receive() {
 		}
 		target := b[10 : 10+size]
 		payload := b[10+size : n]
-		if !e.allowed(len(payload)) {
-			e.drops.Add(1)
-			continue
-		}
 		e.mu.Lock()
 		f := e.flows[id]
 		if e.server {

@@ -80,7 +80,6 @@ func NewEdge(cfg Config, log *logrus.Logger) (*Edge, error) {
 		log:      log,
 		limiter: limits.New(limits.Config{
 			MaxConnections: cfg.MaxConnections,
-			BandwidthMbps:  cfg.BandwidthMbps,
 		}),
 	}, nil
 }
@@ -281,7 +280,6 @@ func (e *Edge) handle(ctx context.Context, local net.Conn, m portmap.Mapping) {
 		return
 	}
 	defer e.limiter.Release()
-	local = e.limiter.Wrap(ctx, local)
 
 	stream, err := e.openFor(ctx, kindTCP, m)
 	if err != nil {
@@ -464,7 +462,6 @@ func (e *Edge) udpFlowFor(ctx context.Context, flows *sync.Map, pumps *sync.Wait
 		return nil, err
 	}
 	// UDP streams share the same tunnel-wide bucket as forwarded TCP.
-	stream = e.limiter.Wrap(ctx, stream)
 	flow := &udpFlow{stream: stream}
 	flow.touch()
 

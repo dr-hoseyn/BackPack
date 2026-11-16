@@ -31,12 +31,12 @@ func TestNativeUDPSourceFlowsStaySeparateAcrossForwardedPorts(t *testing.T) {
 			transport := entrySocket(t, tc.network, tc.host)
 			clientTransport := entrySocket(t, tc.network, tc.host)
 			const token = "native-entry-test-private-token"
-			server, err := newEngine(t.Context(), transport, nil, token, 2, 0)
+			server, err := newEngine(t.Context(), transport, nil, token, 2)
 			if err != nil {
 				t.Fatal(err)
 			}
 			t.Cleanup(func() { server.Close() })
-			client, err := StartClient(t.Context(), clientTransport, transport.LocalAddr(), token, 2, 0)
+			client, err := StartClient(t.Context(), clientTransport, transport.LocalAddr(), token, 2)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -103,7 +103,7 @@ func forwardedEntrySink(t testing.TB, network, host string, size int) func() {
 	t.Helper()
 	entry := entrySocket(t, network, host)
 	pc := entrySocket(t, network, host)
-	e, err := newEngine(t.Context(), pc, nil, "native-entry-benchmark-private-token", 2, 0)
+	e, err := newEngine(t.Context(), pc, nil, "native-entry-benchmark-private-token", 2)
 	if err != nil {
 		t.Fatal(err)
 	}

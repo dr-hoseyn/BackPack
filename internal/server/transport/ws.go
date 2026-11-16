@@ -76,8 +76,6 @@ type WsConfig struct {
 	MSS int
 	// MaxConnections caps simultaneous forwarded connections (0 = unlimited).
 	MaxConnections int
-	// BandwidthMbps caps total tunnel throughput (0 = unlimited).
-	BandwidthMbps int
 }
 
 func NewWSServer(parentCtx context.Context, config *WsConfig, logger *logrus.Logger) *WsTransport {
@@ -89,7 +87,7 @@ func NewWSServer(parentCtx context.Context, config *WsConfig, logger *logrus.Log
 			logger:    logger,
 			usage:     usageSpec{snifferLog: config.SnifferLog, sniffer: config.Sniffer},
 		},
-		limits: newLimiter(Limits{MaxConnections: config.MaxConnections, BandwidthMbps: config.BandwidthMbps}),
+		limits: newLimiter(Limits{MaxConnections: config.MaxConnections}),
 	}
 
 	// The first run is installed the same way every later one is, so there is

@@ -83,7 +83,7 @@ func ValidateSingClient(c *config.ClientConfig) error {
 	if !x.Enabled() {
 		return nil
 	}
-	if err := validateNativeUDP(x.Protocol, x.NativeUDP, x.UDPMaxFlows, x.UDPBandwidthMbps); err != nil {
+	if err := validateNativeUDP(x.Protocol, x.NativeUDP, x.UDPMaxFlows); err != nil {
 		return err
 	}
 	if c.Naive.Enabled() || c.Xray.Enabled() || c.Transport != config.TCP || len(c.FallbackTransports) != 0 || c.Proxy != "" || c.LocalAddr != "" || c.Interface != "" || c.SOMark != 0 || len(c.FallbackAddrs) != 0 || c.HealthFailover || c.LoadBalance {
@@ -142,11 +142,11 @@ func ValidateSingServer(c *config.ServerConfig) error {
 	if !x.Enabled() {
 		return nil
 	}
-	if err := validateNativeUDP(x.Protocol, x.NativeUDP, x.UDPMaxFlows, x.UDPBandwidthMbps); err != nil {
+	if err := validateNativeUDP(x.Protocol, x.NativeUDP, x.UDPMaxFlows); err != nil {
 		return err
 	}
-	if x.NativeUDP && (!c.ForwardsUDP() || c.MaxConnections != 0 || c.BandwidthMbps != 0) {
-		return errors.New("native_udp requires accept_udp=true and its separate udp_max_flows/udp_bandwidth_mbps limits; remove the stream-wide max_connections/bandwidth_mbps limits")
+	if x.NativeUDP && (!c.ForwardsUDP() || c.MaxConnections != 0) {
+		return errors.New("native_udp requires accept_udp=true and its separate udp_max_flows limit; remove the stream-wide max_connections limit")
 	}
 	if c.Naive.Enabled() || c.Xray.Enabled() || c.Transport != config.TCP || len(c.FallbackTransports) != 0 {
 		return errors.New("sing-box requires TCP reverse without other helpers or transport fallbacks")

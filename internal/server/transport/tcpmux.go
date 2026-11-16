@@ -78,8 +78,6 @@ type TcpMuxConfig struct {
 	ProxyProtocol    bool
 	// MaxConnections caps simultaneous forwarded connections (0 = unlimited).
 	MaxConnections int
-	// BandwidthMbps caps total tunnel throughput (0 = unlimited).
-	BandwidthMbps int
 }
 
 // setMuxVersion records the version this run agreed on. A legacy client cannot
@@ -123,7 +121,7 @@ func NewTcpMuxServer(parentCtx context.Context, config *TcpMuxConfig, logger *lo
 		},
 		streamCounter:  0,
 		sessionCounter: 0,
-		limits:         newLimiter(Limits{MaxConnections: config.MaxConnections, BandwidthMbps: config.BandwidthMbps}),
+		limits:         newLimiter(Limits{MaxConnections: config.MaxConnections}),
 	}
 
 	if config.TCPFWD {

@@ -223,22 +223,6 @@ func TestWSAcceptFailureRebindsTheTunnelAndReplacesItsControl(t *testing.T) {
 	}
 }
 
-// A forwarded UDP flow is still a UDP flow when a bandwidth cap wraps it, so it
-// never gets a PROXY protocol header — which cannot describe it and which the
-// handler refuses, closing the flow.
-func TestAUDPFlowStaysAUDPFlowUnderABandwidthCap(t *testing.T) {
-	fw, err := newUDPForwarder(silentLogger(), "127.0.0.1:0", "127.0.0.1:9")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer fw.close()
-	flow := newUDPFlow(fw, (&net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 5000}).AddrPort())
-	lim := newLimiter(Limits{BandwidthMbps: 10})
-	if !isUDPFlow(lim.wrap(context.Background(), flow)) {
-		t.Fatal("a bandwidth cap hid that the connection is a UDP flow")
-	}
-}
-
 func dialRetry(t *testing.T, addr string) net.Conn {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)

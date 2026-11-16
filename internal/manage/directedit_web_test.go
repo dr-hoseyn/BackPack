@@ -58,7 +58,7 @@ func TestAPanelEditLeavesUntouchedFieldsAlone(t *testing.T) {
 		Addr: "203.0.113.9:9000", Token: "a-long-token", Iface: "bp0",
 		LocalIP: "10.10.0.1/30", PeerIP: "10.10.0.2", MTU: 1371,
 		Ports: []string{"443"}, AcceptUDP: true,
-		MaxConnections: 50, BandwidthMbps: 100, SockBuf: 8 << 20,
+		MaxConnections: 50, SockBuf: 8 << 20,
 		Spoof: config.SpoofConfig{SpoofPeerIP: "198.51.100.4", SpoofProfile: "tcp"},
 	}.Render()).L3
 
@@ -85,7 +85,6 @@ func TestAPanelEditLeavesUntouchedFieldsAlone(t *testing.T) {
 		{"mtu", 1371, round.MTU},
 		{"accept_udp", true, round.AcceptUDP},
 		{"max_connections", 50, round.MaxConnections},
-		{"bandwidth_mbps", 100, round.BandwidthMbps},
 		{"sockbuf", 8 << 20, round.SockBuf},
 		{"spoof_peer_ip", "198.51.100.4", round.SpoofPeerIP},
 		{"spoof_profile", "tcp", round.SpoofProfile},

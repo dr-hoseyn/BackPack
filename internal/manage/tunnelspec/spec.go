@@ -133,8 +133,6 @@ type Spec struct {
 
 	// MaxConnections caps simultaneous forwarded connections (0 = unlimited).
 	MaxConnections int
-	// BandwidthMbps caps total tunnel throughput in Mbit/s (0 = unlimited).
-	BandwidthMbps int
 
 	// Optional per-port traffic accounting.
 	Sniffer bool
@@ -330,9 +328,6 @@ func (s Spec) Render() string {
 		}
 		if s.MaxConnections > 0 {
 			p("max_connections = %d\n", s.MaxConnections)
-		}
-		if s.BandwidthMbps > 0 {
-			p("bandwidth_mbps = %d\n", s.BandwidthMbps)
 		}
 		p("sniffer = %t\n", s.Sniffer)
 		b.WriteString("ports = [\n")

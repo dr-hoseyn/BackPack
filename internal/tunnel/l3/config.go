@@ -154,10 +154,6 @@ type Config struct {
 	// kernel routes into the interface, which has no connections to count.
 	MaxConnections int
 
-	// BandwidthMbps caps forwarded throughput in Mbit/s (0 = unlimited). Same
-	// scope as MaxConnections, and for the same reason.
-	BandwidthMbps int
-
 	// Spoof tunes the forged-source carrier. Ignored unless Carrier is
 	// "spoof". It is the same type the reverse transports take, so the keys an
 	// operator already knows mean the same thing here.
@@ -396,7 +392,6 @@ func ConfigFromTable(table config.L3Config) (Config, error) {
 		Ports:          table.Ports,
 		AcceptUDP:      table.AcceptUDP,
 		MaxConnections: table.MaxConnections,
-		BandwidthMbps:  table.BandwidthMbps,
 		// Read only by the carrier they belong to; both are ignored otherwise.
 		FEC:       FECConfig{Data: table.FECData, Parity: table.FECParity, Auth: table.FECAuth},
 		Multipath: MultipathConfig{Paths: table.Paths},

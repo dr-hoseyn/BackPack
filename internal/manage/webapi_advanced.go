@@ -459,19 +459,17 @@ func (f ConnTune) apply(s *TunnelSpec, defaultPort string) error {
 // which is no limit — the same answer the CLI's Limits screen starts on.
 type TunnelLimits struct {
 	MaxConnections int `json:"maxConnections"`
-	BandwidthMbps  int `json:"bandwidthMbps"`
 }
 
 func limitsOf(s TunnelSpec) TunnelLimits {
-	return TunnelLimits{MaxConnections: s.MaxConnections, BandwidthMbps: s.BandwidthMbps}
+	return TunnelLimits{MaxConnections: s.MaxConnections}
 }
 
 func (f TunnelLimits) apply(s *TunnelSpec) error {
-	if f.MaxConnections < 0 || f.BandwidthMbps < 0 {
+	if f.MaxConnections < 0 {
 		return fmt.Errorf("a limit cannot be negative — use 0 for no limit")
 	}
 	s.MaxConnections = f.MaxConnections
-	s.BandwidthMbps = f.BandwidthMbps
 	return nil
 }
 

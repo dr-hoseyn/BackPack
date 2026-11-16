@@ -106,9 +106,6 @@ type Config struct {
 	// Enforced on the Iran side, where the connections arrive.
 	MaxConnections int
 
-	// BandwidthMbps caps total tunnel throughput in Mbit/s (0 = unlimited).
-	BandwidthMbps int
-
 	// Sessions is how many mux sessions the edge keeps open, with new streams
 	// spread across them. One is enough for most traffic; more helps when a
 	// single connection is being shaped, or when head-of-line blocking in the
@@ -238,7 +235,6 @@ func ConfigFromTable(dc config.DirectConfig) Config {
 		Ports:            dc.Ports,
 		AcceptUDP:        dc.AcceptUDP,
 		MaxConnections:   dc.MaxConnections,
-		BandwidthMbps:    dc.BandwidthMbps,
 		Sessions:         dc.Sessions,
 		DialTimeout:      time.Duration(dc.DialTimeout) * time.Second,
 		RetryDelay:       time.Duration(dc.RetryInterval) * time.Second,

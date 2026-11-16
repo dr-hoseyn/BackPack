@@ -19,7 +19,7 @@ func (c *Client) startNativeUDP(proxyURL string) func() {
 			pc, err := naive.NewSOCKSPacketConn(ctx, strings.TrimPrefix(proxyURL, "socks5://"), c.config.RemoteAddr)
 			if err == nil {
 				peer, _ := net.ResolveUDPAddr("udp", c.config.RemoteAddr)
-				e, startErr := nativeudp.StartClient(ctx, pc, peer, c.config.Token, c.config.Sing.UDPMaxFlows, c.config.Sing.UDPBandwidthMbps)
+				e, startErr := nativeudp.StartClient(ctx, pc, peer, c.config.Token, c.config.Sing.UDPMaxFlows)
 				if startErr == nil {
 					<-ctx.Done()
 					e.Close()
@@ -46,7 +46,7 @@ func (c *Client) startNativeUDP(proxyURL string) func() {
 
 func (c *Client) startNativePacket(pc net.PacketConn, peer net.Addr) (func(), error) {
 	native := c.config.NativeSing()
-	e, err := nativeudp.StartClient(c.ctx, pc, peer, c.config.Token, native.UDPMaxFlows, native.UDPBandwidthMbps)
+	e, err := nativeudp.StartClient(c.ctx, pc, peer, c.config.Token, native.UDPMaxFlows)
 	if err != nil {
 		pc.Close()
 		return nil, err

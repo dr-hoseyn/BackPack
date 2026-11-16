@@ -25,7 +25,7 @@ func awgBody(c config.AWGConfig) (string, error) {
 	if err := amneziawg.Config(c).Validate(); err != nil {
 		return "", err
 	}
-	if _, err := l3.NewForwarder(l3.Config{PeerIP: hostOf(c.PeerAddress), Ports: c.Ports, AcceptUDP: c.AcceptUDP, MaxConnections: c.MaxConnections, BandwidthMbps: c.BandwidthMbps}, nil); err != nil {
+	if _, err := l3.NewForwarder(l3.Config{PeerIP: hostOf(c.PeerAddress), Ports: c.Ports, AcceptUDP: c.AcceptUDP, MaxConnections: c.MaxConnections}, nil); err != nil {
 		return "", err
 	}
 	var b strings.Builder
@@ -58,7 +58,7 @@ func awgPeer(c config.AWGConfig, host string) (config.AWGConfig, error) {
 	peer.Address, peer.PeerAddress = c.PeerAddress, c.Address
 	peer.Endpoint = net.JoinHostPort(host, strconv.Itoa(c.ListenPort))
 	peer.ListenPort, peer.Keepalive = 0, 20
-	peer.Ports, peer.AcceptUDP, peer.MaxConnections, peer.BandwidthMbps = nil, false, 0, 0
+	peer.Ports, peer.AcceptUDP, peer.MaxConnections = nil, false, 0
 	return peer, amneziawg.Config(peer).Validate()
 }
 
@@ -81,7 +81,11 @@ func awgFromLink(l ShareLink) (config.AWGConfig, error) {
 	var c config.AWGConfig
 	d := json.NewDecoder(strings.NewReader(l.AWGPeer))
 	d.DisallowUnknownFields()
-	if err := d.Decode(&c); err != nil {
+	peer := struct {
+		*config.AWGConfig
+		LegacyBandwidth int `json:"bandwidth_mbps"`
+	}{AWGConfig: &c}
+	if err := d.Decode(&peer); err != nil {
 		return c, fmt.Errorf("invalid AmneziaWG peer configuration")
 	}
 	if err := d.Decode(new(any)); err != io.EOF {
@@ -253,9 +257,6 @@ func applyAWGEdit(c config.AWGConfig, e DirectEdit) (config.AWGConfig, error) {
 	}
 	if e.MaxConnections != nil {
 		c.MaxConnections = *e.MaxConnections
-	}
-	if e.BandwidthMbps != nil {
-		c.BandwidthMbps = *e.BandwidthMbps
 	}
 	_, err := awgBody(c)
 	return c, err

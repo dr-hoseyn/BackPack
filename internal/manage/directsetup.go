@@ -588,7 +588,6 @@ func askL3Advanced(cfg *l3Spec, side directSide, addresses bool) {
 	if side == sideIran && len(cfg.Ports) > 0 {
 		fmt.Println()
 		cfg.MaxConnections = tui.PromptInt("Max Connections (0 = No Limit)", cfg.MaxConnections)
-		cfg.BandwidthMbps = tui.PromptInt("Bandwidth Mbit/s (0 = No Limit)", cfg.BandwidthMbps)
 	}
 }
 

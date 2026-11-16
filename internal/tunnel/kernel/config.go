@@ -78,7 +78,7 @@ func Resolve(c config.KernelConfig) (config.KernelConfig, error) {
 	if len(c.Ports) > 0 && (c.Role != "iran" || m.IPv6Only) {
 		return c, fmt.Errorf("kernel: forwarded ports require an Iran endpoint that carries IPv4")
 	}
-	if c.MaxConnections < 0 || c.BandwidthMbps < 0 {
+	if c.MaxConnections < 0 {
 		return c, fmt.Errorf("kernel: forwarding limits cannot be negative")
 	}
 	if len(c.Token) < 24 || len(c.Token) > 4096 {
@@ -164,7 +164,7 @@ func Resolve(c config.KernelConfig) (config.KernelConfig, error) {
 }
 
 func Forwarder(c config.KernelConfig) (*l3.Forwarder, error) {
-	return l3.NewForwarder(l3.Config{PeerIP: c.PeerIP, Ports: c.Ports, AcceptUDP: c.AcceptUDP, MaxConnections: c.MaxConnections, BandwidthMbps: c.BandwidthMbps}, nil)
+	return l3.NewForwarder(l3.Config{PeerIP: c.PeerIP, Ports: c.Ports, AcceptUDP: c.AcceptUDP, MaxConnections: c.MaxConnections}, nil)
 }
 
 func Peer(c config.KernelConfig) config.KernelConfig {

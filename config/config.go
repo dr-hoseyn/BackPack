@@ -434,8 +434,7 @@ type ServerConfig struct {
 	//
 	// Purely local: nothing about it reaches the wire, so the two ends need not
 	// agree and it is safe to enable on one side first. It applies only to the
-	// plain `tcp` transport on Linux, and only when the tunnel has no bandwidth
-	// limit — anything else quietly keeps the buffered path.
+	// plain `tcp` transport on Linux. Other transports use the buffered relay.
 	ZeroCopy bool `toml:"zero_copy"`
 
 	// ProxyProtocol prefixes each forwarded connection with a PROXY protocol
@@ -444,8 +443,6 @@ type ServerConfig struct {
 	ProxyProtocol bool `toml:"proxy_protocol"`
 	// MaxConnections caps simultaneous forwarded connections (0 = unlimited).
 	MaxConnections int `toml:"max_connections"`
-	// BandwidthMbps caps total tunnel throughput in Mbit/s (0 = unlimited).
-	BandwidthMbps int `toml:"bandwidth_mbps"`
 	// Preset records the performance profile: balance, turbo, aggressive or
 	// throughput. On Linux, throughput also enables persistent high-concurrency
 	// host tuning at startup and reload unless skip_optz is true. Existing
@@ -644,8 +641,7 @@ type ClientConfig struct {
 	//
 	// Purely local: nothing about it reaches the wire, so the two ends need not
 	// agree and it is safe to enable on one side first. It applies only to the
-	// plain `tcp` transport on Linux, and only when the tunnel has no bandwidth
-	// limit — anything else quietly keeps the buffered path.
+	// plain `tcp` transport on Linux. Other transports use the buffered relay.
 	ZeroCopy bool `toml:"zero_copy"`
 
 	// Preset records the performance profile: balance, turbo, aggressive or

@@ -63,7 +63,7 @@ Receive windows are lazy ceilings, but their memory cost under load is real:
 growth can use more. Several high-capacity tunnels share the same host resources.
 The profile leaves enough software capacity for the target; actual throughput
 depends on the filtered, lossy or shaped path and carrier. Configured
-`max_connections` and `bandwidth_mbps` remain in effect.
+`max_connections` remains in effect.
 
 ## Verification
 

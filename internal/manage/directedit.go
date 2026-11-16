@@ -79,7 +79,7 @@ func editDirectPorts(t Tunnel, cfg config.Config) bool {
 		tui.Info("Ports        : " + strings.Join(d.Ports, ", "))
 		tui.Info("UDP          : " + onOff(d.AcceptUDP))
 		tui.Info("Tuning       : " + presetLabel(d.Preset) + fmt.Sprintf(", %d session(s)", max(d.Sessions, 1)))
-		tui.Info("Limits       : " + limitsLabel(d.MaxConnections, d.BandwidthMbps))
+		tui.Info("Limits       : " + limitsLabel(d.MaxConnections))
 	} else {
 		tui.Info("Listens On   : " + d.Addr)
 		fmt.Println()
@@ -99,7 +99,7 @@ func editDirectPorts(t Tunnel, cfg config.Config) bool {
 	options := []tui.Option{
 		{Title: "Forwarded Ports", Desc: ""},
 		{Title: "UDP Forwarding", Desc: "now " + onOff(d.AcceptUDP)},
-		{Title: "Limits", Desc: "now " + limitsLabel(d.MaxConnections, d.BandwidthMbps)},
+		{Title: "Limits", Desc: "now " + limitsLabel(d.MaxConnections)},
 		{Title: "Preset", Desc: "now " + presetLabel(d.Preset)},
 		{Title: "TCP MSS Clamp", Desc: "now " + directMSSLabel(d.MSS)},
 		{Title: "Show Token", Desc: ""},
@@ -123,7 +123,6 @@ func editDirectPorts(t Tunnel, cfg config.Config) bool {
 		saveDirect(t, d)
 	case 2:
 		d.MaxConnections = tui.PromptInt("Max Connections (0 = No Limit)", d.MaxConnections)
-		d.BandwidthMbps = tui.PromptInt("Bandwidth Mbit/s (0 = No Limit)", d.BandwidthMbps)
 		saveDirect(t, d)
 	case 3:
 		p := chooseDirectPreset()
@@ -380,7 +379,7 @@ func l3SpecOf(t Tunnel, l config.L3Config) l3Spec {
 		Paths:  l.Paths,
 		Preset: l.Preset, TxQueueLen: l.TxQueueLen, Qdisc: l.Qdisc,
 		Ports: l.Ports, AcceptUDP: l.AcceptUDP,
-		MaxConnections: l.MaxConnections, BandwidthMbps: l.BandwidthMbps,
+		MaxConnections: l.MaxConnections,
 		// Carried whole, so an edit to the MTU does not quietly revert a
 		// carrier the operator spent an afternoon tuning.
 		Spoof: l.SpoofConfig,

@@ -427,7 +427,7 @@ The shard counts must match on both ends. [More](../tutorial/udp-kcp-fec.md)
 
 | Setting | What it is |
 |---|---|
-| **Zero-copy forwarding (experimental)** | Lets the kernel move bytes directly between the two sockets. The fastest path here and the least proven — try it on a spare tunnel first. Linux only, plain `tcp` only, and only when the tunnel has no bandwidth limit; anything else quietly keeps the buffered path. Purely local, so the two ends need not agree. |
+| **Zero-copy forwarding (experimental)** | Lets the kernel move bytes directly between the two sockets. The fastest path here and the least proven — try it on a spare tunnel first. Linux only, plain `tcp` only; anything else quietly keeps the buffered path. Purely local, so the two ends need not agree. |
 
 ---
 

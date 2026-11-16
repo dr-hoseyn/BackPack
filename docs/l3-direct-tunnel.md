@@ -210,10 +210,6 @@ Two things worth knowing:
   engine rebuilds its session, connections already open are undisturbed, and
   while the tunnel is genuinely down new connections are refused rather than
   left hanging.
-- When `bandwidth_mbps` is set, client-to-backend UDP packets take turns by
-  source flow. The queue keeps packet order within each flow and drops new
-  packets at 16 pending packets per flow or 1,024 packets or 4 MiB of payload
-  across the forwarder.
 - **This is ordinary userspace forwarding.** For the highest possible
   throughput you can skip it and use kernel `iptables` DNAT over `bp0` instead
   — the interface is a normal one and nothing here prevents it.

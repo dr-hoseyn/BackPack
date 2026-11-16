@@ -29,7 +29,6 @@ type DirectSpec struct {
 	Ports            []string
 	AcceptUDP        bool
 	MaxConnections   int
-	BandwidthMbps    int
 	Sessions         int
 	Preset           string
 	MuxFrameSize     int
@@ -80,10 +79,9 @@ func (s DirectSpec) Render() string {
 		if s.Sessions > 1 {
 			writeKV(&b, "sessions", fmt.Sprint(s.Sessions))
 		}
-		if s.MaxConnections > 0 || s.BandwidthMbps > 0 {
+		if s.MaxConnections > 0 {
 			b.WriteString("\n# Caps on this tunnel. Zero means unlimited.\n")
 			writeKV(&b, "max_connections", fmt.Sprint(s.MaxConnections))
-			writeKV(&b, "bandwidth_mbps", fmt.Sprint(s.BandwidthMbps))
 		}
 		if s.Preset != "" {
 			b.WriteString("\n# Performance tuning. The stream buffer is what caps a single\n")
@@ -176,7 +174,6 @@ type L3Spec struct {
 	Ports          []string
 	AcceptUDP      bool
 	MaxConnections int
-	BandwidthMbps  int
 
 	// Carried whole rather than field by field, because these are the keys the
 	// wizard never asks about and the editor must not lose.
@@ -310,10 +307,9 @@ func (s L3Spec) Render() string {
 		b.WriteString("# simply carries whatever is routed into the interface.\n")
 		writeKV(&b, "ports", tomlList(s.Ports))
 		writeKV(&b, "accept_udp", fmt.Sprint(s.AcceptUDP))
-		if s.MaxConnections > 0 || s.BandwidthMbps > 0 {
+		if s.MaxConnections > 0 {
 			b.WriteString("\n# Caps on the forwarded ports only. Zero means unlimited.\n")
 			writeKV(&b, "max_connections", fmt.Sprint(s.MaxConnections))
-			writeKV(&b, "bandwidth_mbps", fmt.Sprint(s.BandwidthMbps))
 		}
 	}
 
@@ -504,19 +500,12 @@ func L3EncapLabel(l config.L3Config) string {
 	return label
 }
 
-// LimitsLabel renders the two caps for a summary or a management screen. It
-// says "unlimited" rather than "0", because a zero in a list of numbers reads
-// like a setting of zero.
-func LimitsLabel(maxConns, bandwidthMbps int) string {
-	conns := "unlimited"
-	if maxConns > 0 {
-		conns = fmt.Sprintf("%d connections", maxConns)
+// LimitsLabel renders the configured maximum number of forwarded connections.
+func LimitsLabel(maxConns int) string {
+	if maxConns <= 0 {
+		return "unlimited"
 	}
-	bandwidth := "unlimited"
-	if bandwidthMbps > 0 {
-		bandwidth = fmt.Sprintf("%d Mbit/s", bandwidthMbps)
-	}
-	return conns + ", " + bandwidth
+	return fmt.Sprintf("%d connections", maxConns)
 }
 
 // DirectSide is which machine the wizard is being run on.

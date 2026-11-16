@@ -130,14 +130,12 @@ Optional local settings in each sing table:
 ```toml
 native_udp = true
 udp_max_flows = 128       # default 128, maximum 4096
-udp_bandwidth_mbps = 20   # 0 = unlimited; excess datagrams are dropped
 ```
 
 Flow state expires after 60 idle seconds and each flow has a four-packet setup
-queue. Limits are local; all native paths in one process must use identical
-local limits. Existing stream-wide `max_connections` or `bandwidth_mbps` on Iran
-are rejected with native UDP: use the explicit UDP limits rather than assuming
-the stream limiter covers these sockets. Metrics distinguish association
+queue. Each native path in the same process must use the same flow cap.
+The stream-wide `max_connections` setting is incompatible with native UDP.
+Use `udp_max_flows` for that path. Metrics distinguish association
 health, active flows, sent/received/dropped datagrams and byte totals. Ordinary
 tunnel byte counters include native UDP for traffic accounting.
 

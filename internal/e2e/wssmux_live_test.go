@@ -69,7 +69,7 @@ func TestWSSMuxDedicatedLivePath(t *testing.T) {
 		cfg := baseServerConfig("wssmux", tunnelPort, entryPort, net.JoinHostPort("127.0.0.1", strconv.Itoa(backendPort)), token)
 		cfg.BindAddr = net.JoinHostPort("0.0.0.0", strconv.Itoa(tunnelPort))
 		cfg.Ports = []string{net.JoinHostPort("127.0.0.1", strconv.Itoa(entryPort)) + "=" + net.JoinHostPort("127.0.0.1", strconv.Itoa(backendPort))}
-		cfg.MuxCon, cfg.MaxConnections, cfg.BandwidthMbps = 8, 4, 20
+		cfg.MuxCon, cfg.MaxConnections = 8, 4
 		cfg.LogLevel = "error"
 		engine := server.NewServer(cfg, ctx)
 		wg.Go(engine.Start)

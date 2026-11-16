@@ -218,10 +218,10 @@ func TestSwitchingCarrierDropsTheOldOnesSettings(t *testing.T) {
 // is not an answer.
 func TestLimitsRoundTripAndRefuseNegatives(t *testing.T) {
 	s := TunnelSpec{Role: "server", Transport: "tcp"}
-	if err := (TunnelLimits{MaxConnections: 500, BandwidthMbps: 100}).apply(&s); err != nil {
+	if err := (TunnelLimits{MaxConnections: 500}).apply(&s); err != nil {
 		t.Fatal(err)
 	}
-	if got := limitsOf(s); got.MaxConnections != 500 || got.BandwidthMbps != 100 {
+	if got := limitsOf(s); got.MaxConnections != 500 {
 		t.Errorf("limits did not survive: %+v", got)
 	}
 	if err := (TunnelLimits{MaxConnections: -1}).apply(&s); err == nil {

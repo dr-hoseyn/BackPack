@@ -93,7 +93,6 @@ them both ends have to agree on. This says what exists.
 |---|---|---|
 | `accept_udp` | `bool` | AcceptUDP also forwards UDP on the configured ports. |
 | `address` | `string` | Address is this endpoint's unicast host prefix (/32 or /128). |
-| `bandwidth_mbps` | `int` | BandwidthMbps limits forwarded traffic, independent of routed IP traffic. |
 | `endpoint` | `string` | Endpoint is the listener's literal public IP:UDP-port on the dialling side. |
 | `interface` | `string` | Interface is the new exclusive bpawg-prefixed TUN interface. |
 | `keepalive` | `int` | Keepalive is the persistent keepalive period in seconds (0..120). |
@@ -172,7 +171,6 @@ them both ends have to agree on. This says what exists.
 | `server_name` | `string` | ServerName is the identity verified by TLS, including the cover for ShadowTLS. |
 | `shadowsocks_key` | `string` | ShadowsocksKey is a canonical base64 32-byte SS2022 key for ShadowTLS only. |
 | `tailcat` | `TailcatConfig` | Tailcat is the experimental point-to-point identity and explicit DERP selection. |
-| `udp_bandwidth_mbps` | `int` | UDPBandwidthMbps caps native UDP separately, dropping excess packets; 0 is unlimited. |
 | `udp_max_flows` | `int` | UDPMaxFlows caps native associations on this machine; 0 uses 128, maximum 4096. |
 | `uuid` | `string` | UUID identifies the TUIC account; unused for the other protocols. |
 
@@ -263,10 +261,9 @@ them both ends have to agree on. This says what exists.
 | `acme_domain` | `string` | ACMEDomain switches the kharej side to a Let's Encrypt certificate for that domain instead of a generated one. The domain must resolve to it. |
 | `acme_email` | `string` | ACMEEmail is where Let's Encrypt sends expiry warnings. Optional. |
 | `addr` | `string` | Addr is the kharej server's host:port on the Iran side, or the address to bind on the kharej side. |
-| `bandwidth_mbps` | `int` | BandwidthMbps caps total throughput across this tunnel, in megabits per second. 0 is unlimited. |
 | `dial_timeout` | `int` | DialTimeout bounds a dial, in seconds. Zero takes the default. |
 | `keepalive_period` | `int` | Keepalive is the TCP keepalive period on the tunnel connection, in seconds. |
-| `max_connections` | `int` | MaxConnections caps how many forwarded connections may be open at once (0 = unlimited), and BandwidthMbps caps total throughput in Mbit/s (0 = unlimited). Both are enforced on the Iran side, where the users arrive, and both are off unless set. |
+| `max_connections` | `int` | MaxConnections caps how many forwarded connections may be open at once (0 = unlimited). It is enforced on the Iran side, where users arrive. |
 | `mss` | `int` | MSS clamps the largest TCP payload this end puts in one segment on the tunnel connection. Zero — the default — leaves the decision to the kernel. |
 | `mux_framesize` | `int` | MaxFrameSize caps one smux frame, in bytes. Filled from a preset. |
 | `mux_recievebuffer` | `int` | MaxReceiveBuffer is the per-session receive window, in bytes. Filled from a preset. (The spelling is a typo that shipped; it cannot be corrected without breaking every existing config.) |
@@ -289,7 +286,6 @@ them both ends have to agree on. This says what exists.
 | Key | Type | Description |
 |---|---|---|
 | `accept_udp` | `bool` | AcceptUDP enables UDP alongside TCP on forwarded ports. |
-| `bandwidth_mbps` | `int` | BandwidthMbps caps forwarded traffic in Mbit/s; zero is unlimited. |
 | `gre_ignore_df` | `*bool` | GREIgnoreDF overrides xgre's local IPv4 DF policy. Unset defaults to true on Iran and false on Kharej; peer links recompute their own role default. |
 | `id` | `uint32` | ID is the paired GRE key, VNI or pseudowire ID; xgre accepts the full uint32 range. Zero derives one from Token. |
 | `interface` | `string` | Interface exclusively names this tunnel; empty derives a name from its secret. |
@@ -314,7 +310,6 @@ them both ends have to agree on. This says what exists.
 | `accept_udp` | `bool` | AcceptUDP forwards UDP as well as TCP on the mapped ports. Off unless set, matching the reverse tunnel's default and for the same reason: a tunnel should not silently start carrying every QUIC flow on port 443. |
 | `addr` | `string` | Addr is the peer's host:port when dialling, or the address to bind when listening. |
 | `auto_mtu` | `*bool` | AutoMTU measures what the path really carries, once the tunnel is up, and sets the interface to match. |
-| `bandwidth_mbps` | `int` | BandwidthMbps caps total throughput across this tunnel, in megabits per second. 0 is unlimited. |
 | `carrier` | `string` | Carrier is the datagram transport underneath: "udp" (the default, and the right choice on a path that does not interfere), "pck" (raw TCP segments, so a capture sees an ordinary flow), "quic" (a real QUIC session), "masque" (RFC 9298 CONNECT-UDP over verified HTTP/3), "sni" (pck, plus a TLS ClientHello naming an allowed domain at the start of the flow), "xdi" (inside ICMP echo) or "spoof" (raw IP with a forged source). All but udp, quic and masque are Linux-only and need CAP_NET_RAW. |
 | `encap` | `string` | Encap is always GRE now: four bytes, or eight with gre_key. "ipip" is still accepted and read as GRE, so a file written when there was a choice keeps working. One tunnel carries both IPv4 and IPv6. |
 | `fec_auth` | `bool` | FECAuth authenticates data and parity shards with the tunnel token. Enable it on both peers after upgrading them. |
@@ -323,7 +318,7 @@ them both ends have to agree on. This says what exists.
 | `gre_key` | `uint32` | GREKey is the RFC 2890 key, letting more than one logical tunnel share a carrier. Zero omits the field. Ignored unless encap is "gre". |
 | `iface` | `string` | Iface is the interface to create. Empty makes "bp0". |
 | `local_ip` | `string` | LocalIP is this end's address on the tunnel, normally with a prefix: "10.10.0.1/30". A bare address requires PeerIP and makes a point-to-point link instead. |
-| `max_connections` | `int` | MaxConnections and BandwidthMbps cap the forwarded ports above (0 = unlimited each). They do not apply to routed traffic: the tunnel carries whatever the kernel puts into the interface, which has no connections to count. |
+| `max_connections` | `int` | MaxConnections caps simultaneous connections on forwarded ports (0 = unlimited). Routed traffic uses the kernel interface and has no connections to count. |
 | `mode` | `string` | Mode is "dial" or "listen". Empty means there is no layer-3 tunnel in this configuration, which is how every pre-existing config reads. |
 | `mss_clamp` | `int` | MSSClamp caps the TCP segment size of connections crossing the tunnel, which is the fix for the failure a layer-3 tunnel produces most often and advertises least: ping works, pages load, and every large transfer stalls forever, because both endpoints negotiated a segment from their own 1500-byte interfaces and the ICMP message that would have corrected them was dropped somewhere on the way. |
 | `mtu` | `int` | MTU is the interface MTU. Zero takes a deliberately conservative default, because a layer-3 tunnel whose packets are slightly too large does not fail loudly — it passes small flows and stalls large ones. |
@@ -353,7 +348,7 @@ them both ends have to agree on. This says what exists.
 | Key | Type | Description |
 |---|---|---|
 | `dns_bind` | `string` | DNSBind is the local literal IP to receive DNS packets on; empty takes the listener address, or a wildcard address when dialing. Ports come from addr and paths. It is local and is never copied into a setup link. |
-| `dns_rate` | `int` | DNSRate caps outgoing DNS packets per second, including FEC and handshakes. Zero disables the cap. It is independent of bandwidth_mbps. |
+| `dns_rate` | `int` | DNSRate caps outgoing DNS packets per second, including FEC and handshakes. Zero disables the cap. |
 | `dns_rotate` | `int` | DNSRotate creates a fresh sending socket every N packets. Zero keeps one ephemeral source port. Each endpoint may tune its sending side. |
 
 ## [l3] — the MASQUE carrier
@@ -472,7 +467,6 @@ them both ends have to agree on. This says what exists.
 | `server_name` | `string` | ServerName is the TLS identity, or the verified cover identity for ShadowTLS. |
 | `shadowsocks_key` | `string` | ShadowsocksKey is the base64 32-byte SS2022 key, required for ShadowTLS v3. |
 | `tailcat` | `TailcatConfig` | Tailcat provisions one authorized peer with a separately pinned helper. |
-| `udp_bandwidth_mbps` | `int` | UDPBandwidthMbps caps native UDP in Mbit/s; 0 is unlimited. |
 | `udp_max_flows` | `int` | UDPMaxFlows caps native forwarded flows; 0 uses 128, maximum 4096. |
 | `uuid` | `string` | UUID is the canonical TUIC v5 account identity. |
 
@@ -500,7 +494,6 @@ them both ends have to agree on. This says what exists.
 | `accept_udp` | `*bool` | AcceptUDP turns UDP forwarding on for the exposed ports. It is off unless set: a forwarded port carries TCP only until the operator asks for UDP as well. The pointer distinguishes "not set" (off) from an explicit accept_udp = true, so a config with no line does not forward UDP. |
 | `acme_domain` | `string` | ACMEDomain switches wss/wssmux to a Let's Encrypt certificate for this domain instead of the generated self-signed one. The domain must resolve to this server. Empty keeps the self-signed certificate. |
 | `acme_email` | `string` | ACMEEmail is where Let's Encrypt sends expiry warnings. Optional. |
-| `bandwidth_mbps` | `int` | BandwidthMbps caps total tunnel throughput in Mbit/s (0 = unlimited). |
 | `bind_addr` | `string` | BindAddr is the address and port this server listens on for the control channel — "0.0.0.0:443" for every interface, or one address to pin it to a single local IP. The client's remote_addr must name the same port. |
 | `channel_size` | `int` | ChannelSize is how many connections may queue between the accept loop and the handlers before new ones are dropped. A larger queue absorbs a burst; it does not make the tunnel faster. |
 | `connect` | `ConnectServerConfig` | Connect selects authenticated TrustTunnel or WebTransport streams for Reverse. |
@@ -581,4 +574,4 @@ them both ends have to agree on. This says what exists.
 
 ---
 
-*Generated from `config/` on 2026-11-12. Last verified against Backpack v1.26.1 (2026-11-15)*
+*Generated from `config/` on 2026-11-17. Last verified against Backpack v1.26.1.*

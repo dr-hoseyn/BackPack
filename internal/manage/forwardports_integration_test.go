@@ -69,7 +69,7 @@ func TestForwardPortReverseEditPreservesHiddenRelay(t *testing.T) {
 
 func TestForwardPortClearKeepsL3Settings(t *testing.T) {
 	before := config.L3Config{Mode: "dial", Carrier: "pck", PeerIP: "10.10.0.2/30",
-		Ports: []string{"443"}, AcceptUDP: true, MaxConnections: 12, BandwidthMbps: 50,
+		Ports: []string{"443"}, AcceptUDP: true, MaxConnections: 12,
 		MTU: 1400, FECData: 10, FECParity: 3, Paths: 4, Qdisc: "fq_codel"}
 	raw := ""
 	got, err := applyDirectEdit(before, DirectEdit{Ports: &raw})

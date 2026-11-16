@@ -21,8 +21,6 @@ type SingClientConfig struct {
 	NativeUDP bool `toml:"native_udp,omitempty"`
 	// UDPMaxFlows caps native associations on this machine; 0 uses 128, maximum 4096.
 	UDPMaxFlows int `toml:"udp_max_flows,omitempty"`
-	// UDPBandwidthMbps caps native UDP separately, dropping excess packets; 0 is unlimited.
-	UDPBandwidthMbps int `toml:"udp_bandwidth_mbps,omitempty"`
 	// Binary is the absolute path to the pinned sing-box executable.
 	Binary string `toml:"binary"`
 	// Protocol is hysteria2, anytls, shadowtls (v3 with SS2022), or tuic (v5).
@@ -68,8 +66,6 @@ type SingServerConfig struct {
 	NativeUDP bool `toml:"native_udp,omitempty"`
 	// UDPMaxFlows caps native forwarded flows; 0 uses 128, maximum 4096.
 	UDPMaxFlows int `toml:"udp_max_flows,omitempty"`
-	// UDPBandwidthMbps caps native UDP in Mbit/s; 0 is unlimited.
-	UDPBandwidthMbps int `toml:"udp_bandwidth_mbps,omitempty"`
 	// Binary is the absolute path to the pinned sing-box executable.
 	Binary string `toml:"binary"`
 	// Protocol is hysteria2, anytls, shadowtls, or tuic.

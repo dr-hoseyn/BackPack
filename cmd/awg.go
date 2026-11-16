@@ -18,7 +18,7 @@ func awgForwarder(c config.AWGConfig) (*l3.Forwarder, error) {
 	if err != nil {
 		return nil, err
 	}
-	return l3.NewForwarder(l3.Config{PeerIP: p.Addr().String(), Ports: c.Ports, AcceptUDP: c.AcceptUDP, MaxConnections: c.MaxConnections, BandwidthMbps: c.BandwidthMbps}, nil)
+	return l3.NewForwarder(l3.Config{PeerIP: p.Addr().String(), Ports: c.Ports, AcceptUDP: c.AcceptUDP, MaxConnections: c.MaxConnections}, nil)
 }
 
 var runManagedAWG = amneziawg.RunManaged

@@ -172,9 +172,7 @@ func (f portForwarder) accept(listener net.Listener, remoteAddr string) {
 			conn.Close()
 			continue
 		}
-		wrapped := f.limits.wrap(f.ctx, conn)
-
-		if f.offer(LocalTCPConn{conn: wrapped, remoteAddr: remoteAddr, timeCreated: nowMillis()}) {
+		if f.offer(LocalTCPConn{conn: conn, remoteAddr: remoteAddr, timeCreated: nowMillis()}) {
 			f.log.Debugf("forwarded port: accepted a client from %s", tcpConn.RemoteAddr().String())
 		} else {
 			// The queue is full: the tunnel is not keeping up, and holding the
@@ -182,7 +180,7 @@ func (f portForwarder) accept(listener net.Listener, remoteAddr string) {
 			f.log.Warnf("forwarded port %s: the queue is full, dropping a client from %s",
 				listener.Addr().String(), tcpConn.RemoteAddr().String())
 			f.limits.release()
-			wrapped.Close()
+			conn.Close()
 		}
 	}
 }
@@ -193,12 +191,11 @@ func (f portForwarder) admitUDP(conn net.Conn, target string) bool {
 	if !f.limits.acquire() {
 		return false
 	}
-	wrapped := f.limits.wrap(f.ctx, conn)
-	if f.offer(LocalTCPConn{conn: wrapped, remoteAddr: target, timeCreated: nowMillis()}) {
+	if f.offer(LocalTCPConn{conn: conn, remoteAddr: target, timeCreated: nowMillis()}) {
 		return true
 	}
 	f.limits.release()
-	wrapped.Close()
+	conn.Close()
 	return false
 }
 

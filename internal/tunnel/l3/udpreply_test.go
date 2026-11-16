@@ -11,8 +11,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/backpack/backpack/internal/tunnel/limits"
 )
 
 type udpDeadlineConn struct {
@@ -27,76 +25,66 @@ func (c *udpDeadlineConn) SetReadDeadline(at time.Time) error {
 	return c.Conn.SetReadDeadline(at)
 }
 
-func TestUDPReplyTimersDoNotChurnForEveryUncappedPacket(t *testing.T) {
-	for _, capped := range []bool{false, true} {
-		t.Run(fmt.Sprintf("capped-%t", capped), func(t *testing.T) {
-			local, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer local.Close()
-			client, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer client.Close()
-			a, b := net.Pipe()
-			defer b.Close()
-			backend := &udpDeadlineConn{Conn: a}
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-			member := &backendMember{}
-			member.active.Store(1)
-			flow := &udpFlow{backend: backend, ctx: ctx, cancel: cancel, member: member}
+func TestUDPReplyTimersDoNotChurnForEveryPacket(t *testing.T) {
+	local, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer local.Close()
+	client, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	a, b := net.Pipe()
+	defer b.Close()
+	backend := &udpDeadlineConn{Conn: a}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	member := &backendMember{}
+	member.active.Store(1)
+	flow := &udpFlow{backend: backend, ctx: ctx, cancel: cancel, member: member}
+	flow.touch()
+	payloads := [][]byte{nil, []byte("x"), bytes.Repeat([]byte("m"), 1200), bytes.Repeat([]byte("l"), 60000)}
+	reads := 0
+	var renewedFrom int64
+	backend.read = func(p []byte) (int, error) {
+		reads++
+		if reads == 1 {
+			// The original timer fires while outbound client traffic
+			// still keeps the conversation alive. No payload was read.
 			flow.touch()
-			payloads := [][]byte{nil, []byte("x"), bytes.Repeat([]byte("m"), 1200), bytes.Repeat([]byte("l"), 60000)}
-			reads := 0
-			var renewedFrom int64
-			backend.read = func(p []byte) (int, error) {
-				reads++
-				if reads == 1 {
-					// The original timer fires while outbound client traffic
-					// still keeps the conversation alive. No payload was read.
-					flow.touch()
-					renewedFrom = flow.lastSeen.Load()
-					return 0, os.ErrDeadlineExceeded
-				}
-				if reads-2 < len(payloads) {
-					return copy(p, payloads[reads-2]), nil
-				}
-				return 0, io.EOF
-			}
-			f := &Forwarder{}
-			if capped {
-				f.limiter = limits.New(limits.Config{BandwidthMbps: 1})
-			}
-			f.stats.active.Store(1)
-			var flows sync.Map
-			clientAddr := client.LocalAddr().(*net.UDPAddr).AddrPort()
-			flows.Store(clientAddr, flow)
-			f.pumpUDPReplies(&flows, flow, local, clientAddr)
-			wantTimers := 2 // initial wait and renewal after the injected timeout
-			if capped {
-				wantTimers = reads // retain the full pacing budget on every read
-			}
-			if len(backend.deadlines) != wantTimers {
-				t.Fatalf("%d deadline resets for %d reads, want %d", len(backend.deadlines), reads, wantTimers)
-			}
-			if !capped && !backend.deadlines[1].Equal(time.Unix(0, renewedFrom).Add(udpFlowIdle)) {
-				t.Fatal("renewal did not preserve the actual idle expiration")
-			}
-			buf := make([]byte, udpBufferSize)
-			_ = client.SetReadDeadline(time.Now().Add(time.Second))
-			for _, want := range payloads {
-				n, _, err := client.ReadFromUDPAddrPort(buf)
-				if err != nil || !bytes.Equal(buf[:n], want) {
-					t.Fatalf("reply changed: bytes=%d want=%d err=%v", n, len(want), err)
-				}
-			}
-			if f.Stats().Active != 0 || member.active.Load() != 0 || ctx.Err() == nil {
-				t.Fatal("reply worker did not release its flow on exit")
-			}
-		})
+			renewedFrom = flow.lastSeen.Load()
+			return 0, os.ErrDeadlineExceeded
+		}
+		if reads-2 < len(payloads) {
+			return copy(p, payloads[reads-2]), nil
+		}
+		return 0, io.EOF
+	}
+	f := &Forwarder{}
+	f.stats.active.Store(1)
+	var flows sync.Map
+	clientAddr := client.LocalAddr().(*net.UDPAddr).AddrPort()
+	flows.Store(clientAddr, flow)
+	f.pumpUDPReplies(&flows, flow, local, clientAddr)
+	wantTimers := 2 // initial wait and renewal after the injected timeout
+	if len(backend.deadlines) != wantTimers {
+		t.Fatalf("%d deadline resets for %d reads, want %d", len(backend.deadlines), reads, wantTimers)
+	}
+	if !backend.deadlines[1].Equal(time.Unix(0, renewedFrom).Add(udpFlowIdle)) {
+		t.Fatal("renewal did not preserve the actual idle expiration")
+	}
+	buf := make([]byte, udpBufferSize)
+	_ = client.SetReadDeadline(time.Now().Add(time.Second))
+	for _, want := range payloads {
+		n, _, err := client.ReadFromUDPAddrPort(buf)
+		if err != nil || !bytes.Equal(buf[:n], want) {
+			t.Fatalf("reply changed: bytes=%d want=%d err=%v", n, len(want), err)
+		}
+	}
+	if f.Stats().Active != 0 || member.active.Load() != 0 || ctx.Err() == nil {
+		t.Fatal("reply worker did not release its flow on exit")
 	}
 }
 

@@ -108,11 +108,13 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Repeat datagram, deadline, fair pacing and authentication checks
+      - name: Repeat datagram, deadline and authentication checks
         run: >-
           go test -race ./internal/tunnel/l3
-          -run '^Test(UDPReply|UDPWriteQueue|UDPFlowClose|ForwarderCarriesUDP|ForwarderKeepsUDPFlows|ForwarderRoutesUDPRepliesAcrossAddressFamilies|ForwarderPacesUDPAcrossFlows|AuthenticatedFEC|FEC|ReviewedFEC)'
+          -run '^Test(UDPReply|UDPFlowCancellation|ForwarderCarriesUDP|ForwarderKeepsUDPFlows|ForwarderRoutesUDPRepliesAcrossAddressFamilies|AuthenticatedFEC|FEC|ReviewedFEC)'
           -count=20 -v -timeout 3m
+      - name: Accept old bandwidth settings without pacing and enforce connection caps
+        run: go test -race ./internal/e2e -run '^Test(LegacyBandwidthKeyDoesNotPaceTraffic|ConnectionLimitIsEnforced|TheUDPConnectionLimitIsEnforced)$' -count=1 -timeout 2m
       - name: Measure verified reply CPU, FEC cost and idle memory
         run: |
           set -euo pipefail
@@ -126,7 +128,7 @@ jobs:
         run: |
           set -euo pipefail
           git worktree add --detach "$RUNNER_TEMP/udp-idle-base" "$BASE_SHA"
-          cp internal/tunnel/l3/udpflow_memory_test.go "$RUNNER_TEMP/udp-idle-base/internal/tunnel/l3/"
+
           cp internal/tunnel/l3/fec_cpu_test.go "$RUNNER_TEMP/udp-idle-base/internal/tunnel/l3/"
           cd "$RUNNER_TEMP/udp-idle-base"
           go test ./internal/tunnel/l3 -run '^$' -bench '^BenchmarkUDPIdleReplyFlows$' -benchtime=1x -count=3 | tee "$RUNNER_TEMP/udp-idle-base.txt"

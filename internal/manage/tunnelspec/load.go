@@ -65,7 +65,6 @@ func LoadServer(name string) (Spec, error) {
 		Sniffer:            sc.Sniffer,
 		ProxyProtocol:      sc.ProxyProtocol,
 		MaxConnections:     sc.MaxConnections,
-		BandwidthMbps:      sc.BandwidthMbps,
 		Preset:             sc.Preset,
 		KCPMTU:             sc.MTU,
 		KCPInterval:        sc.Interval,

@@ -191,14 +191,9 @@ type L3Config struct {
 	// tunnel should not silently start carrying every QUIC flow on port 443.
 	AcceptUDP bool `toml:"accept_udp"`
 
-	// MaxConnections and BandwidthMbps cap the forwarded ports above
-	// (0 = unlimited each). They do not apply to routed traffic: the tunnel
-	// carries whatever the kernel puts into the interface, which has no
-	// connections to count.
+	// MaxConnections caps simultaneous connections on forwarded ports (0 = unlimited).
+	// Routed traffic uses the kernel interface and has no connections to count.
 	MaxConnections int `toml:"max_connections"`
-	// BandwidthMbps caps total throughput across this tunnel, in megabits per
-	// second. 0 is unlimited.
-	BandwidthMbps int `toml:"bandwidth_mbps"`
 
 	// Embedded so the spoof_* keys sit at the top level of the [l3] table.
 	// This is the only table they are read from, and they are read only when

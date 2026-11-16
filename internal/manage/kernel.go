@@ -53,7 +53,11 @@ func kernelFromLink(l ShareLink) (config.KernelConfig, error) {
 	}
 	d := json.NewDecoder(strings.NewReader(l.KernelPeer))
 	d.DisallowUnknownFields()
-	if err := d.Decode(&c); err != nil {
+	peer := struct {
+		*config.KernelConfig
+		LegacyBandwidth int `json:"BandwidthMbps"`
+	}{KernelConfig: &c}
+	if err := d.Decode(&peer); err != nil {
 		return c, fmt.Errorf("invalid kernel peer configuration")
 	}
 	if d.Decode(new(any)) != io.EOF {

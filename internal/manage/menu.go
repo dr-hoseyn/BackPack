@@ -193,7 +193,7 @@ func editPortsMenu(name string) {
 				{Title: "Transport", Desc: "keeps the token and ports"},
 				{Title: "Preset", Desc: "Balance, Turbo or Aggressive"},
 				{Title: "Real Client IP", Desc: "PROXY protocol, for device limits"},
-				{Title: "Limits", Desc: "connections and bandwidth"},
+				{Title: "Limits", Desc: "maximum open connections"},
 			}
 			actions := []func(){
 				func() { changeTunnelPort(name, spec) },
@@ -532,7 +532,7 @@ func editManagedTunnelMenu(name string, spec TunnelSpec) bool {
 	}
 	if spec.Role == "server" {
 		tui.Info("Forwarded Ports : " + strings.Join(VisiblePorts(spec.Ports, spec.Token), ", "))
-		opts = append(opts, tui.Option{Title: "Forwarded Ports", Desc: "TCP services on Kharej"}, tui.Option{Title: "Limits", Desc: "connections and bandwidth"})
+		opts = append(opts, tui.Option{Title: "Forwarded Ports", Desc: "TCP services on Kharej"}, tui.Option{Title: "Limits", Desc: "maximum open connections"})
 		actions = append(actions, func() { changeForwardedPorts(name, spec) }, func() { editLimits(name, spec) })
 	}
 	if len(ConfigHistory(name)) > 0 {
@@ -583,28 +583,18 @@ func toggleLoadBalance(name string, spec TunnelSpec) {
 
 // limitsSummary renders the configured caps for the Edit header.
 func limitsSummary(spec TunnelSpec) string {
-	switch {
-	case spec.MaxConnections == 0 && spec.BandwidthMbps == 0:
-		return "none"
-	case spec.BandwidthMbps == 0:
-		return fmt.Sprintf("%d connections", spec.MaxConnections)
-	case spec.MaxConnections == 0:
-		return fmt.Sprintf("%d Mbit/s", spec.BandwidthMbps)
-	default:
-		return fmt.Sprintf("%d connections, %d Mbit/s", spec.MaxConnections, spec.BandwidthMbps)
-	}
+	return limitsLabel(spec.MaxConnections)
 }
 
-// editLimits sets the per-tunnel connection and bandwidth caps.
+// editLimits sets the per-tunnel connection cap.
 func editLimits(name string, spec TunnelSpec) {
 	fmt.Println()
 	tui.Title("Limits — " + name)
 	fmt.Println()
 
 	maxConns := tui.PromptInt("Max Connections (0 = No Limit)", spec.MaxConnections)
-	bandwidth := tui.PromptInt("Bandwidth Mbit/s (0 = No Limit)", spec.BandwidthMbps)
 
-	if maxConns == spec.MaxConnections && bandwidth == spec.BandwidthMbps {
+	if maxConns == spec.MaxConnections {
 		tui.Info("No Change.")
 		tui.PressEnter()
 		return
@@ -615,7 +605,7 @@ func editLimits(name string, spec TunnelSpec) {
 			return
 		}
 	}
-	if err := SetLimits(name, maxConns, bandwidth, reviewSpec); err != nil {
+	if err := SetLimits(name, maxConns, reviewSpec); err != nil {
 		editError(err)
 		tui.PressEnter()
 		return

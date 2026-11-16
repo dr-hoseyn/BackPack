@@ -217,7 +217,7 @@ func updateReverseFromLink(link ShareLink, o LinkApplyOptions, existing string) 
 		if s.SingClient.Enabled() && s.SingClient.Protocol == previousSing.Protocol {
 			s.SingClient.Binary = previousSing.Binary
 			if s.SingClient.NativeUDP {
-				s.SingClient.UDPMaxFlows, s.SingClient.UDPBandwidthMbps = previousSing.UDPMaxFlows, previousSing.UDPBandwidthMbps
+				s.SingClient.UDPMaxFlows = previousSing.UDPMaxFlows
 			}
 		}
 		if link.Tr == "short-https" && previousShort || link.Tr == "managed-paths" && len(previousPaths) != 0 {
@@ -237,7 +237,6 @@ func updateReverseFromLink(link ShareLink, o LinkApplyOptions, existing string) 
 							p.Sing.Binary = old.Sing.Binary
 							if p.Sing.NativeUDP {
 								p.Sing.UDPMaxFlows = old.Sing.UDPMaxFlows
-								p.Sing.UDPBandwidthMbps = old.Sing.UDPBandwidthMbps
 							}
 						}
 						if p.Naive.Enabled() && old.Naive.Enabled() {
