@@ -24,14 +24,15 @@ import (
 // the fixes that each copy needed separately (limits released on every path,
 // the queue drained when the generation ends), is here once.
 type portForwarder struct {
-	ctx       context.Context
-	ports     []string
-	acceptUDP bool
-	queue     chan LocalTCPConn
-	muxQueue  *muxLocalQueue
-	limits    *limiter
-	listeners *listenerSet
-	log       *logrus.Logger
+	ctx           context.Context
+	ports         []string
+	acceptUDP     bool
+	batchUDPReads bool
+	queue         chan LocalTCPConn
+	muxQueue      *muxLocalQueue
+	limits        *limiter
+	listeners     *listenerSet
+	log           *logrus.Logger
 
 	// tune applies the transport's socket options to an accepted user
 	// connection. Optional.
@@ -123,7 +124,7 @@ func (f portForwarder) listen(localAddr, remoteAddr string) {
 		udpStopped := make(chan struct{})
 		go func() {
 			defer close(udpStopped)
-			startUDPForward(f.ctx, f.log, localAddr, remoteAddr, f.admitUDP)
+			startUDPForward(f.ctx, f.log, localAddr, remoteAddr, f.batchUDPReads, f.admitUDP)
 		}()
 		// This listener's ownership covers its UDP sibling too. A reload
 		// must not return the TCP port while UDP is still closing.
