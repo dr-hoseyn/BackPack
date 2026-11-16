@@ -91,6 +91,5 @@ func TestSpliceTransferDeclinesAnUnknownWrapper(t *testing.T) {
 	}
 }
 
-// opaqueWrapper stands in for any wrapper that changes what a read or a write
-// means — the bandwidth limiter being the one that actually exists.
+// opaqueWrapper stands in for a connection whose I/O behavior is unknown.
 type opaqueWrapper struct{ net.Conn }

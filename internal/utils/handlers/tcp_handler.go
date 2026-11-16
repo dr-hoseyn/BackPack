@@ -201,10 +201,8 @@ func spliceTransfer(from net.Conn, to net.Conn, logger *logrus.Logger, usage *tr
 		return false
 	}
 
-	// Unwrapping the counter is safe because onChunk below counts exactly what
-	// it would have. Unwrapping anything else would not be — a bandwidth cap
-	// disappears if the bytes stop passing through it — so nothing else is
-	// unwrapped, and a limited connection simply is not a *net.TCPConn here.
+	// Unwrap only the counter. onChunk below accounts for the same bytes.
+	// Other wrappers can change the behavior of reads or writes.
 	fromConn, fromCounted := metrics.Uncount(from)
 	toConn, toCounted := metrics.Uncount(to)
 

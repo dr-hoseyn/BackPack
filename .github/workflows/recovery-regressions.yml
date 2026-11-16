@@ -128,7 +128,6 @@ jobs:
         run: |
           set -euo pipefail
           git worktree add --detach "$RUNNER_TEMP/udp-idle-base" "$BASE_SHA"
-
           cp internal/tunnel/l3/fec_cpu_test.go "$RUNNER_TEMP/udp-idle-base/internal/tunnel/l3/"
           cd "$RUNNER_TEMP/udp-idle-base"
           go test ./internal/tunnel/l3 -run '^$' -bench '^BenchmarkUDPIdleReplyFlows$' -benchtime=1x -count=3 | tee "$RUNNER_TEMP/udp-idle-base.txt"

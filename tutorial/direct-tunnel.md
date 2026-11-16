@@ -99,10 +99,8 @@ sudo backpack
 
 Both wizards ask in the order the reverse one does — transport, address, name,
 token, ports, tuning — so nothing is in an unfamiliar place if you have set up
-a reverse tunnel before. The last question is the only one that hides anything:
-saying `n` takes the preset's tuning and leaves both caps off, which is what
-almost every tunnel wants. Saying `y` asks about session count and the
-a connection cap with `max_connections`.
+a reverse tunnel before. Choose `n` to use the preset without a connection
+cap. Choose `y` to set the session count and `max_connections`.
 
 The wizard prints a summary, you confirm, and it writes the config and starts
 the service.
