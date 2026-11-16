@@ -313,6 +313,13 @@ func (s *KcpTransport) tunnelListener(g *kcpGen) {
 
 	// The tunnel's own port: retried rather than fatal. See bindfail.go.
 	var carrier io.Closer
+	// Cancellation during a successful bind closes the KCP listener in
+	// bindTunnelPort. KCP does not own the underlying DNS, ICMP or PCK socket.
+	defer func() {
+		if carrier != nil {
+			_ = carrier.Close()
+		}
+	}()
 	listener, ok := bindTunnelPort(g.ctx, s.logger, s.config.BindAddr, func() (*kcp.Listener, error) {
 		l, c, err := network.KCPListen(s.config.BindAddr, s.config.Token, s.kcpSettings)
 		carrier = c
@@ -322,11 +329,6 @@ func (s *KcpTransport) tunnelListener(g *kcpGen) {
 		return
 	}
 
-	// Both are closed on the way out. Closing the listener alone leaves the
-	// carrier's raw socket bound — the leak that made a restart fail to bind —
-	// so the carrier is closed too; for plain UDP it is a no-op. The carrier
-	// goes last so nothing is still reading the socket when it is pulled.
-	defer carrier.Close()
 	defer listener.Close()
 
 	if s.config.DataShards > 0 {
