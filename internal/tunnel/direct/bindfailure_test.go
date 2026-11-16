@@ -166,11 +166,15 @@ func TestForwardedPortRecoversAfterTemporaryBindFailure(t *testing.T) {
 			go func() { edgeDone <- edge.Run(ctx) }()
 			defer func() { cancel(); <-edgeDone }()
 			for deadline := time.Now().Add(3 * time.Second); ; {
-				if edge.Stats().Sessions > 0 && strings.Contains(captured.String(), "stopped:") {
+				logged := captured.String()
+				// The healthy TCP listener starts independently of the failed
+				// bind and the physical session.
+				if edge.Stats().Sessions > 0 && strings.Contains(logged, "stopped:") &&
+					strings.Contains(logged, "direct: forwarding "+healthyAddr+" -> ") {
 					break
 				}
 				if time.Now().After(deadline) {
-					t.Fatal("session or initial bind failure was not observed")
+					t.Fatal("session, healthy TCP listener or initial bind failure was not observed")
 				}
 				time.Sleep(5 * time.Millisecond)
 			}
