@@ -3,6 +3,7 @@ package direct
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
@@ -32,13 +33,14 @@ func TestUDPFlowsCountAgainstTheConnectionCap(t *testing.T) {
 	t.Cleanup(func() { cancel(); <-originDone })
 
 	port := freePort(t)
+	edgeLog, captured := testLoggerCapturing(t)
 	edge, err := NewEdge(Config{
 		Role: RoleEdge, Addr: awaitBind(t, origin).String(), Token: token,
 		Ports:          []string{fmt.Sprintf("127.0.0.1:%d=%s", port, backend)},
 		AcceptUDP:      true,
 		MaxConnections: 2,
 		RetryDelay:     200 * time.Millisecond,
-	}, quietLogger())
+	}, edgeLog)
 	if err != nil {
 		t.Fatalf("NewEdge: %v", err)
 	}
@@ -48,6 +50,15 @@ func TestUDPFlowsCountAgainstTheConnectionCap(t *testing.T) {
 
 	tn := &tunnel{edge: edge, origin: origin, port: port}
 	tn.awaitSession(t, 5*time.Second)
+	// Wait for the UDP listener itself without opening a flow that would
+	// consume one of the two slots under test.
+	listening := fmt.Sprintf("direct: forwarding udp 127.0.0.1:%d -> ", port)
+	for deadline := time.Now().Add(3 * time.Second); !strings.Contains(captured.String(), listening); {
+		if time.Now().After(deadline) {
+			t.Fatalf("UDP forwarder never bound: %s", captured.String())
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 
 	// Two clients, each its own source address and so its own flow, is the
 	// whole allowance.
