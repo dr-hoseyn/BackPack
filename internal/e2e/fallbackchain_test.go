@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"fmt"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -66,8 +67,8 @@ func TestServerRotatesToTheTransportTheClientIsUsing(t *testing.T) {
 	entryPort := freePort(t)
 	token := "fallback-token-0123456789abcdefg"
 
-	// The server starts on quic and falls back to tcp.
-	srvCfg := baseServerConfig("quic", tunnelPort, entryPort, backend.addr, token)
+	// WS and TCP both need the same TCP listener address.
+	srvCfg := baseServerConfig("ws", tunnelPort, entryPort, backend.addr, token)
 	srvCfg.FallbackTransports = []config.TransportType{config.TCP}
 	srvCfg.FallbackDwell = 8
 
@@ -139,5 +140,27 @@ func TestNoFallbackListBehavesExactlyAsBefore(t *testing.T) {
 	}
 	if err := tun.roundTrip(randomPayload(t, 64*1024)); err != nil {
 		t.Fatalf("a plain tunnel regressed: %v", err)
+	}
+}
+
+func TestServerFallsBackAfterCandidateSetupFails(t *testing.T) {
+	backend := startEchoBackend(t)
+	tunnelPort, entryPort := freePort(t), freePort(t)
+	token := "fallback-token-0123456789abcdefg"
+
+	srvCfg := baseServerConfig("tls", tunnelPort, entryPort, backend.addr, token)
+	dir := t.TempDir()
+	srvCfg.TLSCertFile = filepath.Join(dir, "absent.crt")
+	srvCfg.TLSKeyFile = filepath.Join(dir, "absent.key")
+	srvCfg.FallbackTransports = []config.TransportType{config.TCP}
+	srvCfg.FallbackDwell = 1
+
+	cliCfg := baseClientConfig("tcp", fmt.Sprintf("127.0.0.1:%d", tunnelPort), token, nil)
+	tun := runPair(t, srvCfg, cliCfg, entryPort, tunnelPort)
+	if err := tun.waitReady(tunnelReadyTimeout); err != nil {
+		t.Fatalf("server never reached TCP after TLS setup failed: %v", err)
+	}
+	if err := tun.roundTrip(randomPayload(t, 64*1024)); err != nil {
+		t.Fatalf("data did not survive after failed TLS setup: %v", err)
 	}
 }

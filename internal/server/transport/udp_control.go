@@ -17,7 +17,9 @@ func (s *UdpTransport) channelHandshake(g *udpGen) {
 	// This transport's control channel is TCP even though its data is not, so
 	// this goroutine holds a listener too and Start has to wait for it. Counted
 	// here rather than in tunnelListener, which owns the UDP half.
-	s.listeners.hold()
+	if !s.listeners.hold(g.ctx) {
+		return
+	}
 	defer s.listeners.release()
 
 	// The tunnel's own control port: retried rather than fatal. See bindfail.go.

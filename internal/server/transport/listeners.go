@@ -43,19 +43,6 @@ func closeListenerOnCancel(ctx context.Context, listener io.Closer) func() {
 // It is on the transport rather than on the generation on purpose: at shutdown
 // the answer wanted is "have *all* of them gone", including any belonging to a
 // generation that a restart replaced while this one was winding down.
-//
-// # Why not a WaitGroup
-//
-// A WaitGroup is the obvious choice and it is wrong here, which the race
-// detector said immediately. Its contract is that every Add happens before
-// Wait — and these Adds happen *inside* the listener goroutines, which the
-// transport launched and did not wait for. A listener that binds a moment after
-// shutdown begins is an Add racing a Wait, which is a data race however the
-// counter happens to land.
-//
-// A counter and a channel have no such ordering requirement: hold and release
-// take the lock, and wait takes a snapshot of the channel under the same lock.
-// A listener that arrives late simply reopens the gate.
 type listenerSet struct {
 	mu sync.Mutex
 	n  int
@@ -65,16 +52,21 @@ type listenerSet struct {
 	zero chan struct{}
 }
 
-// hold is called by a goroutine that has just bound a listener; release when it
-// has closed it. Both sides in the same function, so a listener cannot be
-// counted without being uncounted.
-func (l *listenerSet) hold() {
+// hold acquires ownership before binding. After generation cancellation,
+// wait sees every outstanding bind and late workers cannot open ports.
+// The cancellation check shares wait's lock so checking the context and
+// recording a bind in progress happen together.
+func (l *listenerSet) hold(ctx context.Context) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	if ctx.Err() != nil {
+		return false
+	}
 	if l.n == 0 {
 		l.zero = make(chan struct{})
 	}
 	l.n++
+	return true
 }
 
 func (l *listenerSet) release() {

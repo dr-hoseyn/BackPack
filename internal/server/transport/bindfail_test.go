@@ -102,7 +102,7 @@ func TestAnUnreadableMappingDoesNotEndTheProcess(t *testing.T) {
 	log := quietLogger()
 	log.SetOutput(&logged)
 	var bound []string
-	eachForward([]string{"80=a=b", "notaport", "8080", "9000-9001=127.0.0.1:22"}, log,
+	eachForward(context.Background(), []string{"80=a=b", "notaport", "8080", "9000-9001=127.0.0.1:22"}, log,
 		func(localAddr, target string) { bound = append(bound, localAddr+"→"+target) })
 
 	for _, bad := range []string{"80=a=b", "notaport"} {
@@ -175,5 +175,18 @@ func TestATakenTunnelPortIsRetriedUntilItIsFree(t *testing.T) {
 	case <-admitted:
 	case <-time.After(2 * time.Second):
 		t.Fatal("a connection on the bound port was never admitted")
+	}
+}
+
+func TestForwardExpansionStopsOnCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var addresses []string
+	eachForward(ctx, []string{"9000-9003", "9004"}, quietLogger(), func(addr, _ string) {
+		addresses = append(addresses, addr)
+		cancel()
+	})
+	if len(addresses) != 1 || addresses[0] != ":9000" {
+		t.Fatalf("scheduled additional listeners after cancellation: %v", addresses)
 	}
 }

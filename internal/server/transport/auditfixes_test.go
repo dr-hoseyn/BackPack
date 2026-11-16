@@ -180,7 +180,7 @@ func TestWSAcceptFailureRebindsTheTunnelAndReplacesItsControl(t *testing.T) {
 				}
 				dialer.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} // generated test certificate
 			}
-			s.listeners.hold()
+			s.listeners.hold(context.Background())
 			go func() {
 				defer s.listeners.release()
 				s.serveWebSocketListener(gen, server, ln, mode, &s.controlChannel, s.startAfterRestart)

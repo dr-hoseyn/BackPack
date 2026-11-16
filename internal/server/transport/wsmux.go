@@ -214,7 +214,9 @@ func (s *WsMuxTransport) vacate(g *wsMuxGen) {
 func (s *WsMuxTransport) tunnelListener(g *wsMuxGen) {
 	// Counted while this goroutine holds a listener, so Start can wait for the
 	// port rather than sleeping and hoping. See listeners.go.
-	s.listeners.hold()
+	if !s.listeners.hold(g.ctx) {
+		return
+	}
 	defer s.listeners.release()
 
 	addr := s.config.BindAddr

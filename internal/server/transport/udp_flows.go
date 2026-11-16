@@ -19,7 +19,7 @@ import (
 // over a pooled tunnel connection and ended when it goes quiet.
 
 func (s *UdpTransport) parsePortMappings(g *udpGen) {
-	eachForward(s.config.Ports, s.logger, func(localAddr, target string) {
+	eachForward(g.ctx, s.config.Ports, s.logger, func(localAddr, target string) {
 		go s.localListener(g, localAddr, target)
 	})
 }
@@ -27,11 +27,10 @@ func (s *UdpTransport) parsePortMappings(g *udpGen) {
 func (s *UdpTransport) localListener(g *udpGen, localAddr, remoteAddr string) {
 	// Counted while this goroutine holds a listener, so Start can wait for the
 	// port rather than sleeping and hoping. See listeners.go.
-	s.listeners.hold()
-	defer s.listeners.release()
-	if g.ctx.Err() != nil {
+	if !s.listeners.hold(g.ctx) {
 		return
 	}
+	defer s.listeners.release()
 
 	localUDPAddr, err := net.ResolveUDPAddr("udp", localAddr)
 	if err != nil {

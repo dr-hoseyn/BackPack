@@ -61,7 +61,7 @@ func TestWSMuxFatalListenerFailureReopensAnAuthenticatedTunnelPort(t *testing.T)
 			done := make(chan struct{})
 			// Match tunnelListener's ownership: Restart must wait until the
 			// failed HTTP loop has closed its sockets and released this slot.
-			s.listeners.hold()
+			s.listeners.hold(context.Background())
 			go func() {
 				defer close(done)
 				defer s.listeners.release()
