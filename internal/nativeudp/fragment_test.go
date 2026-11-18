@@ -2,6 +2,7 @@ package nativeudp
 
 import (
 	"bytes"
+	"encoding/binary"
 	"testing"
 	"time"
 )
@@ -126,5 +127,53 @@ func TestIncompleteNativeDatagramExpiresWithoutGrowingState(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("expired fragment blocked the association")
+	}
+}
+
+func TestFullNativeUDPReassemblyContinuesDeliveringNewDatagrams(t *testing.T) {
+	link := &Link{assemblies: make(map[fragmentKey]*assembly)}
+	session := [16]byte{1}
+	payload := bytes.Repeat([]byte{0x42}, fragmentSize+200)
+	fragment := func(id uint64, index uint16) []byte {
+		part := make([]byte, fragmentHeader)
+		part[0] = 3
+		binary.BigEndian.PutUint64(part[1:9], id)
+		binary.BigEndian.PutUint16(part[9:11], index)
+		binary.BigEndian.PutUint16(part[11:13], 2)
+		binary.BigEndian.PutUint32(part[13:17], uint32(len(payload)))
+		offset := int(index) * fragmentSize
+		return append(part, payload[offset:min(len(payload), offset+fragmentSize)]...)
+	}
+	for id := uint64(1); id <= assemblyLimit; id++ {
+		if link.assemble(session, fragment(id, 0)) != nil {
+			t.Fatal("partial datagram delivered")
+		}
+	}
+	const newer = assemblyLimit + 1
+	// Use a different payload in the recycled slot to detect stale bytes.
+	for i := range payload {
+		payload[i] = byte(i)
+	}
+	if link.assemble(session, fragment(newer, 1)) != nil {
+		t.Fatal("partial out-of-order datagram delivered")
+	}
+	if _, exists := link.assemblies[fragmentKey{session, 1}]; exists {
+		t.Fatal("oldest incomplete datagram still retained after pressure")
+	}
+	if len(link.assemblies) != assemblyLimit {
+		t.Fatal("reassembly exceeded its original bound")
+	}
+	got := link.assemble(session, fragment(newer, 0))
+	if !bytes.Equal(got, payload) {
+		t.Fatal("new complete datagram blocked by old incomplete datagrams")
+	}
+	if got := link.dropped.Load(); got != 1 {
+		t.Fatalf("dropped %d datagrams, want only the evicted one", got)
+	}
+
+	// Normal completion removes a node from anywhere in the order.
+	link.assemble(session, fragment(10, 1))
+	if len(link.assemblies) != assemblyLimit-2 || link.oldestAssembly.key.message != 2 || link.newestAssembly.key.message != assemblyLimit {
+		t.Fatal("reassembly order inconsistent after interior completion")
 	}
 }

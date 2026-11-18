@@ -66,6 +66,8 @@ type Link struct {
 	previous                *keys
 	pending                 map[[16]byte]*keys
 	assemblies              map[fragmentKey]*assembly
+	oldestAssembly          *assembly
+	newestAssembly          *assembly
 	messageSeq              atomic.Uint64
 	attempt                 *attempt
 	highStamp               uint64
@@ -149,11 +151,8 @@ func (l *Link) maintain() {
 	for {
 		now := time.Now()
 		l.mu.Lock()
-		for id, a := range l.assemblies {
-			if now.Sub(a.created) > assemblyLife {
-				delete(l.assemblies, id)
-				l.dropped.Add(1)
-			}
+		for l.oldestAssembly != nil && now.Sub(l.oldestAssembly.created) > assemblyLife {
+			l.discardAssembly(l.oldestAssembly)
 		}
 		for id, k := range l.pending {
 			if now.Sub(k.created) > 5*time.Second {
