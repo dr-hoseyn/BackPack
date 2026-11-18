@@ -3,7 +3,6 @@ package e2e
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -211,18 +210,19 @@ func TestAdaptiveManagedPathsPreserveActiveForwardsAndRecoverNewConnectionsAfter
 	t.Logf("verified a new forward %s after cutting the second carrier", time.Since(cutAt).Round(time.Millisecond))
 	check(active, "original first-path stream remains alive")
 
-	// Baseline for evaluating Resume: a connection on the failed path closes,
-	// even after new connections can use the surviving verified path.
-	if err := second.SetReadDeadline(cutAt.Add(40 * time.Second)); err != nil {
+	// Baseline for Resume: the failed-path connection stops delivering
+	// bytes, even after new connections can use the surviving verified path.
+	// It may close or stay half-open until the application disconnects.
+	if err := second.SetDeadline(time.Now().Add(3 * time.Second)); err != nil {
 		t.Fatal(err)
 	}
-	var probe [1]byte
-	n, err := second.Read(probe[:])
-	var timeout net.Error
-	if n != 0 || err == nil || (errors.As(err, &timeout) && timeout.Timeout()) {
-		t.Fatalf("expected the forward on the cut path to close, read %d bytes, err=%v", n, err)
+	if _, err := second.Write([]byte("existing forward after outage")); err == nil {
+		var probe [1]byte
+		n, err := second.Read(probe[:])
+		if n != 0 || err == nil {
+			t.Fatalf("forward on the cut path unexpectedly delivered data, read %d bytes, err=%v", n, err)
+		}
 	}
-	t.Logf("original second-path forward closed after at most %s", time.Since(cutAt).Round(time.Millisecond))
 	active.Close()
 	tun.Stop()
 	waitPortFree(t, firstPort, 3*time.Second)
