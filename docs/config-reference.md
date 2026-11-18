@@ -229,6 +229,7 @@ them both ends have to agree on. This says what exists.
 | `naive` | `NaiveClientConfig` | Naive optionally reaches the loopback reverse target through a tunnel-owned official Chromium Naive helper; experimental and disabled when empty. |
 | `nodelay` | `bool` | Nodelay disables Nagle's algorithm on the tunnel's sockets. Off unless set; every preset sets it. It trades a little bandwidth for latency, which is what an interactive session wants and a bulk transfer does not notice. |
 | `path_policy` | `PathPolicy` | PathPolicy tunes verified probing, hysteresis and failover for Paths only. |
+| `path_resume` | `bool` | PathResume allows established Short HTTPS streams to use a verified sibling path. |
 | `paths` | `[]ManagedClientPath` | Paths keeps paired managed carriers warm and selects verified healthy paths. |
 | `pprof` | `bool` | PPROF exposes Go's profiling endpoint on loopback. Off by default, and loopback-only on purpose: its heap dump contains this tunnel's token. |
 | `preset` | `string` | Preset records the performance profile: balance, turbo, aggressive or throughput. On Linux, throughput also enables persistent high-concurrency host tuning at startup and reload unless skip_optz is true. Existing transport values are not re-expanded when the binary is updated. |
@@ -522,6 +523,7 @@ them both ends have to agree on. This says what exists.
 | `naive` | `NaiveServerConfig` | Naive optionally wraps the loopback TCP reverse listener in HTTP/2 with a tunnel-owned sing-box helper; experimental and disabled when empty. |
 | `nodelay` | `bool` | Nodelay disables Nagle's algorithm on the tunnel's sockets. Off unless set; every preset sets it. It trades a little bandwidth for latency, which is what an interactive session wants and what a bulk transfer does not notice. |
 | `path_profile` | `string` | PathProfile selects economy or full for the peer's initial managed probe policy. |
+| `path_resume` | `bool` | PathResume shares TCP relay sessions across managed Short HTTPS listeners. |
 | `paths` | `[]ManagedServerPath` | Paths keeps 2..8 independent managed public carriers alive for one Reverse engine. |
 | `ports` | `[]string` | Ports are the forwarded ports this server exposes, as "443", "8080=127.0.0.1:80", "443-450" or "10.0.0.5:443". See docs/port-mappings.md for every form. |
 | `pprof` | `bool` | PPROF exposes Go's profiling endpoint on 127.0.0.1:6060. Off by default and loopback-only: its heap dump contains this tunnel's token. |
@@ -581,4 +583,4 @@ them both ends have to agree on. This says what exists.
 
 ---
 
-*Generated from `config/` on 2026-11-12. Last verified against Backpack v1.26.1 (2026-11-15)*
+*Generated from `config/` on 2026-11-18. Last verified against Backpack v1.26.1.*

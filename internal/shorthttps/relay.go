@@ -27,7 +27,9 @@ import (
 
 const chunkSize = 2048
 const bufferLimit = 64 << 10
-const maxSessions = 64
+
+// MaxSessions bounds the relay's retained backend sessions.
+const MaxSessions = 64
 
 type request struct {
 	ID     string `json:"id"`
@@ -229,7 +231,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if stream == nil && q.Open {
-		if len(s.sessions) >= maxSessions {
+		if len(s.sessions) >= MaxSessions {
 			s.mu.Unlock()
 			http.Error(w, "session limit", http.StatusServiceUnavailable)
 			return
@@ -404,7 +406,16 @@ func (c *Client) exchange(ctx context.Context, q request) (response, error) {
 
 // Forward owns one accepted local TCP connection. CloseWrite is transported as
 // a logical EOF; delayed backend replies remain readable afterwards.
-func (c *Client) Forward(parent context.Context, local net.Conn) (resultErr error) {
+func (c *Client) Forward(parent context.Context, local net.Conn) error {
+	return c.ForwardWithFailover(parent, local, nil)
+}
+
+// ForwardWithFailover can retry an established session through another client
+// pointing to the same server relay. The selector runs only after retryable
+// failures and may return nil to retry the current endpoint. It must return
+// only endpoints trusted to serve the same relay.
+func (c *Client) ForwardWithFailover(parent context.Context, local net.Conn, alternate func(*Client) *Client) (resultErr error) {
+	current := c
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 	defer local.Close()
@@ -419,7 +430,7 @@ func (c *Client) Forward(parent context.Context, local net.Conn) (resultErr erro
 	defer func() {
 		if attempted {
 			cleanup, cancel := context.WithTimeout(context.WithoutCancel(parent), time.Second)
-			_, _ = c.exchange(cleanup, request{ID: q.ID, Close: true})
+			_, _ = current.exchange(cleanup, request{ID: q.ID, Close: true})
 			cancel()
 		}
 	}()
@@ -472,7 +483,7 @@ func (c *Client) Forward(parent context.Context, local net.Conn) (resultErr erro
 		}
 		q.EOF = uploadEOF
 		attempted = true
-		p, err := c.exchange(ctx, q)
+		p, err := current.exchange(ctx, q)
 		if err != nil {
 			var status relayStatusError
 			var verification *tls.CertificateVerificationError
@@ -481,6 +492,13 @@ func (c *Client) Forward(parent context.Context, local net.Conn) (resultErr erro
 			}
 			if time.Since(lastSuccess) > 15*time.Second {
 				return err
+			}
+			// Before the opening response, the peer may already have written
+			// bytes. Never recreate that unconfirmed session on another relay.
+			if !q.Open && alternate != nil && ctx.Err() == nil {
+				if next := alternate(current); next != nil {
+					current = next
+				}
 			}
 			select {
 			case <-ctx.Done():
@@ -529,7 +547,7 @@ func (c *Client) Serve(ctx context.Context, l net.Listener, onError func(error))
 	ctx, cancel := context.WithCancel(ctx)
 	var wg sync.WaitGroup
 	defer func() { cancel(); l.Close(); wg.Wait() }()
-	slots := make(chan struct{}, maxSessions)
+	slots := make(chan struct{}, MaxSessions)
 	stop := context.AfterFunc(ctx, func() { l.Close() })
 	defer stop()
 	for {

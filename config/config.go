@@ -294,6 +294,8 @@ type ServerConfig struct {
 	CarrierOptions
 	// PathProfile selects economy or full for the peer's initial managed probe policy.
 	PathProfile string `toml:"path_profile,omitempty"`
+	// PathResume shares TCP relay sessions across managed Short HTTPS listeners.
+	PathResume bool `toml:"path_resume,omitempty"`
 	// Paths keeps 2..8 independent managed public carriers alive for one Reverse engine.
 	Paths []ManagedServerPath `toml:"paths"`
 	// Connect selects authenticated TrustTunnel or WebTransport streams for Reverse.
@@ -484,6 +486,8 @@ type ClientConfig struct {
 	Paths []ManagedClientPath `toml:"paths"`
 	// PathPolicy tunes verified probing, hysteresis and failover for Paths only.
 	PathPolicy PathPolicy `toml:"path_policy"`
+	// PathResume allows established Short HTTPS streams to use a verified sibling path.
+	PathResume bool `toml:"path_resume,omitempty"`
 	// Connect selects restricted TrustTunnel or WebTransport streams for Reverse.
 	Connect ConnectClientConfig `toml:"connect"`
 	// Short selects bounded fresh HTTPS requests for TCP Reverse.

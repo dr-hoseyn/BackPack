@@ -17,6 +17,7 @@ var pathName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,31}$`)
 func serverConfig(base config.ServerConfig, p config.ManagedServerPath) config.ServerConfig {
 	native := base.NativeSing().NativeUDP
 	base.Paths = nil
+	base.PathResume = false
 	base.Naive = p.Naive
 	base.Xray = p.Xray
 	base.Sing = p.Sing
@@ -34,6 +35,7 @@ func serverConfig(base config.ServerConfig, p config.ManagedServerPath) config.S
 }
 func clientConfig(base config.ClientConfig, p config.ManagedClientPath) config.ClientConfig {
 	base.Paths = nil
+	base.PathResume = false
 	base.PathPolicy = config.PathPolicy{}
 	base.Naive = p.Naive
 	base.Xray = p.Xray
@@ -58,6 +60,25 @@ func Validate(c *config.Config) error {
 		return errors.New("path_profile requires managed paths and must be economy or full")
 	}
 	s, cl := len(c.Server.Paths), len(c.Client.Paths)
+	if c.Server.PathResume && s == 0 || c.Client.PathResume && cl == 0 {
+		return errors.New("path_resume requires managed paths in the same role")
+	}
+	if c.Server.PathResume || c.Client.PathResume {
+		shortPaths := 0
+		for _, p := range c.Server.Paths {
+			if p.Short.Enabled() {
+				shortPaths++
+			}
+		}
+		for _, p := range c.Client.Paths {
+			if p.Short.Enabled() {
+				shortPaths++
+			}
+		}
+		if shortPaths < 2 {
+			return errors.New("path_resume requires at least two managed Short HTTPS paths")
+		}
+	}
 	if s == 0 && cl == 0 {
 		if c.Client.PathPolicy != (config.PathPolicy{}) {
 			return errors.New("path_policy requires client.paths")

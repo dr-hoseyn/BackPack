@@ -186,6 +186,7 @@ type ShareLink struct {
 	HelperNativeUDP    bool     `json:"hnu,omitempty"`
 	PathLinks          []string `json:"mpl,omitempty"`
 	PathProfile        string   `json:"mpp,omitempty"`
+	PathResume         bool     `json:"mpr,omitempty"`
 	AWGPeer            string   `json:"awgp,omitempty"`
 	KernelPeer         string   `json:"krp,omitempty"`
 	DNSRotate          int      `json:"dnr,omitempty"`
@@ -313,6 +314,9 @@ func DecodeShareLink(s string) (out ShareLink, err error) {
 func checkShareLink(out ShareLink) error {
 	if out.Tok == "" || out.Tr == "" {
 		return fmt.Errorf("the setup link is missing the token or the transport — it was not made by this version")
+	}
+	if out.PathResume && out.Tr != "managed-paths" {
+		return fmt.Errorf("path resume requires a managed paths setup link")
 	}
 	switch out.Kind {
 	case "reverse", "direct", "awg", "kernel":

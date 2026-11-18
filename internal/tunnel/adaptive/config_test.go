@@ -17,6 +17,15 @@ func TestManagedPathConfigurationRejectsAmbiguousPairingAndUnsupportedCombinatio
 	if err := Validate(ptrConfig(server())); err != nil {
 		t.Fatal("valid independent listeners refused:", err)
 	}
+	resumable := server()
+	resumable.Server.PathResume = true
+	if err := Validate(&resumable); err != nil {
+		t.Fatal("valid resumable listeners refused:", err)
+	}
+	resumable.Server.Paths[1].Short = config.ShortServerConfig{}
+	if Validate(&resumable) == nil || Validate(&config.Config{Client: config.ClientConfig{PathResume: true}}) == nil {
+		t.Fatal("resume accepted without two managed Short HTTPS paths")
+	}
 	for name, change := range map[string]func(*config.Config){
 		"one path":                    func(c *config.Config) { c.Server.Paths = c.Server.Paths[:1] },
 		"duplicate identity":          func(c *config.Config) { c.Server.Paths[1].Name = c.Server.Paths[0].Name },

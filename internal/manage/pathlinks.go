@@ -42,6 +42,7 @@ func pathClientEndpoint(p config.ManagedClientPath) string {
 
 func managedPathsLink(l ShareLink, server config.ServerConfig) (string, error) {
 	l.PathProfile = server.PathProfile
+	l.PathResume = server.PathResume
 	l.Tr, l.InnerPort = "managed-paths", l.Port
 	if h, _, err := net.SplitHostPort(server.BindAddr); err == nil && h != "127.0.0.1" {
 		l.InnerHost = h
@@ -49,6 +50,7 @@ func managedPathsLink(l ShareLink, server config.ServerConfig) (string, error) {
 	for _, p := range server.Paths {
 		child := server
 		child.Paths = nil
+		child.PathResume = false
 		child.Naive = p.Naive
 		child.Xray = p.Xray
 		child.Sing = p.Sing
@@ -99,6 +101,7 @@ func decodeManagedPaths(l ShareLink) ([]ShareLink, error) {
 	}
 	paths := make([]ShareLink, 0, len(l.PathLinks))
 	names := map[string]bool{}
+	shortPaths := 0
 	for _, raw := range l.PathLinks {
 		p, err := DecodeShareLink(raw)
 		if err != nil {
@@ -110,8 +113,17 @@ func decodeManagedPaths(l ShareLink) ([]ShareLink, error) {
 		if p.HelperNativeUDP && (!config.SingDatagram(p.Tr) || !l.AcceptUDP) {
 			return nil, errors.New("native UDP path requires paired Hysteria2/TUIC and UDP forwarding")
 		}
+		if p.PathResume {
+			return nil, errors.New("path resume belongs to the enclosing managed setup link")
+		}
+		if p.Tr == "short-https" {
+			shortPaths++
+		}
 		names[p.Name] = true
 		paths = append(paths, p)
+	}
+	if l.PathResume && shortPaths < 2 {
+		return nil, errors.New("path resume requires at least two Short HTTPS paths")
 	}
 	return paths, nil
 }
@@ -121,6 +133,7 @@ func managedPathsClientFromLink(s *TunnelSpec, l ShareLink, host string) {
 		s.PathPolicy = economyPathPolicy()
 	}
 	s.ClientPaths = nil
+	s.PathResume = l.PathResume
 	paths, err := decodeManagedPaths(l)
 	if err != nil {
 		return

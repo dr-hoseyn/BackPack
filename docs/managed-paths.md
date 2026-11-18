@@ -34,6 +34,21 @@ local helper association. Outage packets are dropped rather than queued or
 replayed. A Short HTTPS or another stream-only carrier is never substituted for
 native UDP. When native UDP is enabled, non-native paths carry only TCP.
 
+## Resume for managed Short HTTPS
+
+When two or more managed paths use Short HTTPS, set `path_resume = true` under
+`[server]` on Iran and `[client]` on Kharej, or export a new setup link after
+setting it on Iran. Both peers must support the option. It is off by default.
+
+An established Short HTTPS stream can move to another verified Short HTTPS
+path after a request fails. Both listeners use the same bounded relay and byte
+positions, so acknowledged data is not replayed to the TCP backend. The
+backup is used only after a failure. Probes always stay on the path they test.
+If no compatible path recovers within the existing relay retry window, the
+stream ends. Server restarts, other carrier types and UDP are outside this mode.
+The relay shares its existing limit of 64 sessions across the Short HTTPS
+listeners, including control connections and probes.
+
 ## Configuration
 
 This minimal TCP-only example uses two Short HTTPS endpoints; any supported
