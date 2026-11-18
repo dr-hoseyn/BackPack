@@ -109,8 +109,8 @@ func StartShortServer(parent context.Context, v *config.ServerConfig, log *logru
 	return StartShortServerWithRelay(parent, v, log, nil)
 }
 
-func NewShortRelayServer(ctx context.Context, v *config.ServerConfig) (*shorthttps.Server, error) {
-	return shorthttps.NewServer(ctx, v.BindAddr, shortToken(v.Token))
+func NewShortRelayServer(ctx context.Context, v *config.ServerConfig, limit int) (*shorthttps.Server, error) {
+	return shorthttps.NewServerWithSessionLimit(ctx, v.BindAddr, shortToken(v.Token), limit)
 }
 
 // StartShortServerWithRelay leaves a shared relay owned by its caller.
@@ -121,7 +121,7 @@ func StartShortServerWithRelay(parent context.Context, v *config.ServerConfig, l
 	ctx, cancel := context.WithCancel(parent)
 	closeRelay := func() {}
 	if relay == nil {
-		privateRelay, err := NewShortRelayServer(ctx, v)
+		privateRelay, err := NewShortRelayServer(ctx, v, shorthttps.MaxSessions)
 		if err != nil {
 			cancel()
 			return nil, err
@@ -235,7 +235,7 @@ func StartShortClientWithRelay(parent context.Context, v *config.ClientConfig, l
 		defer stop()
 		var wg sync.WaitGroup
 		defer wg.Wait()
-		slots := make(chan struct{}, 64)
+		slots := make(chan struct{}, shorthttps.MaxSessions)
 		reportReadiness(ctx, true)
 		for {
 			conn, err := l.Accept()

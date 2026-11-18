@@ -46,8 +46,8 @@ positions, so acknowledged data is not replayed to the TCP backend. The
 backup is used only after a failure. Probes always stay on the path they test.
 If no compatible path recovers within the existing relay retry window, the
 stream ends. Server restarts, other carrier types and UDP are outside this mode.
-The relay shares its existing limit of 64 sessions across the Short HTTPS
-listeners, including control connections and probes.
+The shared relay keeps the combined session budget of 64 per Short HTTPS
+listener, including control connections and probes.
 
 ## Configuration
 

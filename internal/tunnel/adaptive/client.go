@@ -83,7 +83,7 @@ func StartClient(parent context.Context, cfg *config.ClientConfig, log *logrus.L
 	c := &ClientPaths{ctx: ctx, cancel: cancel, listener: l, selector: selector, policy: policy, cfg: *cfg, log: log, paths: make([]clientPath, len(cfg.Paths)), connections: map[string]*proxyConnection{}}
 	if cfg.PathResume {
 		c.shortRelays = make([]*shorthttps.Client, len(cfg.Paths))
-		c.shortSlots = make(chan struct{}, shorthttps.MaxSessions)
+		var limit int
 		for i, p := range cfg.Paths {
 			if !p.Short.Enabled() {
 				continue
@@ -95,7 +95,9 @@ func StartClient(parent context.Context, cfg *config.ClientConfig, log *logrus.L
 				return nil, err
 			}
 			c.shortRelays[i] = relay
+			limit += shorthttps.MaxSessions
 		}
+		c.shortSlots = make(chan struct{}, limit)
 	}
 	for i, p := range cfg.Paths {
 		c.paths[i].name = p.Name

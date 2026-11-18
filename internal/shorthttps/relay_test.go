@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -307,5 +308,54 @@ func TestBackendResetDoesNotBecomeSuccessfulEOF(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("failed backend stream leaked")
+	}
+}
+
+func TestSharedRelayKeepsItsCombinedSessionLimit(t *testing.T) {
+	backend, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer backend.Close()
+	go func() {
+		for {
+			conn, err := backend.Accept()
+			if err != nil {
+				return
+			}
+			conn.Close()
+		}
+	}()
+	const limit = 2 * MaxSessions
+	relay, err := NewServerWithSessionLimit(t.Context(), backend.Addr().String(), testToken, limit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer relay.Close()
+	exchange := func(id int, close bool) int {
+		t.Helper()
+		body, err := json.Marshal(request{ID: fmt.Sprintf("%032x", id), Open: !close, Close: close})
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := httptest.NewRequest(http.MethodPost, "/sync", bytes.NewReader(body))
+		r.Header.Set("Authorization", "Bearer "+testToken)
+		w := httptest.NewRecorder()
+		relay.ServeHTTP(w, r)
+		return w.Code
+	}
+	for id := 1; id <= limit; id++ {
+		if code := exchange(id, false); code != http.StatusOK {
+			t.Fatalf("session %d refused below shared limit: HTTP %d", id, code)
+		}
+	}
+	if code := exchange(limit+1, false); code != http.StatusServiceUnavailable {
+		t.Fatalf("exceeded shared limit: HTTP %d", code)
+	}
+	if code := exchange(1, true); code != http.StatusNoContent {
+		t.Fatalf("failed to release a session: HTTP %d", code)
+	}
+	if code := exchange(limit+1, false); code != http.StatusOK {
+		t.Fatalf("released slot was not reused: HTTP %d", code)
 	}
 }

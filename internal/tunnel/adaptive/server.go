@@ -30,8 +30,14 @@ func StartServer(parent context.Context, cfg *config.ServerConfig, log *logrus.L
 	s := &ServerPaths{cancel: cancel}
 	var shortRelay *shorthttps.Server
 	if cfg.PathResume {
+		var limit int
+		for _, path := range cfg.Paths {
+			if path.Short.Enabled() {
+				limit += shorthttps.MaxSessions
+			}
+		}
 		var err error
-		shortRelay, err = naive.NewShortRelayServer(ctx, cfg)
+		shortRelay, err = naive.NewShortRelayServer(ctx, cfg, limit)
 		if err != nil {
 			cancel()
 			return nil, err

@@ -28,7 +28,7 @@ import (
 const chunkSize = 2048
 const bufferLimit = 64 << 10
 
-// MaxSessions bounds the relay's retained backend sessions.
+// MaxSessions bounds the retained backend sessions for one relay listener.
 const MaxSessions = 64
 
 type request struct {
@@ -121,17 +121,27 @@ func (s *session) read(ctx context.Context) {
 // Server connects only to one configured literal loopback backend. Requests
 // cannot choose a destination, and unauthenticated peers cannot create sessions.
 type Server struct {
-	target   string
-	token    [32]byte
-	ctx      context.Context
-	cancel   context.CancelFunc
-	mu       sync.Mutex
-	sessions map[string]*session
-	closed   bool
-	wg       sync.WaitGroup
+	target       string
+	token        [32]byte
+	ctx          context.Context
+	cancel       context.CancelFunc
+	mu           sync.Mutex
+	sessions     map[string]*session
+	sessionLimit int
+	closed       bool
+	wg           sync.WaitGroup
 }
 
 func NewServer(ctx context.Context, target, token string) (*Server, error) {
+	return NewServerWithSessionLimit(ctx, target, token, MaxSessions)
+}
+
+// NewServerWithSessionLimit lets managed listeners share their existing
+// combined session budget without retaining more state than separate relays.
+func NewServerWithSessionLimit(ctx context.Context, target, token string, limit int) (*Server, error) {
+	if limit < 1 || limit > 8*MaxSessions {
+		return nil, errors.New("invalid Short HTTPS session limit")
+	}
 	host, port, err := net.SplitHostPort(target)
 	ip := net.ParseIP(host)
 	n, portErr := strconv.Atoi(port)
@@ -142,7 +152,7 @@ func NewServer(ctx context.Context, target, token string) (*Server, error) {
 		return nil, errors.New("use a random token of at least 32 characters")
 	}
 	ctx, cancel := context.WithCancel(ctx)
-	s := &Server{target: target, token: sha256.Sum256([]byte(token)), ctx: ctx, cancel: cancel, sessions: make(map[string]*session)}
+	s := &Server{target: target, token: sha256.Sum256([]byte(token)), ctx: ctx, cancel: cancel, sessions: make(map[string]*session), sessionLimit: limit}
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
@@ -231,7 +241,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if stream == nil && q.Open {
-		if len(s.sessions) >= MaxSessions {
+		if len(s.sessions) >= s.sessionLimit {
 			s.mu.Unlock()
 			http.Error(w, "session limit", http.StatusServiceUnavailable)
 			return
