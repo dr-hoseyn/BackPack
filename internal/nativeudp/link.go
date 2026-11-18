@@ -68,6 +68,7 @@ type Link struct {
 	assemblies              map[fragmentKey]*assembly
 	oldestAssembly          *assembly
 	newestAssembly          *assembly
+	spareAssembly           *assembly
 	messageSeq              atomic.Uint64
 	attempt                 *attempt
 	highStamp               uint64

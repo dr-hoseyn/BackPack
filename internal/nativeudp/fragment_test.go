@@ -176,4 +176,18 @@ func TestFullNativeUDPReassemblyContinuesDeliveringNewDatagrams(t *testing.T) {
 	if len(link.assemblies) != assemblyLimit-2 || link.oldestAssembly.key.message != 2 || link.newestAssembly.key.message != assemblyLimit {
 		t.Fatal("reassembly order inconsistent after interior completion")
 	}
+
+	// Recycling assembly metadata must not reuse a completed buffer that
+	// the reader can still hold.
+	original := bytes.Clone(got)
+	for i := range payload {
+		payload[i] ^= 0xff
+	}
+	link.assemble(session, fragment(newer+1, 0))
+	if next := link.assemble(session, fragment(newer+1, 1)); !bytes.Equal(next, payload) {
+		t.Fatal("recycled metadata corrupted the next datagram")
+	}
+	if !bytes.Equal(got, original) {
+		t.Fatal("recycling metadata changed a previously delivered datagram")
+	}
 }

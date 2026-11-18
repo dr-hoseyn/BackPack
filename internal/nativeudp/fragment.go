@@ -35,6 +35,8 @@ func (l *Link) addAssembly(key fragmentKey, size int, count uint16) *assembly {
 	if len(l.assemblies) == assemblyLimit {
 		a = l.oldestAssembly
 		l.discardAssembly(a)
+	} else if l.spareAssembly != nil {
+		a, l.spareAssembly = l.spareAssembly, nil
 	} else {
 		a = &assembly{}
 	}
@@ -105,7 +107,14 @@ func (l *Link) assemble(session [16]byte, p []byte) []byte {
 		return nil
 	}
 	l.removeAssembly(a)
-	return a.body
+	body := a.body
+	if l.spareAssembly == nil {
+		// The reader owns the completed buffer. Keep only the metadata for
+		// the next assembly, never a reference to the delivered bytes.
+		*a = assembly{}
+		l.spareAssembly = a
+	}
+	return body
 }
 
 func (l *Link) sendMessage(b []byte) error {
