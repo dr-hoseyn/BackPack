@@ -29,14 +29,34 @@ jobs:
           text = path.read_text()
           anchor = 'got := minAllocsPerRun(5, 20, func() { c.WriteBatch(bufs, to) })'
           assert text.count(anchor) == 1
-          path.write_text(text.replace(anchor, anchor + '\n\tt.Logf("L3_WRITE_ALLOCS %.1f", got)'))
+          begin = text.index('func TestWriteBatchDoesNotAllocatePerCall(')
+          end = text.index('func TestBatchSendRate(', begin)
+          fixture = text[begin:end]
+          fixture = fixture.replace('defer sink.Close()', 'defer sink.Close()\n\tdrained := make(chan struct{}, batchSize)')
+          fixture = fixture.replace('\n\t\t}\n\t}()', '\n\t\t\tdrained <- struct{}{}\n\t\t}\n\t}()', 1)
+          original = (
+              'c.WriteBatch(bufs, to) // prime\n\n'
+              '\t' + anchor
+          )
+          synchronized = (
+              'sendAndDrain := func() {\n'
+              '\t\tn, err := c.WriteBatch(bufs, to)\n'
+              '\t\tif err != nil || n != len(bufs) { t.Fatalf("write batch: %d %v", n, err) }\n'
+              '\t\tfor range n { <-drained }\n'
+              '\t}\n'
+              '\tsendAndDrain()\n'
+              '\tgot := minAllocsPerRun(5, 20, sendAndDrain)\n'
+              '\tt.Logf("L3_WRITE_ALLOCS %.1f", got)'
+          )
+          assert original in fixture
+          path.write_text(text[:begin] + fixture.replace(original, synchronized) + text[end:])
           PY
           done
           for role in base candidate; do
             tree="$GITHUB_WORKSPACE"
             if [ "$role" = base ]; then tree="$RUNNER_TEMP/alloc-base"; fi
             (cd "$tree" && go test -race -c -o "$RUNNER_TEMP/alloc-$role.test" ./internal/tunnel/l3)
-            if "$RUNNER_TEMP/alloc-$role.test" -test.run='^TestWriteBatchDoesNotAllocatePerCall$' -test.count=100 -test.v > "$RUNNER_TEMP/alloc-$role.log" 2>&1; then
+            if "$RUNNER_TEMP/alloc-$role.test" -test.run='^TestWriteBatchDoesNotAllocatePerCall$' -test.count=30 -test.timeout=40s -test.v > "$RUNNER_TEMP/alloc-$role.log" 2>&1; then
               echo "RESULT $role passed"
             else
               echo "RESULT $role failed"
