@@ -19,8 +19,8 @@ EWMA score. This is a small verified-transfer sample, not a capacity benchmark.
 
 Selection affects **new** TCP tunnel connections. Idle pool connections on the
 old path close and refill through the new path. Active forwards retain their
-original connections. A failed active connection cannot be migrated; its
-application must reconnect. There is a narrow destination-assignment boundary
+original connections. By default, an application whose path fails must
+reconnect. Managed Short HTTPS can opt into the Resume behavior below. There is a narrow destination-assignment boundary
 while a pooled connection becomes active, so this is not an atomic migration
 protocol. If every candidate fails verification, new connections fail closed
 until one recovers. No unverified direct connection is substituted.

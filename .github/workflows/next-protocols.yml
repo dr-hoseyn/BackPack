@@ -29,6 +29,12 @@ jobs:
       - name: Adaptive paths preserve active streams and recover new connections
         if: success() || failure()
         run: go test ./internal/e2e -run '^TestAdaptiveManagedPaths' -race -count=1 -v -timeout 4m
+      - name: Compare steady-state Short HTTPS with resume off and on
+        if: success() || failure()
+        env:
+          BP_RESUME_RESOURCE_BENCHMARK: '1'
+          GOMAXPROCS: '4'
+        run: go test ./internal/e2e -run '^TestManagedShortResumeResources$' -count=1 -v -timeout 3m
       - name: Verify vet and build
         if: success() || failure()
         run: |

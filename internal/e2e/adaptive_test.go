@@ -144,7 +144,13 @@ func TestAdaptiveManagedPathsPreserveActiveForwardsAndRecoverNewConnectionsAfter
 	t.Run("with resume", func(t *testing.T) { testManagedTCPPathOutage(t, true) })
 }
 
-func testManagedTCPPathOutage(t *testing.T, resume bool) {
+type managedShortPair struct {
+	tunnel                *tunnel
+	first, second         *controlledPath
+	firstPort, secondPort int
+}
+
+func startManagedShortPair(t *testing.T, resume bool) managedShortPair {
 	t.Helper()
 	cert, key := testCert(t)
 	backend := startEchoBackend(t)
@@ -170,6 +176,13 @@ func testManagedTCPPathOutage(t *testing.T, resume bool) {
 		t.Fatal(err)
 	}
 	waitSelectedPath(t, "first", 10*time.Second)
+	return managedShortPair{tunnel: tun, first: a, second: b, firstPort: firstPort, secondPort: secondPort}
+}
+
+func testManagedTCPPathOutage(t *testing.T, resume bool) {
+	t.Helper()
+	pair := startManagedShortPair(t, resume)
+	tun, a, b := pair.tunnel, pair.first, pair.second
 	active, err := net.DialTimeout("tcp", tun.Entry, time.Second)
 	if err != nil {
 		t.Fatal(err)
@@ -235,6 +248,6 @@ func testManagedTCPPathOutage(t *testing.T, resume bool) {
 	second.Close()
 	active.Close()
 	tun.Stop()
-	waitPortFree(t, firstPort, 3*time.Second)
-	waitPortFree(t, secondPort, 3*time.Second)
+	waitPortFree(t, pair.firstPort, 3*time.Second)
+	waitPortFree(t, pair.secondPort, 3*time.Second)
 }
