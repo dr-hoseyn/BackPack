@@ -17,6 +17,14 @@ Local helper readiness or a successful TLS handshake alone never passes a
 probe. RTT, measured transfer rate and recent probe failures contribute to an
 EWMA score. This is a small verified-transfer sample, not a capacity benchmark.
 
+**Tunnel Metrics** and the JSON snapshot report probe RTT jitter as
+`probe_jitter_ms`. It is a smoothed absolute change between consecutive
+successful probes. The first pair initializes the value, then each new change
+contributes 25%. After a failed probe, failed managed dial, or helper
+withdrawal, it takes two successful probes to report jitter again. This diagnostic reuses the existing
+probes, does not measure application packet jitter, and does not affect path
+selection.
+
 Selection affects **new** TCP tunnel connections. Idle pool connections on the
 old path close and refill through the new path. Active forwards retain their
 original connections. A failed active connection cannot be migrated; its
