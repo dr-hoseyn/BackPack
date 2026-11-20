@@ -28,6 +28,10 @@ import (
 // the same measurement can be copied to and run on the previous release.
 func resourceTunnel(t *testing.T) (*tunnel, int) {
 	t.Helper()
+	if os.Getenv("BP_WSSMUX_THROUGHPUT") != "" {
+		tun := bulkProfileTunnel(t, "wssmux")
+		return tun, tun.TunnelPort
+	}
 	backend := startEchoBackend(t)
 	tunnelPort, entryPort := freePort(t), freePort(t)
 	const token = "resource-profile-token-0123456789"
@@ -298,9 +302,19 @@ func TestWSMuxResourceProfile(t *testing.T) {
 	runtime.ReadMemStats(&after)
 	appBytes := float64(workers * rounds * len(payload))
 	cpu := cpuAfter.Total() - cpuBefore.Total()
+	goodput := appBytes * 8 / seconds / 1e6
 	t.Logf("RESOURCE_MIXED app_bytes=%.0f echo_mbps=%.1f cpu_seconds=%.6f cpu_seconds_per_gib=%.6f probe_p99_ms=%.3f gc_cycles=%d gc_pause_ms=%.3f", appBytes,
-		appBytes*8/seconds/1e6, cpu, cpu/(appBytes/(1<<30)), float64(latencies[(len(latencies)*99+99)/100-1])/float64(time.Millisecond), after.NumGC-idle.NumGC,
+		goodput, cpu, cpu/(appBytes/(1<<30)), float64(latencies[(len(latencies)*99+99)/100-1])/float64(time.Millisecond), after.NumGC-idle.NumGC,
 		float64(after.PauseTotalNs-idle.PauseTotalNs)/1e6)
+	if raw := os.Getenv("BP_RESOURCE_MIN_MBPS"); raw != "" {
+		minimum, err := strconv.ParseFloat(raw, 64)
+		if err != nil || math.IsNaN(minimum) || math.IsInf(minimum, 0) || minimum <= 0 {
+			t.Fatal("invalid minimum verified resource Mbps")
+		}
+		if goodput < minimum {
+			t.Errorf("verified goodput %.1f Mbit/s is below %.1f Mbit/s", goodput, minimum)
+		}
+	}
 	for _, c := range connections {
 		c.Close()
 	}
