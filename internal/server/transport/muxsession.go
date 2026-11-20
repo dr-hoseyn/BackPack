@@ -2,6 +2,7 @@ package transport
 
 import (
 	"context"
+	"net"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -20,10 +21,11 @@ import (
 // after dequeue can bind a previous client's session to its replacement.
 type pooledMuxSession struct {
 	*smux.Session
-	owner     context.Context
-	idleFloor int
-	pressure  func() int
-	bulk      func() bool
+	owner        context.Context
+	idleFloor    int
+	pressure     func() int
+	bulk         func() bool
+	traceCarrier net.Conn
 }
 
 // enqueueMuxSession is called while the seat's admission lock is held.
@@ -112,13 +114,14 @@ type muxSession struct {
 	relayFrame    int // WSSMux send frame size; zero for other carriers
 	tracePort     int // optional loopback WSSMux admission trace
 
-	limits   *limiter
-	log      *logrus.Logger
-	streams  *int32
-	sessions *int32
-	count    func(*int32, int32)
-	pressure func() int
-	bulk     func() bool
+	limits       *limiter
+	log          *logrus.Logger
+	streams      *int32
+	sessions     *int32
+	count        func(*int32, int32)
+	pressure     func() int
+	bulk         func() bool
+	traceCarrier net.Conn
 	// Only peers that negotiated support enable retirement. The callback
 	// atomically reserves one excess session's removal above the pool floor.
 	idleRetire  func() bool
@@ -259,6 +262,9 @@ func (m muxSession) run(session *smux.Session) {
 				})
 			}
 			trace := startMuxAdmissionTrace(incomingConn, m.tracePort, idleSince)
+			if trace != nil {
+				trace.sampleCarrier(m.traceCarrier)
+			}
 			stream, err := session.OpenStream()
 			if trace != nil {
 				trace.opened = time.Now()
@@ -321,6 +327,7 @@ func (m muxSession) run(session *smux.Session) {
 			if trace != nil {
 				incomingConn.conn = &muxAdmissionReply{
 					Conn: incomingConn.conn, trace: *trace, announced: time.Now(), output: os.Stderr,
+					carrier: m.traceCarrier, streamID: stream.ID(),
 				}
 			}
 

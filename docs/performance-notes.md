@@ -704,3 +704,23 @@ See `internal/tunnel/l3/bench_gate_test.go`.
 ---
 
 *Last verified against Backpack v1.26.1 (2026-11-15)*
+
+## Measuring first-reply latency on WSSMux
+
+Set `BP_WSSMUX_TRACE_PORT` on the WSSMux server to a loopback forward listener port
+and `BP_WSSMUX_TRACE_BACKEND_PORT` on the WSSMux client to its loopback TCP
+backend port. The server reports queue, stream opening, target announcement,
+and time to deliver the first reply. The client reports backend dial time and
+time from dial completion to reading the first backend bytes. The latter
+includes waiting for forwarded request bytes and backend processing.
+
+On a direct path that preserves the client's carrier source port, match
+`WSSMUX_ADMISSION` and `WSSMUX_BACKEND` lines by `carrier_port` and `stream_id`
+within the same connection lifetime. On Linux, each line also gives two
+samples of the local carrier's unsent bytes, cumulative TCP retransmissions
+and smoothed RTT. Compare the start and end retransmission counters on the
+same carrier. The TCP counters are shared by all streams on that carrier.
+`tcp_available=false` indicates a missing sample.
+
+The traces are disabled by default and report only streams that deliver
+a first reply. Count timeouts and failures separately when testing latency.

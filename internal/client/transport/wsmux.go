@@ -3,6 +3,8 @@ package transport
 import (
 	"context"
 	"fmt"
+	"os"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -27,6 +29,7 @@ type WsMuxTransport struct {
 	sessions   muxPoolSessions
 	poolLost   chan struct{}
 	dataRoutes wsMuxDataRoutes
+	tracePort  int
 }
 type WsMuxConfig struct {
 	RemoteAddr string
@@ -75,6 +78,12 @@ func NewWSMuxClient(parentCtx context.Context, cfg *WsMuxConfig, logger *logrus.
 		},
 		config:   cfg,
 		poolLost: make(chan struct{}, 1),
+	}
+
+	if cfg.Mode == config.WSSMUX {
+		if port, err := strconv.ParseUint(os.Getenv("BP_WSSMUX_TRACE_BACKEND_PORT"), 10, 16); err == nil {
+			client.tracePort = int(port)
+		}
 	}
 
 	client.firstGeneration(parentCtx, logger, usageSpec{snifferLog: cfg.SnifferLog, sniffer: cfg.Sniffer})
@@ -335,7 +344,12 @@ func (c *WsMuxTransport) handleSession(tunnelConn *websocket.Conn, mux network.W
 
 	established = true
 	defer c.sessions.add(session, mux.Retirement)()
-	c.serveSession(session, tunnelConn.RemoteAddr(), c.backend())
+	backend := c.backend()
+	if c.tracePort != 0 {
+		backend.tracePort = c.tracePort
+		backend.traceCarrier = tunnelConn.NetConn()
+	}
+	c.serveSession(session, tunnelConn.RemoteAddr(), backend)
 }
 
 // backend is how this transport's users reach the local service. See

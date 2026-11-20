@@ -325,11 +325,16 @@ func (s *WsMuxTransport) tunnelListener(g *wsMuxGen) {
 					conn.Close()
 					return
 				}
+				var traceCarrier net.Conn
+				if s.tracePort != 0 {
+					traceCarrier = conn.NetConn()
+				}
 				accepted := g.seat.admitFor(g.ctx, owner, func(ctx context.Context) bool {
 					return enqueueMuxEntry(g.tunnelChannel, pooledMuxSession{
 						Session: session, owner: ctx, idleFloor: floor,
-						pressure: network.WSMuxPressure(conn.NetConn()),
-						bulk:     network.WSMuxRecentBulk(wire),
+						pressure:     network.WSMuxPressure(conn.NetConn()),
+						bulk:         network.WSMuxRecentBulk(wire),
+						traceCarrier: traceCarrier,
 					})
 				})
 				if !accepted {
@@ -383,6 +388,7 @@ func (s *WsMuxTransport) handleLoop(g *wsMuxGen) {
 			loop := s.session(g, session.owner)
 			loop.pressure = session.pressure
 			loop.bulk = session.bulk
+			loop.traceCarrier = session.traceCarrier
 			if session.idleFloor > 0 {
 				loop.idleTimeout = 60 * time.Second
 				loop.idleRetire = func() bool {

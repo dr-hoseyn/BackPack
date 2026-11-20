@@ -6,4 +6,6 @@ import "net"
 
 func tcpMuxSocketPressure(net.Conn) (int, bool) { return 0, false }
 
+func sampleMuxTCP(net.Conn) MuxTCPSnapshot { return MuxTCPSnapshot{} }
+
 func limitTCPMuxBacklog(net.Conn) func() { return nil }
