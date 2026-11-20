@@ -139,3 +139,23 @@ func BenchmarkAdaptiveRelayBufferPair(b *testing.B) {
 		down.release()
 	}
 }
+
+func TestAdaptiveRelayWideMuxGrowthPreservesBulkFramesAndShortTail(t *testing.T) {
+	const frame = 65520
+	want := bytes.Repeat([]byte{0x51}, 7*frame+113)
+	from := &sizedReadConn{data: want}
+	to := &completedWriteConn{}
+	buffer := newRelayCopyBuffer()
+	buffer.frameSize = frame
+	if !copyBuffered(from, to, &buffer, quietLogger(), nil, 0, false) {
+		t.Fatal("buffer ownership lost")
+	}
+	defer buffer.release()
+	if !bytes.Equal(want, to.received) {
+		t.Fatal("bulk relay changed payload")
+	}
+	if prefix := []int{smallRelayBufferSize, frame, 4 * frame}; len(from.sizes) < len(prefix) ||
+		!slices.Equal(from.sizes[:len(prefix)], prefix) {
+		t.Fatalf("reads = %v, want prefix %v", from.sizes, prefix)
+	}
+}
