@@ -23,6 +23,7 @@ const WSMuxBinaryProtocol = "binary"
 const (
 	wsMuxWindowUpdateCommand = 4
 	wsMuxWindowUpdateSize    = 8
+	wsMuxSmallMessageSize    = 256
 	wsMuxBulkReadWrite       = 8 << 10
 	wsMuxBulkActivityWindow  = 100 * time.Millisecond
 )
@@ -60,8 +61,9 @@ type webSocketStream struct {
 	writeMu  sync.Mutex
 	closed   atomic.Bool
 	writeErr error // accessed only under writeMu
-	// Only the writeMu owner reuses this fixed-size control metadata.
-	controlFrame [smuxHeaderSize + wsMuxWindowUpdateSize]byte
+	// Only the writeMu owner reuses this scratch. It is small enough to
+	// stage announcements and interactive frames without copying bulk data.
+	smallMessage [wsMuxSmallMessageSize]byte
 	announceOpen bool
 	openPending  bool
 	openFrame    [smuxHeaderSize]byte
@@ -181,26 +183,22 @@ func (c *webSocketStream) WriteBuffers(v [][]byte) (int, error) {
 			return len(header), nil
 		}
 	}
-	// These smux controls contain no application payload. Gorilla's server
-	// WriteMessage keeps its writer on the stack. Join a v2 window update in
-	// per-carrier storage rather than allocating a temporary 16-byte slice.
-	// All bytes are consumed synchronously while writeMu remains held.
-	if prefix == nil && len(v) == 2 && len(v[0]) == smuxHeaderSize {
+	if len(v) == 2 && len(v[0]) == smuxHeaderSize {
 		header, body := v[0], v[1]
-		var control []byte
-		if len(body) == 0 {
-			control = header
-		} else if len(body) == wsMuxWindowUpdateSize && header[0] == 2 &&
-			header[1] == wsMuxWindowUpdateCommand && header[2] == wsMuxWindowUpdateSize && header[3] == 0 {
-			copy(c.controlFrame[:smuxHeaderSize], header)
-			copy(c.controlFrame[smuxHeaderSize:], body)
-			control = c.controlFrame[:]
+		n := len(header) + len(body)
+		update := len(body) == wsMuxWindowUpdateSize && header[0] == 2 &&
+			header[1] == wsMuxWindowUpdateCommand && header[2] == wsMuxWindowUpdateSize && header[3] == 0
+		if prefix == nil && len(body) == 0 {
+			return c.writeSmallMessage(header, n)
 		}
-		if control != nil {
-			if err := c.conn.WriteMessage(websocket.BinaryMessage, control); err != nil {
-				return c.failWrite(0, err)
-			}
-			return len(control), nil
+		// Reverse WSSMux uses Gorilla's server WriteMessage path, which
+		// avoids the heap-allocated NextWriter for these short messages.
+		// Keep the vectored writer for bulk frames to avoid a payload copy.
+		if len(prefix)+n <= len(c.smallMessage) && (c.announceOpen || update) {
+			message := append(c.smallMessage[:0], prefix...)
+			message = append(message, header...)
+			message = append(message, body...)
+			return c.writeSmallMessage(message, n)
 		}
 	}
 	w, err := c.conn.NextWriter(websocket.BinaryMessage)
@@ -234,6 +232,13 @@ func (c *webSocketStream) WriteBuffers(v [][]byte) (int, error) {
 		return c.failWrite(n, err)
 	}
 	return n, err
+}
+
+func (c *webSocketStream) writeSmallMessage(message []byte, n int) (int, error) {
+	if err := c.conn.WriteMessage(websocket.BinaryMessage, message); err != nil {
+		return c.failWrite(0, err)
+	}
+	return n, nil
 }
 
 func (c *webSocketStream) failWrite(n int, err error) (int, error) {
