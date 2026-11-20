@@ -16,7 +16,7 @@ import "sync"
 // to; past that the returns fall off, because the cost stops being the syscall
 // count and starts being the copy itself.
 //
-// And it was allocated per direction per connection — two 16 KB allocations for
+// And it was allocated per direction per connection â€” two 16 KB allocations for
 // every connection the tunnel forwards. For a long download that is nothing.
 // For a browser opening thirty short connections to load one page, it is thirty
 // times two garbage-collected allocations that did not have to exist, on a
@@ -36,6 +36,14 @@ var smallRelayBuffers = sync.Pool{New: func() any {
 	return &b
 }}
 
+// WSSMux commonly has many quiet streams on each physical connection.
+const quietMuxRelayBufferSize = 4 * 1024
+
+var quietMuxRelayBuffers = sync.Pool{New: func() any {
+	b := make([]byte, quietMuxRelayBufferSize)
+	return &b
+}}
+
 type relayCopyBuffer struct {
 	p         *[]byte
 	adaptive  bool
@@ -46,8 +54,20 @@ func newRelayCopyBuffer() relayCopyBuffer {
 	return relayCopyBuffer{p: smallRelayBuffers.Get().(*[]byte), adaptive: true}
 }
 
+func newMuxRelayCopyBuffer() relayCopyBuffer {
+	return relayCopyBuffer{p: quietMuxRelayBuffers.Get().(*[]byte), adaptive: true}
+}
+
 func (b *relayCopyBuffer) grow(n int) {
-	if b.adaptive && n == len(*b.p) && n == smallRelayBufferSize {
+	if !b.adaptive || n != len(*b.p) {
+		return
+	}
+	switch n {
+	case quietMuxRelayBufferSize:
+		old := b.p
+		b.p = smallRelayBuffers.Get().(*[]byte)
+		quietMuxRelayBuffers.Put(old)
+	case smallRelayBufferSize:
 		old := b.p
 		b.p = getRelayBuffer()
 		smallRelayBuffers.Put(old)
@@ -57,9 +77,12 @@ func (b *relayCopyBuffer) grow(n int) {
 // Failed writes may leave smux holding the slice. The caller deliberately
 // discards that buffer rather than returning it to either pool.
 func (b *relayCopyBuffer) release() {
-	if len(*b.p) == smallRelayBufferSize {
+	switch len(*b.p) {
+	case quietMuxRelayBufferSize:
+		quietMuxRelayBuffers.Put(b.p)
+	case smallRelayBufferSize:
 		smallRelayBuffers.Put(b.p)
-	} else {
+	default:
 		putRelayBuffer(b.p)
 	}
 }
@@ -67,7 +90,7 @@ func (b *relayCopyBuffer) release() {
 // relayBuffers hands out reusable copy buffers.
 //
 // It stores *[]byte rather than []byte: putting a slice into a sync.Pool
-// converts it to an interface, and that conversion allocates — which would put
+// converts it to an interface, and that conversion allocates â€” which would put
 // back a good part of what pooling is here to save.
 var relayBuffers = sync.Pool{
 	New: func() any {
