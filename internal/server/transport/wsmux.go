@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -51,6 +52,7 @@ type WsMuxTransport struct {
 	streamCounter  int32
 	sessionCounter int32
 	limits         *limiter
+	tracePort      int
 }
 
 type WsMuxConfig struct {
@@ -107,6 +109,11 @@ func NewWSMuxServer(parentCtx context.Context, cfg *WsMuxConfig, logger *logrus.
 		streamCounter:  0,
 		sessionCounter: 0,
 		limits:         newLimiter(Limits{MaxConnections: cfg.MaxConnections, BandwidthMbps: cfg.BandwidthMbps}),
+	}
+	if cfg.Mode == config.WSSMUX {
+		if port, err := strconv.ParseUint(os.Getenv("BP_WSSMUX_TRACE_PORT"), 10, 16); err == nil {
+			server.tracePort = int(port)
+		}
 	}
 
 	// The first run is installed the same way every later one is, so there is
@@ -414,6 +421,7 @@ func (s *WsMuxTransport) session(g *wsMuxGen, owner context.Context) muxSession 
 	}
 	return muxSession{
 		relayFrame:    frameSize,
+		tracePort:     s.tracePort,
 		ctx:           owner,
 		local:         g.localChannel,
 		usage:         g.usageMonitor,
