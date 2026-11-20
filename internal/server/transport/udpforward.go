@@ -50,12 +50,21 @@ const udpIdleTimeout = 60 * time.Second
 // stalled flow cannot grow the process without limit.
 const udpFlowQueue = 256
 
+// Cap the amount of already queued data one WSSMux read can gather. Leave
+// room for the smux and WebSocket headers in one full-size TLS record.
+const (
+	udpReadBatchDatagrams = 8
+	udpReadBatchBytes     = 16<<10 - 16
+)
+
 // udpForwarder owns one UDP socket on a forwarded port and the flows on it.
 type udpForwarder struct {
 	conn   *net.UDPConn
 	logger *logrus.Logger
 	// target is the address on the far side, already marked as UDP.
 	target string
+
+	batchReads bool
 
 	mu        sync.Mutex
 	flows     map[netip.AddrPort]*udpFlow
@@ -99,7 +108,7 @@ func newUDPForwarder(logger *logrus.Logger, localAddr, remoteAddr string) (*udpF
 // it, and left the record behind when the offer failed; every later datagram
 // from that address was filed against a flow no goroutine was reading, so one
 // full channel silenced that peer until the service was restarted.
-func startUDPForward(ctx context.Context, logger *logrus.Logger, localAddr, remoteAddr string,
+func startUDPForward(ctx context.Context, logger *logrus.Logger, localAddr, remoteAddr string, batchReads bool,
 	admit func(conn net.Conn, target string) bool) {
 	if ctx.Err() != nil {
 		return
@@ -110,6 +119,7 @@ func startUDPForward(ctx context.Context, logger *logrus.Logger, localAddr, remo
 		logger.Warnf("forwarded port %s carries TCP only — its UDP side could not be opened: %v", localAddr, err)
 		return
 	}
+	fw.batchReads = batchReads
 	logger.Infof("UDP listener started successfully, listening on address: %s", fw.conn.LocalAddr())
 	defer closeListenerOnCancel(ctx, fw)()
 
@@ -309,14 +319,33 @@ func (f *udpFlow) Read(p []byte) (int, error) {
 			return 0, io.EOF
 		}
 	}
+	n := f.consumeFrame(p)
+	if f.fwd.batchReads && len(f.pending) == 0 {
+		limit := min(len(p), udpReadBatchBytes)
+		// Only this reader consumes f.in, and the channel stays open.
+		// Take only frames already queued so a lone datagram leaves immediately.
+		queued := min(len(f.in), udpReadBatchDatagrams-1)
+		for i := 0; i < queued && n < limit; i++ {
+			f.pendingFrame = <-f.in
+			f.pending = f.pendingFrame
+			if len(f.pending) > limit-n {
+				break // start this frame on the next read
+			}
+			n += f.consumeFrame(p[n:limit])
+		}
+	}
+	f.touch()
+	return n, nil
+}
+
+func (f *udpFlow) consumeFrame(p []byte) int {
 	n := copy(p, f.pending)
 	f.pending = f.pending[n:]
 	if len(f.pending) == 0 {
 		network.PutDatagramBuffer(f.pendingFrame)
 		f.pendingFrame = nil
 	}
-	f.touch()
-	return n, nil
+	return n
 }
 
 // Write reassembles framed datagrams out of whatever the tunnel hands over and

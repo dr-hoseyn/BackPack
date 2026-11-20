@@ -3,9 +3,12 @@ package transport
 import (
 	"bytes"
 	"context"
+	"io"
 	"net"
+	"net/netip"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/backpack/backpack/internal/utils/network"
@@ -195,7 +198,7 @@ func TestABusyUDPPortIsNotFatal(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		startUDPForward(ctx, quietLogger(), pc.LocalAddr().String(), "9000",
+		startUDPForward(ctx, quietLogger(), pc.LocalAddr().String(), "9000", false,
 			func(net.Conn, string) bool { return true })
 	}()
 
@@ -219,4 +222,56 @@ func testForwarder(t *testing.T, target string) *udpForwarder {
 	}
 	t.Cleanup(fw.close)
 	return fw
+}
+
+func TestWSSMuxUDPReadPreservesQueuedDatagrams(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		fw := &udpForwarder{batchReads: true}
+		flow := newUDPFlow(fw, netip.MustParseAddrPort("127.0.0.1:1234"))
+		defer flow.Close()
+
+		// A single datagram must never wait for another arrival.
+		flow.deliver(nil)
+		buf := make([]byte, udpReadBatchBytes+10)
+		if n, err := flow.Read(buf); err != nil || n != 2 || !bytes.Equal(buf[:n], []byte{0, 0}) {
+			t.Fatalf("single empty datagram: n=%d, err=%v", n, err)
+		}
+
+		var want bytes.Buffer
+		for i := 0; i <= udpReadBatchDatagrams; i++ {
+			payload := []byte{byte(i)}
+			flow.deliver(payload)
+			if err := network.WriteDatagram(&want, payload); err != nil {
+				t.Fatal(err)
+			}
+		}
+		n, err := flow.Read(buf)
+		if err != nil || n != udpReadBatchDatagrams*3 || !bytes.Equal(buf[:n], want.Next(n)) {
+			t.Fatalf("did not batch the first %d frames in order: n=%d, err=%v", udpReadBatchDatagrams, n, err)
+		}
+		if n, err := flow.Read(buf); err != nil || !bytes.Equal(buf[:n], want.Bytes()) {
+			t.Fatalf("did not preserve the remaining frame: n=%d, err=%v", n, err)
+		}
+
+		// A frame that does not fit must remain first for the next read,
+		// including when that read can carry only a prefix of the frame.
+		large := bytes.Repeat([]byte{0x42}, udpReadBatchBytes)
+		flow.deliver([]byte{7})
+		flow.deliver(large)
+		flow.deliver([]byte{8})
+		if n, err := flow.Read(buf); err != nil || n != 3 || !bytes.Equal(buf[:n], []byte{0, 1, 7}) {
+			t.Fatalf("first datagram before an oversized frame: n=%d, err=%v", n, err)
+		}
+		var header [1]byte
+		if _, err := io.ReadFull(flow, header[:]); err != nil || header[0] != byte(len(large)>>8) {
+			t.Fatalf("first byte of the retained frame: %x, %v", header, err)
+		}
+		if _, err := io.ReadFull(flow, buf[:len(large)+1]); err != nil ||
+			buf[0] != byte(len(large)&255) || !bytes.Equal(buf[1:len(large)+1], large) {
+			t.Fatalf("retained frame changed after a short read: %v", err)
+		}
+		if n, err := flow.Read(buf); err != nil || n != 3 || !bytes.Equal(buf[:n], []byte{0, 1, 8}) {
+			t.Fatalf("last datagram after an oversized frame: n=%d, err=%v", n, err)
+		}
+	})
 }

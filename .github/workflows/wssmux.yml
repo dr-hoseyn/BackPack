@@ -36,6 +36,9 @@ jobs:
           go test -race ./internal/utils/network ./internal/client/transport ./internal/server/transport ./internal/e2e
           -run '^(TestWSS|TestWSMux|TestWebSocket|TestAWSS|TestMuxUpgrade|TestTLSTransports|TestMuxCapacityGrows|TestMuxSessionFailure)'
           -count=1 -timeout 4m
+
+      - name: Forward a real UDP datagram over WSSMux
+        run: go test -race ./internal/e2e -run '^TestForwardedUDPWorksOnEveryTransport$/^wssmux$' -count=1 -timeout 2m
       - name: Provision private trust in real setup-link bearer clients
         run: >-
           go test -race ./internal/manage

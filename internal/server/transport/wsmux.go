@@ -438,7 +438,8 @@ func (s *WsMuxTransport) forwarder(g *wsMuxGen) portForwarder {
 	return portForwarder{
 		expireQueued: s.session(g, g.ctx).dropLocal,
 		ctx:          g.ctx, ports: s.config.Ports, acceptUDP: s.config.AcceptUDP,
-		muxQueue: g.localChannel, limits: s.limits, listeners: &s.listeners, log: s.logger,
+		batchUDPReads: s.config.Mode == config.WSSMUX && s.config.BandwidthMbps <= 0,
+		muxQueue:      g.localChannel, limits: s.limits, listeners: &s.listeners, log: s.logger,
 		tune:   s.tuneUserConn,
 		queued: muxRequestForGeneration(g.ctx, &s.counterMutex, &s.streamCounter, &s.sessionCounter, s.config.MuxCon, g.reqNewConnChan, s.logger),
 	}

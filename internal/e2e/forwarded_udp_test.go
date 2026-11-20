@@ -86,7 +86,7 @@ func startForwardingTunnel(t *testing.T, transport, backendAddr string) string {
 // forwardedUDPTransports are the stream transports, all of which now carry
 // datagrams on a forwarded port. The raw udp transport is not here: it forwards
 // only UDP and has its own test.
-var forwardedUDPTransports = []string{"tcp", "tcpmux", "ws", "wsmux", "kcp", "quic"}
+var forwardedUDPTransports = []string{"tcp", "tcpmux", "ws", "wsmux", "wssmux", "kcp", "quic"}
 
 func TestForwardedUDPWorksOnEveryTransport(t *testing.T) {
 	for _, transport := range forwardedUDPTransports {
