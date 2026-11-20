@@ -35,6 +35,7 @@ type muxQueueWaiter struct {
 	lastUse    uint64
 	warm       bool
 	pressure   func() int
+	bulk       func() bool
 	prev, next *muxQueueWaiter // linked only while waiting on a balanced queue
 }
 
@@ -164,11 +165,13 @@ func (q *muxLocalQueue) notify() {
 // Preserve the shared channel's readiness order among healthy carriers. Quiet
 // long-lived streams are not evidence that a TCP socket is busy; ranking their
 // count changed healthy scheduling and regressed fresh-user latency in controls.
-// Pressure is nonnegative, so the first zero score is already optimal. Usually
-// this observes one carrier and does not scan the rest of the pool.
+// Prefer a carrier without recent bulk traffic when the kernel pressure ties.
+// The first idle carrier with zero pressure is optimal. If all carriers are
+// busy, use the best one immediately.
 func (q *muxLocalQueue) chooseReadyCarrier() *muxQueueWaiter {
 	var next *muxQueueWaiter
 	var bestPressure int
+	var bestBulk bool
 	for waiter := q.head; waiter != nil; waiter = waiter.next {
 		if waiter.isClosed() {
 			continue
@@ -177,11 +180,12 @@ func (q *muxLocalQueue) chooseReadyCarrier() *muxQueueWaiter {
 		if waiter.pressure != nil {
 			pressure = waiter.pressure()
 		}
-		if pressure == 0 {
+		bulk := waiter.bulk != nil && waiter.bulk()
+		if pressure == 0 && !bulk {
 			return waiter
 		}
-		if next == nil || pressure < bestPressure {
-			next, bestPressure = waiter, pressure
+		if next == nil || pressure < bestPressure || (pressure == bestPressure && bestBulk && !bulk) {
+			next, bestPressure, bestBulk = waiter, pressure, bulk
 		}
 	}
 	return next
