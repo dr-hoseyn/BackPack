@@ -27,7 +27,7 @@ jobs:
           results="$RUNNER_TEMP/cipher-results"
           mkdir -p "$results"
           go test -c -o "$RUNNER_TEMP/cipher-fixture" ./internal/e2e
-          rg -m 1 '\bssse3\b' /proc/cpuinfo >/dev/null
+          grep -q -w ssse3 /proc/cpuinfo
           for run in accelerated-1 scalar-1 scalar-2 accelerated-2; do
             debug="cpu.aes=off"
             if [[ "$run" == scalar-* ]]; then debug="$debug,cpu.ssse3=off"; fi
