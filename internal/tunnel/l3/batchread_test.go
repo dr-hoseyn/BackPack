@@ -437,7 +437,7 @@ func TestWriteBatchDoesNotAllocatePerCall(t *testing.T) {
 		t.Skip("sendmmsg is a Linux syscall")
 	}
 	c := newLocalUDPCarrier(t)
-	sink, err := net.ListenPacket("udp", "127.0.0.1:0")
+	sink, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
 	if err != nil {
 		t.Fatalf("binding a sink: %v", err)
 	}
@@ -445,7 +445,8 @@ func TestWriteBatchDoesNotAllocatePerCall(t *testing.T) {
 	go func() {
 		b := make([]byte, 2048)
 		for {
-			if _, _, err := sink.ReadFrom(b); err != nil {
+			// The allocation sampler counts the whole process, including this drain.
+			if _, _, err := sink.ReadFromUDPAddrPort(b); err != nil {
 				return
 			}
 		}
