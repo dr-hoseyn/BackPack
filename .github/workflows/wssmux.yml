@@ -105,7 +105,9 @@ jobs:
             order="baseline candidate"
             if [ $((sample % 2)) -eq 0 ]; then order="candidate baseline"; fi
             for kind in $order; do
-              "$RUNNER_TEMP/wssmux-$kind" -test.run '^TestWSMuxResourceProfile$' -test.v -test.timeout 2m \
+              test_lowat=0
+              if [ "$kind" = candidate ]; then test_lowat=1; fi
+              BP_WSSMUX_TEST_SEND_LOWAT="$test_lowat" "$RUNNER_TEMP/wssmux-$kind" -test.run '^TestWSMuxResourceProfile$' -test.v -test.timeout 2m \
                 | tee "wssmux-ab-$kind-$sample.log"
             done
           done

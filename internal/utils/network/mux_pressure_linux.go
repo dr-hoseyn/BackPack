@@ -3,6 +3,8 @@
 package network
 
 import (
+	"errors"
+	"fmt"
 	"net"
 	"syscall"
 	"time"
@@ -61,6 +63,34 @@ func tcpMuxQueueReserve(info *unix.TCPInfo) int {
 	}
 	reserve := int(rate * rtt / 8_000_000)
 	return max(floor, (reserve+step-1)/step*step)
+}
+
+// SetWSMuxSendLowWatermark sets and verifies the unsent-byte threshold on
+// the TCP socket without changing the congestion window or socket buffers.
+func SetWSMuxSendLowWatermark(conn net.Conn, bytes int) error {
+	socket, ok := tcpMuxPressureConn(conn).(syscall.Conn)
+	if !ok {
+		return errors.New("carrier does not expose a TCP socket")
+	}
+	raw, err := socket.SyscallConn()
+	if err != nil {
+		return err
+	}
+	var optionErr error
+	if err := raw.Control(func(fd uintptr) {
+		optionErr = unix.SetsockoptInt(int(fd), unix.IPPROTO_TCP, unix.TCP_NOTSENT_LOWAT, bytes)
+		if optionErr != nil {
+			return
+		}
+		var actual int
+		actual, optionErr = unix.GetsockoptInt(int(fd), unix.IPPROTO_TCP, unix.TCP_NOTSENT_LOWAT)
+		if optionErr == nil && actual != bytes {
+			optionErr = fmt.Errorf("TCP_NOTSENT_LOWAT readback %d, expected %d", actual, bytes)
+		}
+	}); err != nil {
+		return err
+	}
+	return optionErr
 }
 
 func readMuxTCPInfo(conn net.Conn) *unix.TCPInfo {

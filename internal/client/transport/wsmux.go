@@ -24,12 +24,13 @@ type WsMuxTransport struct {
 	// lifecycle.go.
 	lifecycle
 
-	config     *WsMuxConfig
-	smuxConfig *smux.Config
-	sessions   muxPoolSessions
-	poolLost   chan struct{}
-	dataRoutes wsMuxDataRoutes
-	tracePort  int
+	config        *WsMuxConfig
+	smuxConfig    *smux.Config
+	sessions      muxPoolSessions
+	poolLost      chan struct{}
+	dataRoutes    wsMuxDataRoutes
+	tracePort     int
+	testSendQueue bool
 }
 type WsMuxConfig struct {
 	RemoteAddr string
@@ -81,6 +82,7 @@ func NewWSMuxClient(parentCtx context.Context, cfg *WsMuxConfig, logger *logrus.
 	}
 
 	if cfg.Mode == config.WSSMUX {
+		client.testSendQueue = os.Getenv("BP_WSSMUX_TEST_SEND_LOWAT") == "1"
 		if port, err := strconv.ParseUint(os.Getenv("BP_WSSMUX_TRACE_BACKEND_PORT"), 10, 16); err == nil {
 			client.tracePort = int(port)
 		}
@@ -332,6 +334,15 @@ func (c *WsMuxTransport) handleSession(tunnelConn *websocket.Conn, mux network.W
 			}
 		}
 	}()
+
+	if c.testSendQueue {
+		const lowWatermark = 64 << 10
+		if err := network.SetWSMuxSendLowWatermark(tunnelConn.NetConn(), lowWatermark); err != nil {
+			c.logger.Errorf("WSSMux send queue experiment: %v", err)
+		} else if c.tracePort != 0 {
+			fmt.Fprintln(os.Stderr, "WSSMUX_SEND_LOWAT verified_bytes=65536")
+		}
+	}
 
 	// SMUX server
 	cfg := *c.smuxConfig
