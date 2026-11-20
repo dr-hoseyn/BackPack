@@ -43,7 +43,9 @@ type tcpTunnelPort struct {
 func (p tcpTunnelPort) serve() {
 	// Counted while this goroutine holds a listener, so a restart can wait for
 	// the port rather than sleeping and hoping. See listeners.go.
-	p.listeners.hold()
+	if !p.listeners.hold(p.ctx) {
+		return
+	}
 	defer p.listeners.release()
 
 	// The tunnel's own port is not optional, so a failed bind here cannot be

@@ -52,7 +52,7 @@ func (f portForwarder) run() {
 	} else {
 		go drainOnEnd(f.ctx, f.queue, f.limits)
 	}
-	eachForward(f.ports, f.log, func(localAddr, target string) {
+	eachForward(f.ctx, f.ports, f.log, func(localAddr, target string) {
 		go f.listen(localAddr, target)
 	})
 }
@@ -62,8 +62,11 @@ func (f portForwarder) run() {
 // reason to end the process — under a unit that restarts every three seconds
 // one typo used to become a crash loop — so it is reported and skipped, and
 // the tunnel's other ports are unaffected.
-func eachForward(ports []string, log *logrus.Logger, bind func(localAddr, target string)) {
+func eachForward(ctx context.Context, ports []string, log *logrus.Logger, bind func(localAddr, target string)) {
 	for _, portMapping := range ports {
+		if ctx.Err() != nil {
+			return
+		}
 		parts := strings.Split(portMapping, "=")
 		if len(parts) > 2 {
 			log.Errorf("ignoring the port mapping %q: it has more than one '='", portMapping)
@@ -83,6 +86,9 @@ func eachForward(ports []string, log *logrus.Logger, bind func(localAddr, target
 		}
 
 		for _, l := range listens {
+			if ctx.Err() != nil {
+				return
+			}
 			// With no target, each port forwards to the same port on the far side.
 			target := remoteAddr
 			if target == "" {
@@ -99,11 +105,10 @@ func eachForward(ports []string, log *logrus.Logger, bind func(localAddr, target
 // listen serves one forwarded port until the generation ends.
 func (f portForwarder) listen(localAddr, remoteAddr string) {
 	// Counted so a restart can wait for the port to be free again.
-	f.listeners.hold()
-	defer f.listeners.release()
-	if f.ctx.Err() != nil {
+	if !f.listeners.hold(f.ctx) {
 		return
 	}
+	defer f.listeners.release()
 
 	listener, err := net.Listen("tcp", localAddr)
 	if err != nil {

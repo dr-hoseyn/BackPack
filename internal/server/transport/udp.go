@@ -176,7 +176,9 @@ func (s *UdpTransport) newGen(ctx context.Context) *udpGen {
 func (s *UdpTransport) tunnelListener(g *udpGen) {
 	// Counted while this goroutine holds a listener, so Start can wait for the
 	// port rather than sleeping and hoping. See listeners.go.
-	s.listeners.hold()
+	if !s.listeners.hold(g.ctx) {
+		return
+	}
 	defer s.listeners.release()
 
 	// An address that does not parse is a configuration error: retrying it

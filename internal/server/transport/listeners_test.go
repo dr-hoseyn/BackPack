@@ -7,17 +7,10 @@ import (
 	"time"
 )
 
-// The counter Start waits on.
-//
-// A WaitGroup was the first attempt and the race detector rejected it on sight:
-// its contract is that every Add happens before Wait, and these Adds happen
-// inside listener goroutines the transport launched and did not wait for. A
-// listener binding a moment after shutdown begins is an Add racing a Wait.
-
 func TestWaitReturnsOnceEveryListenerHasClosed(t *testing.T) {
 	var l listenerSet
-	l.hold()
-	l.hold()
+	l.hold(context.Background())
+	l.hold(context.Background())
 
 	done := make(chan struct{})
 	go func() { defer close(done); l.wait(context.Background()) }()
@@ -60,14 +53,14 @@ func TestWaitingOnNothingReturnsAtOnce(t *testing.T) {
 // could not express. It must reopen the gate rather than being missed.
 func TestAListenerThatArrivesLateStillCounts(t *testing.T) {
 	var l listenerSet
-	l.hold()
+	l.hold(context.Background())
 
 	done := make(chan struct{})
 	go func() { defer close(done); l.wait(context.Background()) }()
 
 	time.Sleep(20 * time.Millisecond)
-	l.hold()    // a second listener, after wait is already blocked
-	l.release() // the first closes
+	l.hold(context.Background()) // a second listener, after wait is already blocked
+	l.release()                  // the first closes
 
 	select {
 	case <-done:
@@ -88,7 +81,7 @@ func TestAListenerThatArrivesLateStillCounts(t *testing.T) {
 // operator learns nothing from a service that refuses to stop.
 func TestWaitGivesUpRatherThanHangingForever(t *testing.T) {
 	var l listenerSet
-	l.hold() // and never released
+	l.hold(context.Background()) // and never released
 
 	ctx, cancel := context.WithTimeout(context.Background(), 80*time.Millisecond)
 	defer cancel()
@@ -110,7 +103,7 @@ func TestTheCounterIsSafeUnderConcurrentListeners(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			l.hold()
+			l.hold(context.Background())
 			time.Sleep(time.Millisecond)
 			l.release()
 		}()
@@ -137,7 +130,7 @@ func TestTheCounterIsSafeUnderConcurrentListeners(t *testing.T) {
 // wait unable to ever return.
 func TestAnExtraReleaseDoesNotBreakTheCounter(t *testing.T) {
 	var l listenerSet
-	l.hold()
+	l.hold(context.Background())
 	l.release()
 	l.release() // one too many
 
@@ -148,7 +141,7 @@ func TestAnExtraReleaseDoesNotBreakTheCounter(t *testing.T) {
 		t.Fatalf("the counter is %d after an extra release", n)
 	}
 
-	l.hold()
+	l.hold(context.Background())
 	done := make(chan struct{})
 	go func() { defer close(done); l.wait(context.Background()) }()
 	l.release()
@@ -157,4 +150,20 @@ func TestAnExtraReleaseDoesNotBreakTheCounter(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("the counter never recovered")
 	}
+}
+
+func TestListenerHoldRejectsCancelledGeneration(t *testing.T) {
+	var listeners listenerSet
+	generation, cancel := context.WithCancel(context.Background())
+	cancel()
+	listeners.wait(context.Background())
+
+	if listeners.hold(generation) {
+		listeners.release()
+		t.Fatal("a listener can still bind after its cancelled generation drained")
+	}
+	if !listeners.hold(context.Background()) {
+		t.Fatal("a new generation cannot acquire the listener")
+	}
+	listeners.release()
 }

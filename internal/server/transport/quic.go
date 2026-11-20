@@ -236,7 +236,9 @@ const quicFarewellFlush = 150 * time.Millisecond
 func (s *QuicTransport) tunnelListener(g *quicGen, handshake chan<- quicClaim) {
 	// Counted while this goroutine holds a listener, so Start can wait for the
 	// port rather than sleeping and hoping. See listeners.go.
-	s.listeners.hold()
+	if !s.listeners.hold(g.ctx) {
+		return
+	}
 	defer s.listeners.release()
 
 	// The tunnel's own port: retried rather than fatal. See bindfail.go.

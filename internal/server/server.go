@@ -114,14 +114,8 @@ func (s *Server) Start() {
 		defer func() { <-pprofStopped }()
 	}
 
-	// One transport, or an ordered chain of them. With no fallbacks configured
-	// the chain holds a single candidate and behaves exactly as the switch it
-	// replaced. With fallbacks it holds each candidate for the dwell and then
-	// tries the next, which is how a client whose carrier was filtered finds an
-	// ear on this end. See internal/tunnel/chain for why the two ends meet.
-	//
-	// Candidates run one at a time on purpose: starting a transport binds the
-	// forwarded ports, so two live candidates would fight over them.
+	// Each candidate owns the shared bind and forwarded ports. Join its
+	// listeners at every handoff and when the server shuts down.
 	ch := chain.New(string(s.config.Transport),
 		config.FallbackNames(s.config.FallbackTransports),
 		config.Dwell(s.config.FallbackDwell)).
@@ -129,34 +123,20 @@ func (s *Server) Start() {
 	if !ch.Single() {
 		s.logger.Infof("transport fallback chain: %v", ch.Candidates())
 	}
-	// The server holds each candidate for the whole dwell; the client sweeps.
-	//
-	// live is the transport currently running, so Start can wait for it below.
-	// The chain cancels a candidate's context when it rotates or stops; what it
-	// cannot know is when the listeners behind it have actually closed.
-	var live runner
 	ch.Run(s.ctx, false, func(ctx context.Context, name string) chain.Attempt {
 		r := s.startTransport(ctx, config.TransportType(name))
 		if r == nil {
-			return chain.Attempt{}
+			return chain.Attempt{Settled: func() bool { return false }}
 		}
-		live = r
-		return chain.Attempt{Settled: r.Running}
+		return chain.Attempt{
+			Settled: r.Running,
+			WaitStopped: func() {
+				wait, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+				defer cancel()
+				r.Wait(wait)
+			},
+		}
 	})
-
-	// Start does not return until the ports are free.
-	//
-	// Without this it returned as soon as the chain stopped supervising, while
-	// the listeners were still closing — and a reload builds the next
-	// generation immediately, so the two fought for the same ports. Restart's
-	// two-second sleep was the workaround; this is the answer.
-	if live != nil {
-		// Not s.ctx: that is already cancelled by the time this runs, and
-		// waiting on a dead context would wait for nothing.
-		wait, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		live.Wait(wait)
-		cancel()
-	}
 
 	s.logger.Info("all workers stopped successfully")
 
