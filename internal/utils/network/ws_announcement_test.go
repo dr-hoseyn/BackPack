@@ -174,6 +174,50 @@ func TestWSMuxAnnouncementPreservesLegacyAndGenericImmediateWrites(t *testing.T)
 	})
 }
 
+func TestWSMuxSmallAndBulkFramesKeepTheirBoundaries(t *testing.T) {
+	server, client, _ := announcementPair(t, true, true)
+	stream := WSMuxAnnouncementStream(server).(muxVectorWriter)
+	client.SetReadDeadline(time.Now().Add(3 * time.Second))
+	for _, size := range []int{128, 240, 241, 65520, 128} {
+		open := announcementHeader(2, 0, 0, 7)
+		header := announcementHeader(2, 2, size, 7)
+		body := bytes.Repeat([]byte{byte(size)}, size)
+		want := append(append(bytes.Clone(open), header...), body...)
+		if _, err := stream.WriteBuffers([][]byte{open, nil}); err != nil {
+			t.Fatal(err)
+		}
+		if n, err := stream.WriteBuffers([][]byte{header, body}); n != len(header)+size || err != nil {
+			t.Fatalf("size %d: wrote %d, error %v", size, n, err)
+		}
+		kind, got, err := client.ReadMessage()
+		if err != nil || kind != websocket.BinaryMessage || !bytes.Equal(got, want) {
+			t.Fatalf("size %d: received %d bytes, kind %d, error %v", size, len(got), kind, err)
+		}
+	}
+}
+
+func BenchmarkWSMuxAnnouncementFrameWriter(b *testing.B) {
+	for _, size := range []int{6, 128, 65520} {
+		b.Run(fmt.Sprintf("bytes-%d", size), func(b *testing.B) {
+			stream := controlServerStream(b, &wsControlSink{})
+			stream.announceOpen = true
+			open := [][]byte{announcementHeader(2, 0, 0, 7), nil}
+			data := [][]byte{announcementHeader(2, 2, size, 7), make([]byte, size)}
+			b.SetBytes(int64(size))
+			b.ReportAllocs()
+			b.ResetTimer()
+			for range b.N {
+				if _, err := stream.WriteBuffers(open); err != nil {
+					b.Fatal(err)
+				}
+				if _, err := stream.WriteBuffers(data); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
 func BenchmarkWSMuxStreamAnnouncement(b *testing.B) {
 	for _, coalesce := range []bool{false, true} {
 		b.Run(fmt.Sprint("combined=", coalesce), func(b *testing.B) {
