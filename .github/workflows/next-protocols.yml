@@ -9,6 +9,7 @@ jobs:
     timeout-minutes: 12
     env:
       GOMAXPROCS: '4'
+      BP_BENCH_PACE_MBPS: '720'
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -22,6 +23,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/pilot"
           work="$RUNNER_TEMP/pilot"
           go vet ./tools/wssresume-pilot
+          go test -race ./tools/wssresume-pilot -count=5 -timeout=80s
           go build -o "$work/backpack" .
           go build -o "$work/pilot" ./tools/wssresume-pilot
           go build -o "$work/tunnelbench" ./tools/tunnelbench

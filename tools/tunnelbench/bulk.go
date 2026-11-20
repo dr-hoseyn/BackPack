@@ -8,9 +8,12 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"errors"
+	"golang.org/x/time/rate"
 	"io"
 	"math"
 	"net"
+	"os"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -25,10 +28,23 @@ func bulkStream(seed []byte) cipher.Stream {
 	return cipher.NewCTR(block, seed[32:48])
 }
 
+var benchPace = func() *rate.Limiter {
+	mbps, _ := strconv.ParseFloat(os.Getenv("BP_BENCH_PACE_MBPS"), 64)
+	if mbps <= 0 {
+		return nil
+	}
+	return rate.NewLimiter(rate.Limit(mbps*1e6/8), 8*bulkBlock)
+}()
+
 func bulkWrite(c net.Conn, payload []byte, timeout time.Duration, attempted *atomic.Uint64) error {
 	stream := bulkStream(payload)
 	buf := make([]byte, bulkBlock)
 	for {
+		if benchPace != nil {
+			if err := benchPace.WaitN(context.Background(), len(buf)); err != nil {
+				return err
+			}
+		}
 		clear(buf)
 		stream.XORKeyStream(buf, buf)
 		c.SetWriteDeadline(time.Now().Add(timeout))
