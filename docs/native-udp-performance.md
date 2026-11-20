@@ -36,6 +36,13 @@ server. The FEC benchmark measures authenticated framing without socket I/O.
 The idle benchmark records retained Go heap for 300 idle reply workers, exposing
 the memory tradeoff. These do not establish WAN throughput or long-term uptime.
 
+## Native UDP fragment reassembly
+
+The receiver keeps up to 64 incomplete datagrams. When the window fills,
+it discards the oldest incomplete datagram to admit new traffic. Expiry
+and eviction leave complete datagrams independent, without retransmitting
+fragments or changing the authenticated wire format.
+
 ## Native sender framing
 
 The sender now reuses bounded framing and encrypted wire buffers under its existing

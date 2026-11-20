@@ -22,6 +22,56 @@ type assembly struct {
 	body    []byte
 	seen    uint64
 	count   uint16
+	key     fragmentKey
+	prev    *assembly
+	next    *assembly
+}
+
+// Assembly order tracks the first authenticated fragment of each datagram.
+// It lets the receiver prefer new traffic over incomplete old traffic under
+// pressure while keeping both the memory limit and eviction work bounded.
+func (l *Link) addAssembly(key fragmentKey, size int, count uint16) *assembly {
+	var a *assembly
+	if len(l.assemblies) == assemblyLimit {
+		a = l.oldestAssembly
+		l.discardAssembly(a)
+	} else if l.spareAssembly != nil {
+		a, l.spareAssembly = l.spareAssembly, nil
+	} else {
+		a = &assembly{}
+	}
+	body := a.body
+	if len(body) != size {
+		body = make([]byte, size)
+	}
+	*a = assembly{created: time.Now(), body: body, count: count, key: key, prev: l.newestAssembly}
+	if l.newestAssembly == nil {
+		l.oldestAssembly = a
+	} else {
+		l.newestAssembly.next = a
+	}
+	l.newestAssembly = a
+	l.assemblies[key] = a
+	return a
+}
+
+func (l *Link) removeAssembly(a *assembly) {
+	delete(l.assemblies, a.key)
+	if a.prev == nil {
+		l.oldestAssembly = a.next
+	} else {
+		a.prev.next = a.next
+	}
+	if a.next == nil {
+		l.newestAssembly = a.prev
+	} else {
+		a.next.prev = a.prev
+	}
+}
+
+func (l *Link) discardAssembly(a *assembly) {
+	l.removeAssembly(a)
+	l.dropped.Add(1)
 }
 
 // assemble runs under Link.mu, only after AEAD and replay validation.
@@ -42,16 +92,9 @@ func (l *Link) assemble(session [16]byte, p []byte) []byte {
 	key := fragmentKey{session, id}
 	a := l.assemblies[key]
 	if a == nil {
-		if len(l.assemblies) >= assemblyLimit {
-			l.dropped.Add(1)
-			return nil
-		}
-		a = &assembly{created: time.Now(), body: make([]byte, size), count: count}
-		l.assemblies[key] = a
-	}
-	if time.Since(a.created) > assemblyLife || len(a.body) != size || a.count != count {
-		delete(l.assemblies, key)
-		l.dropped.Add(1)
+		a = l.addAssembly(key, size, count)
+	} else if time.Since(a.created) > assemblyLife || len(a.body) != size || a.count != count {
+		l.discardAssembly(a)
 		return nil
 	}
 	bit := uint64(1) << index
@@ -63,8 +106,15 @@ func (l *Link) assemble(session [16]byte, p []byte) []byte {
 	if a.seen != (uint64(1)<<count)-1 {
 		return nil
 	}
-	delete(l.assemblies, key)
-	return a.body
+	l.removeAssembly(a)
+	body := a.body
+	if l.spareAssembly == nil {
+		// The reader owns the completed buffer. Keep only the metadata for
+		// the next assembly, never a reference to the delivered bytes.
+		*a = assembly{}
+		l.spareAssembly = a
+	}
+	return body
 }
 
 func (l *Link) sendMessage(b []byte) error {

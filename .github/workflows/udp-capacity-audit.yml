@@ -51,6 +51,11 @@ jobs:
         run: |
           set -o pipefail
           go test ./internal/nativeudp -run '^$' -bench '^BenchmarkNativeUDPEngineSend$' -benchmem -benchtime=1s -count=5 | tee "$RUNNER_TEMP/native-udp-candidate.txt"
+      - name: Measure authenticated receive on the candidate
+        run: |
+          set -o pipefail
+          go test ./internal/nativeudp -run '^$' -bench '^BenchmarkNativeUDPAuthenticatedReceive$/^dial=false$/^bytes=(64|1200)$' -benchmem -benchtime=300ms -count=5 | tee "$RUNNER_TEMP/native-udp-receive-candidate.txt"
+
       - name: Repeated client replacement, including TLS and multiplexing
         run: |
           set -o pipefail
@@ -65,6 +70,7 @@ jobs:
           git worktree add --detach "$RUNNER_TEMP/native-udp-base" "$BASE_SHA"
           cp internal/nativeudp/send_rekey_test.go "$RUNNER_TEMP/native-udp-base/internal/nativeudp/"
           cp internal/nativeudp/rekey_delivery_test.go "$RUNNER_TEMP/native-udp-base/internal/nativeudp/"
+          cp internal/nativeudp/reassembly_window_test.go "$RUNNER_TEMP/native-udp-base/internal/nativeudp/"
           cd "$RUNNER_TEMP/native-udp-base"
           if go test ./internal/nativeudp -run '^TestNativeDatagramKeepsItsSessionWhenRekeyCompletesBetweenFragments$' -count=1 > "$RUNNER_TEMP/native-udp-reproduction.txt" 2>&1; then
             echo 'Base already keeps a datagram in one Noise session.' >> "$RUNNER_TEMP/native-udp-reproduction.txt"
@@ -76,6 +82,12 @@ jobs:
           else
             grep -q 'fragmented datagram was lost across a completed Noise rekey' "$RUNNER_TEMP/native-udp-delivery-reproduction.txt"
           fi
+          if go test ./internal/nativeudp -run '^TestAuthenticatedNativeUDPDeliversThroughAFullReassemblyWindow$' -count=1 > "$RUNNER_TEMP/native-udp-reassembly-reproduction.txt" 2>&1; then
+            echo 'Base already delivers a complete datagram through a full window.' >> "$RUNNER_TEMP/native-udp-reassembly-reproduction.txt"
+          else
+            grep -q 'later complete datagram blocked by earlier fragment loss' "$RUNNER_TEMP/native-udp-reassembly-reproduction.txt"
+          fi
+          go test ./internal/nativeudp -run '^$' -bench '^BenchmarkNativeUDPAuthenticatedReceive$/^dial=false$/^bytes=(64|1200)$' -benchmem -benchtime=300ms -count=5 | tee "$RUNNER_TEMP/native-udp-receive-base.txt"
           go test ./internal/nativeudp -run '^$' -bench '^BenchmarkNativeUDPEngineSend$' -benchmem -benchtime=1s -count=5 | tee "$RUNNER_TEMP/native-udp-base.txt"
       - uses: actions/upload-artifact@v7
         if: always()
