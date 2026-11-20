@@ -153,6 +153,42 @@ func TestFECRepairsUpToItsParityAndNoFurther(t *testing.T) {
 	}
 }
 
+func TestAuthenticatedFECReconstructsMixedSizesAfterFrameReuse(t *testing.T) {
+	send, recv := newLossyPair(nil)
+	cfg := FECConfig{Data: 4, Parity: 2, Auth: true}
+	tx, err := newFECCarrier(send, cfg, deriveFECKeys("mixed sizes", true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rx, err := newFECCarrier(recv, cfg, deriveFECKeys("mixed sizes", false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Drop the largest data shard and one parity shard per group, so recovery
+	// depends on the short shards being zero-padded up to the full width.
+	send.drop = func(n int) bool { return n%6 == 3 || n%6 == 5 }
+	for group, sizes := range [][4]int{{800, 900, 1000, 1100}, {80, 900, 100, 1100}, {20, 300, 250, 1400}} {
+		want := make(map[byte][]byte)
+		for index, size := range sizes {
+			id := byte(1 + group*cfg.Data + index)
+			payload := bytes.Repeat([]byte{id}, size)
+			want[id] = payload
+			if _, err := tx.WriteTo(payload, recv.addr); err != nil {
+				t.Fatal(err)
+			}
+		}
+		for _, got := range drain(t, rx) {
+			if len(got) == 0 || !bytes.Equal(got, want[got[0]]) {
+				t.Fatalf("group %d delivered an unexpected or corrupt shard", group)
+			}
+			delete(want, got[0])
+		}
+		if len(want) != 0 {
+			t.Fatalf("group %d is missing %d shards", group, len(want))
+		}
+	}
+}
+
 // With nothing lost, every packet arrives once — the layer must not duplicate a
 // packet it also rebuilt, and must not hold anything back.
 func TestFECDeliversEachPacketOnceOnACleanPath(t *testing.T) {

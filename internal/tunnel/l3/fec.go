@@ -163,13 +163,13 @@ type fecCarrier struct {
 	sendTag [sha256.Size]byte
 	recvTag [sha256.Size]byte
 
-	sendMu    sync.Mutex
-	sendGrp   uint32
-	sendIdx   int
-	sendPad   [][]byte // padded shards of the group being built
-	sendMax   int      // the longest shard so far in this group
-	sendPeer  net.Addr // where the group's parity goes, from the last write
-	sendFrame []byte   // reused wire frame, under sendMu
+	sendMu     sync.Mutex
+	sendGrp    uint32
+	sendIdx    int
+	sendFrames [][]byte // header and shard body, with room for a trailing MAC
+	sendShards [][]byte // body-only views for Reed-Solomon
+	sendMax    int      // the longest shard so far in this group
+	sendPeer   net.Addr // where the group's parity goes, from the last write
 
 	readMu    sync.Mutex
 	readFrame []byte // receive scratch, held until the payload has been copied
@@ -314,26 +314,25 @@ func (c *fecCarrier) WriteTo(p []byte, addr net.Addr) (int, error) {
 	if len(p) > 65535 {
 		return 0, fmt.Errorf("l3: FEC payload of %d bytes exceeds its length field", len(p))
 	}
-	if c.sendPad == nil {
-		c.sendPad = make([][]byte, c.cfg.Data+c.cfg.Parity)
+	if c.sendFrames == nil {
+		total := c.cfg.Data + c.cfg.Parity
+		c.sendFrames = make([][]byte, total)
+		c.sendShards = make([][]byte, total)
 	}
-	// Each slot owns its shard until parity has been sent. Keep its capacity
-	// across groups instead of allocating two copies per data packet.
-	need := fecLenPrefix + len(p)
-	shard := c.sendPad[c.sendIdx]
-	if cap(shard) < need {
-		shard = make([]byte, need)
-	} else {
-		shard = shard[:need]
+	// Build the data frame in its own slot so the encoder can reuse the body
+	// after the synchronous write returns.
+	size := fecOverhead + len(p)
+	frame := c.sendFrames[c.sendIdx]
+	if cap(frame) < size+c.tagLen() {
+		frame = make([]byte, size, size+c.tagLen())
 	}
-	binary.BigEndian.PutUint16(shard[:fecLenPrefix], uint16(len(p)))
-	copy(shard[fecLenPrefix:], p)
-	c.sendPad[c.sendIdx] = shard
-	c.sendMax = max(c.sendMax, need)
+	frame = frame[:size]
+	c.sendFrames[c.sendIdx] = frame
+	c.sendMax = max(c.sendMax, size)
 	c.sendPeer = addr
-	frame := c.wireFrame(fecHeaderLen + need)
 	putFECHeader(frame, fecKindData, c.sendGrp, byte(c.sendIdx))
-	copy(frame[fecHeaderLen:], shard)
+	binary.BigEndian.PutUint16(frame[fecHeaderLen:], uint16(len(p)))
+	copy(frame[fecOverhead:], p)
 	err := c.writeFrame(frame, addr)
 	c.sendIdx++
 	if c.sendIdx == c.cfg.Data {
@@ -343,15 +342,6 @@ func (c *fecCarrier) WriteTo(p []byte, addr net.Addr) (int, error) {
 		return 0, err
 	}
 	return len(p), nil
-}
-
-// wireFrame is borrowed until the underlying synchronous write returns.
-// Every caller holds sendMu, including parity generation.
-func (c *fecCarrier) wireFrame(size int) []byte {
-	if cap(c.sendFrame) < size+c.tagLen() {
-		c.sendFrame = make([]byte, size+c.tagLen())
-	}
-	return c.sendFrame[:size]
 }
 
 func (c *fecCarrier) writeFrame(frame []byte, addr net.Addr) error {
@@ -380,28 +370,31 @@ func (c *fecCarrier) flushParity() {
 	if size == 0 {
 		return
 	}
-	for i, shard := range c.sendPad {
-		used := len(shard)
-		if cap(shard) < size {
-			padded := make([]byte, size)
-			copy(padded, shard)
-			shard = padded
-		} else {
-			shard = shard[:size]
+	capacity := size + c.tagLen()
+	for i, frame := range c.sendFrames {
+		used := len(frame)
+		if cap(frame) < capacity {
+			padded := make([]byte, size, capacity)
 			if i < c.cfg.Data {
-				// Old group bytes must not become this group's padding.
-				clear(shard[used:])
+				copy(padded[fecHeaderLen:], frame[fecHeaderLen:])
+			}
+			frame = padded
+		} else {
+			frame = frame[:size]
+			if i < c.cfg.Data {
+				// Discard bytes left by the MAC and previous groups.
+				clear(frame[used:])
 			}
 		}
-		c.sendPad[i] = shard
+		c.sendFrames[i] = frame
+		c.sendShards[i] = frame[fecHeaderLen:]
 	}
-	if err := c.enc.Encode(c.sendPad); err != nil {
+	if err := c.enc.Encode(c.sendShards); err != nil {
 		return
 	}
-	frame := c.wireFrame(fecHeaderLen + size)
-	for i := c.cfg.Data; i < len(c.sendPad); i++ {
+	for i := c.cfg.Data; i < len(c.sendFrames); i++ {
+		frame := c.sendFrames[i]
 		putFECHeader(frame, fecKindParity, c.sendGrp, byte(i))
-		copy(frame[fecHeaderLen:], c.sendPad[i])
 		// Data is already on the wire; parity remains best effort.
 		_ = c.writeFrame(frame, c.sendPeer)
 	}
@@ -557,7 +550,7 @@ func (c *fecCarrier) rebuild(g *fecGroup) {
 		copy(padded, s)
 		work[i] = padded
 	}
-	if err := c.enc.Reconstruct(work); err != nil {
+	if err := c.enc.ReconstructData(work); err != nil {
 		return
 	}
 	g.done = true
