@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	utls "github.com/refraction-networking/utls"
 	"golang.org/x/sys/unix"
 )
 
@@ -125,5 +126,31 @@ func TestTCPMuxPressureKeepsWarmCapacityThroughOrdinaryRTTJitter(t *testing.T) {
 	info.Rtt, info.Min_rtt = 500_000, 500_000
 	if got := tcpMuxQueuePressure(&info); got <= 16 {
 		t.Fatalf("a high-RTT carrier could never yield to a spare: %d", got)
+	}
+}
+
+func TestWSMuxTCPSnapshotFindsTheSocketUnderClientUpgradeAndTLS(t *testing.T) {
+	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	conn, err := net.DialTimeout("tcp4", listener.Addr().String(), time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	peer, err := listener.Accept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer peer.Close()
+
+	tlsConn := utls.UClient(conn, &utls.Config{}, utls.HelloChrome_133)
+	// As on the dialer side, the upgrade wrapper sits outside the TLS socket.
+	upgrade := muxUpgradeStream(tlsConn).(*muxUpgradeConn)
+	defer upgrade.releaseReader()
+	if sample := SampleMuxTCP(upgrade); !sample.Available || sample.RTTUS == 0 {
+		t.Fatalf("missing TCP snapshot through client wrappers: %+v", sample)
 	}
 }
