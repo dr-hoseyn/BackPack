@@ -174,6 +174,44 @@ func TestWSMuxAnnouncementPreservesLegacyAndGenericImmediateWrites(t *testing.T)
 	})
 }
 
+func TestWSSMuxRecentBulkObservesBothDirectionsAndExpires(t *testing.T) {
+	server, client, _ := announcementPair(t, true, true)
+	wire := WSMuxAnnouncementStream(server)
+	bulk := WSMuxRecentBulk(wire)
+	if bulk() || WSMuxRecentBulk(WSMuxStream(client)) != nil {
+		t.Fatal("a new carrier or the client reported server bulk traffic")
+	}
+	from := WebSocketStream(client)
+	small := []byte("light echo")
+	if _, err := from.Write(small); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.ReadFull(wire, make([]byte, len(small))); err != nil || bulk() {
+		t.Fatalf("small control traffic marked the carrier busy: %v", err)
+	}
+	payload := make([]byte, wsMuxBulkReadWrite)
+	if _, err := from.Write(payload); err != nil {
+		t.Fatal(err)
+	}
+	// A bulk frame may reach the mux in many short reads.
+	for range 8 {
+		if _, err := io.ReadFull(wire, payload[:len(payload)/8]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !bulk() {
+		t.Fatal("incoming bulk traffic was invisible to admission")
+	}
+	stream := wire.(*webSocketStream)
+	stream.lastBulk.Store(int64(time.Since(wsMuxActivityEpoch) - wsMuxBulkActivityWindow - time.Second))
+	if bulk() {
+		t.Fatal("an idle carrier retained its earlier bulk penalty")
+	}
+	if _, err := wire.Write(payload); err != nil || !bulk() {
+		t.Fatalf("outgoing bulk traffic was invisible to admission: %v", err)
+	}
+}
+
 func BenchmarkWSMuxStreamAnnouncement(b *testing.B) {
 	for _, coalesce := range []bool{false, true} {
 		b.Run(fmt.Sprint("combined=", coalesce), func(b *testing.B) {

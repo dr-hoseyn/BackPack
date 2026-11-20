@@ -22,6 +22,7 @@ type pooledMuxSession struct {
 	owner     context.Context
 	idleFloor int
 	pressure  func() int
+	bulk      func() bool
 }
 
 // enqueueMuxSession is called while the seat's admission lock is held.
@@ -115,6 +116,7 @@ type muxSession struct {
 	sessions *int32
 	count    func(*int32, int32)
 	pressure func() int
+	bulk     func() bool
 	// Only peers that negotiated support enable retirement. The callback
 	// atomically reserves one excess session's removal above the pool floor.
 	idleRetire  func() bool
@@ -173,7 +175,7 @@ func (m muxSession) run(session *smux.Session) {
 	}()
 	var waiter *muxQueueWaiter
 	if m.local.waiters != nil {
-		waiter = &muxQueueWaiter{ready: make(chan struct{}, 1), slots: counter, done: session.CloseChan(), pressure: m.pressure}
+		waiter = &muxQueueWaiter{ready: make(chan struct{}, 1), slots: counter, done: session.CloseChan(), pressure: m.pressure, bulk: m.bulk}
 		defer m.local.leave(waiter)
 	}
 
