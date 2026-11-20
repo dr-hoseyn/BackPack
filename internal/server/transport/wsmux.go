@@ -329,6 +329,7 @@ func (s *WsMuxTransport) tunnelListener(g *wsMuxGen) {
 					return enqueueMuxEntry(g.tunnelChannel, pooledMuxSession{
 						Session: session, owner: ctx, idleFloor: floor,
 						pressure: network.WSMuxPressure(conn.NetConn()),
+						bulk:     network.WSMuxRecentBulk(wire),
 					})
 				})
 				if !accepted {
@@ -381,6 +382,7 @@ func (s *WsMuxTransport) handleLoop(g *wsMuxGen) {
 
 			loop := s.session(g, session.owner)
 			loop.pressure = session.pressure
+			loop.bulk = session.bulk
 			if session.idleFloor > 0 {
 				loop.idleTimeout = 60 * time.Second
 				loop.idleRetire = func() bool {

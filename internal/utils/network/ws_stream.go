@@ -24,7 +24,11 @@ const (
 	wsMuxWindowUpdateCommand = 4
 	wsMuxWindowUpdateSize    = 8
 	wsMuxSmallMessageSize    = 256
+	wsMuxBulkReadWrite       = 8 << 10
+	wsMuxBulkActivityWindow  = 100 * time.Millisecond
 )
+
+var wsMuxActivityEpoch = time.Now()
 
 // Older peers did not frame their data. Select the format only after the
 // authenticated upgrade has acknowledged the standard binary subprotocol.
@@ -53,6 +57,7 @@ type webSocketStream struct {
 	readMu   sync.Mutex
 	reader   io.Reader
 	readErr  error
+	readBulk int // bytes read from the current binary message
 	writeMu  sync.Mutex
 	closed   atomic.Bool
 	writeErr error // accessed only under writeMu
@@ -62,6 +67,26 @@ type webSocketStream struct {
 	announceOpen bool
 	openPending  bool
 	openFrame    [smuxHeaderSize]byte
+	lastBulk     atomic.Int64
+}
+
+// WSMuxRecentBulk reports substantial recent traffic in either direction on a
+// framed reverse WSSMux carrier. TCP's local send queue alone cannot see bulk
+// traffic arriving from its peer. Raw and plain WebSocket carriers return nil.
+func WSMuxRecentBulk(conn net.Conn) func() bool {
+	if stream, ok := conn.(*webSocketStream); ok && stream.announceOpen {
+		return stream.recentBulk
+	}
+	return nil
+}
+
+func (c *webSocketStream) recentBulk() bool {
+	last := c.lastBulk.Load()
+	return last != 0 && time.Since(wsMuxActivityEpoch)-time.Duration(last) < wsMuxBulkActivityWindow
+}
+
+func (c *webSocketStream) markBulk() {
+	c.lastBulk.Store(int64(time.Since(wsMuxActivityEpoch)))
 }
 
 func (c *webSocketStream) Read(p []byte) (int, error) {
@@ -89,8 +114,16 @@ func (c *webSocketStream) Read(p []byte) (int, error) {
 				return 0, c.readErr
 			}
 			c.reader = reader
+			c.readBulk = 0
 		}
 		n, err := c.reader.Read(p)
+		if c.announceOpen {
+			c.readBulk += n
+			if c.readBulk >= wsMuxBulkReadWrite {
+				c.markBulk()
+				c.readBulk = 0
+			}
+		}
 		if err == io.EOF {
 			c.reader = nil
 			if n > 0 {
@@ -181,6 +214,9 @@ func (c *webSocketStream) WriteBuffers(v [][]byte) (int, error) {
 	}
 	n := 0
 	for _, p := range v {
+		if c.announceOpen && len(p) >= wsMuxBulkReadWrite {
+			c.markBulk()
+		}
 		written, err := w.Write(p)
 		n += written
 		if err != nil {

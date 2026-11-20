@@ -57,6 +57,27 @@ func TestWSMuxQuietUsersDoNotDisplaceAnOlderHealthyWaiter(t *testing.T) {
 	}
 }
 
+func TestWSMuxSteersNewUsersAroundRecentBulkWithEqualPressure(t *testing.T) {
+	q := newBalancedMuxLocalQueue(1)
+	busy, quiet := wsMuxWaiter(1, nil), wsMuxWaiter(50, nil)
+	busy.bulk = func() bool { return true }
+	q.wait(busy)
+	q.wait(quiet)
+	q.push(LocalTCPConn{timeCreated: 1}, nil)
+	takeScheduledWSMux(t, q, quiet, 1)
+
+	// No quiet carrier is ready. Use the busy carrier without a delay.
+	q.push(LocalTCPConn{timeCreated: 2}, nil)
+	takeScheduledWSMux(t, q, busy, 2)
+
+	// A real send backlog still matters more than activity.
+	quiet.pressure = func() int { return 1 }
+	q.wait(quiet)
+	q.wait(busy)
+	q.push(LocalTCPConn{timeCreated: 3}, nil)
+	takeScheduledWSMux(t, q, busy, 3)
+}
+
 func TestWSMuxReadinessOrderSurvivesIdleChecksAndDepartures(t *testing.T) {
 	q := newBalancedMuxLocalQueue(1)
 	workers := make([]*muxQueueWaiter, 6)
