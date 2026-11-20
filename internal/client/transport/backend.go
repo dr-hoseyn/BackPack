@@ -16,9 +16,9 @@ import (
 // The last hop: from the tunnel to the service a user actually asked for, on
 // this machine or one it can reach.
 //
-// Every transport ends here, and each had its own copy of it — pick a healthy
+// Every transport ends here, and each had its own copy of it â€” pick a healthy
 // backend, choose the socket buffers, dial, report a failure the way
-// localdial.go words it, relay — with the multiplexed ones also carrying a copy
+// localdial.go words it, relay â€” with the multiplexed ones also carrying a copy
 // of the loop that takes streams off a session. They differed only in their
 // socket options, which are backendOpts.
 
@@ -30,10 +30,11 @@ type backendOpts struct {
 	dialTimeout time.Duration
 	keepAlive   time.Duration
 	// rcvBuf and sndBuf are the socket buffers for a backend on another
-	// machine; a loopback backend always gets 32 KB. Zero leaves the kernel's.
-	rcvBuf int
-	sndBuf int
-	mss    int
+	// machine. By default a loopback backend gets 32 KiB in each direction.
+	rcvBuf                  int
+	sndBuf                  int
+	autotuneLoopbackReceive bool
+	mss                     int
 	// sniffer records per-port usage for the panel.
 	sniffer    bool
 	relayFrame int // optional WSSMux destination frame size
@@ -95,6 +96,9 @@ func (l *lifecycle) dialBackend(addr string, o backendOpts) net.Conn {
 		rcv, snd := o.rcvBuf, o.sndBuf
 		if isLoopback(candidate) {
 			rcv, snd = loopbackBuffer, loopbackBuffer
+			if o.autotuneLoopbackReceive {
+				rcv = 0 // leave Linux receive-window autotuning enabled
+			}
 		}
 		conn, err := network.TcpDialer(dialCtx, candidate, timeout, o.keepAlive, true, 1, rcv, snd, o.mss)
 		if err != nil {
@@ -155,7 +159,7 @@ func (l *lifecycle) serveSession(session *smux.Session, from net.Addr, o backend
 		// idle backend flows. Waiting for the whole generation stranded them
 		// across pool repairs while the control channel stayed connected.
 		cancel()
-		// However the loop ended, the session ends with it — including when
+		// However the loop ended, the session ends with it â€” including when
 		// the generation was already over before the first AcceptStream.
 		session.Close()
 	}()

@@ -3,6 +3,7 @@ package transport
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -45,6 +46,7 @@ type WsMuxConfig struct {
 	MaxReceiveBuffer int
 	MaxStreamBuffer  int
 	ConnPoolSize     int
+	Throughput       bool
 	MaxSessions      int
 	Mode             config.TransportType
 	SimpleAuth       bool
@@ -58,7 +60,7 @@ type WsMuxConfig struct {
 	// Outbound says how the connections that reach the tunnel server leave
 	// this machine: through a proxy, from a chosen source address or
 	// interface, under a routing mark. Nil dials directly. None of it is ever
-	// applied to the dial to the local backend — see network/outbound.go.
+	// applied to the dial to the local backend â€” see network/outbound.go.
 	Outbound *network.Outbound
 }
 
@@ -161,7 +163,7 @@ func (c *WsMuxTransport) dialControl(ctx context.Context) (*websocket.Conn, erro
 }
 
 // poolMaintainer keeps the pool the right size. The policy is poolSizer's,
-// shared with every other client transport — see poolmaintain.go.
+// shared with every other client transport â€” see poolmaintain.go.
 func (c *WsMuxTransport) poolMaintainer() {
 	poolSizer{
 		mux:         true,
@@ -346,13 +348,14 @@ func (c *WsMuxTransport) backend() backendOpts {
 		frameSize = c.smuxConfig.MaxFrameSize
 	}
 	return backendOpts{
-		relayFrame:  frameSize,
-		dialTimeout: c.config.DialTimeOut,
-		keepAlive:   c.config.KeepAlive,
-		rcvBuf:      0,
-		sndBuf:      0,
-		mss:         0,
-		sniffer:     c.config.Sniffer,
+		relayFrame:              frameSize,
+		autotuneLoopbackReceive: runtime.GOOS == "linux" && c.config.Mode == config.WSSMUX && c.config.Throughput,
+		dialTimeout:             c.config.DialTimeOut,
+		keepAlive:               c.config.KeepAlive,
+		rcvBuf:                  0,
+		sndBuf:                  0,
+		mss:                     0,
+		sniffer:                 c.config.Sniffer,
 	}
 }
 

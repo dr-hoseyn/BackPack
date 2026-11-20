@@ -398,6 +398,7 @@ func (c *Client) startTransport(ctx context.Context, tr config.TransportType, en
 			RetryInterval:    time.Duration(c.config.RetryInterval) * time.Second,
 			DialTimeOut:      time.Duration(c.config.DialTimeout) * time.Second,
 			ConnPoolSize:     c.config.ConnectionPool,
+			Throughput:       c.config.Preset == "throughput",
 			Token:            c.config.Token,
 			MuxVersion:       c.config.MuxVersion,
 			MaxFrameSize:     c.config.MaxFrameSize,
