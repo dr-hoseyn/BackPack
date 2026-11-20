@@ -75,6 +75,9 @@ type pathState struct {
 	successes, failures int
 	rtt, speed, loss    float64
 	checked             time.Time
+	lastProbeRTT        time.Duration
+	probeJitter         float64
+	probeJitterMeasured bool
 }
 
 type Switch struct {
@@ -116,6 +119,8 @@ func (s *Selector) Record(i int, result pathprobe.Result, err error, now time.Ti
 	p := &s.states[i]
 	p.checked = now
 	if err != nil || result.RTT <= 0 || result.BytesPerSecond <= 0 || math.IsNaN(result.BytesPerSecond) || math.IsInf(result.BytesPerSecond, 0) {
+		p.lastProbeRTT = 0
+		p.probeJitterMeasured = false
 		p.failures++
 		p.successes = 0
 		p.loss = p.loss*.75 + .25
@@ -124,6 +129,16 @@ func (s *Selector) Record(i int, result pathprobe.Result, err error, now time.Ti
 			p.failed = true
 		}
 	} else {
+		if p.lastProbeRTT > 0 {
+			variation := math.Abs(float64(result.RTT - p.lastProbeRTT))
+			if p.probeJitterMeasured {
+				p.probeJitter = p.probeJitter*.75 + variation*.25
+			} else {
+				p.probeJitter = variation
+				p.probeJitterMeasured = true
+			}
+		}
+		p.lastProbeRTT = result.RTT
 		p.successes++
 		p.failures = 0
 		p.loss *= .75
@@ -153,6 +168,8 @@ func (s *Selector) Withdraw(i int, now time.Time) []Switch {
 		return nil
 	}
 	p := &s.states[i]
+	p.lastProbeRTT = 0
+	p.probeJitterMeasured = false
 	p.healthy, p.failed = false, true
 	p.successes = 0
 	p.failures = max(p.failures, s.policy.Failures)
@@ -202,12 +219,13 @@ func (s *Selector) Pick(datagram bool) int {
 }
 
 type PathStatus struct {
-	Healthy        bool      `json:"healthy"`
-	RTTMillis      float64   `json:"rtt_ms"`
-	Mbps           float64   `json:"mbps"`
-	FailurePercent float64   `json:"failure_percent"`
-	Failures       int       `json:"consecutive_failures"`
-	Checked        time.Time `json:"checked"`
+	Healthy           bool      `json:"healthy"`
+	RTTMillis         float64   `json:"rtt_ms"`
+	ProbeJitterMillis *float64  `json:"probe_jitter_ms,omitempty"`
+	Mbps              float64   `json:"mbps"`
+	FailurePercent    float64   `json:"failure_percent"`
+	Failures          int       `json:"consecutive_failures"`
+	Checked           time.Time `json:"checked"`
 }
 
 func (s *Selector) Status() []PathStatus {
@@ -221,7 +239,18 @@ func (s *Selector) statusSnapshot() ([]PathStatus, [2]int) {
 	defer s.mu.Unlock()
 	result := make([]PathStatus, len(s.states))
 	for i, p := range s.states {
-		result[i] = PathStatus{p.healthy, p.rtt / float64(time.Millisecond), p.speed * 8 / 1e6, p.loss * 100, p.failures, p.checked}
+		result[i] = PathStatus{
+			Healthy:        p.healthy,
+			RTTMillis:      p.rtt / float64(time.Millisecond),
+			Mbps:           p.speed * 8 / 1e6,
+			FailurePercent: p.loss * 100,
+			Failures:       p.failures,
+			Checked:        p.checked,
+		}
+		if p.probeJitterMeasured {
+			jitterMillis := p.probeJitter / float64(time.Millisecond)
+			result[i].ProbeJitterMillis = &jitterMillis
+		}
 	}
 	return result, s.selected
 }

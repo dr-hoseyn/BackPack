@@ -23,6 +23,7 @@ func (c *ClientPaths) Status() metrics.ManagedPathsStats {
 			protocol = p.Sing.Protocol
 		}
 		s.Paths[i] = metrics.ManagedPathStatus{Name: p.Name, Protocol: protocol, HelperReady: c.paths[i].ready.Load(), Healthy: state.Healthy, RTTMillis: state.RTTMillis, Mbps: state.Mbps, FailurePercent: state.FailurePercent, ConsecutiveFailures: state.Failures, Checked: state.Checked}
+		s.Paths[i].ProbeJitterMillis = state.ProbeJitterMillis
 		s.Paths[i].ProbeSentBytes = c.paths[i].probeSent.Load()
 		s.Paths[i].ProbeReceivedBytes = c.paths[i].probeReceived.Load()
 		s.Paths[i].ProbeAttempts = c.paths[i].probeAttempts.Load()

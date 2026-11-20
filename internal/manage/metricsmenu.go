@@ -68,7 +68,11 @@ func printSnapshot(t Tunnel, s metrics.Snapshot) {
 				tui.Info("  Native UDP path : " + p.NativeUDPActive)
 			}
 			for _, path := range p.Paths {
-				tui.Info(fmt.Sprintf("    %s (%s): healthy=%t, %.1f ms, %.2f Mbit/s, %.1f%% probe failures", path.Name, path.Protocol, path.Healthy, path.RTTMillis, path.Mbps, path.FailurePercent))
+				line := fmt.Sprintf("    %s (%s): healthy=%t, %.1f ms, %.2f Mbit/s, %.1f%% probe failures", path.Name, path.Protocol, path.Healthy, path.RTTMillis, path.Mbps, path.FailurePercent)
+				if path.ProbeJitterMillis != nil {
+					line += fmt.Sprintf(", %.1f ms probe RTT jitter", *path.ProbeJitterMillis)
+				}
+				tui.Info(line)
 			}
 		}
 		if n := s.NativeUDP; n != nil {

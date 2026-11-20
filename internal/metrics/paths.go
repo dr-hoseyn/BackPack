@@ -18,6 +18,7 @@ type ManagedPathStatus struct {
 	HelperReady             bool      `json:"helper_ready"`
 	Healthy                 bool      `json:"healthy"`
 	RTTMillis               float64   `json:"rtt_ms"`
+	ProbeJitterMillis       *float64  `json:"probe_jitter_ms,omitempty"`
 	Mbps                    float64   `json:"mbps"`
 	FailurePercent          float64   `json:"failure_percent"`
 	ConsecutiveFailures     int       `json:"consecutive_failures"`

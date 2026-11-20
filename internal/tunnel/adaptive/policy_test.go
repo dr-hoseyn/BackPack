@@ -73,3 +73,66 @@ func TestManagedPathPolicyRefusesUnboundedTrafficAndUnusableThresholds(t *testin
 		}
 	}
 }
+
+func BenchmarkVerifiedProbeRecord(b *testing.B) {
+	s, err := NewSelector(config.PathPolicy{}, []bool{false, true, false, true})
+	if err != nil {
+		b.Fatal(err)
+	}
+	now := time.Now()
+	samples := [2]pathprobe.Result{
+		{RTT: 40 * time.Millisecond, BytesPerSecond: 1e6},
+		{RTT: 50 * time.Millisecond, BytesPerSecond: 1e6},
+	}
+	for i := range 4 {
+		s.Record(i, samples[0], nil, now)
+	}
+	b.ReportAllocs()
+	for b.Loop() {
+		for i := range 4 {
+			s.Record(i, samples[0], nil, now)
+			s.Record(i, samples[1], nil, now)
+		}
+	}
+}
+
+func TestProbeRTTJitterNeedsConsecutiveSuccessfulSamples(t *testing.T) {
+	s, err := NewSelector(config.PathPolicy{}, []bool{false, true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	record := func(rtt time.Duration) {
+		s.Record(0, pathprobe.Result{RTT: rtt, BytesPerSecond: 1e6}, nil, now)
+	}
+	check := func(want float64, measured bool) {
+		t.Helper()
+		status := s.Status()
+		got := status[0].ProbeJitterMillis
+		if (got != nil) != measured || got != nil && *got != want {
+			t.Fatalf("path 0 jitter = %v, want %.1f ms with measured=%t", status[0], want, measured)
+		}
+		if status[1].ProbeJitterMillis != nil {
+			t.Fatal("probe jitter leaked to an unsampled path")
+		}
+	}
+	check(0, false)
+	record(40 * time.Millisecond)
+	check(0, false)
+	record(30 * time.Millisecond)
+	check(10, true)
+	record(30 * time.Millisecond)
+	check(7.5, true)
+	s.Record(0, pathprobe.Result{}, errors.New("probe timed out"), now)
+	check(0, false)
+	record(20 * time.Millisecond)
+	check(0, false)
+	record(20 * time.Millisecond)
+	check(0, true)
+	s.Withdraw(0, now)
+	check(0, false)
+	record(50 * time.Millisecond)
+	check(0, false)
+	record(55 * time.Millisecond)
+	check(5, true)
+}
