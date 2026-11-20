@@ -33,6 +33,7 @@ func configureManagedPaths(n *TunnelSpec, old TunnelSpec, public, host string, p
 		}
 	}
 	n.AcceptUDP = false
+	shortPaths := 0
 	for i := range count {
 		previousName, previousEndpoint, previousExport := "path"+strconv.Itoa(i+1), public, ""
 		one := *n
@@ -58,6 +59,9 @@ func configureManagedPaths(n *TunnelSpec, old TunnelSpec, public, host string, p
 		if !setupManagedCarrierWithProbe(&one, protocols[choice], endpoint, host, probe) {
 			return false
 		}
+		if one.ShortServer.Enabled() || one.ShortClient.Enabled() {
+			shortPaths++
+		}
 		if one.BindAddr != n.BindAddr || one.RemoteAddr != n.RemoteAddr {
 			tui.Error("Every path must use the same private Reverse target.")
 			return false
@@ -70,6 +74,7 @@ func configureManagedPaths(n *TunnelSpec, old TunnelSpec, public, host string, p
 			n.ClientPaths = append(n.ClientPaths, config.ManagedClientPath{Name: name, Naive: one.NaiveClient, Xray: one.XrayClient, Sing: one.SingClient, Short: one.ShortClient, Connect: one.ConnectClient})
 		}
 	}
+	n.PathResume = shortPaths >= 2 && tui.Confirm("Resume Active TCP Connections Across Short HTTPS Paths (Enable On Both Peers)", old.PathResume)
 	if n.Role == "client" {
 		n.PathPolicy = old.PathPolicy
 		n.ConnectionPool = 8

@@ -43,6 +43,22 @@ func TestManagedPathSetupLinkPairsAllEndpointsWithoutExportingPrivateFiles(t *te
 	if s.RemoteAddr != "127.0.0.1:3080" || len(s.ClientPaths) != 2 || s.ClientPaths[0].Short.Server != "first.example:443" || s.ClientPaths[1].Short.Server != "[2001:db8::5]:9443" {
 		t.Fatal("client pairing changed path endpoint")
 	}
+	if link.PathResume || s.PathResume {
+		t.Fatal("resume unexpectedly enabled")
+	}
+	cfg.Server.PathResume = true
+	raw, err = shareLinkOf("paired", "198.51.100.1", cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resumable, err := DecodeShareLink(raw)
+	if err != nil || !resumable.PathResume {
+		t.Fatalf("resume flag missing from paired link: %v", err)
+	}
+	managedClientFromLink(&s, resumable, resumable.Host)
+	if !s.PathResume || !strings.Contains(s.Render(), "\npath_resume = true\n") {
+		t.Fatal("paired client configuration lost the option")
+	}
 	bad := link
 	wrong := sub[0]
 	wrong.Tok = "different-secret"

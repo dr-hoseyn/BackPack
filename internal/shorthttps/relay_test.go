@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -43,6 +44,12 @@ func fixture(t *testing.T, target string, wrap func(http.Handler) http.Handler) 
 }
 
 func TestRetryKeepsOneTCPStreamAndPreservesDelayedHalfCloseReply(t *testing.T) {
+	t.Run("same endpoint", func(t *testing.T) { testRelayAfterLostResponse(t, false) })
+	t.Run("alternate endpoint", func(t *testing.T) { testRelayAfterLostResponse(t, true) })
+}
+
+func testRelayAfterLostResponse(t *testing.T, failover bool) {
+	t.Helper()
 	backend, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -69,6 +76,10 @@ func TestRetryKeepsOneTCPStreamAndPreservesDelayedHalfCloseReply(t *testing.T) {
 	s, c, ctx, _ := fixture(t, backend.Addr().String(), func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			connections.Add(1)
+			if failover && dropped.Load() {
+				http.Error(w, "path unavailable", http.StatusServiceUnavailable)
+				return
+			}
 			body, _ := io.ReadAll(r.Body)
 			r.Body.Close()
 			r.Body = io.NopCloser(bytes.NewReader(body))
@@ -76,7 +87,7 @@ func TestRetryKeepsOneTCPStreamAndPreservesDelayedHalfCloseReply(t *testing.T) {
 			_ = json.Unmarshal(body, &q)
 			record := httptest.NewRecorder()
 			next.ServeHTTP(record, r)
-			if len(q.Data) > 0 && dropped.CompareAndSwap(false, true) {
+			if len(q.Data) > 0 && (!failover || !q.Open) && dropped.CompareAndSwap(false, true) {
 				conn, _, err := w.(http.Hijacker).Hijack()
 				if err == nil {
 					conn.Close()
@@ -92,6 +103,20 @@ func TestRetryKeepsOneTCPStreamAndPreservesDelayedHalfCloseReply(t *testing.T) {
 			_, _ = w.Write(record.Body.Bytes())
 		})
 	})
+	var backup *Client
+	var backupRequests atomic.Int32
+	if failover {
+		alternate := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			backupRequests.Add(1)
+			s.ServeHTTP(w, r)
+		}))
+		defer alternate.Close()
+		ca := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: alternate.Certificate().Raw})
+		backup, err = NewClient(alternate.URL, testToken, string(ca))
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
 	local, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -104,7 +129,16 @@ func TestRetryKeepsOneTCPStreamAndPreservesDelayedHalfCloseReply(t *testing.T) {
 			done <- err
 			return
 		}
-		done <- c.Forward(ctx, conn)
+		if backup == nil {
+			done <- c.Forward(ctx, conn)
+			return
+		}
+		done <- c.ForwardWithFailover(ctx, conn, func(current *Client) *Client {
+			if current == c {
+				return backup
+			}
+			return nil
+		})
 	}()
 	app, err := net.Dial("tcp", local.Addr().String())
 	if err != nil {
@@ -130,7 +164,10 @@ func TestRetryKeepsOneTCPStreamAndPreservesDelayedHalfCloseReply(t *testing.T) {
 	if err := <-done; err != nil {
 		t.Fatal(err)
 	}
-	if !dropped.Load() || connections.Load() < 4 {
+	if failover && backupRequests.Load() == 0 {
+		t.Fatal("stream did not use the alternate HTTPS endpoint")
+	}
+	if !dropped.Load() || connections.Load()+backupRequests.Load() < 4 {
 		t.Fatal("did not exercise a dropped data response and fresh requests")
 	}
 	s.mu.Lock()
@@ -271,5 +308,54 @@ func TestBackendResetDoesNotBecomeSuccessfulEOF(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("failed backend stream leaked")
+	}
+}
+
+func TestSharedRelayKeepsItsCombinedSessionLimit(t *testing.T) {
+	backend, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer backend.Close()
+	go func() {
+		for {
+			conn, err := backend.Accept()
+			if err != nil {
+				return
+			}
+			conn.Close()
+		}
+	}()
+	const limit = 2 * MaxSessions
+	relay, err := NewServerWithSessionLimit(t.Context(), backend.Addr().String(), testToken, limit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer relay.Close()
+	exchange := func(id int, close bool) int {
+		t.Helper()
+		body, err := json.Marshal(request{ID: fmt.Sprintf("%032x", id), Open: !close, Close: close})
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := httptest.NewRequest(http.MethodPost, "/sync", bytes.NewReader(body))
+		r.Header.Set("Authorization", "Bearer "+testToken)
+		w := httptest.NewRecorder()
+		relay.ServeHTTP(w, r)
+		return w.Code
+	}
+	for id := 1; id <= limit; id++ {
+		if code := exchange(id, false); code != http.StatusOK {
+			t.Fatalf("session %d refused below shared limit: HTTP %d", id, code)
+		}
+	}
+	if code := exchange(limit+1, false); code != http.StatusServiceUnavailable {
+		t.Fatalf("exceeded shared limit: HTTP %d", code)
+	}
+	if code := exchange(1, true); code != http.StatusNoContent {
+		t.Fatalf("failed to release a session: HTTP %d", code)
+	}
+	if code := exchange(limit+1, false); code != http.StatusOK {
+		t.Fatalf("released slot was not reused: HTTP %d", code)
 	}
 }

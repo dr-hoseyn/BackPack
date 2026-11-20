@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"math"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -15,6 +16,7 @@ import (
 	"github.com/backpack/backpack/internal/metrics"
 	"github.com/backpack/backpack/internal/nativeudp"
 	"github.com/backpack/backpack/internal/pathprobe"
+	"github.com/backpack/backpack/internal/shorthttps"
 	"github.com/backpack/backpack/internal/tunnel/naive"
 	"github.com/backpack/backpack/internal/utils"
 	"github.com/backpack/backpack/internal/utils/network"
@@ -52,6 +54,8 @@ type ClientPaths struct {
 	paths       []clientPath
 	connections map[string]*proxyConnection
 	packets     []*packetConn
+	shortRelays []*shorthttps.Client
+	shortSlots  chan struct{}
 	unregister  func()
 }
 
@@ -77,6 +81,24 @@ func StartClient(parent context.Context, cfg *config.ClientConfig, log *logrus.L
 	}
 	ctx, cancel := context.WithCancel(parent)
 	c := &ClientPaths{ctx: ctx, cancel: cancel, listener: l, selector: selector, policy: policy, cfg: *cfg, log: log, paths: make([]clientPath, len(cfg.Paths)), connections: map[string]*proxyConnection{}}
+	if cfg.PathResume {
+		c.shortRelays = make([]*shorthttps.Client, len(cfg.Paths))
+		var limit int
+		for i, p := range cfg.Paths {
+			if !p.Short.Enabled() {
+				continue
+			}
+			relay, err := naive.NewShortRelayClient(clientConfig(*cfg, p))
+			if err != nil {
+				cancel()
+				l.Close()
+				return nil, err
+			}
+			c.shortRelays[i] = relay
+			limit += shorthttps.MaxSessions
+		}
+		c.shortSlots = make(chan struct{}, limit)
+	}
 	for i, p := range cfg.Paths {
 		c.paths[i].name = p.Name
 		c.paths[i].wake = make(chan struct{}, 1)
@@ -105,7 +127,11 @@ func StartClient(parent context.Context, cfg *config.ClientConfig, log *logrus.L
 		c.wg.Add(1)
 		go func() {
 			defer c.wg.Done()
-			h, err := naive.StartWithRetry(pathCtx, log, func() (*naive.Helper, error) { return startClientHelper(pathCtx, &child, log) })
+			var shortRelay *shorthttps.Client
+			if c.shortRelays != nil {
+				shortRelay = c.shortRelays[i]
+			}
+			h, err := naive.StartWithRetry(pathCtx, log, func() (*naive.Helper, error) { return startClientHelper(pathCtx, &child, log, shortRelay) })
 			if err != nil {
 				return
 			}
@@ -122,12 +148,12 @@ func StartClient(parent context.Context, cfg *config.ClientConfig, log *logrus.L
 	return c, nil
 }
 
-func startClientHelper(ctx context.Context, cfg *config.ClientConfig, log *logrus.Logger) (*naive.Helper, error) {
+func startClientHelper(ctx context.Context, cfg *config.ClientConfig, log *logrus.Logger, shortRelay *shorthttps.Client) (*naive.Helper, error) {
 	switch {
 	case cfg.Connect.Enabled():
 		return naive.StartConnectClient(ctx, cfg, log)
 	case cfg.Short.Enabled():
-		return naive.StartShortClient(ctx, cfg, log)
+		return naive.StartShortClientWithRelay(ctx, cfg, log, shortRelay)
 	case cfg.Sing.Enabled():
 		return naive.StartSingClient(ctx, cfg, log)
 	case cfg.Xray.Enabled():
@@ -362,6 +388,10 @@ func (c *ClientPaths) forward(local net.Conn) {
 		local.Write([]byte{5, 4, 0, 1, 0, 0, 0, 0, 0, 0})
 		return
 	}
+	if c.shortRelays != nil && c.shortRelays[i] != nil {
+		c.forwardResumable(local, i)
+		return
+	}
 	ctx, cancel := context.WithTimeout(c.ctx, time.Duration(c.policy.ProbeTimeout)*time.Second)
 	remote, err := c.dial(ctx, i)
 	cancel()
@@ -407,4 +437,61 @@ func (c *ClientPaths) forward(local net.Conn) {
 		remote.Close()
 	}
 	<-done
+}
+
+func (c *ClientPaths) trackForward(local net.Conn, i int) func() {
+	key := local.RemoteAddr().String()
+	c.mu.Lock()
+	c.connections[key] = &proxyConnection{conn: local, path: i}
+	c.mu.Unlock()
+	return func() {
+		c.mu.Lock()
+		delete(c.connections, key)
+		c.mu.Unlock()
+	}
+}
+
+func acceptForward(local net.Conn) bool {
+	if _, err := local.Write([]byte{5, 0, 0, 1, 0, 0, 0, 0, 0, 0}); err != nil {
+		return false
+	}
+	local.SetDeadline(time.Time{})
+	return true
+}
+
+func (c *ClientPaths) forwardResumable(local net.Conn, i int) {
+	select {
+	case c.shortSlots <- struct{}{}:
+		defer func() { <-c.shortSlots }()
+	default:
+		local.Write([]byte{5, 1, 0, 1, 0, 0, 0, 0, 0, 0})
+		return
+	}
+	defer c.trackForward(local, i)()
+	if !acceptForward(local) {
+		return
+	}
+	if err := c.shortRelays[i].ForwardWithFailover(c.ctx, local, c.shortAlternate); err != nil && c.ctx.Err() == nil {
+		c.log.Debugf("resumable Short HTTPS stream ended: %v", err)
+	}
+}
+
+// shortAlternate never uses an unverified endpoint. Probe connections still
+// use their original, fixed helper so they cannot report a sibling's health.
+func (c *ClientPaths) shortAlternate(current *shorthttps.Client) *shorthttps.Client {
+	c.selector.mu.Lock()
+	defer c.selector.mu.Unlock()
+	best, bestScore := -1, math.Inf(1)
+	for i, relay := range c.shortRelays {
+		if relay == nil || relay == current || !c.paths[i].ready.Load() {
+			continue
+		}
+		if score := c.selector.score(i); score < bestScore {
+			best, bestScore = i, score
+		}
+	}
+	if best < 0 {
+		return nil
+	}
+	return c.shortRelays[best]
 }

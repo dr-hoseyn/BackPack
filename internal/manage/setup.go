@@ -169,6 +169,7 @@ func managedEndpoint(s TunnelSpec) string {
 func clearManagedTransport(s *TunnelSpec) {
 	s.ConnectServer, s.ConnectClient = config.ConnectServerConfig{}, config.ConnectClientConfig{}
 	s.ServerPaths, s.ClientPaths, s.PathPolicy = nil, nil, config.PathPolicy{}
+	s.PathResume = false
 	s.ShortServer, s.ShortClient = config.ShortServerConfig{}, config.ShortClientConfig{}
 	s.SingServer, s.SingClient = config.SingServerConfig{}, config.SingClientConfig{}
 	s.NaiveServer, s.NaiveClient = config.NaiveServerConfig{}, config.NaiveClientConfig{}

@@ -17,6 +17,7 @@ import (
 type Spec struct {
 	CarrierOptions config.CarrierOptions `json:"-"`
 	PathProfile    string
+	PathResume     bool
 	ServerPaths    []config.ManagedServerPath `json:"-"`
 	ClientPaths    []config.ManagedClientPath `json:"-"`
 	PathPolicy     config.PathPolicy
@@ -271,6 +272,9 @@ func (s Spec) Render() string {
 
 	if s.Role == "server" {
 		b.WriteString("[server]\n")
+		if s.PathResume {
+			p("path_resume = true\n")
+		}
 		if s.PathProfile != "" {
 			p("path_profile = %q\n", s.PathProfile)
 		}
@@ -347,6 +351,9 @@ func (s Spec) Render() string {
 
 	// client
 	b.WriteString("[client]\n")
+	if s.PathResume {
+		p("path_resume = true\n")
+	}
 	p("remote_addr = %q\n", s.RemoteAddr)
 	if len(s.FallbackAddrs) > 0 {
 		b.WriteString("fallback_addrs = [\n")
@@ -540,7 +547,7 @@ func (s Spec) validateHelpers() error {
 			return err
 		}
 	}
-	if len(s.ServerPaths) != 0 || len(s.ClientPaths) != 0 || s.PathPolicy != (config.PathPolicy{}) {
+	if len(s.ServerPaths) != 0 || len(s.ClientPaths) != 0 || s.PathPolicy != (config.PathPolicy{}) || s.PathResume {
 		var cfg config.Config
 		if _, err := toml.Decode(s.Render(), &cfg); err != nil {
 			return err

@@ -27,7 +27,9 @@ import (
 
 const chunkSize = 2048
 const bufferLimit = 64 << 10
-const maxSessions = 64
+
+// MaxSessions bounds the retained backend sessions for one relay listener.
+const MaxSessions = 64
 
 type request struct {
 	ID     string `json:"id"`
@@ -119,17 +121,27 @@ func (s *session) read(ctx context.Context) {
 // Server connects only to one configured literal loopback backend. Requests
 // cannot choose a destination, and unauthenticated peers cannot create sessions.
 type Server struct {
-	target   string
-	token    [32]byte
-	ctx      context.Context
-	cancel   context.CancelFunc
-	mu       sync.Mutex
-	sessions map[string]*session
-	closed   bool
-	wg       sync.WaitGroup
+	target       string
+	token        [32]byte
+	ctx          context.Context
+	cancel       context.CancelFunc
+	mu           sync.Mutex
+	sessions     map[string]*session
+	sessionLimit int
+	closed       bool
+	wg           sync.WaitGroup
 }
 
 func NewServer(ctx context.Context, target, token string) (*Server, error) {
+	return NewServerWithSessionLimit(ctx, target, token, MaxSessions)
+}
+
+// NewServerWithSessionLimit lets managed listeners share their existing
+// combined session budget without retaining more state than separate relays.
+func NewServerWithSessionLimit(ctx context.Context, target, token string, limit int) (*Server, error) {
+	if limit < 1 || limit > 8*MaxSessions {
+		return nil, errors.New("invalid Short HTTPS session limit")
+	}
 	host, port, err := net.SplitHostPort(target)
 	ip := net.ParseIP(host)
 	n, portErr := strconv.Atoi(port)
@@ -140,7 +152,7 @@ func NewServer(ctx context.Context, target, token string) (*Server, error) {
 		return nil, errors.New("use a random token of at least 32 characters")
 	}
 	ctx, cancel := context.WithCancel(ctx)
-	s := &Server{target: target, token: sha256.Sum256([]byte(token)), ctx: ctx, cancel: cancel, sessions: make(map[string]*session)}
+	s := &Server{target: target, token: sha256.Sum256([]byte(token)), ctx: ctx, cancel: cancel, sessions: make(map[string]*session), sessionLimit: limit}
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
@@ -229,7 +241,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if stream == nil && q.Open {
-		if len(s.sessions) >= maxSessions {
+		if len(s.sessions) >= s.sessionLimit {
 			s.mu.Unlock()
 			http.Error(w, "session limit", http.StatusServiceUnavailable)
 			return
@@ -404,7 +416,16 @@ func (c *Client) exchange(ctx context.Context, q request) (response, error) {
 
 // Forward owns one accepted local TCP connection. CloseWrite is transported as
 // a logical EOF; delayed backend replies remain readable afterwards.
-func (c *Client) Forward(parent context.Context, local net.Conn) (resultErr error) {
+func (c *Client) Forward(parent context.Context, local net.Conn) error {
+	return c.ForwardWithFailover(parent, local, nil)
+}
+
+// ForwardWithFailover can retry an established session through another client
+// pointing to the same server relay. The selector runs only after retryable
+// failures and may return nil to retry the current endpoint. It must return
+// only endpoints trusted to serve the same relay.
+func (c *Client) ForwardWithFailover(parent context.Context, local net.Conn, alternate func(*Client) *Client) (resultErr error) {
+	current := c
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 	defer local.Close()
@@ -419,7 +440,7 @@ func (c *Client) Forward(parent context.Context, local net.Conn) (resultErr erro
 	defer func() {
 		if attempted {
 			cleanup, cancel := context.WithTimeout(context.WithoutCancel(parent), time.Second)
-			_, _ = c.exchange(cleanup, request{ID: q.ID, Close: true})
+			_, _ = current.exchange(cleanup, request{ID: q.ID, Close: true})
 			cancel()
 		}
 	}()
@@ -472,7 +493,7 @@ func (c *Client) Forward(parent context.Context, local net.Conn) (resultErr erro
 		}
 		q.EOF = uploadEOF
 		attempted = true
-		p, err := c.exchange(ctx, q)
+		p, err := current.exchange(ctx, q)
 		if err != nil {
 			var status relayStatusError
 			var verification *tls.CertificateVerificationError
@@ -481,6 +502,13 @@ func (c *Client) Forward(parent context.Context, local net.Conn) (resultErr erro
 			}
 			if time.Since(lastSuccess) > 15*time.Second {
 				return err
+			}
+			// Before the opening response, the peer may already have written
+			// bytes. Never recreate that unconfirmed session on another relay.
+			if !q.Open && alternate != nil && ctx.Err() == nil {
+				if next := alternate(current); next != nil {
+					current = next
+				}
 			}
 			select {
 			case <-ctx.Done():
@@ -529,7 +557,7 @@ func (c *Client) Serve(ctx context.Context, l net.Listener, onError func(error))
 	ctx, cancel := context.WithCancel(ctx)
 	var wg sync.WaitGroup
 	defer func() { cancel(); l.Close(); wg.Wait() }()
-	slots := make(chan struct{}, maxSessions)
+	slots := make(chan struct{}, MaxSessions)
 	stop := context.AfterFunc(ctx, func() { l.Close() })
 	defer stop()
 	for {

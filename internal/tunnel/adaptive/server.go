@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 
 	"github.com/backpack/backpack/config"
+	"github.com/backpack/backpack/internal/shorthttps"
 	"github.com/backpack/backpack/internal/tunnel/naive"
 	"github.com/sirupsen/logrus"
 )
@@ -27,6 +28,27 @@ func StartServer(parent context.Context, cfg *config.ServerConfig, log *logrus.L
 	}
 	ctx, cancel := context.WithCancel(parent)
 	s := &ServerPaths{cancel: cancel}
+	var shortRelay *shorthttps.Server
+	if cfg.PathResume {
+		var limit int
+		for _, path := range cfg.Paths {
+			if path.Short.Enabled() {
+				limit += shorthttps.MaxSessions
+			}
+		}
+		var err error
+		shortRelay, err = naive.NewShortRelayServer(ctx, cfg, limit)
+		if err != nil {
+			cancel()
+			return nil, err
+		}
+		s.wg.Add(1)
+		go func() {
+			defer s.wg.Done()
+			<-ctx.Done()
+			shortRelay.Close()
+		}()
+	}
 	ready := make([]atomic.Bool, len(cfg.Paths))
 	var readyMu sync.Mutex
 	for i, p := range cfg.Paths {
@@ -44,7 +66,7 @@ func StartServer(parent context.Context, cfg *config.ServerConfig, log *logrus.L
 		s.wg.Add(1)
 		go func() {
 			defer s.wg.Done()
-			h, err := naive.StartWithRetry(pathCtx, log, func() (*naive.Helper, error) { return startServerHelper(pathCtx, &child, log) })
+			h, err := naive.StartWithRetry(pathCtx, log, func() (*naive.Helper, error) { return startServerHelper(pathCtx, &child, log, shortRelay) })
 			if err != nil {
 				return
 			}
@@ -56,12 +78,12 @@ func StartServer(parent context.Context, cfg *config.ServerConfig, log *logrus.L
 	return s, nil
 }
 
-func startServerHelper(ctx context.Context, cfg *config.ServerConfig, log *logrus.Logger) (*naive.Helper, error) {
+func startServerHelper(ctx context.Context, cfg *config.ServerConfig, log *logrus.Logger, shortRelay *shorthttps.Server) (*naive.Helper, error) {
 	switch {
 	case cfg.Connect.Enabled():
 		return naive.StartConnectServer(ctx, cfg, log)
 	case cfg.Short.Enabled():
-		return naive.StartShortServer(ctx, cfg, log)
+		return naive.StartShortServerWithRelay(ctx, cfg, log, shortRelay)
 	case cfg.Sing.Enabled():
 		return naive.StartSingServer(ctx, cfg, log)
 	case cfg.Xray.Enabled():

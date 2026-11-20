@@ -86,11 +86,11 @@ func ValidateShort(c *config.Config) error {
 	if _, _, err := xrayEndpoint(v.Short.Server); err != nil {
 		return err
 	}
-	_, err := shortClient(v)
+	_, err := NewShortRelayClient(v)
 	return err
 }
 
-func shortClient(v config.ClientConfig) (*shorthttps.Client, error) {
+func NewShortRelayClient(v config.ClientConfig) (*shorthttps.Client, error) {
 	var ca []byte
 	if v.Short.CAFile != "" {
 		if err := readableFile(v.Short.CAFile); err != nil {
@@ -106,20 +106,34 @@ func shortClient(v config.ClientConfig) (*shorthttps.Client, error) {
 }
 
 func StartShortServer(parent context.Context, v *config.ServerConfig, log *logrus.Logger) (*Helper, error) {
+	return StartShortServerWithRelay(parent, v, log, nil)
+}
+
+func NewShortRelayServer(ctx context.Context, v *config.ServerConfig, limit int) (*shorthttps.Server, error) {
+	return shorthttps.NewServerWithSessionLimit(ctx, v.BindAddr, shortToken(v.Token), limit)
+}
+
+// StartShortServerWithRelay leaves a shared relay owned by its caller.
+func StartShortServerWithRelay(parent context.Context, v *config.ServerConfig, log *logrus.Logger, relay *shorthttps.Server) (*Helper, error) {
 	if err := ValidateShort(&config.Config{Server: *v}); err != nil {
 		return nil, err
 	}
 	ctx, cancel := context.WithCancel(parent)
-	relay, err := shorthttps.NewServer(ctx, v.BindAddr, shortToken(v.Token))
-	if err != nil {
-		cancel()
-		return nil, err
+	closeRelay := func() {}
+	if relay == nil {
+		privateRelay, err := NewShortRelayServer(ctx, v, shorthttps.MaxSessions)
+		if err != nil {
+			cancel()
+			return nil, err
+		}
+		relay = privateRelay
+		closeRelay = relay.Close
 	}
 	tlsCfg := &tls.Config{MinVersion: tls.VersionTLS13, NextProtos: []string{"http/1.1"}, CurvePreferences: []tls.CurveID{tls.X25519, tls.CurveP256}}
 	if v.Short.ACMEDomain != "" {
 		cache := filepath.Join("/etc/backpack/acme", "short-https", v.Short.ACMEDomain)
 		if err := os.MkdirAll(cache, 0700); err != nil {
-			relay.Close()
+			closeRelay()
 			cancel()
 			return nil, err
 		}
@@ -130,13 +144,13 @@ func StartShortServer(parent context.Context, v *config.ServerConfig, log *logru
 	} else {
 		cert, key, err := validatedTLSMaterial(v.Short.Certificate, v.Short.Key, v.Short.ServerName, "short-https")
 		if err != nil {
-			relay.Close()
+			closeRelay()
 			cancel()
 			return nil, err
 		}
 		pair, err := tls.X509KeyPair(cert, key)
 		if err != nil {
-			relay.Close()
+			closeRelay()
 			cancel()
 			return nil, err
 		}
@@ -144,14 +158,14 @@ func StartShortServer(parent context.Context, v *config.ServerConfig, log *logru
 	}
 	l, err := tls.Listen("tcp", v.Short.Listen, tlsCfg)
 	if err != nil {
-		relay.Close()
+		closeRelay()
 		cancel()
 		return nil, err
 	}
 	h := &Helper{cancel: cancel, done: make(chan struct{}), addr: l.Addr().String()}
 	go func() {
 		defer close(h.done)
-		defer relay.Close()
+		defer closeRelay()
 		defer reportReadiness(ctx, false)
 		for {
 			srv := &http.Server{Handler: relay, ReadHeaderTimeout: 3 * time.Second, ReadTimeout: 5 * time.Second, WriteTimeout: 5 * time.Second, IdleTimeout: time.Second, MaxHeaderBytes: 4096}
@@ -192,12 +206,20 @@ type shortBufferedConn struct {
 func (c *shortBufferedConn) Read(b []byte) (int, error) { return c.r.Read(b) }
 
 func StartShortClient(parent context.Context, v *config.ClientConfig, log *logrus.Logger) (*Helper, error) {
+	return StartShortClientWithRelay(parent, v, log, nil)
+}
+
+// StartShortClientWithRelay keeps proxy calls pinned to the supplied endpoint.
+func StartShortClientWithRelay(parent context.Context, v *config.ClientConfig, log *logrus.Logger, relay *shorthttps.Client) (*Helper, error) {
 	if err := ValidateShort(&config.Config{Client: *v}); err != nil {
 		return nil, err
 	}
-	relay, err := shortClient(*v)
-	if err != nil {
-		return nil, err
+	if relay == nil {
+		var err error
+		relay, err = NewShortRelayClient(*v)
+		if err != nil {
+			return nil, err
+		}
 	}
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -213,7 +235,7 @@ func StartShortClient(parent context.Context, v *config.ClientConfig, log *logru
 		defer stop()
 		var wg sync.WaitGroup
 		defer wg.Wait()
-		slots := make(chan struct{}, 64)
+		slots := make(chan struct{}, shorthttps.MaxSessions)
 		reportReadiness(ctx, true)
 		for {
 			conn, err := l.Accept()
