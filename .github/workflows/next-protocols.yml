@@ -1,103 +1,128 @@
-name: Next protocol regression tests
+name: WSSMux resume pilot
 on:
-  push:
-    branches: [main, codex/next-protocols]
-  pull_request:
   workflow_dispatch:
 permissions:
   contents: read
-concurrency:
-  group: next-protocols-${{ github.head_ref || github.ref_name }}
-  cancel-in-progress: true
 jobs:
-  networking:
+  capacity:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 12
+    env:
+      GOMAXPROCS: '4'
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
-      - name: Repeat WSS proof and legacy endpoint fixture lifecycles
-        run: go test ./internal/utils/network -race -run '^TestAWSSClient' -count=20 -timeout 1m
-      - name: Config and network regression tests with race detection
-        run: |
-          sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
-          sudo install -m 600 -o "$(id -un)" -g "$(id -gn)" /dev/null /etc/backpack.restore.lock
-          go test ./config ./cmd ./internal/utils/network ./internal/masqueh2 ./internal/nativeudp ./internal/pathprobe ./internal/tunnel/adaptive ./internal/tunnel/l3 ./internal/manage/tunnelspec ./internal/shorthttps ./internal/tunnel/naive -race -count=1 -timeout 10m
-      - name: Adaptive paths preserve active streams and recover new connections
-        if: success() || failure()
-        run: go test ./internal/e2e -run '^TestAdaptiveManagedPaths' -race -count=1 -v -timeout 4m
-      - name: Compare steady-state Short HTTPS with resume off and on
-        if: success() || failure()
-        env:
-          BP_RESUME_RESOURCE_BENCHMARK: '1'
-          GOMAXPROCS: '4'
-        run: go test ./internal/e2e -run '^TestManagedShortResumeResources$' -count=1 -v -timeout 3m
-      - name: Verify vet and build
-        if: success() || failure()
-        run: |
-          go vet ./...
-          go build ./...
-      - name: MPTCP multiple subflows and primary-path outage
-        if: success() || failure()
+      - name: Compare plain and resumable WSSMux bulk traffic
         run: |
           set -euo pipefail
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq iproute2
-          go test -c -o "$RUNNER_TEMP/network.test" ./internal/utils/network
-          sudo env TESTBIN="$RUNNER_TEMP/network.test" W="$RUNNER_TEMP/mptcp-live" timeout -k 5s 60s \
-            unshare --net --mount --fork bash internal/e2e/testdata/mptcp-live.sh
-      - name: Real MASQUE HTTP2 TUN, restart and loss
-        if: success() || failure()
-        run: |
-          set -euo pipefail
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq iproute2 netcat-openbsd bc
-          go build -o "$RUNNER_TEMP/backpack-next" .
-          for scenario in ipv4 ipv6 restart loss; do
-            extra=()
-            case "$scenario" in
-              ipv6) extra+=(IPV6=1) ;;
-              restart) extra+=(RESTART=1) ;;
-              loss) extra+=("NETEM=delay 20ms loss 1%") ;;
-            esac
-            sudo env BIN="$RUNNER_TEMP/backpack-next" W="$RUNNER_TEMP/masque-h2-$scenario" "${extra[@]}" \
-              timeout -k 5s 6m unshare --net --mount --fork -- bash internal/e2e/testdata/l3live.sh masque-h2 1 \
-              | tee "$RUNNER_TEMP/masque-h2-$scenario.out"
-            grep -q '^RESULT OK' "$RUNNER_TEMP/masque-h2-$scenario.out"
+          cd "$GITHUB_WORKSPACE"
+          mkdir -p "$RUNNER_TEMP/pilot"
+          work="$RUNNER_TEMP/pilot"
+          go vet ./tools/wssresume-pilot
+          go build -o "$work/backpack" .
+          go build -o "$work/pilot" ./tools/wssresume-pilot
+          go build -o "$work/tunnelbench" ./tools/tunnelbench
+          cd "$work"
+          umask 077
+          openssl rand -hex 32 > pilot.key
+          token="$(openssl rand -hex 32)"
+          cat > server.toml <<EOF
+          [server]
+          bind_addr = "127.0.0.1:38443"
+          transport = "wssmux"
+          token = "$token"
+          preset = "throughput"
+          skip_optz = true
+          accept_udp = false
+          heartbeat = 40
+          keepalive = 75
+          nodelay = true
+          channel_size = 8192
+          mux_con = 512
+          mux_version = 2
+          mux_framesize = 65535
+          mux_recievebuffer = 33554432
+          mux_streambuffer = 33554432
+          ports = ["127.0.0.1:38444=127.0.0.1:38502", "127.0.0.1:38448=127.0.0.1:38501"]
+          EOF
+          cat > client.toml <<EOF
+          [client]
+          remote_addr = "127.0.0.1:38443"
+          transport = "wssmux"
+          token = "$token"
+          preset = "throughput"
+          skip_optz = true
+          keepalive = 75
+          nodelay = true
+          dial_timeout = 5
+          retry_interval = 1
+          channel_size = 8192
+          connection_pool = 64
+          mux_version = 2
+          mux_framesize = 65535
+          mux_recievebuffer = 33554432
+          mux_streambuffer = 33554432
+          EOF
+          pids=()
+          trap 'kill "${pids[@]}" 2>/dev/null || true' EXIT
+          ./tunnelbench -serve 127.0.0.1:38502 -mode bulk > backend.log 2>&1 & pids+=($!)
+          ./pilot -mode exit -listen 127.0.0.1:38501 -target 127.0.0.1:38502 -key-file pilot.key > exit.log 2>&1 & exit_pid=$!; pids+=("$exit_pid")
+          ./pilot -mode edge -listen 127.0.0.1:38449 -target 127.0.0.1:38448 -key-file pilot.key > edge.log 2>&1 & edge_pid=$!; pids+=("$edge_pid")
+          ./backpack -c server.toml > server.log 2>&1 & server=$!; pids+=("$server")
+          sleep 1
+          ./backpack -c client.toml > client.log 2>&1 & client=$!; pids+=("$client")
+          sleep 5
+          measure() {
+            python3 - "$@" <<'PY'
+          import json,pathlib,sys
+          result=[]
+          for pid in sys.argv[1:]:
+              cols=pathlib.Path("/proc",pid,"stat").read_text().split(") ",1)[1].split()
+              result.append([int(cols[11])+int(cols[12]),int(cols[21])])
+          print(json.dumps(result))
+          PY
+          }
+          for case in raw-1 resume-1 resume-2 raw-2; do
+            port=38444
+            tracked=("$server" "$client")
+            if [[ "$case" == resume-* ]]; then
+              port=38449
+              tracked+=("$edge_pid" "$exit_pid")
+            fi
+            measure "${tracked[@]}" > "$case-before.json"
+            if ./tunnelbench -mode bulk -target "$case=127.0.0.1:$port" -parallel 8 -duration 10s -warmup 2s -io-timeout 10s -json > "$case-bulk.json"; then
+              measure "${tracked[@]}" > "$case-after.json"
+            else
+              echo "$case failed"
+              tail -10 edge.log exit.log server.log client.log
+              exit 1
+            fi
           done
-  management:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+          python3 - <<'PY' | tee summary.json
+          import glob,json,os,pathlib,statistics
+          summary={}
+          for kind in ("raw","resume"):
+              trials=[]
+              for run in (1,2):
+                  tag=f"{kind}-{run}"
+                  rows=json.loads(pathlib.Path(f"{tag}-bulk.json").read_text())
+                  before=json.loads(pathlib.Path(f"{tag}-before.json").read_text())
+                  after=json.loads(pathlib.Path(f"{tag}-after.json").read_text())
+                  trials.append(dict(directions={r["direction"]:round(r["verified_bulk_mbps"],2) for r in rows},
+                    failures=sum(r["failures"] for r in rows),
+                    cpu_seconds=round(sum(b[0]-a[0] for a,b in zip(before,after))/os.sysconf("SC_CLK_TCK"),3),
+                    rss_mib=round(sum(r[1] for r in after)*os.sysconf("SC_PAGE_SIZE")/2**20,2)))
+              summary[kind]=trials
+          print(json.dumps(summary,indent=2))
+          PY
+          cat summary.json >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        if: always()
         with:
-          go-version-file: go.mod
-          cache: true
-      - name: Prepare private fixtures and test management
-        run: |
-          sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" /etc/backpack
-          sudo install -m 600 -o "$(id -un)" -g "$(id -gn)" /dev/null /etc/backpack.restore.lock
-          go test ./internal/manage -race -count=1 -timeout 15m
-  native-reverse:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
-          cache: true
-      - name: Install verified pinned sing-box
-        run: |
-          set -euo pipefail
-          curl -fL --retry 3 https://github.com/SagerNet/sing-box/releases/download/v1.14.2/sing-box-1.14.2-linux-amd64.tar.gz -o "$RUNNER_TEMP/sing.tar.gz"
-          echo "a684484d7477d1437282ee411f4d131d0340aaad60a7868841ebd5d87dd8a0c6  $RUNNER_TEMP/sing.tar.gz" | sha256sum -c -
-          tar -xzf "$RUNNER_TEMP/sing.tar.gz" -C "$RUNNER_TEMP"
-          echo "BP_SINGBOX_BINARY=$RUNNER_TEMP/sing-box-1.14.2-linux-amd64/sing-box" >> "$GITHUB_ENV"
-          echo "LD_LIBRARY_PATH=$RUNNER_TEMP/sing-box-1.14.2-linux-amd64" >> "$GITHUB_ENV"
-      - name: Real helper reverse TCP, stream/native UDP and directional EOF
-        run: go test ./internal/e2e -run '^(TestSingReverse|TestAdaptiveNativeUDP)' -race -count=1 -v -timeout 8m
+          name: wssmux-resume-pilot
+          path: |
+            ${{ runner.temp }}/pilot/*-bulk.json
+            ${{ runner.temp }}/pilot/summary.json
