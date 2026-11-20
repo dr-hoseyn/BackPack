@@ -22,15 +22,20 @@ type controlledPath struct {
 
 	mu      sync.Mutex
 	blocked bool
-	active  map[net.Conn]context.CancelFunc
+	active  map[net.Conn]*controlledPathConn
+}
+
+type controlledPathConn struct {
+	stop  context.CancelFunc
+	bytes atomic.Int64
 }
 
 // cut blocks new sessions and cancels every session already on this path.
 func (p *controlledPath) cut() int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	for _, stop := range p.active {
-		stop()
+	for _, conn := range p.active {
+		conn.stop()
 	}
 	p.blocked = true
 	return len(p.active)
@@ -46,7 +51,7 @@ func newControlledPathOn(t *testing.T, target, network, bind string) *controlled
 	if err != nil {
 		t.Fatal(err)
 	}
-	p := &controlledPath{addr: l.Addr().String(), active: make(map[net.Conn]context.CancelFunc)}
+	p := &controlledPath{addr: l.Addr().String(), active: make(map[net.Conn]*controlledPathConn)}
 	ctx, cancel := context.WithCancel(t.Context())
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -64,7 +69,8 @@ func newControlledPathOn(t *testing.T, target, network, bind string) *controlled
 				continue
 			}
 			connCtx, stopConn := context.WithCancel(ctx)
-			p.active[local] = stopConn
+			flow := &controlledPathConn{stop: stopConn}
+			p.active[local] = flow
 			p.mu.Unlock()
 			wg.Add(1)
 			go func() {
@@ -98,7 +104,7 @@ func newControlledPathOn(t *testing.T, target, network, bind string) *controlled
 				done := make(chan struct{})
 				go func() {
 					defer close(done)
-					io.Copy(pathTrafficWriter{remote, &p.bytes}, local)
+					io.Copy(pathTrafficWriter{remote, &p.bytes, &flow.bytes}, local)
 					remote.(*net.TCPConn).CloseWrite()
 				}()
 				io.Copy(local, remote)
@@ -115,12 +121,14 @@ func newControlledPathOn(t *testing.T, target, network, bind string) *controlled
 
 type pathTrafficWriter struct {
 	io.Writer
-	bytes *atomic.Int64
+	bytes     *atomic.Int64
+	connBytes *atomic.Int64
 }
 
 func (w pathTrafficWriter) Write(p []byte) (int, error) {
 	n, err := w.Writer.Write(p)
 	w.bytes.Add(int64(n))
+	w.connBytes.Add(int64(n))
 	return n, err
 }
 
