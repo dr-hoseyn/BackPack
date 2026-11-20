@@ -2,6 +2,7 @@ package transport
 
 import (
 	"context"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -109,6 +110,7 @@ type muxSession struct {
 	proxyProtocol bool
 	sniffer       bool
 	relayFrame    int // WSSMux send frame size; zero for other carriers
+	tracePort     int // optional loopback WSSMux admission trace
 
 	limits   *limiter
 	log      *logrus.Logger
@@ -256,7 +258,11 @@ func (m muxSession) run(session *smux.Session) {
 					m.dropLocal(incomingConn)
 				})
 			}
+			trace := startMuxAdmissionTrace(incomingConn, m.tracePort, idleSince)
 			stream, err := session.OpenStream()
+			if trace != nil {
+				trace.opened = time.Now()
+			}
 			claimed := incomingConn.pairing.claim()
 			if timer != nil {
 				claimed = timer.Stop()
@@ -312,6 +318,11 @@ func (m muxSession) run(session *smux.Session) {
 			}
 			_ = stream.SetWriteDeadline(time.Time{})
 			incomingConn.pairing = nil
+			if trace != nil {
+				incomingConn.conn = &muxAdmissionReply{
+					Conn: incomingConn.conn, trace: *trace, announced: time.Now(), output: os.Stderr,
+				}
+			}
 
 			// Handle data exchange between connections
 			workers.Add(1)
