@@ -1,5 +1,12 @@
 # WSS Mux resource use
 
+## Idle relay buffers
+
+WSSMux starts each relay direction with a pooled 4 KiB buffer. A full read
+grows it to 16 KiB and then to 64 KiB as traffic warrants. Short reads are
+forwarded immediately. Bulk reads into WSSMux still observe the frame sizing
+described below.
+
 ## Short-connection announcements
 
 The reverse WSSMux server follows each smux stream-open header with its target
@@ -195,4 +202,4 @@ and a p99/throughput comparison justify a per-service setting.
 
 </div>
 
-Last verified against Backpack v1.26.1 (2026-11-15)
+Last verified against Backpack v1.27.0 (2026-11-21)

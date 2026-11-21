@@ -86,4 +86,4 @@ automatically, and can reach it through a CDN edge instead of the origin:
 
 ---
 
-*Last verified against Backpack v1.26.1 (2026-11-15)*
+*Last verified against Backpack v1.27.0 (2026-11-21)*

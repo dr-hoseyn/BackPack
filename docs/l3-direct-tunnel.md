@@ -735,4 +735,4 @@ obfuscated به `CAP_NET_RAW` هم نیاز دارند). **هیچ‌وقت حا�
 
 ---
 
-*Last verified against Backpack v1.26.1 (2026-11-15)*
+*Last verified against Backpack v1.27.0 (2026-11-21)*

@@ -103,4 +103,4 @@ Reference pages: what each part of Backpack **is**, and every setting it has.
 
 ---
 
-*Last verified against Backpack v1.26.1 (2026-11-15)*
+*Last verified against Backpack v1.27.0 (2026-11-21)*

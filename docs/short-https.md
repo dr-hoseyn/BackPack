@@ -2,7 +2,7 @@
 
 Requires BackPack v1.11.0 or later on both machines for managed mode.
 
-*Last verified against Backpack v1.26.1 (2026-11-15)*
+*Last verified against Backpack v1.27.0 (2026-11-21)*
 
 `backpack short-https` is an **experimental, standalone TCP port relay** for
 paths that allow short HTTPS exchanges but stop established connections after
@@ -71,7 +71,9 @@ server_name = "iran.example.com"
 
 Only the exact paired loopback target is allowed. Managed Short HTTPS supports
 TCP forwarding and directional EOF without an external helper, and can join
-[managed adaptive paths](managed-paths.md). It cannot carry native UDP, TUN,
+[managed adaptive paths](managed-paths.md). Since v1.27.0, compatible sibling
+paths can opt into [managed TCP resume](managed-paths.md#resume-for-managed-short-https).
+Short HTTPS cannot carry native UDP, TUN,
 another outbound proxy or MPTCP. Connection Test includes a managed Short HTTPS
 case with temporary verified certificates. Start with a modest pool: control,
 idle pool, active forwards and probes all consume the bounded logical sessions.

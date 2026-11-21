@@ -703,7 +703,7 @@ See `internal/tunnel/l3/bench_gate_test.go`.
 
 ---
 
-*Last verified against Backpack v1.26.1 (2026-11-15)*
+*Last verified against Backpack v1.27.0 (2026-11-21)*
 
 ## Measuring first-reply latency on WSSMux
 

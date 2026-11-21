@@ -247,4 +247,4 @@ host روی تونل معکوس و مستقیم یعنی `127.0.0.1` خارج، 
 
 ---
 
-*Last verified against Backpack v1.26.1 (2026-11-15)*
+*Last verified against Backpack v1.27.0 (2026-11-21)*
