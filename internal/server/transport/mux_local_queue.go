@@ -37,6 +37,7 @@ type muxQueueWaiter struct {
 	warm       bool
 	pressure   func() int
 	bulk       func() bool
+	draining   func() bool
 	prev, next *muxQueueWaiter // linked only while waiting on a balanced queue
 }
 
@@ -67,6 +68,12 @@ func newBalancedMuxLocalQueue(limit int) *muxLocalQueue {
 	q.waiters = make(map[*muxQueueWaiter]struct{})
 	q.balanced = true
 	return q
+}
+
+func (q *muxLocalQueue) hasPending() bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return q.entries.Len() != 0
 }
 
 func (q *muxLocalQueue) push(local LocalTCPConn, queued func()) bool {
@@ -185,11 +192,17 @@ func (q *muxLocalQueue) notify() {
 // The first idle carrier with zero pressure is optimal. If all carriers are
 // busy, use the best one immediately.
 func (q *muxLocalQueue) chooseReadyCarrier() *muxQueueWaiter {
-	var next *muxQueueWaiter
+	var next, draining *muxQueueWaiter
 	var bestPressure int
 	var bestBulk bool
 	for waiter := q.head; waiter != nil; waiter = waiter.next {
 		if waiter.isClosed() {
+			continue
+		}
+		if waiter.draining != nil && waiter.draining() {
+			if draining == nil {
+				draining = waiter
+			}
 			continue
 		}
 		pressure := 0
@@ -203,6 +216,9 @@ func (q *muxLocalQueue) chooseReadyCarrier() *muxQueueWaiter {
 		if next == nil || pressure < bestPressure || (pressure == bestPressure && bestBulk && !bulk) {
 			next, bestPressure, bestBulk = waiter, pressure, bulk
 		}
+	}
+	if next == nil {
+		return draining
 	}
 	return next
 }

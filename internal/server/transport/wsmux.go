@@ -29,6 +29,9 @@ import (
 // that outlives its run from reaching into the run that replaced it.
 type wsMuxGen struct {
 	idleTraffic    muxIdleTraffic
+	drain          *wsMuxDrain
+	queueTimeouts  atomic.Uint64
+	openRetries    atomic.Uint64
 	ctx            context.Context
 	tunnelChannel  chan pooledMuxSession
 	localChannel   *muxLocalQueue
@@ -160,10 +163,19 @@ func (s *WsMuxTransport) startAfterRestart(ctx context.Context) {
 func (s *WsMuxTransport) newGen(ctx context.Context) *wsMuxGen {
 	queue := newBalancedMuxLocalQueue(s.config.ChannelSize)
 	queue.retrySlowOpen = s.config.Mode == config.WSSMUX
+	var drain *wsMuxDrain
+	if s.config.Mode == config.WSSMUX {
+		if path := os.Getenv("BP_WSSMUX_DRAIN_PEERS"); path != "" {
+			drain = &wsMuxDrain{}
+			drain.reload(path, s.logger)
+			go drain.watch(ctx, path, s.logger)
+		}
+	}
 	return &wsMuxGen{
 		ctx:            ctx,
 		tunnelChannel:  make(chan pooledMuxSession, s.config.ChannelSize),
 		localChannel:   queue,
+		drain:          drain,
 		reqNewConnChan: make(chan struct{}, s.config.ChannelSize),
 		usageMonitor:   s.usageMonitor(ctx),
 	}
@@ -275,6 +287,7 @@ func (s *WsMuxTransport) tunnelListener(g *wsMuxGen) {
 				owner = g.seat.client()
 			}
 			version, floor := s.smuxConfig.Version, 0
+			localIdle := false
 			if r.URL.Path != "/channel" {
 				var err error
 				version, floor, err = network.SelectWSMux(r.Header, s.config.MuxVersion)
@@ -289,6 +302,10 @@ func (s *WsMuxTransport) tunnelListener(g *wsMuxGen) {
 					response.Set(network.WSMuxVersionHeader, strconv.Itoa(version))
 					if floor > 0 {
 						response.Set(network.WSMuxPoolHeader, strconv.Itoa(floor))
+						localIdle = s.config.Mode == config.WSSMUX && r.Header.Get(network.WSMuxIdleHeader) == "1"
+						if localIdle {
+							response.Set(network.WSMuxIdleHeader, "1")
+						}
 					}
 				}
 			}
@@ -331,11 +348,17 @@ func (s *WsMuxTransport) tunnelListener(g *wsMuxGen) {
 				if s.tracePort != 0 {
 					traceCarrier = conn.NetConn()
 				}
+				var draining func() bool
+				if g.drain != nil {
+					draining = g.drain.forPeer(conn.RemoteAddr().String())
+					s.logger.Debugf("WSSMux data carrier peer %s", conn.RemoteAddr())
+				}
 				accepted := g.seat.admitFor(g.ctx, owner, func(ctx context.Context) bool {
 					return enqueueMuxEntry(g.tunnelChannel, pooledMuxSession{
-						Session: session, owner: ctx, idleFloor: floor,
+						Session: session, owner: ctx, idleFloor: floor, localIdle: localIdle,
 						pressure:     network.WSMuxPressure(conn.NetConn()),
 						bulk:         network.WSMuxRecentBulk(wire),
+						draining:     draining,
 						traceCarrier: traceCarrier,
 					})
 				})
@@ -375,11 +398,22 @@ func (s *WsMuxTransport) tunnelListener(g *wsMuxGen) {
 }
 
 func (s *WsMuxTransport) handleLoop(g *wsMuxGen) {
+	var report <-chan time.Time
+	if s.config.Mode == config.WSSMUX {
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
+		report = ticker.C
+	}
 	for {
 		select {
 		case <-g.ctx.Done():
 			return
 
+		case <-report:
+			metrics.ReportWSMuxAdmission(metrics.WSMuxAdmissionStats{
+				Carriers: int(atomic.LoadInt32(&s.sessionCounter)), QueueTimeouts: g.queueTimeouts.Load(),
+				OpenRetries: g.openRetries.Load(),
+			})
 		case session := <-g.tunnelChannel:
 			// +1 for session counter
 			if !s.countGeneration(g.ctx, &s.sessionCounter, 1) {
@@ -390,13 +424,20 @@ func (s *WsMuxTransport) handleLoop(g *wsMuxGen) {
 			loop := s.session(g, session.owner)
 			loop.pressure = session.pressure
 			loop.bulk = session.bulk
+			loop.draining = session.draining
 			loop.traceCarrier = session.traceCarrier
 			if session.idleFloor > 0 {
 				loop.idleTimeout = 60 * time.Second
 				loop.idleRetire = func() bool {
-					in, out := metrics.Traffic()
-					if !g.idleTraffic.quiet(time.Now(), in, out) {
-						return false
+					if session.localIdle {
+						if g.localChannel.hasPending() {
+							return false
+						}
+					} else {
+						in, out := metrics.Traffic()
+						if !g.idleTraffic.quiet(time.Now(), in, out) {
+							return false
+						}
 					}
 					return s.retireIdleSession(g.ctx, session.owner, &s.sessionCounter, session.idleFloor)
 				}
@@ -453,7 +494,7 @@ func (s *WsMuxTransport) session(g *wsMuxGen, owner context.Context) muxSession 
 
 // forwarder is this transport's forwarded ports for one generation.
 func (s *WsMuxTransport) forwarder(g *wsMuxGen) portForwarder {
-	return portForwarder{
+	f := portForwarder{
 		expireQueued: s.session(g, g.ctx).dropLocal,
 		ctx:          g.ctx, ports: s.config.Ports, acceptUDP: s.config.AcceptUDP,
 		batchUDPReads: s.config.Mode == config.WSSMUX && s.config.BandwidthMbps <= 0,
@@ -462,4 +503,13 @@ func (s *WsMuxTransport) forwarder(g *wsMuxGen) portForwarder {
 		tcpKeepAlive: s.config.KeepAlive,
 		queued:       muxRequestForGeneration(g.ctx, &s.counterMutex, &s.streamCounter, &s.sessionCounter, s.config.MuxCon, g.reqNewConnChan, s.logger),
 	}
+	if s.config.Mode == config.WSSMUX {
+		drop := f.expireQueued
+		f.expireQueued = func(local LocalTCPConn) {
+			g.queueTimeouts.Add(1)
+			drop(local)
+		}
+		f.onPairingRetry = func() { g.openRetries.Add(1) }
+	}
+	return f
 }

@@ -32,7 +32,7 @@ func TestWSSMuxSpreadRecoversDataSessionOnControlRoute(t *testing.T) {
 				return
 			}
 			stalledAttempts.Add(1)
-			_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+			_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 			_, _ = io.Copy(io.Discard, conn)
 			_ = conn.Close()
 		}
@@ -67,7 +67,7 @@ func TestWSSMuxSpreadRecoversDataSessionOnControlRoute(t *testing.T) {
 	defer cancel()
 	cfg := smux.DefaultConfig()
 	client := NewWSMuxClient(ctx, &WsMuxConfig{
-		Endpoints: endpoints, Token: token, Mode: config.WSSMUX, DialTimeOut: 500 * time.Millisecond,
+		Endpoints: endpoints, Token: token, Mode: config.WSSMUX, DialTimeOut: 10 * time.Second,
 		MaxFrameSize: cfg.MaxFrameSize, MaxReceiveBuffer: cfg.MaxReceiveBuffer, MaxStreamBuffer: cfg.MaxStreamBuffer,
 	}, logrus.New())
 	mux := network.WSMuxOptions{PoolSize: 2}
@@ -77,7 +77,9 @@ func TestWSSMuxSpreadRecoversDataSessionOnControlRoute(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer conn.Close()
-	t.Logf("authenticated data session established in %v", time.Since(start))
+	if elapsed := time.Since(start); elapsed >= 2*time.Second {
+		t.Fatalf("fallback consumed the user's admission budget: %v", elapsed)
+	}
 	if got := conn.RemoteAddr().String(); got != controlAddr {
 		t.Fatalf("data session connected to %s, want %s", got, controlAddr)
 	}

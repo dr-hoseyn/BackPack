@@ -69,39 +69,7 @@ func resourceTunnel(t *testing.T) (*tunnel, int) {
 		}
 	}
 	if os.Getenv("BP_RESOURCE_NETEM") != "" {
-		seed := "42"
-		if raw := os.Getenv("BP_RESOURCE_NETEM_SEED"); raw != "" {
-			if _, err := strconv.ParseUint(raw, 10, 32); err != nil {
-				t.Fatal("invalid netem seed")
-			}
-			seed = raw
-		}
-		// Use receiver ingress, as tc-netem requires for realistic TCP/TSQ
-		// results. MTU and offload settings make loss apply to wire-sized
-		// packets instead of giant loopback/GSO packets. Everything below is
-		// confined to a disposable network namespace in CI.
-		commands := [][]string{
-			{"ip", "link", "set", "lo", "mtu", "1500"},
-			{"ip", "link", "add", "bpifb", "type", "ifb"},
-			{"ip", "link", "set", "bpifb", "mtu", "1500", "up"},
-			{"ethtool", "-K", "lo", "tso", "off", "gso", "off", "gro", "off"},
-			{"ethtool", "-K", "bpifb", "tso", "off", "gso", "off", "gro", "off"},
-			{"tc", "qdisc", "add", "dev", "bpifb", "root", "netem", "delay", "40ms", "loss", "0.1%", "rate", "200mbit", "limit", "10000", "seed", seed},
-			{"tc", "qdisc", "add", "dev", "lo", "handle", "ffff:", "ingress"},
-		}
-		for _, direction := range []string{"dport", "sport"} {
-			commands = append(commands, []string{"tc", "filter", "add", "dev", "lo", "protocol", "ip", "parent", "ffff:", "prio", "1", "u32",
-				"match", "ip", "protocol", "6", "0xff", "match", "ip", direction, strconv.Itoa(tunnelPort), "0xffff", "action", "mirred", "egress", "redirect", "dev", "bpifb"})
-		}
-		for _, args := range commands {
-			if output, err := exec.Command(args[0], args[1:]...).CombinedOutput(); err != nil {
-				t.Fatalf("netem setup: %v: %s", err, output)
-			}
-		}
-		t.Cleanup(func() {
-			_ = exec.Command("tc", "qdisc", "del", "dev", "lo", "ingress").Run()
-			_ = exec.Command("ip", "link", "del", "bpifb").Run()
-		})
+		setupWSMuxNetem(t, tunnelPort)
 	}
 	tun := runPair(t, srv, cli, entryPort, tunnelPort)
 	if err := tun.waitReady(tunnelReadyTimeout); err != nil {
@@ -358,7 +326,22 @@ func TestWSMuxPoolRetiresAfterLoadWithoutDisconnectingQuietUser(t *testing.T) {
 		t.Fatalf("fixture did not grow the pool: %d", peak)
 	}
 	deadline := time.Now().Add(120 * time.Second)
+	keepTraffic := os.Getenv("BP_WSSMUX_RETIREMENT_ACTIVE") == "1"
+	keepalive := []byte("low-rate traffic during idle retirement")
+	gotKeepalive := make([]byte, len(keepalive))
 	for sessions() > floor && time.Now().Before(deadline) {
+		if keepTraffic {
+			c := connections[0]
+			if err := c.SetDeadline(time.Now().Add(3 * time.Second)); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := c.Write(keepalive); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := io.ReadFull(c, gotKeepalive); err != nil || !bytes.Equal(gotKeepalive, keepalive) {
+				t.Fatalf("active user during pool retirement: %q, %v", gotKeepalive, err)
+			}
+		}
 		time.Sleep(time.Second)
 	}
 	if got := sessions(); got != floor {
@@ -428,4 +411,41 @@ func resourceOfferedRoundTrip(tun *tunnel, payload []byte, limiter *rate.Limiter
 		return fmt.Errorf("paced transfer corrupted")
 	}
 	return err
+}
+
+func setupWSMuxNetem(t *testing.T, tunnelPort int) {
+	t.Helper()
+	seed := "42"
+	if raw := os.Getenv("BP_RESOURCE_NETEM_SEED"); raw != "" {
+		if _, err := strconv.ParseUint(raw, 10, 32); err != nil {
+			t.Fatal("invalid netem seed")
+		}
+		seed = raw
+	}
+	// Use receiver ingress, as tc-netem requires for realistic TCP/TSQ
+	// results. MTU and offload settings make loss apply to wire-sized
+	// packets instead of giant loopback/GSO packets. Everything below is
+	// confined to a disposable network namespace in CI.
+	commands := [][]string{
+		{"ip", "link", "set", "lo", "mtu", "1500"},
+		{"ip", "link", "add", "bpifb", "type", "ifb"},
+		{"ip", "link", "set", "bpifb", "mtu", "1500", "up"},
+		{"ethtool", "-K", "lo", "tso", "off", "gso", "off", "gro", "off"},
+		{"ethtool", "-K", "bpifb", "tso", "off", "gso", "off", "gro", "off"},
+		{"tc", "qdisc", "add", "dev", "bpifb", "root", "netem", "delay", "40ms", "loss", "0.1%", "rate", "200mbit", "limit", "10000", "seed", seed},
+		{"tc", "qdisc", "add", "dev", "lo", "handle", "ffff:", "ingress"},
+	}
+	for _, direction := range []string{"dport", "sport"} {
+		commands = append(commands, []string{"tc", "filter", "add", "dev", "lo", "protocol", "ip", "parent", "ffff:", "prio", "1", "u32",
+			"match", "ip", "protocol", "6", "0xff", "match", "ip", direction, strconv.Itoa(tunnelPort), "0xffff", "action", "mirred", "egress", "redirect", "dev", "bpifb"})
+	}
+	for _, args := range commands {
+		if output, err := exec.Command(args[0], args[1:]...).CombinedOutput(); err != nil {
+			t.Fatalf("netem setup: %v: %s", err, output)
+		}
+	}
+	t.Cleanup(func() {
+		_ = exec.Command("tc", "qdisc", "del", "dev", "lo", "ingress").Run()
+		_ = exec.Command("ip", "link", "del", "bpifb").Run()
+	})
 }

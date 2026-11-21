@@ -46,7 +46,8 @@ type portForwarder struct {
 	queued func()
 	// expireQueued is used by mux queues, which can have no consumer while
 	// the data pool is down.
-	expireQueued func(LocalTCPConn)
+	expireQueued   func(LocalTCPConn)
+	onPairingRetry func()
 }
 
 // run binds every mapping and returns; the listeners live until ctx ends.
@@ -224,7 +225,11 @@ func (f portForwarder) offer(local LocalTCPConn) bool {
 			// Use another ownership record so the original opener
 			// cannot claim this socket when its SYN eventually returns.
 			next.pairing = &queuedMuxPairing{finish: p.finish}
-			return f.muxQueue.pushLocal(next, nil, true)
+			queued := f.muxQueue.pushLocal(next, nil, true)
+			if queued && f.onPairingRetry != nil {
+				f.onPairingRetry()
+			}
+			return queued
 		}
 		return f.muxQueue.push(local, f.queued)
 	}

@@ -88,6 +88,12 @@ jobs:
           set -o pipefail
           "$RUNNER_TEMP/resource-candidate" -test.run '^TestWSMuxPoolRetiresAfterLoadWithoutDisconnectingQuietUser$' \
             -test.v -test.timeout 3m | tee "$RUNNER_TEMP/resource-num3-retirement.txt"
+      - name: Retire idle carriers during verified low-rate traffic
+        env:
+          BP_RESOURCE_RETIREMENT: '1'
+          BP_WSSMUX_RETIREMENT_ACTIVE: '1'
+        run: |
+          "$RUNNER_TEMP/resource-candidate" -test.run '^TestWSMuxPoolRetiresAfterLoadWithoutDisconnectingQuietUser$' -test.v -test.timeout 3m
       - name: Compare quality with delay, loss and a fixed link rate
         run: |
           set -euo pipefail

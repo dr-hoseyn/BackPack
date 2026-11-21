@@ -5,6 +5,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"sort"
 	"strconv"
 	"sync"
 	"testing"
@@ -25,7 +26,7 @@ func TestWSSMuxDedicatedLivePath(t *testing.T) {
 	if len(token) < 32 {
 		t.Fatal("live fixture requires a fresh strong token")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 55*time.Second)
 	defer cancel()
 	var wg sync.WaitGroup
 	defer wg.Wait()
@@ -77,6 +78,9 @@ func TestWSSMuxDedicatedLivePath(t *testing.T) {
 		if err := tun.waitReady(25 * time.Second); err != nil {
 			t.Fatal(err)
 		}
+		if os.Getenv("BP_WSSMUX_LIVE_COMPARE") == "1" {
+			compareWSSMuxLive(t, tun)
+		}
 		for _, size := range []int{128, 64 << 10, 256 << 10} {
 			start := time.Now()
 			if err := tun.roundTrip(randomPayload(t, size)); err != nil {
@@ -86,5 +90,75 @@ func TestWSSMuxDedicatedLivePath(t *testing.T) {
 		}
 	default:
 		t.Fatal("unknown live role")
+	}
+}
+
+// The capped offered load is deliberately small enough for shared live hosts.
+// Server-side timing includes TCP entry, mux admission and the verified echo.
+func compareWSSMuxLive(t *testing.T, tun *tunnel) {
+	t.Helper()
+	conn, err := net.DialTimeout("tcp", tun.Entry, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	block, small := randomPayload(t, 64<<10), randomPayload(t, 128)
+	stop := make(chan struct{})
+	type bulkSample struct {
+		blocks int
+		err    error
+	}
+	done := make(chan bulkSample, 1)
+	started := make(chan struct{})
+	bulkStart := time.Now()
+	go func() {
+		var sample bulkSample
+		defer func() { done <- sample }()
+		close(started)
+		for {
+			begin := time.Now()
+			if sample.err = wssmuxRecoveryEcho(conn, block); sample.err != nil {
+				return
+			}
+			sample.blocks++
+			select {
+			case <-stop:
+				return
+			case <-time.After(max(0, 100*time.Millisecond-time.Since(begin))):
+			}
+		}
+	}()
+	<-started
+	const samples = 40
+	replies := make([]time.Duration, 0, samples)
+	failures := 0
+	for range samples {
+		start := time.Now()
+		if err := tun.roundTrip(small); err != nil {
+			failures++
+			t.Logf("fresh WSSMux echo failed: %v", err)
+			if failures >= 3 {
+				break
+			}
+		} else {
+			replies = append(replies, time.Since(start))
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	close(stop)
+	bulk := <-done
+	seconds := time.Since(bulkStart).Seconds()
+	sort.Slice(replies, func(i, j int) bool { return replies[i] < replies[j] })
+	if len(replies) == 0 || bulk.err != nil || bulk.blocks == 0 {
+		t.Fatalf("missing verified traffic: replies=%d bulk=%+v", len(replies), bulk)
+	}
+	percentile := func(p int) float64 {
+		return float64(replies[(p*len(replies)+99)/100-1]) / float64(time.Millisecond)
+	}
+	t.Logf("LIVE_WSSMUX_COMPARE verified=%d failures=%d p50_ms=%.2f p95_ms=%.2f p99_ms=%.2f bulk_echo_mbps=%.3f bulk_bytes=%d",
+		len(replies), failures, percentile(50), percentile(95), percentile(99),
+		float64(bulk.blocks*len(block)*8)/seconds/1e6, bulk.blocks*len(block))
+	if failures != 0 {
+		t.Fatalf("%d fresh connections failed", failures)
 	}
 }

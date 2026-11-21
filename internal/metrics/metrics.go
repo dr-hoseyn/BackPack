@@ -66,7 +66,9 @@ type Snapshot struct {
 	// allowed to grow past PoolConfigured under load, so reporting only the
 	// live count would look like a leak; the two together, with the throughput
 	// that caused it, are what make the number explainable.
-	Pool *PoolStats `json:"pool,omitempty"`
+	Pool           *PoolStats           `json:"pool,omitempty"`
+	WSMuxData      *WSMuxDataStats      `json:"wsmux_data,omitempty"`
+	WSMuxAdmission *WSMuxAdmissionStats `json:"wsmux_admission,omitempty"`
 
 	// LocalService is the last hop, when it is failing.
 	//
@@ -261,6 +263,8 @@ func (c *Collector) Snapshot() Snapshot {
 		Peer:         currentPeer(),
 		Connected:    connected.Load(),
 	}
+	s.WSMuxData = wsMuxData.Load()
+	s.WSMuxAdmission = wsMuxAdmission.Load()
 	if live, target, configured, mbps := PoolState(); configured > 0 {
 		s.Pool = &PoolStats{Live: live, Target: target, Configured: configured, Mbps: mbps}
 	}

@@ -6,6 +6,14 @@ on:
       - '.github/workflows/wssmux-scale-soak.yml'
       - 'internal/e2e/wssmux_scale_soak_test.go'
       - 'internal/server/transport/muxsession.go'
+      - 'internal/server/transport/mux_local_queue.go'
+      - 'internal/server/transport/wsmux*.go'
+      - 'internal/client/transport/wsmux*.go'
+      - 'internal/client/transport/*pool*.go'
+      - 'internal/utils/network/ws*.go'
+      - 'internal/utils/handlers/*relay*.go'
+      - 'config/**'
+      - 'cmd/defaults.go'
   workflow_dispatch:
     inputs:
       baseline_ref:

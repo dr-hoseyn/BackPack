@@ -69,3 +69,36 @@ func TestWSMuxRejectsIncompatibleOrMalformedNegotiation(t *testing.T) {
 		}
 	}
 }
+
+func TestWSMuxLocalIdleRequiresMutualSupport(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		offer bool
+		ack   bool
+		floor string
+		want  bool
+	}{
+		{"both", true, true, "2", true},
+		{"legacy server", true, false, "2", false},
+		{"unsolicited response", false, true, "2", false},
+		{"floor mismatch", true, true, "3", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			options := WSMuxOptions{PoolSize: 2, LocalIdle: tc.offer}
+			offer := make(http.Header)
+			options.offer(offer)
+			if got := offer.Get(WSMuxIdleHeader) == "1"; got != tc.offer {
+				t.Fatalf("advertised local idle = %v, want %v", got, tc.offer)
+			}
+			reply := make(http.Header)
+			reply.Set(WSMuxVersionHeader, "1")
+			reply.Set(WSMuxPoolHeader, tc.floor)
+			if tc.ack {
+				reply.Set(WSMuxIdleHeader, "1")
+			}
+			if err := options.accept(reply); err != nil || options.LocalIdle != tc.want {
+				t.Fatalf("local idle = %v, want %v, error = %v", options.LocalIdle, tc.want, err)
+			}
+		})
+	}
+}

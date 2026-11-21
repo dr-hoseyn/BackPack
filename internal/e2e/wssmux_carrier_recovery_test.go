@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -26,6 +28,17 @@ func TestWSSMuxReplacesOneFailedDataCarrierDuringTraffic(t *testing.T) {
 	const token = "wssmux-data-carrier-recovery-test-token"
 	server := baseServerConfig("wssmux", tunnelPort, entryPort, backend.addr, token)
 	path := newControlledPath(t, server.BindAddr)
+	if os.Getenv("BP_WSSMUX_RECOVERY_NETEM") == "1" {
+		_, rawPort, err := net.SplitHostPort(path.addr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		pathPort, err := strconv.Atoi(rawPort)
+		if err != nil {
+			t.Fatal(err)
+		}
+		setupWSMuxNetem(t, pathPort)
+	}
 	client := baseClientConfig("wssmux", path.addr, token, nil)
 	const poolSize = 8
 	client.ConnectionPool, client.WSMuxMaxSessions = poolSize, poolSize

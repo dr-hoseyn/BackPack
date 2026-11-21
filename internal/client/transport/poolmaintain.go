@@ -73,13 +73,16 @@ type poolSizer struct {
 	dial func()
 	// spawn registers workers with their generation; nil is useful to callers
 	// that run the sizing policy on its own.
-	spawn   func(func())
-	pending *int32
-	maxSize int
+	spawn      func(func())
+	pending    *int32
+	maxSize    int
+	maxPending int
 	// sessionLost optionally wakes floor repair before the next sizing tick.
-	sessionLost <-chan struct{}
+	sessionLost  <-chan struct{}
+	sessionReady <-chan struct{}
 	// Only peers that negotiated safe retirement participate in mux shrink.
-	sessions *muxPoolSessions
+	sessions   *muxPoolSessions
+	reportData func(idle int)
 }
 
 func (p poolSizer) launch() {
@@ -95,6 +98,9 @@ func (p poolSizer) repair(target int) bool {
 		return false
 	}
 	missing := target - poolOccupancy(p.pending, p.open)
+	if p.maxPending > 0 {
+		missing = min(missing, p.maxPending-int(atomic.LoadInt32(p.pending)))
+	}
 	for i := 0; i < missing && p.ctx.Err() == nil; i++ {
 		p.launch()
 	}
@@ -105,7 +111,11 @@ func (p poolSizer) repair(target int) bool {
 // to absorb a burst while the server gives queued users only three seconds.
 func (p poolSizer) maintain() {
 	var quietSince time.Time
-	for i := 0; i < p.size; i++ { // initial pool filling
+	initial := p.size
+	if p.maxPending > 0 {
+		initial = min(initial, p.maxPending)
+	}
+	for i := 0; i < initial; i++ { // initial pool filling
 		p.launch()
 	}
 
@@ -139,6 +149,10 @@ func (p poolSizer) maintain() {
 		case <-p.ctx.Done():
 			return
 
+		case <-p.sessionReady:
+			// Continue a bounded warm-up batch as TLS upgrades complete.
+			p.repair(p.size)
+
 		case <-p.sessionLost:
 			// A peer that immediately closes each new session must not
 			// trigger an unbounded reconnect loop. Allow one early floor
@@ -163,15 +177,16 @@ func (p poolSizer) maintain() {
 			// process per tunnel and every one of them counts its bytes into
 			// the same place — through CountedConn or through AddBytes.
 			mbps := load.mbps()
-			active, tracked, canRetire := 0, 0, false
+			active, tracked, canRetire, localIdle := 0, 0, false, false
 			if p.sessions != nil {
-				active, tracked, canRetire = p.sessions.snapshot()
+				active, tracked, canRetire, localIdle = p.sessions.snapshot()
 			}
 			// Retain the established throughput-growth policy while users are
 			// present: fewer physical TCP paths can shift loss-recovery queues
 			// onto fresh users. Occupancy only suppresses stale byte-rate growth
 			// after all streams have ended and warm capacity is already present.
-			spareSession := tracked == openAvg && active == 0 && tracked >= max(p.size, 1)
+			spareSession := tracked == openAvg && tracked >= max(p.size, 1) &&
+				(active == 0 || (localIdle && active < tracked))
 
 			// A mux session may be carrying a long transfer without asking for
 			// another stream. Retire it only after actual traffic goes quiet.
@@ -179,7 +194,7 @@ func (p poolSizer) maintain() {
 			if canRetire && tracked == openAvg {
 				// Low-rate but long-lived streams still occupy a session. Leave
 				// those alone; only lower the desired count of unused sessions.
-				quiet = taken == 0 && active < openAvg && mbps == 0
+				quiet = taken == 0 && active < openAvg && (localIdle || mbps == 0)
 			}
 			if !quiet {
 				quietSince = time.Time{}
@@ -233,6 +248,9 @@ func (p poolSizer) maintain() {
 			// not launch the same missing connections twice.
 			p.repair(newPoolSize)
 			metrics.ReportPool(openAvg, newPoolSize, p.size, mbps)
+			if p.reportData != nil {
+				p.reportData(tracked - active)
+			}
 		}
 	}
 }

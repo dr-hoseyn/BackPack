@@ -2,7 +2,9 @@ package transport
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net"
 	"os"
 	"slices"
 	"strconv"
@@ -29,6 +31,7 @@ type WsMuxTransport struct {
 	smuxConfig *smux.Config
 	sessions   muxPoolSessions
 	poolLost   chan struct{}
+	poolReady  chan struct{}
 	dataRoutes wsMuxDataRoutes
 	tracePort  int
 }
@@ -82,6 +85,7 @@ func NewWSMuxClient(parentCtx context.Context, cfg *WsMuxConfig, logger *logrus.
 	}
 
 	if cfg.Mode == config.WSSMUX {
+		client.poolReady = make(chan struct{}, 1)
 		if port, err := strconv.ParseUint(os.Getenv("BP_WSSMUX_TRACE_BACKEND_PORT"), 10, 16); err == nil {
 			client.tracePort = int(port)
 		}
@@ -101,6 +105,9 @@ func (c *WsMuxTransport) Start() {
 func (c *WsMuxTransport) Restart() {
 	c.restart(nil, func() {
 		drain(c.poolLost)
+		if c.poolReady != nil {
+			drain(c.poolReady)
+		}
 		c.dataRoutes.reset()
 	}, c.Start)
 }
@@ -173,22 +180,33 @@ func (c *WsMuxTransport) dialControl(ctx context.Context) (*websocket.Conn, erro
 // poolMaintainer keeps the pool the right size. The policy is poolSizer's,
 // shared with every other client transport — see poolmaintain.go.
 func (c *WsMuxTransport) poolMaintainer() {
-	poolSizer{
-		mux:         true,
-		ctx:         c.state.Ctx(),
-		log:         c.logger,
-		size:        c.config.ConnPoolSize,
-		aggressive:  c.config.AggressivePool,
-		open:        &c.poolConnections,
-		taken:       &c.loadConnections,
-		shrink:      c.controlFlow,
-		dial:        c.tunnelDialer,
-		spawn:       c.state.Go,
-		pending:     &c.dialingConnections,
-		maxSize:     c.poolLimit(),
-		sessions:    &c.sessions,
-		sessionLost: c.poolLost,
-	}.maintain()
+	p := poolSizer{
+		mux:          true,
+		ctx:          c.state.Ctx(),
+		log:          c.logger,
+		size:         c.config.ConnPoolSize,
+		aggressive:   c.config.AggressivePool,
+		open:         &c.poolConnections,
+		taken:        &c.loadConnections,
+		shrink:       c.controlFlow,
+		dial:         c.tunnelDialer,
+		spawn:        c.state.Go,
+		pending:      &c.dialingConnections,
+		maxSize:      c.poolLimit(),
+		sessions:     &c.sessions,
+		sessionLost:  c.poolLost,
+		sessionReady: c.poolReady,
+		maxPending:   c.maxPendingDials(),
+	}
+	if c.config.Mode == config.WSSMUX {
+		p.reportData = func(idle int) {
+			metrics.ReportWSMuxData(metrics.WSMuxDataStats{
+				Pending: int(atomic.LoadInt32(&c.dialingConnections)), Idle: idle,
+				Routes: c.dataRoutes.snapshot(c.config.Endpoints.InPreferenceOrder()),
+			})
+		}
+	}
+	p.maintain()
 }
 
 // control is this generation's control loop. The websocket server listens
@@ -200,7 +218,7 @@ func (c *WsMuxTransport) control() controlLoop {
 }
 
 func (c *WsMuxTransport) tunnelDialer() {
-	ready, ok := c.beginPoolDial(c.poolLimit())
+	ready, ok := c.beginPoolDial(c.poolLimit(), c.maxPendingDials())
 	if !ok {
 		return
 	}
@@ -208,7 +226,9 @@ func (c *WsMuxTransport) tunnelDialer() {
 
 	c.logger.Debugf("initiating new %s tunnel connection to address %s", c.config.Mode, c.config.RemoteAddr)
 
-	mux := network.WSMuxOptions{Version: c.config.MuxVersion, PoolSize: c.config.ConnPoolSize}
+	mux := network.WSMuxOptions{
+		Version: c.config.MuxVersion, PoolSize: c.config.ConnPoolSize, LocalIdle: c.config.Mode == config.WSSMUX,
+	}
 	tunnelWSConn, err := c.dialTunnel(c.state.Ctx(), &mux)
 	if err != nil {
 		c.logger.Errorf("tunnel server dialer: %v", err)
@@ -221,19 +241,50 @@ func (c *WsMuxTransport) tunnelDialer() {
 	// Increment active connections counter
 	atomic.AddInt32(&c.poolConnections, 1)
 	ready()
+	select {
+	case c.poolReady <- struct{}{}:
+	default:
+	}
 
 	c.handleSession(tunnelWSConn, mux)
+}
+
+// Limit concurrent TLS upgrades when a lost pool has a large target.
+func (c *WsMuxTransport) maxPendingDials() int {
+	if c.config.Mode == config.WSSMUX {
+		return 16
+	}
+	return 0
 }
 
 func (c *WsMuxTransport) dialTunnel(ctx context.Context, mux *network.WSMuxOptions) (*websocket.Conn, error) {
 	const maxAttempts = 3
 	cfg := c.config
-	dial := func(addr string, attempts int) (*websocket.Conn, error) {
-		return network.WebSocketDialer(ctx, cfg.Outbound, addr, cfg.EdgeIP, "/tunnel", cfg.DialTimeOut, cfg.KeepAlive, cfg.Nodelay, cfg.Token, cfg.Mode, cfg.SimpleAuth, attempts, 2*1024*1024, 2*1024*1024, cfg.MSS, cfg.WSS, mux)
+	dial := func(addr string, attempts int, timeout time.Duration) (*websocket.Conn, error) {
+		options := *mux
+		conn, err := network.WebSocketDialer(ctx, cfg.Outbound, addr, cfg.EdgeIP, "/tunnel", timeout, cfg.KeepAlive, cfg.Nodelay, cfg.Token, cfg.Mode, cfg.SimpleAuth, attempts, 2*1024*1024, 2*1024*1024, cfg.MSS, cfg.WSS, &options)
+		if err == nil {
+			*mux = options
+		}
+		return conn, err
 	}
 	first := cfg.Endpoints.Next()
 	if cfg.Endpoints.Len() < 2 {
-		return dial(first, maxAttempts)
+		started := time.Now()
+		conn, err := dial(first, maxAttempts, cfg.DialTimeOut)
+		if cfg.Mode == config.WSSMUX && ctx.Err() == nil {
+			c.dataRoutes.record(first, started, err == nil)
+		}
+		return conn, err
+	}
+	timeout := cfg.DialTimeOut
+	if cfg.Mode == config.WSSMUX {
+		// Explore alternatives quickly, then give a slow but viable route
+		// its remaining budget if this round found no ready backup.
+		round, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		ctx = round
+		timeout = min(timeout, 800*time.Millisecond)
 	}
 
 	// Start with the preferred route, including ordinary backups whose
@@ -241,11 +292,16 @@ func (c *WsMuxTransport) dialTunnel(ctx context.Context, mux *network.WSMuxOptio
 	// move the control preference.
 	var err error
 	attempts := 0
-	try := func(addr string) *websocket.Conn {
+	var slowRoute string
+	try := func(addr string, timeout time.Duration) *websocket.Conn {
 		attempts++
 		start := time.Now()
-		conn, dialErr := dial(addr, 1)
+		conn, dialErr := dial(addr, 1, timeout)
 		err = dialErr
+		var timeoutErr net.Error
+		if slowRoute == "" && errors.As(dialErr, &timeoutErr) && timeoutErr.Timeout() {
+			slowRoute = addr
+		}
 		if ctx.Err() == nil {
 			c.dataRoutes.record(addr, start, dialErr == nil)
 		}
@@ -255,7 +311,7 @@ func (c *WsMuxTransport) dialTunnel(ctx context.Context, mux *network.WSMuxOptio
 		return conn
 	}
 	if c.dataRoutes.available(first, time.Now()) {
-		if conn := try(first); conn != nil {
+		if conn := try(first, timeout); conn != nil {
 			return conn, nil
 		}
 	}
@@ -278,14 +334,20 @@ func (c *WsMuxTransport) dialTunnel(ctx context.Context, mux *network.WSMuxOptio
 		if addr == first || !c.dataRoutes.available(addr, time.Now()) {
 			continue
 		}
-		if conn := try(addr); conn != nil {
+		if conn := try(addr, timeout); conn != nil {
 			return conn, nil
 		}
 	}
 	// If every route is cooling down, probe one instead of waiting for the
 	// entire cooldown to end. Next() still rotates that probe across routes.
 	if attempts == 0 {
-		conn := try(first)
+		conn := try(first, timeout)
+		if conn != nil {
+			return conn, nil
+		}
+	}
+	if cfg.Mode == config.WSSMUX && cfg.DialTimeOut > timeout && ctx.Err() == nil && slowRoute != "" {
+		conn := try(slowRoute, cfg.DialTimeOut)
 		return conn, err
 	}
 	return nil, err
@@ -294,8 +356,10 @@ func (c *WsMuxTransport) dialTunnel(ctx context.Context, mux *network.WSMuxOptio
 const wsMuxDataRetryDelay = 2 * time.Second
 
 type wsMuxDataRoute struct {
-	started time.Time
-	retryAt time.Time
+	started  time.Time
+	retryAt  time.Time
+	attempts uint64
+	failures uint64
 }
 
 type wsMuxDataRoutes struct {
@@ -313,17 +377,37 @@ func (r *wsMuxDataRoutes) available(addr string, now time.Time) bool {
 func (r *wsMuxDataRoutes) record(addr string, started time.Time, success bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if started.Before(r.routes[addr].started) {
-		return // a newer attempt already reported this route
-	}
 	if r.routes == nil {
 		r.routes = make(map[string]wsMuxDataRoute)
 	}
-	state := wsMuxDataRoute{started: started}
+	state := r.routes[addr]
+	state.attempts++
 	if !success {
-		state.retryAt = time.Now().Add(wsMuxDataRetryDelay)
+		state.failures++
+	}
+	if !started.Before(state.started) {
+		state.started = started
+		state.retryAt = time.Time{}
+		if !success {
+			state.retryAt = time.Now().Add(wsMuxDataRetryDelay)
+		}
 	}
 	r.routes[addr] = state
+}
+
+func (r *wsMuxDataRoutes) snapshot(endpoints []string) []metrics.WSMuxRouteStats {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	routes := make([]metrics.WSMuxRouteStats, 0, len(r.routes))
+	for _, addr := range endpoints {
+		if route := r.routes[addr]; route.attempts != 0 {
+			routes = append(routes, metrics.WSMuxRouteStats{
+				Endpoint: addr, LastOK: route.retryAt.IsZero(), RetryAt: route.retryAt,
+				Attempts: route.attempts, Failures: route.failures,
+			})
+		}
+	}
+	return routes
 }
 
 func (r *wsMuxDataRoutes) reset() {
@@ -355,7 +439,7 @@ func (c *WsMuxTransport) handleSession(tunnelConn *websocket.Conn, mux network.W
 	}
 
 	established = true
-	defer c.sessions.add(session, mux.Retirement)()
+	defer c.sessions.add(session, mux.Retirement, mux.LocalIdle)()
 	backend := c.backend()
 	if c.tracePort != 0 {
 		backend.tracePort = c.tracePort
