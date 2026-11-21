@@ -139,3 +139,52 @@ func BenchmarkAdaptiveRelayBufferPair(b *testing.B) {
 		down.release()
 	}
 }
+
+func TestWSMuxRelayStartsSmallAndGrowsWithoutHoldingTailBytes(t *testing.T) {
+	for _, frame := range []int{0, 1000, 16368, 65520} {
+		for _, size := range []int{127, 3*relayBufferSize + 17} {
+			t.Run(fmt.Sprintf("frame-%d/bytes-%d", frame, size), func(t *testing.T) {
+				want := bytes.Repeat([]byte("z"), size)
+				from := &sizedReadConn{data: want}
+				to := &completedWriteConn{}
+				buffer := newMuxRelayCopyBuffer()
+				buffer.frameSize = frame
+				if !copyBuffered(from, to, &buffer, quietLogger(), nil, 0, false) {
+					t.Fatal("copy lost ownership of its buffer")
+				}
+				defer buffer.release()
+				if !bytes.Equal(to.received, want) {
+					t.Fatal("copy changed payload")
+				}
+				aligned := func(n int) int {
+					if frame > 0 && n >= frame {
+						return n / frame * frame
+					}
+					return n
+				}
+				expected := []int{aligned(quietMuxRelayBufferSize)}
+				if size > relayBufferSize {
+					expected = append(expected, aligned(smallRelayBufferSize), aligned(relayBufferSize))
+				}
+				if !slices.Equal(from.sizes[:min(len(expected), len(from.sizes))], expected) {
+					t.Fatalf("read sizes %v, want prefix %v", from.sizes, expected)
+				}
+				if size < quietMuxRelayBufferSize && len(*buffer.p) != quietMuxRelayBufferSize {
+					t.Fatal("short copy retained a larger buffer")
+				}
+			})
+		}
+	}
+}
+
+func TestWSMuxRelayFailedSmallWriteDoesNotRecycleItsPayload(t *testing.T) {
+	want := bytes.Repeat([]byte("q"), quietMuxRelayBufferSize)
+	to := &queuedWriteConn{err: net.ErrClosed}
+	buffer := newMuxRelayCopyBuffer()
+	if copyBuffered(&sizedReadConn{data: want}, to, &buffer, quietLogger(), nil, 0, false) {
+		t.Fatal("failed write allowed recycling its outstanding slice")
+	}
+	if !bytes.Equal(to.queued, want) {
+		t.Fatal("copy changed the outstanding payload")
+	}
+}
