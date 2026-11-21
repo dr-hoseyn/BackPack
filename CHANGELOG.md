@@ -1,5 +1,34 @@
 # Changelog
 
+## v1.27.0 — 2026-11-21
+
+- Resume eligible managed Short HTTPS TCP streams on a verified sibling path.
+- Recover new WSSMux TCP admissions when a stream open stalls and another
+  carrier is ready. WSMux and WSSMux also try configured backup addresses
+  for failed data upgrades while retaining the active control connection.
+- Reduce Go heap usage for idle WSSMux streams, reuse short-frame writers,
+  steer new streams away from recent bulk traffic, and batch forwarded UDP
+  datagrams. Eliminate redundant TCP keepalive settings on forwarded accepts.
+- Add opt-in WSSMux first-reply timing with Linux TCP socket metrics and
+  test carrier replacement while verified traffic continues on another link.
+- Reduce L3 FEC copying, keep Native UDP reassembly moving under fragment
+  loss, and report jitter from managed-path RTT probes.
+- Preserve existing kernel port reservations during tuning and enforce
+  restore limits when creating backups.
+- Close cancelled KCP binds and wait for reverse tunnel listeners during
+  fallback startup.
+
+<div dir="rtl">
+
+اتصال‌های جدید WSSMux هنگام کندی باز شدن استریم می‌توانند از مسیر دیگری
+استفاده کنند. اگر اتصال داده برقرار نشود، WSMux و WSSMux آدرس‌های پشتیبان
+را امتحان می‌کنند و اتصال کنترل را حفظ می‌کنند. مصرف حافظهٔ استریم‌های
+بیکار کاهش یافته و عیب‌یابی زمان اولین پاسخ دقیق‌تر شده است. ادامهٔ
+اتصال‌های واجد شرایط Short HTTPS روی مسیر جایگزین، حفظ رزرو پورت‌ها و
+کنترل محدودیت‌های بازیابی هنگام تهیهٔ نسخهٔ پشتیبان هم در این نسخه آمده‌اند.
+
+</div>
+
 ## v1.26.1 — 2026-11-15
 
 - Preserve server-first data through HTTP CONNECT proxies, accept successful
