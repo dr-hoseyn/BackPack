@@ -74,7 +74,7 @@ func (p *queuedMuxPairing) arm(created int64) {
 		if p.opening {
 			p.opening = false
 			p.checkSlowOpen = false
-			if p.opening && pairingWait(created) >= slowMuxOpenDelay && p.finish(true) {
+			if pairingWait(created) >= slowMuxOpenDelay && p.finish(true) {
 				p.released = true
 				p.remove = nil
 				return
