@@ -37,6 +37,9 @@ type portForwarder struct {
 	// tune applies the transport's socket options to an accepted user
 	// connection. Optional.
 	tune func(*net.TCPConn)
+	// tcpKeepAlive sets the idle period as part of normal TCP accept setup.
+	// Zero uses the net package default.
+	tcpKeepAlive time.Duration
 	// queued runs once a connection — a TCP client or a new UDP flow — is
 	// waiting in queue: the transport asks its client for a tunnel connection
 	// or a stream to carry it. Optional.
@@ -111,7 +114,8 @@ func (f portForwarder) listen(localAddr, remoteAddr string) {
 	}
 	defer f.listeners.release()
 
-	listener, err := net.Listen("tcp", localAddr)
+	lc := net.ListenConfig{KeepAlive: max(f.tcpKeepAlive, 0)}
+	listener, err := lc.Listen(f.ctx, "tcp", localAddr)
 	if err != nil {
 		// Not fatal: one port being taken must not stop the others.
 		f.log.Error(bindFailure("forwarded port", localAddr, err))

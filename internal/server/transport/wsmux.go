@@ -450,12 +450,8 @@ func (s *WsMuxTransport) forwarder(g *wsMuxGen) portForwarder {
 		ctx:          g.ctx, ports: s.config.Ports, acceptUDP: s.config.AcceptUDP,
 		batchUDPReads: s.config.Mode == config.WSSMUX && s.config.BandwidthMbps <= 0,
 		muxQueue:      g.localChannel, limits: s.limits, listeners: &s.listeners, log: s.logger,
-		tune:   s.tuneUserConn,
-		queued: muxRequestForGeneration(g.ctx, &s.counterMutex, &s.streamCounter, &s.sessionCounter, s.config.MuxCon, g.reqNewConnChan, s.logger),
+		tune:         nodelayTune(s.config.Nodelay, s.logger),
+		tcpKeepAlive: s.config.KeepAlive,
+		queued:       muxRequestForGeneration(g.ctx, &s.counterMutex, &s.streamCounter, &s.sessionCounter, s.config.MuxCon, g.reqNewConnChan, s.logger),
 	}
-}
-
-// tuneUserConn is the same as the ws transport's; see wsTune.
-func (s *WsMuxTransport) tuneUserConn(c *net.TCPConn) {
-	wsTune(c, s.config.Nodelay, s.config.KeepAlive, s.logger)
 }
