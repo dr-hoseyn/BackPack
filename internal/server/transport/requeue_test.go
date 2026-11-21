@@ -106,6 +106,14 @@ func TestExpiredMuxPairingReleasesConnectionInsteadOfRequeueing(t *testing.T) {
 	}
 }
 
+func delegatesMuxSession(name, source string) bool {
+	if name == "wsmux" {
+		// WSMux starts smux after dequeuing and confirming the WebSocket.
+		return strings.Contains(source, "loop.run(session)")
+	}
+	return strings.Contains(source, ".run(session.Session)")
+}
+
 // No mux transport may put a connection back with a blocking send, and each has
 // to give back the mux slot the failed attempt took.
 //
@@ -121,7 +129,7 @@ func TestNoMuxTransportBlocksPuttingAConnectionBack(t *testing.T) {
 	for _, name := range []string{"tcpmux", "wsmux", "kcp"} {
 		t.Run(name+" delegates", func(t *testing.T) {
 			src := readTransportSource(t, name+".go")
-			if !strings.Contains(src, ".run(session.Session)") {
+			if !delegatesMuxSession(name, src) {
 				t.Errorf("%s.go no longer hands its session to the shared loop — if it "+
 					"has a copy of it again, every fault fixed in muxsession.go has to "+
 					"be found and fixed here as well", name)
