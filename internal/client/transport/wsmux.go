@@ -154,7 +154,7 @@ func (c *WsMuxTransport) dialControl(ctx context.Context) (*websocket.Conn, erro
 	dial := func(ctx context.Context, addr string, attempts int) (*websocket.Conn, error) {
 		return network.WebSocketDialer(ctx, cfg.Outbound, addr, cfg.EdgeIP, "/channel", cfg.DialTimeOut, cfg.KeepAlive, true, cfg.Token, cfg.Mode, cfg.SimpleAuth, attempts, 0, 0, cfg.MSS, cfg.WSS)
 	}
-	if cfg.Mode != config.WSSMUX && cfg.Endpoints.Len() < 2 {
+	if cfg.Endpoints.Len() < 2 {
 		return dial(ctx, cfg.Endpoints.Current(), 3)
 	}
 	if cfg.Mode == config.WSSMUX {
@@ -167,7 +167,7 @@ func (c *WsMuxTransport) dialControl(ctx context.Context) (*websocket.Conn, erro
 		ctx = budget
 	}
 
-	// Give each route one full handshake before retrying any route. A TCP
+	// Try each route before starting a new failover round. A TCP
 	// accept alone cannot identify a working TLS/WebSocket path, and racing
 	// authenticated upgrades could claim the server's control seat twice.
 	var lastErr error
@@ -287,13 +287,7 @@ func (c *WsMuxTransport) dialTunnel(ctx context.Context, mux *network.WSMuxOptio
 	first := cfg.Endpoints.Next()
 	if cfg.Endpoints.Len() < 2 {
 		started := time.Now()
-		attempts := maxAttempts
-		if cfg.Mode == config.WSSMUX {
-			// The pool maintainer owns later retries. Do not hold a slot
-			// through three complete handshakes to the same address.
-			attempts = 1
-		}
-		conn, err := dial(first, attempts, cfg.DialTimeOut)
+		conn, err := dial(first, maxAttempts, cfg.DialTimeOut)
 		if cfg.Mode == config.WSSMUX && ctx.Err() == nil {
 			c.dataRoutes.record(first, started, err == nil)
 		}
