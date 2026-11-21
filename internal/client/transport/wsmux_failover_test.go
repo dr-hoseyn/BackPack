@@ -327,3 +327,20 @@ func TestWSSMuxOrdinaryDataFallbackKeepsControlOnPrimary(t *testing.T) {
 		}
 	})
 }
+
+func TestWSSMuxCapacityDoesNotCountAsRouteFailure(t *testing.T) {
+	var routes wsMuxDataRoutes
+	now := time.Now()
+	routes.recordResult("full", now, network.ErrWSMuxCapacity)
+	routes.recordResult("backup", now.Add(-1500*time.Millisecond), nil)
+	if routes.available("full", now) || !routes.atCapacity("full", now) {
+		t.Fatal("route with no capacity must cool down")
+	}
+	if got := routes.quickBudget("backup", 800*time.Millisecond, 5*time.Second); got < 2*time.Second || got > 3*time.Second {
+		t.Fatalf("known slow route got a %v handshake budget", got)
+	}
+	stats := routes.snapshot([]string{"full"})
+	if len(stats) != 1 || stats[0].CapacityRejected != 1 || stats[0].Failures != 0 {
+		t.Fatalf("capacity response polluted reachability statistics: %+v", stats)
+	}
+}

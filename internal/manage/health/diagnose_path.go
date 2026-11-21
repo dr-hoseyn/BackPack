@@ -338,6 +338,13 @@ func wssMuxPathChecks(g string, snap metrics.Snapshot) []Check {
 			if !route.LastOK {
 				check.Level = CheckWarn
 			}
+			if route.CapacityRejected > 0 {
+				check.Detail += fmt.Sprintf(", %d capacity responses", route.CapacityRejected)
+			}
+			if route.CapacityRetryAt.After(time.Now()) {
+				check.Level = CheckWarn
+				check.Fix = "compare the client connection_pool with the server wssmux_max_sessions and current reservations"
+			}
 			out = append(out, check)
 		}
 	}

@@ -2,16 +2,21 @@ package network
 
 import (
 	"fmt"
+	"io"
+
 	"net/http"
 	"strconv"
 	"strings"
+
+	"github.com/gorilla/websocket"
 )
 
 const (
-	WSMuxOfferHeader   = "X-Backpack-Mux-Versions"
-	WSMuxVersionHeader = "X-Backpack-Mux-Version"
-	WSMuxPoolHeader    = "X-Backpack-Mux-Pool"
-	WSMuxIdleHeader    = "X-Backpack-Mux-Idle"
+	WSMuxOfferHeader     = "X-Backpack-Mux-Versions"
+	WSMuxVersionHeader   = "X-Backpack-Mux-Version"
+	WSMuxPoolHeader      = "X-Backpack-Mux-Pool"
+	WSMuxIdleHeader      = "X-Backpack-Mux-Idle"
+	WSMuxAdmissionHeader = "X-Backpack-Mux-Admission"
 )
 
 // WSMuxOptions belongs to one dial. Missing response headers identify an older
@@ -21,6 +26,7 @@ type WSMuxOptions struct {
 	PoolSize          int
 	NegotiatedVersion int
 	Retirement        bool
+	ConfirmAdmission  bool
 	LocalIdle         bool // request per-carrier retirement; cleared unless acknowledged
 }
 
@@ -31,6 +37,9 @@ func (o *WSMuxOptions) offer(h http.Header) {
 	}
 	h.Set(WSMuxOfferHeader, versions)
 	h.Set(WSMuxPoolHeader, strconv.Itoa(o.PoolSize))
+	if o.ConfirmAdmission {
+		h.Set(WSMuxAdmissionHeader, "1")
+	}
 	if o.LocalIdle {
 		h.Set(WSMuxIdleHeader, "1")
 	}
@@ -87,4 +96,19 @@ func SelectWSMux(h http.Header, configured int) (version, floor int, err error) 
 		}
 	}
 	return version, floor, nil
+}
+
+const wsMuxAdmitted = 1
+
+func readWSMuxAdmission(conn *websocket.Conn) error {
+	kind, reader, err := conn.NextReader()
+	if err != nil {
+		return fmt.Errorf("websocket mux admission: %w", err)
+	}
+	var frame [2]byte
+	n, err := io.ReadFull(reader, frame[:])
+	if kind != websocket.BinaryMessage || n != 1 || err != io.ErrUnexpectedEOF || frame[0] != wsMuxAdmitted {
+		return fmt.Errorf("websocket mux: invalid admission confirmation")
+	}
+	return nil
 }

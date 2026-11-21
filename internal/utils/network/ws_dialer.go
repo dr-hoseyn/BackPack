@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -15,6 +16,9 @@ import (
 	"github.com/gorilla/websocket"
 	utls "github.com/refraction-networking/utls"
 )
+
+// ErrWSMuxCapacity identifies a WSSMux data upgrade rejected with HTTP 503.
+var ErrWSMuxCapacity = errors.New("wssmux data capacity unavailable (HTTP 503)")
 
 func WebSocketDialer(ctx context.Context, out *Outbound, addr string, edgeIP string, path string, timeout time.Duration, keepalive time.Duration, nodelay bool, token string, mode config.TransportType, simpleAuth bool, retry int, SO_RCVBUF int, SO_SNDBUF int, mss int, options ...WSDialOption) (*websocket.Conn, error) {
 	var tunnelWSConn *websocket.Conn
@@ -36,7 +40,7 @@ func WebSocketDialer(ctx context.Context, out *Outbound, addr string, edgeIP str
 		}
 		// Let the owning reconnect/failover loop handle a rejected proof or
 		// an oversized response instead of repeating it at this endpoint.
-		if errors.Is(err, errWSSServerUnproven) || errors.Is(err, errWSUpgradeHeadersTooLarge) {
+		if errors.Is(err, errWSSServerUnproven) || errors.Is(err, errWSUpgradeHeadersTooLarge) || errors.Is(err, ErrWSMuxCapacity) {
 			return nil, err
 		}
 
@@ -293,6 +297,9 @@ func attemptDialWebSocket(ctx context.Context, out *Outbound, addr string, edgeI
 	// Dial to the WebSocket server
 	tunnelWSConn, resp, err := dialer.DialContext(ctx, wsURL, headers)
 	if err != nil {
+		if mode == config.WSSMUX && strings.HasPrefix(path, "/tunnel") && resp != nil && resp.StatusCode == http.StatusServiceUnavailable {
+			return nil, ErrWSMuxCapacity
+		}
 		return nil, err
 	}
 	if ekm != nil {
@@ -308,6 +315,14 @@ func attemptDialWebSocket(ctx context.Context, out *Outbound, addr string, edgeI
 	if muxOptions != nil {
 		if err := muxOptions.accept(resp.Header); err != nil {
 			tunnelWSConn.Close()
+			return nil, err
+		}
+	}
+	if muxOptions != nil && muxOptions.ConfirmAdmission && resp.Header.Get(WSMuxAdmissionHeader) == "1" {
+		if tunnelWSConn.Subprotocol() != WSMuxBinaryProtocol {
+			return nil, fmt.Errorf("websocket mux: admission requires binary framing")
+		}
+		if err := readWSMuxAdmission(tunnelWSConn); err != nil {
 			return nil, err
 		}
 	}

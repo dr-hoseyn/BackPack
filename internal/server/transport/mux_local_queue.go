@@ -19,26 +19,28 @@ type muxLocalQueue struct {
 	waiters map[*muxQueueWaiter]struct{}
 	// WebSocket mux spreads new users over healthy carriers; it must not
 	// inherit TCP Forward's preference for concentrating work on a warm pair.
-	balanced      bool
-	retrySlowOpen bool            // only secure WebSocket mux admissions
-	head, tail    *muxQueueWaiter // readiness order for WebSocket carriers
-	selected      *muxQueueWaiter
-	lastUse       uint64
-	warm          [num3WarmCarriers]*muxQueueWaiter
-	warmTimer     *time.Timer
-	warmWaited    bool
+	balanced        bool
+	interactivePort int
+	retrySlowOpen   bool            // only secure WebSocket mux admissions
+	head, tail      *muxQueueWaiter // readiness order for WebSocket carriers
+	selected        *muxQueueWaiter
+	lastUse         uint64
+	warm            [num3WarmCarriers]*muxQueueWaiter
+	warmTimer       *time.Timer
+	warmWaited      bool
 }
 
 type muxQueueWaiter struct {
-	ready      chan struct{}
-	slots      chan struct{}
-	done       <-chan struct{}
-	lastUse    uint64
-	warm       bool
-	pressure   func() int
-	bulk       func() bool
-	draining   func() bool
-	prev, next *muxQueueWaiter // linked only while waiting on a balanced queue
+	ready       chan struct{}
+	slots       chan struct{}
+	done        <-chan struct{}
+	lastUse     uint64
+	warm        bool
+	interactive bool
+	pressure    func() int
+	bulk        func() bool
+	draining    func() bool
+	prev, next  *muxQueueWaiter // linked only while waiting on a balanced queue
 }
 
 func (w *muxQueueWaiter) isClosed() bool { return muxCarrierClosed(w.done) }
@@ -192,11 +194,22 @@ func (q *muxLocalQueue) notify() {
 // The first idle carrier with zero pressure is optimal. If all carriers are
 // busy, use the best one immediately.
 func (q *muxLocalQueue) chooseReadyCarrier() *muxQueueWaiter {
+	if q.interactivePort > 0 && q.entries.Front() != nil {
+		if local, ok := q.entries.Front().Value.(LocalTCPConn); ok && local.conn != nil {
+			if waiter := q.findReadyCarrier(true, localForwardPort(local.conn) == q.interactivePort); waiter != nil {
+				return waiter
+			}
+		}
+	}
+	return q.findReadyCarrier(false, false)
+}
+
+func (q *muxLocalQueue) findReadyCarrier(preferClass, interactive bool) *muxQueueWaiter {
 	var next, draining *muxQueueWaiter
 	var bestPressure int
 	var bestBulk bool
 	for waiter := q.head; waiter != nil; waiter = waiter.next {
-		if waiter.isClosed() {
+		if waiter.isClosed() || (preferClass && waiter.interactive != interactive) {
 			continue
 		}
 		if waiter.draining != nil && waiter.draining() {
@@ -216,6 +229,9 @@ func (q *muxLocalQueue) chooseReadyCarrier() *muxQueueWaiter {
 		if next == nil || pressure < bestPressure || (pressure == bestPressure && bestBulk && !bulk) {
 			next, bestPressure, bestBulk = waiter, pressure, bulk
 		}
+	}
+	if preferClass && (next == nil || (interactive && (bestPressure > 0 || bestBulk))) {
+		return nil
 	}
 	if next == nil {
 		return draining

@@ -257,3 +257,37 @@ Last verified against Backpack v1.27.0 (2026-11-21)
 MTU یا صف شبکه را روی سرویس دارای کاربر اجرا نکنید.
 
 </div>
+
+## Diagnosing data admission and capacity
+
+Upgraded WSSMux peers negotiate a one-message admission confirmation before the
+client marks a carrier ready. Legacy peers keep their original wire format.
+The client reports HTTP 503 responses on data upgrades as capacity separately
+from failed dials and briefly cools down the route with jitter. A generic proxy
+can also return 503. Compare the client's response counts with the server's
+physical-slot counters before attributing the response to BackPack. Set the
+server ceiling at or above the required client floor.
+
+The authenticated /probe measures the upgrade route. Use a verified forwarded
+backend reply to verify that the data path can actually serve traffic. On
+multi-endpoint clients, the initial dial budget can grow for an endpoint with
+observed slow handshakes, within the total configured round deadline.
+
+For a dedicated interactive listener, optionally set the server process
+environment variable BP_WSSMUX_INTERACTIVE_PORT to its local listening port.
+One physical carrier is preferred for that listener when healthy. Ordinary
+listeners use another available carrier first and can borrow the reserved one
+when no ordinary carrier is ready. Leave the variable unset for the default
+scheduler. Compare fresh p95/p99 and sustained verified goodput on your path.
+
+## Experimental stream resume sidecar
+
+Build the optional sidecar with go build ./tools/wssresume-pilot. Its edge and
+exit roles wrap a dedicated TCP forwarding rule over WSSMux. Run the edge on
+the server host with a loopback listener and set its target to the WSSMux entry.
+Set that forwarding rule's destination to the exit's loopback listener on the
+client host, and set the exit target to the backend's loopback address. Both
+roles accept -listen, -target, and -key-file. Use a separate shared key file
+with at least 32 bytes. The authenticated replay connection has a bounded
+resume window and bounded replay buffers. Existing unwrapped WSSMux ports
+continue using the standard stream protocol.
