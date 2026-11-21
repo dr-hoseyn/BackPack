@@ -141,6 +141,17 @@ func attemptDialWebSocket(ctx context.Context, out *Outbound, addr string, edgeI
 	var learnedALPN string
 	rawMux := dataPath && (mode == config.WSMUX || mode == config.WSSMUX)
 
+	serverName := settings.tls.ServerName
+	if mode == config.WSSMUX {
+		route := settings.tls.Routes[addr]
+		if route.EdgeIP != "" {
+			edgeIP = route.EdgeIP
+		}
+		if route.ServerName != "" {
+			serverName = route.ServerName
+		}
+	}
+
 	// Handle edgeIP assignment
 	if edgeIP != "" {
 		_, port, err := net.SplitHostPort(addr)
@@ -191,8 +202,8 @@ func attemptDialWebSocket(ctx context.Context, out *Outbound, addr string, edgeI
 		// The SNI names the real server even when the TCP connection goes to a
 		// CDN edge, and it is what the browser fingerprint would carry.
 		sni := sniFromAddr(addr)
-		if settings.tls.ServerName != "" {
-			sni = settings.tls.ServerName
+		if serverName != "" {
+			sni = serverName
 			_, port, err := net.SplitHostPort(addr)
 			if err != nil {
 				return nil, err

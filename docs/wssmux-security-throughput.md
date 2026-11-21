@@ -139,6 +139,30 @@ per-generation session accounting remain active. Pool growth does not move an
 existing stream to a new TCP connection; TCP head-of-line blocking within each
 physical session remains.
 
+## Physical session limits and per-endpoint destinations
+
+Control failover shares one dial budget across the configured
+endpoints and reserves time for later candidates.
+
+For a server-side physical session limit, set `wssmux_max_sessions` in
+`[server]`. It includes pending data upgrades and established physical
+sessions. Zero leaves the limit disabled. Allow at least the client's warm
+pool and leave headroom for growth or make-before-break draining. The
+Throughput profile warms 64 sessions, so a server ceiling of 64 leaves no
+headroom. `mux_con` still controls the stream limit on each carrier.
+
+WSSMux can override the TCP edge address and TLS/HTTP name separately for
+each configured endpoint. Use the exact normalized hostname/IP and port
+from `remote_addr` or `fallback_addrs`. An omitted field inherits the client
+setting. The override applies to control, data and authenticated health
+probes.
+
+```toml
+[client.wssmux_routes."backup.example.net:443"]
+edge_ip = "2001:db8::10"
+server_name = "origin.example.net"
+```
+
 ## Reproducible verification
 
 The transitive `klauspost/compress` dependency is pinned to 1.18.7 to include

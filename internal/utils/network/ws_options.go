@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"sync"
+
+	"github.com/backpack/backpack/config"
 )
 
 var errWSBinaryRequired = errors.New("websocket stream requires binary messages")
@@ -25,6 +27,7 @@ type WSSClientOptions struct {
 	ServerName        string
 	AllowLegacyServer bool
 	HTTP11Only        bool
+	Routes            map[string]config.WSSMuxRoute
 	once              sync.Once
 	roots             *x509.CertPool
 	err               error

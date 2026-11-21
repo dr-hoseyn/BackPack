@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/backpack/backpack/internal/client"
+	"github.com/backpack/backpack/internal/manage/tunnelspec"
+	"github.com/backpack/backpack/internal/metrics"
 	"github.com/backpack/backpack/internal/server"
 )
 
@@ -26,7 +28,7 @@ func TestWSSMuxDedicatedLivePath(t *testing.T) {
 	if len(token) < 32 {
 		t.Fatal("live fixture requires a fresh strong token")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 55*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 85*time.Second)
 	defer cancel()
 	var wg sync.WaitGroup
 	defer wg.Wait()
@@ -44,6 +46,9 @@ func TestWSSMuxDedicatedLivePath(t *testing.T) {
 	backendPort := port("BP_WSSMUX_LIVE_BACKEND_PORT", 21992)
 	tunnelPort := port("BP_WSSMUX_LIVE_TUNNEL_PORT", 21991)
 	entryPort := port("BP_WSSMUX_LIVE_ENTRY_PORT", 21993)
+	throughput := os.Getenv("BP_WSSMUX_LIVE_THROUGHPUT") == "1"
+	var profile tunnelspec.Spec
+	tunnelspec.ApplyPreset(&profile, tunnelspec.PresetThroughput)
 	switch role {
 	case "client":
 		backend, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(backendPort)))
@@ -62,15 +67,42 @@ func TestWSSMuxDedicatedLivePath(t *testing.T) {
 		}()
 		cfg := baseClientConfig("wssmux", os.Getenv("BP_WSSMUX_LIVE_REMOTE"), token, nil)
 		cfg.ConnectionPool, cfg.WSMuxMaxSessions = 2, 2
+		if throughput {
+			cfg.ConnectionPool, cfg.WSMuxMaxSessions = profile.ConnectionPool, profile.ConnectionPool
+			cfg.Keepalive = profile.KeepAlive
+			cfg.MaxFrameSize, cfg.MaxReceiveBuffer, cfg.MaxStreamBuffer = profile.MuxFrameSize, profile.MuxRecvBuffer, profile.MuxStreamBuffer
+			cfg.SO_RCVBUF, cfg.SO_SNDBUF = profile.SoRcvBuf, profile.SoSndBuf
+		}
 		cfg.LogLevel = "error"
 		engine := client.NewClient(cfg, ctx)
 		wg.Go(engine.Start)
+		if throughput {
+			deadline := time.Now().Add(25 * time.Second)
+			for {
+				live, _, _, _ := metrics.PoolState()
+				if live >= profile.ConnectionPool {
+					t.Logf("LIVE_WSSMUX warm_pool=%d profile=throughput", live)
+					break
+				}
+				if time.Now().After(deadline) || ctx.Err() != nil {
+					t.Fatalf("Throughput pool stalled at %d/%d", live, profile.ConnectionPool)
+				}
+				time.Sleep(100 * time.Millisecond)
+			}
+		}
 		<-ctx.Done()
 	case "server":
 		cfg := baseServerConfig("wssmux", tunnelPort, entryPort, net.JoinHostPort("127.0.0.1", strconv.Itoa(backendPort)), token)
 		cfg.BindAddr = net.JoinHostPort("0.0.0.0", strconv.Itoa(tunnelPort))
 		cfg.Ports = []string{net.JoinHostPort("127.0.0.1", strconv.Itoa(entryPort)) + "=" + net.JoinHostPort("127.0.0.1", strconv.Itoa(backendPort))}
 		cfg.MuxCon, cfg.MaxConnections, cfg.BandwidthMbps = 8, 4, 20
+		if throughput {
+			cfg.ChannelSize, cfg.MuxCon = profile.ChannelSize, profile.MuxCon
+			cfg.MaxConnections = 32
+			cfg.Keepalive, cfg.Heartbeat = profile.KeepAlive, profile.Heartbeat
+			cfg.MaxFrameSize, cfg.MaxReceiveBuffer, cfg.MaxStreamBuffer = profile.MuxFrameSize, profile.MuxRecvBuffer, profile.MuxStreamBuffer
+			cfg.SO_RCVBUF, cfg.SO_SNDBUF = profile.SoRcvBuf, profile.SoSndBuf
+		}
 		cfg.LogLevel = "error"
 		engine := server.NewServer(cfg, ctx)
 		wg.Go(engine.Start)
@@ -79,6 +111,19 @@ func TestWSSMuxDedicatedLivePath(t *testing.T) {
 			t.Fatal(err)
 		}
 		if os.Getenv("BP_WSSMUX_LIVE_COMPARE") == "1" {
+			if throughput {
+				deadline := time.Now().Add(25 * time.Second)
+				for {
+					snapshot := metrics.NewCollector("", "", "", "", nil, nil).Snapshot()
+					if snapshot.WSMuxAdmission != nil && snapshot.WSMuxAdmission.Carriers >= profile.ConnectionPool {
+						break
+					}
+					if time.Now().After(deadline) || ctx.Err() != nil {
+						t.Fatal("Throughput server did not admit its warm pool")
+					}
+					time.Sleep(100 * time.Millisecond)
+				}
+			}
 			compareWSSMuxLive(t, tun)
 		}
 		for _, size := range []int{128, 64 << 10, 256 << 10} {
@@ -110,6 +155,10 @@ func compareWSSMuxLive(t *testing.T, tun *tunnel) {
 	}
 	done := make(chan bulkSample, 1)
 	started := make(chan struct{})
+	interval, samples := 100*time.Millisecond, 40
+	if os.Getenv("BP_WSSMUX_LIVE_FIXED_LOAD") == "1" {
+		interval, samples = 350*time.Millisecond, 120
+	}
 	bulkStart := time.Now()
 	go func() {
 		var sample bulkSample
@@ -124,12 +173,11 @@ func compareWSSMuxLive(t *testing.T, tun *tunnel) {
 			select {
 			case <-stop:
 				return
-			case <-time.After(max(0, 100*time.Millisecond-time.Since(begin))):
+			case <-time.After(max(0, interval-time.Since(begin))):
 			}
 		}
 	}()
 	<-started
-	const samples = 40
 	replies := make([]time.Duration, 0, samples)
 	failures := 0
 	for range samples {
@@ -150,7 +198,7 @@ func compareWSSMuxLive(t *testing.T, tun *tunnel) {
 	seconds := time.Since(bulkStart).Seconds()
 	sort.Slice(replies, func(i, j int) bool { return replies[i] < replies[j] })
 	if len(replies) == 0 || bulk.err != nil || bulk.blocks == 0 {
-		t.Fatalf("missing verified traffic: replies=%d bulk=%+v", len(replies), bulk)
+		t.Fatalf("missing verified traffic: replies=%d blocks=%d bulk_error=%v", len(replies), bulk.blocks, bulk.err)
 	}
 	percentile := func(p int) float64 {
 		return float64(replies[(p*len(replies)+99)/100-1]) / float64(time.Millisecond)

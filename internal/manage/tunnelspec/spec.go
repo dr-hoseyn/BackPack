@@ -2,7 +2,9 @@ package tunnelspec
 
 import (
 	"fmt"
+	"maps"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -93,11 +95,12 @@ type Spec struct {
 	LogFormat string
 
 	// SMUX / multiplexed transports
-	MuxCon          int
-	MuxVersion      int
-	MuxFrameSize    int
-	MuxRecvBuffer   int
-	MuxStreamBuffer int
+	MuxCon            int
+	WSSMuxMaxSessions int
+	MuxVersion        int
+	MuxFrameSize      int
+	MuxRecvBuffer     int
+	MuxStreamBuffer   int
 
 	// KCP transport (reliable ARQ over UDP). Filled from the preset; only
 	// written to the config when the transport is kcp.
@@ -149,7 +152,8 @@ type Spec struct {
 	ACMEEmail  string
 
 	// Edge/CDN IP override (client, websocket transports only)
-	EdgeIP string
+	EdgeIP       string
+	WSSMuxRoutes map[string]config.WSSMuxRoute
 	// SimpleAuth authorises a wss tunnel by the raw token, for a server behind
 	// a TLS-terminating proxy like NGINX. Off by default. See config.SimpleAuth.
 	SimpleAuth           bool
@@ -321,6 +325,9 @@ func (s Spec) Render() string {
 		}
 		if isMux(s.Transport) {
 			p("mux_con = %d\n", s.MuxCon)
+			if s.Transport == "wssmux" && s.WSSMuxMaxSessions > 0 {
+				p("wssmux_max_sessions = %d\n", s.WSSMuxMaxSessions)
+			}
 			p("mux_version = %d\n", s.MuxVersion)
 			p("mux_framesize = %d\n", s.MuxFrameSize)
 			p("mux_recievebuffer = %d\n", s.MuxRecvBuffer)
@@ -444,6 +451,13 @@ func (s Spec) Render() string {
 }
 
 func (s Spec) writeHelpers(b *strings.Builder) {
+	if s.Role == "client" && len(s.WSSMuxRoutes) > 0 {
+		for _, addr := range slices.Sorted(maps.Keys(s.WSSMuxRoutes)) {
+			route := s.WSSMuxRoutes[addr]
+			fmt.Fprintf(b, "\n[client.wssmux_routes.%q]\n", addr)
+			_ = toml.NewEncoder(b).Encode(route)
+		}
+	}
 	if s.Role == "server" && len(s.ServerPaths) != 0 {
 		var encoded strings.Builder
 		_ = toml.NewEncoder(&encoded).Encode(map[string]any{"paths": s.ServerPaths})

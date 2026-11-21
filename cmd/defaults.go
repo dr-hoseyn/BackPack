@@ -229,6 +229,9 @@ func validateConfig(cfg *config.Config) error {
 	if err := checkWSSPrivateToken(cfg); err != nil {
 		return err
 	}
+	if cfg.Server.WSSMuxMaxSessions < 0 || cfg.Server.WSSMuxMaxSessions > 65536 {
+		return fmt.Errorf("server wssmux_max_sessions must be between 0 and 65536")
+	}
 	if cfg.Client.WSMuxMaxSessions < 0 || cfg.Client.WSMuxMaxSessions > 65536 {
 		return fmt.Errorf("wsmux_max_sessions must be between 0 and 65536")
 	}
@@ -327,6 +330,18 @@ func checkFallbackChain(cfg *config.Config) error {
 			return fmt.Errorf("[client] fallback_addrs: %w", err)
 		}
 		cfg.Client.FallbackAddrs = clean
+	}
+	for addr, route := range cfg.Client.WSSMuxRoutes {
+		if addr != cfg.Client.RemoteAddr && !slices.Contains(cfg.Client.FallbackAddrs, addr) {
+			return fmt.Errorf("client wssmux_routes endpoint %q must match remote_addr or a normalized fallback_addrs entry", addr)
+		}
+		if route.EdgeIP != "" && net.ParseIP(route.EdgeIP) == nil {
+			return fmt.Errorf("client wssmux_routes endpoint %q requires a literal edge_ip", addr)
+		}
+		if route.ServerName != "" && net.ParseIP(route.ServerName) == nil &&
+			strings.ContainsAny(route.ServerName, ":/[]@?# \t\r\n") {
+			return fmt.Errorf("client wssmux_routes endpoint %q requires a TLS hostname or IP", addr)
+		}
 	}
 	if err := config.ValidateFallbackTransports(cfg.Server.Transport, cfg.Server.FallbackTransports); err != nil {
 		return fmt.Errorf("[server] %v", err)

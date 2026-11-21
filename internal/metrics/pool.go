@@ -81,6 +81,9 @@ func ReportWSMuxData(stats WSMuxDataStats) {
 
 type WSMuxAdmissionStats struct {
 	Carriers      int    `json:"carriers"`
+	MaxCarriers   int    `json:"max_carriers,omitempty"`
+	Reserved      int    `json:"reserved,omitempty"`
+	Rejected      uint64 `json:"rejected,omitempty"`
 	QueueTimeouts uint64 `json:"queue_timeouts"`
 	OpenRetries   uint64 `json:"open_retries"`
 }

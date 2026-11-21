@@ -28,15 +28,17 @@ import (
 // builds a fresh set for the next run, so carrying them here keeps a goroutine
 // that outlives its run from reaching into the run that replaced it.
 type wsMuxGen struct {
-	idleTraffic    muxIdleTraffic
-	drain          *wsMuxDrain
-	queueTimeouts  atomic.Uint64
-	openRetries    atomic.Uint64
-	ctx            context.Context
-	tunnelChannel  chan pooledMuxSession
-	localChannel   *muxLocalQueue
-	reqNewConnChan chan struct{}
-	usageMonitor   *traffic.Usage
+	idleTraffic       muxIdleTraffic
+	drain             *wsMuxDrain
+	queueTimeouts     atomic.Uint64
+	openRetries       atomic.Uint64
+	admissionRejected atomic.Uint64
+	admissionSlots    chan struct{}
+	ctx               context.Context
+	tunnelChannel     chan pooledMuxSession
+	localChannel      *muxLocalQueue
+	reqNewConnChan    chan struct{}
+	usageMonitor      *traffic.Usage
 	// seat holds the client this generation serves, and serving starts what
 	// outlives any one client — once, whichever claim comes first. See
 	// clientSeat.
@@ -76,6 +78,7 @@ type WsMuxConfig struct {
 	Heartbeat        time.Duration // in seconds
 	ChannelSize      int
 	MuxCon           int
+	MaxSessions      int
 	MuxVersion       int
 	MaxFrameSize     int
 	MaxReceiveBuffer int
@@ -171,7 +174,12 @@ func (s *WsMuxTransport) newGen(ctx context.Context) *wsMuxGen {
 			go drain.watch(ctx, path, s.logger)
 		}
 	}
+	var slots chan struct{}
+	if s.config.Mode == config.WSSMUX && s.config.MaxSessions > 0 {
+		slots = make(chan struct{}, s.config.MaxSessions)
+	}
 	return &wsMuxGen{
+		admissionSlots: slots,
 		ctx:            ctx,
 		tunnelChannel:  make(chan pooledMuxSession, s.config.ChannelSize),
 		localChannel:   queue,
@@ -309,6 +317,25 @@ func (s *WsMuxTransport) tunnelListener(g *wsMuxGen) {
 					}
 				}
 			}
+			// A bounded server reserves capacity before accepting the HTTP
+			// upgrade. The pool watcher owns the reservation after enqueue.
+			var release func()
+			handedOff := false
+			if slots := g.admissionSlots; slots != nil && strings.HasPrefix(r.URL.Path, "/tunnel") {
+				select {
+				case slots <- struct{}{}:
+					release = func() { <-slots }
+					defer func() {
+						if !handedOff {
+							release()
+						}
+					}()
+				default:
+					g.admissionRejected.Add(1)
+					http.Error(w, "websocket mux capacity exhausted", http.StatusServiceUnavailable)
+					return
+				}
+			}
 			conn, err := upgrader.Upgrade(network.WSMuxResponse(w), r, response)
 			if err != nil {
 				s.logger.Errorf("failed to upgrade connection from %s: %v", r.RemoteAddr, err)
@@ -360,9 +387,12 @@ func (s *WsMuxTransport) tunnelListener(g *wsMuxGen) {
 						bulk:         network.WSMuxRecentBulk(wire),
 						draining:     draining,
 						traceCarrier: traceCarrier,
+						release:      release,
 					})
 				})
+				handedOff = accepted
 				if !accepted {
+					g.admissionRejected.Add(1)
 					s.logger.Debugf("websocket mux pool is full or its client changed, closing connection from %s", conn.RemoteAddr().String())
 					session.Close()
 				}
@@ -412,7 +442,8 @@ func (s *WsMuxTransport) handleLoop(g *wsMuxGen) {
 		case <-report:
 			metrics.ReportWSMuxAdmission(metrics.WSMuxAdmissionStats{
 				Carriers: int(atomic.LoadInt32(&s.sessionCounter)), QueueTimeouts: g.queueTimeouts.Load(),
-				OpenRetries: g.openRetries.Load(),
+				OpenRetries: g.openRetries.Load(), Rejected: g.admissionRejected.Load(),
+				MaxCarriers: cap(g.admissionSlots), Reserved: len(g.admissionSlots),
 			})
 		case session := <-g.tunnelChannel:
 			// +1 for session counter

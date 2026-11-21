@@ -135,13 +135,18 @@ func TestWSMuxRouteCooldownExpiresAndIgnoresAnOlderFailure(t *testing.T) {
 	}
 }
 
-func TestWSSMuxControlFallsBackAfterOneStalledHandshake(t *testing.T) {
+func TestWSSMuxControlFallsBackWithinOneBudgetAfterTwoStalledHandshakes(t *testing.T) {
 	// TCP connects but the primary never replies to the TLS ClientHello.
 	primary, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer primary.Close()
+	second, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer second.Close()
 
 	const token = "failover-test-token"
 	upgrader := websocket.Upgrader{}
@@ -164,7 +169,7 @@ func TestWSSMuxControlFallsBackAfterOneStalledHandshake(t *testing.T) {
 	defer backup.Close()
 
 	backupAddr := backup.Listener.Addr().String()
-	endpoints := network.NewEndpoints(primary.Addr().String(), backupAddr)
+	endpoints := network.NewEndpoints(primary.Addr().String(), second.Addr().String(), backupAddr)
 	client := &WsMuxTransport{
 		config: &WsMuxConfig{
 			Endpoints:   endpoints,
@@ -175,9 +180,9 @@ func TestWSSMuxControlFallsBackAfterOneStalledHandshake(t *testing.T) {
 	}
 	client.logger = logrus.New()
 
-	// This budget allows one failed handshake and a healthy local upgrade,
-	// but expires before the old three attempts and their retry waits finish.
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	// Two stalled attempts must leave budget for the healthy third route.
+	// A parent deadline longer than the round keeps the budgets distinct.
+	ctx, cancel := context.WithTimeout(t.Context(), 750*time.Millisecond)
 	defer cancel()
 	start := time.Now()
 	conn, err := client.dialControl(ctx)

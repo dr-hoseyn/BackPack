@@ -28,6 +28,7 @@ type pooledMuxSession struct {
 	bulk         func() bool
 	draining     func() bool
 	traceCarrier net.Conn
+	release      func() // bound on physical carrier lifetime, when configured
 }
 
 // enqueueMuxSession is called while the seat's admission lock is held.
@@ -51,6 +52,9 @@ func enqueueMuxEntry(queue chan pooledMuxSession, entry pooledMuxSession) bool {
 		stop := context.AfterFunc(owner, func() { session.Close() })
 		go func() {
 			defer stop()
+			if entry.release != nil {
+				defer entry.release()
+			}
 			// In reverse mux only this side opens streams. AcceptStream
 			// also reports smux parser errors that leave the socket and
 			// CloseChan open. Retire the session on either event.

@@ -151,22 +151,38 @@ func (c *WsMuxTransport) channelDialer() {
 
 func (c *WsMuxTransport) dialControl(ctx context.Context) (*websocket.Conn, error) {
 	cfg := c.config
-	dial := func(addr string, attempts int) (*websocket.Conn, error) {
+	dial := func(ctx context.Context, addr string, attempts int) (*websocket.Conn, error) {
 		return network.WebSocketDialer(ctx, cfg.Outbound, addr, cfg.EdgeIP, "/channel", cfg.DialTimeOut, cfg.KeepAlive, true, cfg.Token, cfg.Mode, cfg.SimpleAuth, attempts, 0, 0, cfg.MSS, cfg.WSS)
 	}
 	if cfg.Endpoints.Len() < 2 {
-		return dial(cfg.Endpoints.Current(), 3)
+		return dial(ctx, cfg.Endpoints.Current(), 3)
+	}
+	if cfg.Mode == config.WSSMUX {
+		timeout := cfg.DialTimeOut
+		if timeout <= 0 {
+			timeout = 45 * time.Second
+		}
+		budget, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		ctx = budget
 	}
 
-	// Give each route one full handshake before retrying any route. A TCP
+	// Try each route before starting a new failover round. A TCP
 	// accept alone cannot identify a working TLS/WebSocket path, and racing
 	// authenticated upgrades could claim the server's control seat twice.
 	var lastErr error
-	for _, addr := range cfg.Endpoints.InPreferenceOrder() {
+	order := cfg.Endpoints.InPreferenceOrder()
+	for index, addr := range order {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		conn, err := dial(addr, 1)
+		attemptCtx := ctx
+		cancel := func() {}
+		if deadline, ok := ctx.Deadline(); ok && cfg.Mode == config.WSSMUX {
+			attemptCtx, cancel = context.WithTimeout(ctx, time.Until(deadline)/time.Duration(len(order)-index))
+		}
+		conn, err := dial(attemptCtx, addr, 1)
+		cancel()
 		if err == nil {
 			cfg.Endpoints.Prefer(addr)
 			return conn, nil
