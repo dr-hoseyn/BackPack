@@ -89,7 +89,7 @@ func TestWSSMuxSilentControlVacatesSeatWithoutRestartingListener(t *testing.T) {
 	}
 }
 
-func TestWSSMuxAcknowledgesDataAdmissionAndReleasesCapacity(t *testing.T) {
+func TestWSSMuxRejectsCarriersAboveLimitAndReleasesCapacity(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	s := listenerRecoveryServer(t, config.WSSMUX, freeAddr(t), ctx)
 	s.config.MaxSessions = 1
@@ -122,7 +122,7 @@ func TestWSSMuxAcknowledgesDataAdmissionAndReleasesCapacity(t *testing.T) {
 	defer control.Close()
 	wait(s.Running)
 	dialData := func() (*websocket.Conn, error) {
-		return dial("/tunnel", &network.WSMuxOptions{PoolSize: 1, ConfirmAdmission: true})
+		return dial("/tunnel", &network.WSMuxOptions{PoolSize: 1})
 	}
 	first, err := dialData()
 	if err != nil {

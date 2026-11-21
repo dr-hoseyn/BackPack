@@ -2,21 +2,16 @@ package network
 
 import (
 	"fmt"
-	"io"
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
-
-	"github.com/gorilla/websocket"
 )
 
 const (
-	WSMuxOfferHeader     = "X-Backpack-Mux-Versions"
-	WSMuxVersionHeader   = "X-Backpack-Mux-Version"
-	WSMuxPoolHeader      = "X-Backpack-Mux-Pool"
-	WSMuxIdleHeader      = "X-Backpack-Mux-Idle"
-	WSMuxAdmissionHeader = "X-Backpack-Mux-Admission"
+	WSMuxOfferHeader   = "X-Backpack-Mux-Versions"
+	WSMuxVersionHeader = "X-Backpack-Mux-Version"
+	WSMuxPoolHeader    = "X-Backpack-Mux-Pool"
+	WSMuxIdleHeader    = "X-Backpack-Mux-Idle"
 )
 
 // WSMuxOptions belongs to one dial. Missing response headers identify an older
@@ -26,7 +21,6 @@ type WSMuxOptions struct {
 	PoolSize          int
 	NegotiatedVersion int
 	Retirement        bool
-	ConfirmAdmission  bool // request an admission message before smux starts
 	LocalIdle         bool // request per-carrier retirement; cleared unless acknowledged
 }
 
@@ -37,9 +31,6 @@ func (o *WSMuxOptions) offer(h http.Header) {
 	}
 	h.Set(WSMuxOfferHeader, versions)
 	h.Set(WSMuxPoolHeader, strconv.Itoa(o.PoolSize))
-	if o.ConfirmAdmission {
-		h.Set(WSMuxAdmissionHeader, "1")
-	}
 	if o.LocalIdle {
 		h.Set(WSMuxIdleHeader, "1")
 	}
@@ -96,31 +87,4 @@ func SelectWSMux(h http.Header, configured int) (version, floor int, err error) 
 		}
 	}
 	return version, floor, nil
-}
-
-const wsMuxAdmitted = 1
-
-// WriteWSMuxAdmission starts the negotiated data connection with one binary
-// message. It must run before any smux reader or writer starts.
-func WriteWSMuxAdmission(conn *websocket.Conn) error {
-	if err := conn.SetWriteDeadline(time.Now().Add(5 * time.Second)); err != nil {
-		return err
-	}
-	if err := conn.WriteMessage(websocket.BinaryMessage, []byte{wsMuxAdmitted}); err != nil {
-		return err
-	}
-	return conn.SetWriteDeadline(time.Time{})
-}
-
-func readWSMuxAdmission(conn *websocket.Conn) error {
-	kind, r, err := conn.NextReader()
-	if err != nil {
-		return fmt.Errorf("websocket mux: data admission: %w", err)
-	}
-	var message [2]byte
-	size, err := io.ReadFull(r, message[:])
-	if kind != websocket.BinaryMessage || size != 1 || err != io.ErrUnexpectedEOF || message[0] != wsMuxAdmitted {
-		return fmt.Errorf("websocket mux: invalid data admission message")
-	}
-	return nil
 }

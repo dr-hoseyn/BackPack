@@ -139,12 +139,9 @@ per-generation session accounting remain active. Pool growth does not move an
 existing stream to a new TCP connection; TCP head-of-line blocking within each
 physical session remains.
 
-## Data admission and per-endpoint destinations
+## Physical session limits and per-endpoint destinations
 
-Updated WSSMux peers negotiate an admission message before smux starts. A
-route is counted as ready after the server dequeues the connection for the
-current control owner. Older peers continue to use their existing upgrade
-behavior. Control failover shares one dial budget across the configured
+Control failover shares one dial budget across the configured
 endpoints and reserves time for later candidates.
 
 For a server-side physical session limit, set `wssmux_max_sessions` in

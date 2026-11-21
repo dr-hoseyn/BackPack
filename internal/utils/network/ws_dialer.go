@@ -311,12 +311,6 @@ func attemptDialWebSocket(ctx context.Context, out *Outbound, addr string, edgeI
 			return nil, err
 		}
 	}
-	if muxOptions != nil && muxOptions.ConfirmAdmission && resp.Header.Get(WSMuxAdmissionHeader) == "1" {
-		if err := readWSMuxAdmission(tunnelWSConn); err != nil {
-			tunnelWSConn.Close()
-			return nil, err
-		}
-	}
 	if learnedALPN != "" {
 		wssALPN.remember(learnedALPN, time.Now())
 	}

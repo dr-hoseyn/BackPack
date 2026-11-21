@@ -242,7 +242,7 @@ func (c *WsMuxTransport) tunnelDialer() {
 
 	c.logger.Debugf("initiating new %s tunnel connection to address %s", c.config.Mode, c.config.RemoteAddr)
 
-	mux := network.WSMuxOptions{ConfirmAdmission: c.config.Mode == config.WSSMUX,
+	mux := network.WSMuxOptions{
 		Version: c.config.MuxVersion, PoolSize: c.config.ConnPoolSize, LocalIdle: c.config.Mode == config.WSSMUX,
 	}
 	tunnelWSConn, err := c.dialTunnel(c.state.Ctx(), &mux)
