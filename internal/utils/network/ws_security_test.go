@@ -257,3 +257,58 @@ func TestWSSMuxPerEndpointEdgeAndServerNameForDialAndProbe(t *testing.T) {
 		t.Fatalf("expected dial and probe to reach the same custom edge, saw %d requests", observed.Load())
 	}
 }
+
+func TestWSSMuxRequiresNegotiatedAdmissionBeforeReturningADataCarrier(t *testing.T) {
+	const token = "private-admission-test-token"
+	for _, test := range []struct {
+		name    string
+		confirm bool
+		message []byte
+		wantErr bool
+	}{
+		{name: "legacy upgrade", confirm: false},
+		{name: "upgrade before server rejection", confirm: true, wantErr: true},
+		{name: "malformed confirmation", confirm: true, message: []byte{wsMuxAdmitted, 0}, wantErr: true},
+		{name: "admitted", confirm: true, message: []byte{wsMuxAdmitted}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			up := websocket.Upgrader{Subprotocols: []string{WSMuxBinaryProtocol}}
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				proof, err := WSSServerAnswer(r.TLS, token)
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				headers := http.Header{WSSServerProofHeader: {proof}}
+				if test.confirm {
+					if r.Header.Get(WSMuxAdmissionHeader) != "1" {
+						t.Error("client did not offer admission confirmation")
+					}
+					headers.Set(WSMuxAdmissionHeader, "1")
+				}
+				conn, err := up.Upgrade(w, r, headers)
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				defer conn.Close()
+				if test.message != nil {
+					if err := conn.WriteMessage(websocket.BinaryMessage, test.message); err != nil {
+						t.Error(err)
+					}
+				}
+			}))
+			defer server.Close()
+
+			conn, err := WebSocketDialer(t.Context(), nil, server.Listener.Addr().String(), "", "/tunnel",
+				time.Second, time.Second, true, token, config.WSSMUX, false, 1, 0, 0, 0,
+				&WSMuxOptions{PoolSize: 1, ConfirmAdmission: true})
+			if conn != nil {
+				defer conn.Close()
+			}
+			if (err != nil) != test.wantErr {
+				t.Fatalf("data admission error = %v, want error %v", err, test.wantErr)
+			}
+		})
+	}
+}
