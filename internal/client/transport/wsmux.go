@@ -3,6 +3,7 @@ package transport
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -222,13 +223,13 @@ func (c *WsMuxTransport) dialTunnel(ctx context.Context, mux *network.WSMuxOptio
 		return network.WebSocketDialer(ctx, cfg.Outbound, addr, cfg.EdgeIP, "/tunnel", cfg.DialTimeOut, cfg.KeepAlive, cfg.Nodelay, cfg.Token, cfg.Mode, cfg.SimpleAuth, attempts, 2*1024*1024, 2*1024*1024, cfg.MSS, cfg.WSS, mux)
 	}
 	first := cfg.Endpoints.Next()
-	if cfg.Endpoints.Len() < 2 || (!cfg.Endpoints.Spread() && !cfg.Endpoints.DataHealthSteering()) {
+	if cfg.Endpoints.Len() < 2 {
 		return dial(first, maxAttempts)
 	}
 
-	// Start with the spread or health preference. If that route is down,
-	// try the control route and other candidates within the same attempt
-	// count. Data dials never move the control preference.
+	// Start with the preferred route, including ordinary backups whose
+	// control and data upgrades may fail independently. Data dials never
+	// move the control preference.
 	var err error
 	attempts := 0
 	try := func(addr string) *websocket.Conn {
@@ -249,7 +250,16 @@ func (c *WsMuxTransport) dialTunnel(ctx context.Context, mux *network.WSMuxOptio
 			return conn, nil
 		}
 	}
-	for _, addr := range cfg.Endpoints.InPreferenceOrder() {
+	order := cfg.Endpoints.InPreferenceOrder()
+	offset := 0
+	if len(order) > maxAttempts && !cfg.Endpoints.Spread() && !cfg.Endpoints.DataHealthSteering() {
+		// A short attempt budget must not permanently hide later backups
+		// when the preferred route and the first alternatives fail slowly.
+		order = slices.DeleteFunc(order, func(addr string) bool { return addr == first })
+		offset = int((c.dataRoutes.fallbackCursor.Add(1) - 1) % uint64(len(order)))
+	}
+	for i := range order {
+		addr := order[(i+offset)%len(order)]
 		if attempts >= maxAttempts {
 			break
 		}
@@ -280,8 +290,9 @@ type wsMuxDataRoute struct {
 }
 
 type wsMuxDataRoutes struct {
-	mu     sync.Mutex
-	routes map[string]wsMuxDataRoute
+	mu             sync.Mutex
+	routes         map[string]wsMuxDataRoute
+	fallbackCursor atomic.Uint64
 }
 
 func (r *wsMuxDataRoutes) available(addr string, now time.Time) bool {
@@ -310,6 +321,7 @@ func (r *wsMuxDataRoutes) reset() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	clear(r.routes)
+	r.fallbackCursor.Store(0)
 }
 
 func (c *WsMuxTransport) handleSession(tunnelConn *websocket.Conn, mux network.WSMuxOptions) {

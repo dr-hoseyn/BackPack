@@ -16,6 +16,11 @@ If the main address stops answering, the client fails over to the next one
 automatically. This is what keeps a tunnel alive after a server IP gets
 filtered — the most common way a route dies on this path.
 
+WSMux and WSSMux can use an ordinary backup for a new data session when the
+current address still carries control traffic but its data upgrade fails.
+The backup must reach the same Backpack server. This fallback keeps the
+existing control connection and applies to new data sessions.
+
 ## Automatic failover (health-scored)
 
 Plain failover only reacts when an address stops answering. A route usually gets
