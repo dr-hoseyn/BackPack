@@ -67,7 +67,7 @@ func WriteBackup(w io.Writer) error {
 // one real installation on the machine.
 func writeBackupTree(w io.Writer, root string) error {
 	gz := gzip.NewWriter(w)
-	tw := tar.NewWriter(gz)
+	tw := &backupTarWriter{Writer: tar.NewWriter(&archiveStreamWriter{w: gz, remaining: maxRestoreStream})}
 
 	if err := writeBackupEntries(tw, root); err != nil {
 		tw.Close()
@@ -92,8 +92,58 @@ func writeBackupTree(w io.Writer, root string) error {
 	return nil
 }
 
+type archiveStreamWriter struct {
+	w         io.Writer
+	remaining int64
+}
+
+func (w *archiveStreamWriter) Write(p []byte) (int, error) {
+	if int64(len(p)) > w.remaining {
+		return 0, fmt.Errorf("archive exceeds the %d-byte decompressed stream limit", maxRestoreStream)
+	}
+	n, err := w.w.Write(p)
+	w.remaining -= int64(n)
+	return n, err
+}
+
+type archiveLimits struct {
+	entries int
+	bytes   int64
+}
+
+func (l *archiveLimits) add(name string, size int64) error {
+	l.entries++
+	if l.entries > maxRestoreEntries {
+		return fmt.Errorf("archive holds more than %d entries", maxRestoreEntries)
+	}
+	if size > maxRestoreFileBytes {
+		return fmt.Errorf("%s is %d bytes, over the %d-byte limit for one file", name, size, maxRestoreFileBytes)
+	}
+	l.bytes += size
+	if l.bytes > maxRestoreBytes {
+		return fmt.Errorf("archive expands to more than %d bytes", maxRestoreBytes)
+	}
+	return nil
+}
+
+type backupTarWriter struct {
+	*tar.Writer
+	limits archiveLimits
+}
+
+func (w *backupTarWriter) WriteHeader(hdr *tar.Header) error {
+	name, err := safeRestoreName(hdr.Name)
+	if err != nil {
+		return err
+	}
+	if err := w.limits.add(name, hdr.Size); err != nil {
+		return err
+	}
+	return w.Writer.WriteHeader(hdr)
+}
+
 // writeBackupEntries puts the sidecar and the whole config tree into tw.
-func writeBackupEntries(tw *tar.Writer, root string) error {
+func writeBackupEntries(tw *backupTarWriter, root string) error {
 	// Sidecar metadata for settings that don't live under ConfigDir.
 	hours, scheduleErr := schedule.ReadAutoRefreshHours()
 	meta := backupMeta{
@@ -168,6 +218,9 @@ func writeBackupEntries(tw *tar.Writer, root string) error {
 		}
 
 		name := filepath.ToSlash(rel)
+		if name == backupMetaName {
+			return fmt.Errorf("refusing to back up %q: reserved archive entry", name)
+		}
 		if !info.IsDir() {
 			return writeBackupFile(tw, path, name)
 		}
@@ -189,7 +242,7 @@ func isMetricsTemp(rel string) bool {
 
 // Read metadata and content from the same open file. Background collectors can
 // atomically replace their snapshots between the directory walk and this open.
-func writeBackupFile(tw *tar.Writer, path, name string) error {
+func writeBackupFile(tw *backupTarWriter, path, name string) error {
 	f, err := os.Open(path)
 	if err != nil {
 		return err

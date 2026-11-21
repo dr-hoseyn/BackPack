@@ -98,6 +98,35 @@ func TestBackupRefusesWhatItCannotArchive(t *testing.T) {
 	}
 }
 
+func TestBackupDoesNotPublishAnOversizedFile(t *testing.T) {
+	root := t.TempDir()
+	f, err := os.Create(filepath.Join(root, "oversized.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := errors.Join(f.Truncate(maxRestoreFileBytes+1), f.Close()); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	_, err = publishBackup(dir, func(w io.Writer) error { return writeBackupTree(w, root) })
+	if err == nil || !strings.Contains(err.Error(), "oversized.json") {
+		t.Fatalf("expected an error naming the oversized file, got %v", err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("failed backup left files behind: %v, %v", entries, err)
+	}
+}
+
+func TestBackupRejectsAConflictingSidecar(t *testing.T) {
+	root := t.TempDir()
+	writeTree(t, root, map[string]os.FileMode{backupMetaName: 0600})
+	err := writeBackupTree(io.Discard, root)
+	if err == nil || !strings.Contains(err.Error(), backupMetaName) {
+		t.Fatalf("expected an error naming the conflicting sidecar, got %v", err)
+	}
+}
+
 // Publishing is atomic: the final name appears only once the archive is whole.
 func TestPublishedBackupIsCompleteOrAbsent(t *testing.T) {
 	dir := t.TempDir()

@@ -36,6 +36,7 @@ var (
 const capacityHeader = "# Managed by backpack high-concurrency; restore with backpack tune restore\n"
 const capacityAutoPrefix = "# Backpack live-only TCP reservations: "
 const capacityReservedPrefix = "net.ipv4.ip_local_reserved_ports = "
+const reservedPortsKey = "net.ipv4.ip_local_reserved_ports"
 
 type capacityState struct {
 	Range    string `json:"range"`
@@ -123,13 +124,8 @@ func readCapacityValue(r io.Reader) (string, error) {
 func currentCapacity() (capacityState, error) {
 	var state capacityState
 	for key, target := range map[string]*string{"ip_local_port_range": &state.Range, "ip_local_reserved_ports": &state.Reserved} {
-		f, err := os.Open(filepath.Join(procIPv4Dir, key))
+		value, err := readIPv4CapacityValue(key)
 		if err != nil {
-			return state, err
-		}
-		value, readErr := readCapacityValue(f)
-		closeErr := f.Close()
-		if err := errors.Join(readErr, closeErr); err != nil {
 			return state, err
 		}
 		*target = value
@@ -149,6 +145,15 @@ func currentCapacity() (capacityState, error) {
 		*target = &v
 	}
 	return state, nil
+}
+
+func readIPv4CapacityValue(key string) (string, error) {
+	f, err := os.Open(filepath.Join(procIPv4Dir, key))
+	if err != nil {
+		return "", err
+	}
+	value, readErr := readCapacityValue(f)
+	return value, errors.Join(readErr, f.Close())
 }
 
 // Busy polling burns CPU waiting for a packet instead of sleeping. At tens of
@@ -268,39 +273,39 @@ func capacityConfig(ports capacityPorts, state capacityState) []byte {
 func capacityTuningRows(reserve []int) (live, persisted [][2]string, err error) {
 	rows := append([][2]string(nil), sysctls...)
 	if !HighConcurrencyEnabled() {
-		if list := reservedList(reserve); list != "" {
-			rows = append([][2]string{{"net.ipv4.ip_local_reserved_ports", list}}, rows...)
+		if reservedList(reserve) == "" {
+			return rows, rows, nil
 		}
+		current, err := readIPv4CapacityValue("ip_local_reserved_ports")
+		if err != nil {
+			return rows, nil, err
+		}
+		ports, err := ParseReservedPorts(current)
+		if err != nil {
+			return rows, nil, err
+		}
+		rows = append([][2]string{{reservedPortsKey, reservedList(append(ports, reserve...))}}, rows...)
 		return rows, rows, nil
 	}
-	baseline, err := readCapacityBackup()
-	if err == nil {
-		// The caller holds the kernel policy lock. Refresh live ports and
-		// ownership together, with the same rollback as explicit tuning.
-		_, err = enableHighConcurrency(reserve)
-	}
-	if err != nil {
-		// Leave both port sysctls alone if discovery or persistence fails.
-		var safe [][2]string
-		for _, row := range rows {
-			if row[0] != "net.ipv4.ip_local_port_range" {
-				safe = append(safe, row)
-			}
-		}
-		return safe, safe, err
-	}
-	persisted = append([][2]string{{"net.ipv4.ip_local_reserved_ports", baseline.Reserved}}, rows...)
 	for _, row := range rows {
 		if row[0] != "net.ipv4.ip_local_port_range" {
 			live = append(live, row)
 		}
 	}
+	baseline, err := readCapacityBackup()
+	if err != nil {
+		return live, nil, err
+	}
+	persisted = append([][2]string{{reservedPortsKey, baseline.Reserved}}, rows...)
 	for i := range persisted {
 		if persisted[i][0] == "net.ipv4.ip_local_port_range" {
 			persisted[i][1] = baseline.Range
 		}
 	}
-	return live, persisted, nil
+	// The caller holds the kernel policy lock. Keep the boot rollback
+	// policy even if refreshing the live profile fails.
+	_, err = enableHighConcurrency(reserve)
+	return live, persisted, err
 }
 
 func atomicCapacityWrite(path string, data []byte, mode os.FileMode) error {

@@ -2,6 +2,7 @@ package l3
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"strings"
@@ -23,17 +24,17 @@ import (
 // From the outside that is a port that quietly does nothing, which no amount of
 // retrying at the other end can fix.
 func TestAUDPListenerThatCannotBindIsReported(t *testing.T) {
-	port := freePort(t)
-	held, err := net.ListenPacket("udp", fmt.Sprintf("127.0.0.1:%d", port))
+	held, err := net.ListenPacket("udp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("could not hold the port: %v", err)
 	}
 	defer held.Close()
+	addr := held.LocalAddr().String()
 
 	backend := echoUDP(t, "U:")
 	log, captured := testLoggerCapturing(t)
 	forwarder, err := NewForwarder(Config{
-		Ports:     []string{fmt.Sprintf("127.0.0.1:%d=%s", port, backend)},
+		Ports:     []string{addr + "=" + backend},
 		AcceptUDP: true, PeerIP: "127.0.0.1",
 	}, log)
 	if err != nil {
@@ -41,26 +42,22 @@ func TestAUDPListenerThatCannotBindIsReported(t *testing.T) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	runErr := make(chan error, 1)
 	go func() { runErr <- forwarder.Run(ctx) }()
 
-	// Long enough for the bind to be attempted and fail; the TCP half stays up.
-	time.Sleep(300 * time.Millisecond)
-	cancel()
-
 	select {
 	case err := <-runErr:
-		if err == nil {
-			t.Error("Run reported success although a listener never bound — an " +
-				"error raised before cancellation must survive the cancellation")
-		} else if !strings.Contains(err.Error(), "address already in use") {
-			t.Errorf("Run reported %v, which does not name the bind failure", err)
+		var bindErr *net.OpError
+		if !errors.As(err, &bindErr) || bindErr.Op != "listen" || bindErr.Net != "udp" ||
+			bindErr.Addr == nil || bindErr.Addr.String() != addr {
+			t.Errorf("Run returned %v, want UDP listener error for %s", err, addr)
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("Run never returned")
 	}
 
-	if out := captured.String(); !strings.Contains(out, fmt.Sprint(port)) {
+	if out := captured.String(); !strings.Contains(out, addr) {
 		t.Errorf("nothing in the log names the port that could not be bound:\n%s", out)
 	}
 }

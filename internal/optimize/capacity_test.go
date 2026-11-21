@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"testing/iotest"
@@ -436,11 +437,42 @@ func TestHighConcurrencyOptimizeKeepsPolicyWhenDiscoveryFails(t *testing.T) {
 	if err == nil {
 		t.Fatal("missing listener table ignored")
 	}
-	for _, rows := range [][][2]string{live, persisted} {
-		for _, r := range rows {
-			if strings.Contains(r[0], "ip_local_") {
-				t.Fatal("failed discovery still changed policy", r)
-			}
+	for _, r := range live {
+		if strings.Contains(r[0], "ip_local_") {
+			t.Fatal("failed discovery still changed live policy", r)
+		}
+	}
+	for _, want := range [][2]string{
+		{reservedPortsKey, "9000,62050-62051"},
+		{"net.ipv4.ip_local_port_range", "32768 60999"},
+	} {
+		if !slices.Contains(persisted, want) {
+			t.Fatalf("failed discovery lost boot rollback row %v", want)
+		}
+	}
+}
+
+func TestOptimizeMergesExistingPortReservations(t *testing.T) {
+	capacityFixture(t)
+	live, persisted, err := capacityTuningRows([]int{443, 62052, 9000})
+	want := [2]string{reservedPortsKey, "443,9000,62050-62052"}
+	if err != nil || !slices.Contains(live, want) || !slices.Contains(persisted, want) {
+		t.Fatalf("missing merged reservations %v: live %v, persisted %v, error %v", want, live, persisted, err)
+	}
+}
+
+func TestOptimizePreservesBootFileWhenReservationsCannotBeRead(t *testing.T) {
+	capacityFixture(t)
+	if err := os.Remove(filepath.Join(procIPv4Dir, "ip_local_reserved_ports")); err != nil {
+		t.Fatal(err)
+	}
+	live, persisted, err := capacityTuningRows([]int{443})
+	if !errors.Is(err, os.ErrNotExist) || persisted != nil {
+		t.Fatalf("expected to keep existing boot file: persisted %v, error %v", persisted, err)
+	}
+	for _, row := range live {
+		if row[0] == reservedPortsKey {
+			t.Fatalf("unsafe live write: %v", row)
 		}
 	}
 }
