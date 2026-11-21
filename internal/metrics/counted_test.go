@@ -155,3 +155,20 @@ type readOnly struct {
 }
 
 func (c readOnly) Read(b []byte) (int, error) { return c.r.Read(b) }
+
+type benchmarkTrafficConn struct{ net.Conn }
+
+func (benchmarkTrafficConn) Read(p []byte) (int, error)  { return len(p), nil }
+func (benchmarkTrafficConn) Write(p []byte) (int, error) { return len(p), nil }
+
+func BenchmarkCountedConnConcurrent(b *testing.B) {
+	b.ReportAllocs()
+	b.RunParallel(func(pb *testing.PB) {
+		conn := CountedConn(benchmarkTrafficConn{})
+		var p [128]byte
+		for pb.Next() {
+			_, _ = conn.Read(p[:])
+			_, _ = conn.Write(p[:])
+		}
+	})
+}

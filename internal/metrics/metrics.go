@@ -329,21 +329,24 @@ func Read(dir, name string) (Snapshot, error) {
 }
 
 // In-memory progress counters for adaptive pools and live stall detection.
-// Relay readers and writers update different directions concurrently. Keep
-// those atomics off each other's cache lines, including unrelated globals;
-// otherwise an upload invalidates the cache line used by a download. Padding
-// is process-wide and architecture-sized, never per connection or per byte.
-// Updates remain immediately visible: buffering them would delay pool/stall
-// decisions on long-lived streams.
+// Pad each counter so relays in different directions or shards do not
+// invalidate each other's cache lines.
 type trafficCounter struct {
 	_ cpu.CacheLinePad
 	atomic.Uint64
 	_ cpu.CacheLinePad
 }
 
+type trafficShard struct {
+	in, out trafficCounter
+}
+
 var (
-	bytesIn  trafficCounter
-	bytesOut trafficCounter
+	// Message-based callers share this shard. Stream connections choose a
+	// shard once, so every copy still publishes its byte count immediately.
+	messageTraffic trafficShard
+	streamTraffic  [16]trafficShard
+	nextTraffic    atomic.Uint32
 )
 
 // CountedConn wraps a tunnel connection so its traffic is recorded.
@@ -351,14 +354,20 @@ var (
 // It must be applied to the tunnel side, never the local one: wrapping both
 // would count the same bytes twice, since every byte crossing the tunnel is
 // also read from or written to a local socket.
-func CountedConn(c net.Conn) net.Conn { return &countedConn{Conn: c} }
+func CountedConn(c net.Conn) net.Conn {
+	shard := &streamTraffic[nextTraffic.Add(1)%uint32(len(streamTraffic))]
+	return &countedConn{Conn: c, shard: shard}
+}
 
-type countedConn struct{ net.Conn }
+type countedConn struct {
+	net.Conn
+	shard *trafficShard
+}
 
 func (c *countedConn) Read(b []byte) (int, error) {
 	n, err := c.Conn.Read(b)
 	if n > 0 {
-		bytesIn.Add(uint64(n))
+		c.shard.in.Add(uint64(n))
 	}
 	return n, err
 }
@@ -366,7 +375,7 @@ func (c *countedConn) Read(b []byte) (int, error) {
 func (c *countedConn) Write(b []byte) (int, error) {
 	n, err := c.Conn.Write(b)
 	if n > 0 {
-		bytesOut.Add(uint64(n))
+		c.shard.out.Add(uint64(n))
 	}
 	return n, err
 }
@@ -391,12 +400,19 @@ func Uncount(c net.Conn) (net.Conn, bool) {
 // the websocket ones read and write messages instead.
 func AddBytes(in, out uint64) {
 	if in > 0 {
-		bytesIn.Add(in)
+		messageTraffic.in.Add(in)
 	}
 	if out > 0 {
-		bytesOut.Add(out)
+		messageTraffic.out.Add(out)
 	}
 }
 
 // Traffic returns the bytes carried over the tunnel so far.
-func Traffic() (in, out uint64) { return bytesIn.Load(), bytesOut.Load() }
+func Traffic() (in, out uint64) {
+	in, out = messageTraffic.in.Load(), messageTraffic.out.Load()
+	for i := range streamTraffic {
+		in += streamTraffic[i].in.Load()
+		out += streamTraffic[i].out.Load()
+	}
+	return in, out
+}
