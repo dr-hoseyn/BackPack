@@ -35,8 +35,10 @@ type backendOpts struct {
 	sndBuf int
 	mss    int
 	// sniffer records per-port usage for the panel.
-	sniffer    bool
-	relayFrame int // optional WSSMux destination frame size
+	sniffer      bool
+	relayFrame   int // optional WSSMux destination frame size
+	tracePort    int // optional WSSMux loopback backend trace
+	traceCarrier net.Conn
 }
 
 func (o backendOpts) context(generation context.Context) context.Context {
@@ -114,10 +116,14 @@ func (l *lifecycle) dialBackend(addr string, o backendOpts) net.Conn {
 // relay dials the backend for one user already resolved to addr and port, and
 // carries the user's connection to it until either side closes.
 func (l *lifecycle) relay(user net.Conn, addr string, port int, o backendOpts) {
+	trace := startWSMuxBackendTrace(user, addr, port, o)
 	backend := l.dialBackend(addr, o)
 	if backend == nil {
 		user.Close()
 		return
+	}
+	if trace != nil {
+		backend = trace.wrap(backend)
 	}
 	handlers.TCPConnectionHandler(o.context(l.state.Ctx()), false, metrics.CountedConn(user), backend, l.logger, l.state.Usage(), port, o.sniffer, handlers.RelayReadFrames{To: o.relayFrame})
 }

@@ -30,6 +30,8 @@ func tcpMuxPressureConn(conn net.Conn) net.Conn {
 	// unwrap the I/O path: application bytes still pass through encryption.
 	for range 8 {
 		switch wrapper := conn.(type) {
+		case *muxUpgradeConn:
+			conn = wrapper.Conn
 		case interface{ UnderlyingConn() net.Conn }:
 			conn = wrapper.UnderlyingConn()
 		case interface{ NetConn() net.Conn }:

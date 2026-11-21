@@ -63,25 +63,39 @@ func tcpMuxQueueReserve(info *unix.TCPInfo) int {
 	return max(floor, (reserve+step-1)/step*step)
 }
 
-func tcpMuxSocketPressure(conn net.Conn) (int, bool) {
+func readMuxTCPInfo(conn net.Conn) *unix.TCPInfo {
 	socket, ok := conn.(syscall.Conn)
 	if !ok {
-		return 0, false
+		return nil
 	}
 	raw, err := socket.SyscallConn()
 	if err != nil {
-		return 0, false
+		return nil
 	}
-	var pressure int
-	var queued bool
+	var info *unix.TCPInfo
 	_ = raw.Control(func(fd uintptr) {
-		info, err := unix.GetsockoptTCPInfo(int(fd), unix.IPPROTO_TCP, unix.TCP_INFO)
+		sample, err := unix.GetsockoptTCPInfo(int(fd), unix.IPPROTO_TCP, unix.TCP_INFO)
 		if err == nil {
-			pressure = tcpMuxQueuePressure(info)
-			queued = info.Notsent_bytes != 0 || tcpMuxRetransmissionStalled(info)
+			info = sample
 		}
 	})
-	return pressure, queued
+	return info
+}
+
+func tcpMuxSocketPressure(conn net.Conn) (int, bool) {
+	if info := readMuxTCPInfo(conn); info != nil {
+		return tcpMuxQueuePressure(info), info.Notsent_bytes != 0 || tcpMuxRetransmissionStalled(info)
+	}
+	return 0, false
+}
+
+func sampleMuxTCP(conn net.Conn) MuxTCPSnapshot {
+	if info := readMuxTCPInfo(conn); info != nil {
+		return MuxTCPSnapshot{
+			Available: true, NotSentBytes: info.Notsent_bytes, TotalRetrans: info.Total_retrans, RTTUS: info.Rtt,
+		}
+	}
+	return MuxTCPSnapshot{}
 }
 
 func tcpMuxQueuePressure(info *unix.TCPInfo) int {
