@@ -86,7 +86,7 @@ func stageRestore(r io.Reader, configDir, stage string) (restoreContents, error)
 	stream := &io.LimitedReader{R: gz, N: maxRestoreStream + 1}
 	tr := tar.NewReader(stream)
 	seen := make(map[string]bool)
-	var total int64
+	var limits archiveLimits
 
 	for {
 		hdr, err := tr.Next()
@@ -108,18 +108,8 @@ func stageRestore(r io.Reader, configDir, stage string) (restoreContents, error)
 			return contents, fmt.Errorf("archive names %q more than once", hdr.Name)
 		}
 		seen[name] = true
-		if len(seen) > maxRestoreEntries {
-			return contents, fmt.Errorf("archive holds more than %d entries", maxRestoreEntries)
-		}
-
-		if hdr.Typeflag == tar.TypeReg {
-			if hdr.Size > maxRestoreFileBytes {
-				return contents, fmt.Errorf("%s is %d bytes, over the %d-byte limit for one file", name, hdr.Size, int64(maxRestoreFileBytes))
-			}
-			total += hdr.Size
-			if total > maxRestoreBytes {
-				return contents, fmt.Errorf("archive expands to more than %d bytes", int64(maxRestoreBytes))
-			}
+		if err := limits.add(name, hdr.Size); err != nil {
+			return contents, err
 		}
 		// The metadata is part of the archive's bounds and duplicate checks,
 		// but is never written into the staged config directory.

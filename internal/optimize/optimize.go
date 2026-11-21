@@ -164,7 +164,7 @@ func Apply(logf func(string), reserve []int) {
 	// rather than in the table because it depends on the tunnels configured.
 	rows, persistedRows, err := capacityTuningRows(reserve)
 	if err != nil {
-		logf("Could not refresh high-concurrency reservations: " + err.Error())
+		logf("Could not refresh port reservations: " + err.Error())
 	}
 
 	// Persist sysctl settings.
@@ -173,7 +173,9 @@ func Apply(logf func(string), reserve []int) {
 	for _, kv := range persistedRows {
 		fmt.Fprintf(&b, "%s = %s\n", kv[0], kv[1])
 	}
-	if err := os.WriteFile(sysctlFile, []byte(b.String()), 0644); err != nil {
+	if persistedRows == nil {
+		logf("Kept existing persistent settings in " + sysctlFile)
+	} else if err := atomicCapacityWrite(sysctlFile, []byte(b.String()), 0644); err != nil {
 		logf("Could not write " + sysctlFile + ": " + err.Error())
 	} else {
 		logf("Wrote persistent settings to " + sysctlFile)
