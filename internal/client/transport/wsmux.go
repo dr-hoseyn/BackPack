@@ -28,13 +28,14 @@ type WsMuxTransport struct {
 	// lifecycle.go.
 	lifecycle
 
-	config     *WsMuxConfig
-	smuxConfig *smux.Config
-	sessions   muxPoolSessions
-	poolLost   chan struct{}
-	poolReady  chan struct{}
-	dataRoutes wsMuxDataRoutes
-	tracePort  int
+	config           *WsMuxConfig
+	smuxConfig       *smux.Config
+	sessions         muxPoolSessions
+	poolLost         chan struct{}
+	poolReady        chan struct{}
+	dataRoutes       wsMuxDataRoutes
+	tracePort        int
+	confirmAdmission bool
 }
 type WsMuxConfig struct {
 	RemoteAddr string
@@ -87,6 +88,7 @@ func NewWSMuxClient(parentCtx context.Context, cfg *WsMuxConfig, logger *logrus.
 
 	if cfg.Mode == config.WSSMUX {
 		client.poolReady = make(chan struct{}, 1)
+		client.confirmAdmission = os.Getenv("BP_WSSMUX_CONFIRM_ADMISSION") == "1"
 		if port, err := strconv.ParseUint(os.Getenv("BP_WSSMUX_TRACE_BACKEND_PORT"), 10, 16); err == nil {
 			client.tracePort = int(port)
 		}
@@ -244,7 +246,7 @@ func (c *WsMuxTransport) tunnelDialer() {
 	c.logger.Debugf("initiating new %s tunnel connection to address %s", c.config.Mode, c.config.RemoteAddr)
 
 	mux := network.WSMuxOptions{
-		Version: c.config.MuxVersion, PoolSize: c.config.ConnPoolSize, LocalIdle: c.config.Mode == config.WSSMUX, ConfirmAdmission: c.config.Mode == config.WSSMUX,
+		Version: c.config.MuxVersion, PoolSize: c.config.ConnPoolSize, LocalIdle: c.config.Mode == config.WSSMUX, ConfirmAdmission: c.confirmAdmission,
 	}
 	tunnelWSConn, err := c.dialTunnel(c.state.Ctx(), &mux)
 	if err != nil {

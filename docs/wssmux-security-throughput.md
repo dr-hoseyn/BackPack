@@ -260,8 +260,10 @@ MTU یا صف شبکه را روی سرویس دارای کاربر اجرا ن�
 
 ## Diagnosing data admission and capacity
 
-Upgraded WSSMux peers negotiate a one-message admission confirmation before the
-client marks a carrier ready. Legacy peers keep their original wire format.
+Set BP_WSSMUX_CONFIRM_ADMISSION=1 on a WSSMux client to try the negotiated
+carrier confirmation. An upgraded server sends it before the client marks the
+carrier ready. Keep this experiment disabled for the default deployment until
+its tail latency improves. Legacy peers keep their original wire format.
 The client reports HTTP 503 responses on data upgrades as capacity separately
 from failed dials and briefly cools down the route with jitter. A generic proxy
 can also return 503. Compare the client's response counts with the server's
