@@ -406,6 +406,9 @@ type ServerConfig struct {
 	// MuxCon is how many concurrent streams one multiplexed session may carry
 	// before the next connection waits.
 	MuxCon int `toml:"mux_con"`
+
+	// WSSMuxMaxSessions bounds pending and live physical WSSMux sessions. Zero keeps the default.
+	WSSMuxMaxSessions int `toml:"wssmux_max_sessions"`
 	// AcceptUDP turns UDP forwarding on for the exposed ports. It is off unless
 	// set: a forwarded port carries TCP only until the operator asks for UDP as
 	// well. The pointer distinguishes "not set" (off) from an explicit
@@ -573,6 +576,8 @@ type ClientConfig struct {
 	// EdgeIP dials a CDN edge address directly while still presenting the
 	// configured hostname, for the websocket transports behind a CDN.
 	EdgeIP string `toml:"edge_ip"`
+	// WSSMuxRoutes overrides the TCP destination and TLS/HTTP name per configured WSSMux endpoint.
+	WSSMuxRoutes map[string]WSSMuxRoute `toml:"wssmux_routes"`
 	// SimpleAuth authorises a wss tunnel by the raw token instead of a proof
 	// bound to the TLS session. It exists for one deployment the binding
 	// otherwise makes impossible: a TLS-terminating reverse proxy — typically
@@ -698,4 +703,12 @@ type Config struct {
 	// the other way round. Present only in a configuration that asks for one,
 	// on the same terms as L3 above. See config/direct.go.
 	Direct DirectConfig `toml:"direct"`
+}
+
+// WSSMuxRoute inherits omitted fields from the client settings.
+type WSSMuxRoute struct {
+	// EdgeIP is the literal TCP destination IP for this endpoint.
+	EdgeIP string `toml:"edge_ip,omitempty"`
+	// ServerName is the TLS and HTTP origin name for this endpoint.
+	ServerName string `toml:"server_name,omitempty"`
 }

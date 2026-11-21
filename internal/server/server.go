@@ -340,6 +340,7 @@ func (s *Server) startTransport(ctx context.Context, tr config.TransportType) ru
 
 	case config.WSMUX, config.WSSMUX:
 		wsMuxConfig := &transport.WsMuxConfig{
+			MaxSessions:      s.config.WSSMuxMaxSessions,
 			AcceptUDP:        s.config.ForwardsUDP(),
 			BindAddr:         s.config.BindAddr,
 			Nodelay:          s.config.Nodelay,

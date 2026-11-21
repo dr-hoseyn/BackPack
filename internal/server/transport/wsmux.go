@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -23,20 +24,40 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+type pendingWSMux struct {
+	*websocket.Conn
+	owner     context.Context
+	version   int
+	idleFloor int
+	localIdle bool
+	confirm   bool
+	slots     chan struct{}
+}
+
+func (p *pendingWSMux) Close() error {
+	err := p.Conn.Close()
+	if p.slots != nil {
+		<-p.slots
+	}
+	return err
+}
+
 // wsMuxGen is the state of a single run of the transport: the context that ends
 // when the run does, and the channels its goroutines pass work over. Restart
 // builds a fresh set for the next run, so carrying them here keeps a goroutine
 // that outlives its run from reaching into the run that replaced it.
 type wsMuxGen struct {
-	idleTraffic    muxIdleTraffic
-	drain          *wsMuxDrain
-	queueTimeouts  atomic.Uint64
-	openRetries    atomic.Uint64
-	ctx            context.Context
-	tunnelChannel  chan pooledMuxSession
-	localChannel   *muxLocalQueue
-	reqNewConnChan chan struct{}
-	usageMonitor   *traffic.Usage
+	idleTraffic       muxIdleTraffic
+	drain             *wsMuxDrain
+	queueTimeouts     atomic.Uint64
+	openRetries       atomic.Uint64
+	admissionRejected atomic.Uint64
+	ctx               context.Context
+	tunnelChannel     chan *pendingWSMux
+	admissionSlots    chan struct{}
+	localChannel      *muxLocalQueue
+	reqNewConnChan    chan struct{}
+	usageMonitor      *traffic.Usage
 	// seat holds the client this generation serves, and serving starts what
 	// outlives any one client — once, whichever claim comes first. See
 	// clientSeat.
@@ -76,6 +97,7 @@ type WsMuxConfig struct {
 	Heartbeat        time.Duration // in seconds
 	ChannelSize      int
 	MuxCon           int
+	MaxSessions      int
 	MuxVersion       int
 	MaxFrameSize     int
 	MaxReceiveBuffer int
@@ -171,9 +193,14 @@ func (s *WsMuxTransport) newGen(ctx context.Context) *wsMuxGen {
 			go drain.watch(ctx, path, s.logger)
 		}
 	}
+	var slots chan struct{}
+	if s.config.Mode == config.WSSMUX && s.config.MaxSessions > 0 {
+		slots = make(chan struct{}, s.config.MaxSessions)
+	}
 	return &wsMuxGen{
+		admissionSlots: slots,
 		ctx:            ctx,
-		tunnelChannel:  make(chan pooledMuxSession, s.config.ChannelSize),
+		tunnelChannel:  make(chan *pendingWSMux, s.config.ChannelSize),
 		localChannel:   queue,
 		drain:          drain,
 		reqNewConnChan: make(chan struct{}, s.config.ChannelSize),
@@ -309,6 +336,37 @@ func (s *WsMuxTransport) tunnelListener(g *wsMuxGen) {
 					}
 				}
 			}
+			confirm := s.config.Mode == config.WSSMUX &&
+				r.Header.Get(network.WSMuxAdmissionHeader) == "1" && slices.Contains(websocket.Subprotocols(r), network.WSMuxBinaryProtocol)
+			if confirm && owner == nil {
+				g.admissionRejected.Add(1)
+				http.Error(w, "websocket mux has no active control channel", http.StatusServiceUnavailable)
+				return
+			}
+			var slots chan struct{}
+			if r.URL.Path != "/channel" {
+				slots = g.admissionSlots
+				if slots != nil {
+					select {
+					case slots <- struct{}{}:
+					default:
+						g.admissionRejected.Add(1)
+						http.Error(w, "websocket mux capacity exhausted", http.StatusServiceUnavailable)
+						return
+					}
+					defer func() {
+						if slots != nil {
+							<-slots
+						}
+					}()
+				}
+			}
+			if confirm {
+				if response == nil {
+					response = make(http.Header)
+				}
+				response.Set(network.WSMuxAdmissionHeader, "1")
+			}
 			conn, err := upgrader.Upgrade(network.WSMuxResponse(w), r, response)
 			if err != nil {
 				s.logger.Errorf("failed to upgrade connection from %s: %v", r.RemoteAddr, err)
@@ -332,39 +390,21 @@ func (s *WsMuxTransport) tunnelListener(g *wsMuxGen) {
 				g.serving.Do(func() { s.serveGeneration(s.forwarder(g), func() { s.handleLoop(g) }) })
 
 			} else if strings.HasPrefix(r.URL.Path, "/tunnel") {
-				cfg := *s.smuxConfig
-				cfg.Version = version
-				wire := network.WSMuxStream(conn)
-				if s.config.Mode == config.WSSMUX {
-					wire = network.WSMuxAnnouncementStream(conn)
-				}
-				session, err := network.NewWatchedMuxSession(wire, &cfg, smux.Client)
-				if err != nil {
-					s.logger.Errorf("failed to create MUX session for connection %s: %v", conn.RemoteAddr().String(), err)
-					conn.Close()
-					return
-				}
-				var traceCarrier net.Conn
-				if s.tracePort != 0 {
-					traceCarrier = conn.NetConn()
-				}
-				var draining func() bool
-				if g.drain != nil {
-					draining = g.drain.forPeer(conn.RemoteAddr().String())
-					s.logger.Debugf("WSSMux data carrier peer %s", conn.RemoteAddr())
-				}
 				accepted := g.seat.admitFor(g.ctx, owner, func(ctx context.Context) bool {
-					return enqueueMuxEntry(g.tunnelChannel, pooledMuxSession{
-						Session: session, owner: ctx, idleFloor: floor, localIdle: localIdle,
-						pressure:     network.WSMuxPressure(conn.NetConn()),
-						bulk:         network.WSMuxRecentBulk(wire),
-						draining:     draining,
-						traceCarrier: traceCarrier,
-					})
+					entry := &pendingWSMux{Conn: conn, owner: ctx, version: version, idleFloor: floor,
+						localIdle: localIdle, confirm: confirm, slots: slots}
+					select {
+					case g.tunnelChannel <- entry:
+						slots = nil // transfer the reservation to the queued entry
+						return true
+					default:
+						return false
+					}
 				})
 				if !accepted {
-					s.logger.Debugf("websocket mux pool is full or its client changed, closing connection from %s", conn.RemoteAddr().String())
-					session.Close()
+					g.admissionRejected.Add(1)
+					s.logger.Debugf("websocket mux pool is full or its client changed, closing connection from %s", conn.RemoteAddr())
+					conn.Close()
 				}
 			}
 		}),
@@ -412,39 +452,77 @@ func (s *WsMuxTransport) handleLoop(g *wsMuxGen) {
 		case <-report:
 			metrics.ReportWSMuxAdmission(metrics.WSMuxAdmissionStats{
 				Carriers: int(atomic.LoadInt32(&s.sessionCounter)), QueueTimeouts: g.queueTimeouts.Load(),
-				OpenRetries: g.openRetries.Load(),
+				OpenRetries: g.openRetries.Load(), Rejected: g.admissionRejected.Load(),
+				MaxCarriers: cap(g.admissionSlots), Reserved: len(g.admissionSlots),
 			})
-		case session := <-g.tunnelChannel:
-			// +1 for session counter
-			if !s.countGeneration(g.ctx, &s.sessionCounter, 1) {
-				session.Close()
-				continue
-			}
-
-			loop := s.session(g, session.owner)
-			loop.pressure = session.pressure
-			loop.bulk = session.bulk
-			loop.draining = session.draining
-			loop.traceCarrier = session.traceCarrier
-			if session.idleFloor > 0 {
-				loop.idleTimeout = 60 * time.Second
-				loop.idleRetire = func() bool {
-					if session.localIdle {
-						if g.localChannel.hasPending() {
-							return false
-						}
-					} else {
-						in, out := metrics.Traffic()
-						if !g.idleTraffic.quiet(time.Now(), in, out) {
-							return false
-						}
-					}
-					return s.retireIdleSession(g.ctx, session.owner, &s.sessionCounter, session.idleFloor)
-				}
-			}
-			go loop.run(session.Session)
+		case pending := <-g.tunnelChannel:
+			go s.runCarrier(g, pending)
 		}
 	}
+}
+
+func (s *WsMuxTransport) runCarrier(g *wsMuxGen, pending *pendingWSMux) {
+	defer pending.Close()
+	stop := context.AfterFunc(pending.owner, func() { pending.Conn.Close() })
+	defer stop()
+	if pending.owner.Err() != nil {
+		return
+	}
+	if pending.confirm {
+		if err := network.WriteWSMuxAdmission(pending.Conn); err != nil {
+			s.logger.Debugf("websocket mux admission confirmation failed: %v", err)
+			return
+		}
+	}
+	cfg := *s.smuxConfig
+	cfg.Version = pending.version
+	wire := network.WSMuxStream(pending.Conn)
+	if s.config.Mode == config.WSSMUX {
+		wire = network.WSMuxAnnouncementStream(pending.Conn)
+	}
+	session, err := network.NewWatchedMuxSession(wire, &cfg, smux.Client)
+	if err != nil {
+		s.logger.Errorf("failed to create MUX session for connection %s: %v", pending.RemoteAddr(), err)
+		return
+	}
+	defer session.Close()
+	if !s.countGeneration(g.ctx, &s.sessionCounter, 1) {
+		return
+	}
+	go func() {
+		// Only the reverse server opens data streams. A parser error or an
+		// unexpected incoming stream ends this carrier.
+		_, _ = session.AcceptStream()
+		session.Close()
+	}()
+
+	loop := s.session(g, pending.owner)
+	loop.pressure = network.WSMuxPressure(pending.Conn.NetConn())
+	loop.bulk = network.WSMuxRecentBulk(wire)
+	if g.drain != nil {
+		s.logger.Debugf("WSSMux data carrier peer %s", pending.RemoteAddr())
+		loop.draining = g.drain.forPeer(pending.RemoteAddr().String())
+	}
+	if s.tracePort != 0 {
+		loop.traceCarrier = pending.Conn.NetConn()
+	}
+	if pending.idleFloor > 0 {
+		loop.idleTimeout = 60 * time.Second
+		loop.idleRetire = func() bool {
+			if pending.localIdle {
+				if g.localChannel.hasPending() {
+					return false
+				}
+			} else {
+				in, out := metrics.Traffic()
+				if !g.idleTraffic.quiet(time.Now(), in, out) {
+					return false
+				}
+			}
+			return s.retireIdleSession(g.ctx, pending.owner, &s.sessionCounter, pending.idleFloor)
+		}
+	}
+	loop.run(session)
 }
 
 // tlsSettings describes how this listener should obtain its certificate:

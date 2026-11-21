@@ -223,6 +223,7 @@ func (c *Client) startTransport(ctx context.Context, tr config.TransportType, en
 	wss := &network.WSSClientOptions{
 		CAFile: c.config.WSSCAFile, ServerName: c.config.WSSServerName,
 		AllowLegacyServer: c.config.WSSAllowLegacyServer, HTTP11Only: c.config.WSSHTTP11Only,
+		Routes: c.config.WSSMuxRoutes,
 	}
 	if c.config.HealthFailover && endpoints.Len() > 1 {
 		switch tr {

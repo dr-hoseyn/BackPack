@@ -343,7 +343,10 @@ func wssMuxPathChecks(g string, snap metrics.Snapshot) []Check {
 	}
 	if admission := snap.WSMuxAdmission; admission != nil {
 		out = append(out, Check{Group: g, Name: "WSSMux admission", Level: CheckInfo,
-			Detail: fmt.Sprintf("%d live carriers, %d queue timeouts, %d opens retried", admission.Carriers, admission.QueueTimeouts, admission.OpenRetries)})
+			Detail: fmt.Sprintf("%d live carriers, %d queue timeouts, %d opens retried, %d rejected", admission.Carriers, admission.QueueTimeouts, admission.OpenRetries, admission.Rejected)})
+		if admission.MaxCarriers > 0 {
+			out[len(out)-1].Detail += fmt.Sprintf(", %d/%d physical slots reserved", admission.Reserved, admission.MaxCarriers)
+		}
 	}
 	return out
 }

@@ -88,3 +88,56 @@ func TestWSSMuxSilentControlVacatesSeatWithoutRestartingListener(t *testing.T) {
 		t.Fatalf("listener did not serve the replacement control peer: %v", err)
 	}
 }
+
+func TestWSSMuxAcknowledgesDataAdmissionAndReleasesCapacity(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	s := listenerRecoveryServer(t, config.WSSMUX, freeAddr(t), ctx)
+	s.config.MaxSessions = 1
+	g := s.newGen(s.run.context())
+	s.start(g)
+	t.Cleanup(func() {
+		cancel()
+		s.run.stop()
+		s.Wait(context.Background())
+	})
+	dial := func(path string, opts ...network.WSDialOption) (*websocket.Conn, error) {
+		return network.WebSocketDialer(ctx, nil, s.config.BindAddr, "", path,
+			time.Second, time.Second, true, s.config.Token, config.WSSMUX, false, 1, 0, 0, 0, opts...)
+	}
+	wait := func(ready func() bool) {
+		t.Helper()
+		deadline := time.Now().Add(5 * time.Second)
+		for !ready() {
+			if time.Now().After(deadline) {
+				t.Fatal("timed out waiting for WSSMux state")
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+	var control *websocket.Conn
+	wait(func() bool {
+		control, _ = dial("/channel")
+		return control != nil
+	})
+	defer control.Close()
+	wait(s.Running)
+	dialData := func() (*websocket.Conn, error) {
+		return dial("/tunnel", &network.WSMuxOptions{PoolSize: 1, ConfirmAdmission: true})
+	}
+	first, err := dialData()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer first.Close()
+	if second, err := dialData(); err == nil {
+		second.Close()
+		t.Fatal("data carrier exceeded the physical admission limit")
+	}
+	first.Close()
+	wait(func() bool { return len(g.admissionSlots) == 0 })
+	replacement, err := dialData()
+	if err != nil {
+		t.Fatalf("released capacity rejected a new carrier: %v", err)
+	}
+	replacement.Close()
+}

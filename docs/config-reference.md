@@ -46,6 +46,13 @@ them both ends have to agree on. This says what exists.
 | `pck_gateway_mac` | `string` | PckGatewayMAC is the next hop's hardware address, used when frames are injected at the link layer. Empty means read it from the kernel's neighbour table, which is where it already is. Set it only where that lookup is wrong — some virtualised networks answer ARP with an address the hypervisor then rewrites. |
 | `pck_interface` | `string` | PckInterface pins the carrier to a named egress device. Empty — the normal case — lets the route to the peer choose, which is right on every host with one uplink and on most with several. |
 
+## WSSMuxRoute
+
+| Key | Type | Description |
+|---|---|---|
+| `edge_ip` | `string` | EdgeIP is the literal TCP destination IP for this endpoint. |
+| `server_name` | `string` | ServerName is the TLS and HTTP origin name for this endpoint. |
+
 ## [[client.paths]]
 
 | Key | Type | Description |
@@ -253,6 +260,7 @@ them both ends have to agree on. This says what exists.
 | `wss_ca_file` | `string` | WSSCAFile adds trusted PEM certificates for wss/wssmux. Required for a private CA/self-signed server when simple_auth or verified legacy mode is used. |
 | `wss_http11_only` | `bool` | WSSHTTP11Only offers HTTP/1.1 on the first WSS handshake, matching a Chromium fresh-WebSocket path and avoiding an unusable h2 probe. Off keeps the existing full HTTPS preset with authenticated capability fallback. |
 | `wss_server_name` | `string` | WSSServerName overrides the TLS name, SNI and HTTP Host, while remote_addr/edge_ip continue to select the dial destination. Empty uses remote_addr's hostname. |
+| `wssmux_routes` | `map[string]WSSMuxRoute` | WSSMuxRoutes overrides the TCP destination and TLS/HTTP name per configured WSSMux endpoint. |
 | `xray` | `XrayClientConfig` | Xray optionally reaches the loopback reverse target through a restricted tunnel-owned XHTTP/TLS or RAW/REALITY helper. |
 | `zero_copy` | `bool` | ZeroCopy lets the kernel move the bytes of forwarded connections directly between the two sockets, without them passing through this process. It is faster and it is the least proven path here, so it is off by default and turned on per tunnel. |
 
@@ -542,6 +550,7 @@ them both ends have to agree on. This says what exists.
 | `tls_key` | `string` | TLSKeyFile is the private key for tls_cert. |
 | `token` | `string` | Token is the shared secret. Both ends must hold exactly the same one, and a mismatch is refused without saying so — a peer without the token learns nothing, not even that something is listening. |
 | `transport` | `TransportType` | Transport is the carrier this tunnel uses. Both ends must name the same one; see docs/transports.md for what each is for. |
+| `wssmux_max_sessions` | `int` | WSSMuxMaxSessions bounds pending and live physical WSSMux sessions. Zero keeps the default. |
 | `xray` | `XrayServerConfig` | Xray optionally wraps the loopback reverse TCP listener in XHTTP/TLS or RAW/REALITY using a tunnel-owned official helper. |
 | `zero_copy` | `bool` | ZeroCopy lets the kernel move the bytes of forwarded connections directly between the two sockets, without them passing through this process. It is faster and it is the least proven path here, so it is off by default and turned on per tunnel. |
 
@@ -583,4 +592,4 @@ them both ends have to agree on. This says what exists.
 
 ---
 
-*Generated from `config/` on 2026-11-18. Last verified against Backpack v1.27.0.*
+*Generated from `config/` on 2026-11-21. Last verified against Backpack v1.27.0.*

@@ -220,3 +220,40 @@ func TestWSSExplicitHTTP11ProfileSkipsH2Probe(t *testing.T) {
 		t.Fatal("explicit WebSocket profile made an unnecessary h2 connection")
 	}
 }
+
+func TestWSSMuxPerEndpointEdgeAndServerNameForDialAndProbe(t *testing.T) {
+	const token = "private-route-test-token"
+	var observed atomic.Int32
+	up := websocket.Upgrader{}
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, port, _ := net.SplitHostPort(r.Host)
+		if r.Host != net.JoinHostPort("example.com", port) || r.TLS.ServerName != "example.com" {
+			t.Errorf("per-endpoint TLS/HTTP name lost: SNI=%q host=%q", r.TLS.ServerName, r.Host)
+		}
+		observed.Add(1)
+		conn, err := up.Upgrade(w, r, http.Header{WSProbeAckHeader: {"1"}})
+		if err == nil {
+			defer conn.Close()
+		}
+	}))
+	defer server.Close()
+	host, port, err := net.SplitHostPort(server.Listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The logical hostname and fallback IP deliberately cannot reach the TLS fixture.
+	endpoint := net.JoinHostPort("unroutable.invalid", port)
+	trust := trustTestWSS(t, server)
+	trust.ServerName = "wrong.example"
+	trust.Routes = map[string]config.WSSMuxRoute{endpoint: {EdgeIP: host, ServerName: "example.com"}}
+	conn, err := WebSocketDialer(t.Context(), nil, endpoint, "127.0.0.2", "/channel",
+		time.Second, time.Second, true, token, config.WSSMUX, true, 1, 0, 0, 0, trust)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn.Close()
+	WebSocketHealthProbe(nil, "127.0.0.2", token, config.WSSMUX, true, 0, trust)(t.Context(), endpoint, 1)
+	if observed.Load() != 2 {
+		t.Fatalf("expected dial and probe to reach the same custom edge, saw %d requests", observed.Load())
+	}
+}
