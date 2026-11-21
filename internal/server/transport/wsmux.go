@@ -158,10 +158,12 @@ func (s *WsMuxTransport) startAfterRestart(ctx context.Context) {
 
 // newGen builds one generation's channels and usage monitor.
 func (s *WsMuxTransport) newGen(ctx context.Context) *wsMuxGen {
+	queue := newBalancedMuxLocalQueue(s.config.ChannelSize)
+	queue.retrySlowOpen = s.config.Mode == config.WSSMUX
 	return &wsMuxGen{
 		ctx:            ctx,
 		tunnelChannel:  make(chan pooledMuxSession, s.config.ChannelSize),
-		localChannel:   newBalancedMuxLocalQueue(s.config.ChannelSize),
+		localChannel:   queue,
 		reqNewConnChan: make(chan struct{}, s.config.ChannelSize),
 		usageMonitor:   s.usageMonitor(ctx),
 	}

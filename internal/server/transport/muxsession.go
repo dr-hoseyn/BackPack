@@ -235,7 +235,7 @@ func (m muxSession) run(session *smux.Session) {
 				continue
 			}
 			idleSince = time.Now()
-			if incomingConn.pairing != nil && incomingConn.pairing.isExpired() {
+			if !incomingConn.pairing.startOpen(incomingConn.timeCreated) {
 				<-counter
 				continue
 			}
@@ -271,7 +271,7 @@ func (m muxSession) run(session *smux.Session) {
 				}
 			}
 			if !claimed {
-				// The timer owns the local connection and its slot now.
+				// The timer expired the local connection or handed it to a sibling.
 				if err != nil {
 					retired = true
 					m.failed(nil, err)
