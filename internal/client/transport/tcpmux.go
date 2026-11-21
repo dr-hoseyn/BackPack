@@ -374,7 +374,7 @@ func (c *TcpMuxTransport) handleSession(tunnelConn net.Conn, retirement bool) {
 
 	established = true
 	if c.config.TCPFWD {
-		defer c.sessions.add(session, retirement)()
+		defer c.sessions.add(session, retirement, false)()
 	}
 	c.serveSession(session, tunnelConn.RemoteAddr(), c.backend())
 }

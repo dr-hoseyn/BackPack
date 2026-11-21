@@ -318,6 +318,36 @@ func managedPoolCheck(g string, pool *metrics.PoolStats) Check {
 	return c
 }
 
+func wssMuxPathChecks(g string, snap metrics.Snapshot) []Check {
+	control := Check{Group: g, Name: "WSSMux control", Level: CheckOK, Detail: "authenticated control channel is connected"}
+	if snap.Connected == nil || !*snap.Connected {
+		control.Level, control.Detail = CheckWarn, "engine has no authenticated control channel"
+	}
+	out := []Check{control}
+	if data, pool := snap.WSMuxData, snap.Pool; data != nil && pool != nil {
+		check := Check{Group: g, Name: "WSSMux data", Level: CheckOK,
+			Detail: fmt.Sprintf("%d live, %d without active streams, %d dialing", pool.Live, data.Idle, data.Pending)}
+		if pool.Live == 0 {
+			check.Level = CheckWarn
+			check.Fix = "check the results of the configured /tunnel routes and mux negotiation"
+		}
+		out = append(out, check)
+		for _, route := range data.Routes {
+			check := Check{Group: g, Name: "Data upgrade " + route.Endpoint, Level: CheckOK,
+				Detail: fmt.Sprintf("%d failed of %d dial results", route.Failures, route.Attempts)}
+			if !route.LastOK {
+				check.Level = CheckWarn
+			}
+			out = append(out, check)
+		}
+	}
+	if admission := snap.WSMuxAdmission; admission != nil {
+		out = append(out, Check{Group: g, Name: "WSSMux admission", Level: CheckInfo,
+			Detail: fmt.Sprintf("%d live carriers, %d queue timeouts, %d opens retried", admission.Carriers, admission.QueueTimeouts, admission.OpenRetries)})
+	}
+	return out
+}
+
 // pathChecks measures the ordinary transport's pool and outer path MTU.
 func pathChecks(g string, t core.Tunnel) []Check {
 	var out []Check
@@ -337,6 +367,12 @@ func pathChecks(g string, t core.Tunnel) []Check {
 		// group out meant the transports most likely to be chosen for a hostile
 		// path were the ones told least about it.
 		return append(out, datagramPathChecks(g, t)...)
+	}
+
+	if t.Transport == "wssmux" {
+		if snap, err := metrics.Read(app.ConfigDir, t.Name); err == nil && time.Since(snap.Taken) <= time.Minute {
+			out = append(out, wssMuxPathChecks(g, snap)...)
+		}
 	}
 
 	before := tunnelSockets(port)

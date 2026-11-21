@@ -29,6 +29,7 @@ func ctProbe(ctx context.Context, c *connTestCase, l3Echo int, report func(ConnT
 	connectCtx, cancelConnect := context.WithTimeout(ctx, connectWaitFor(c))
 	defer cancelConnect()
 	var conn net.Conn
+	entryAccepted := false
 	for conn == nil {
 		if ctx.Err() != nil {
 			r.Status, r.Detail = ctDown, "stopped"
@@ -37,6 +38,13 @@ func ctProbe(ctx context.Context, c *connTestCase, l3Echo int, report func(ConnT
 		}
 		if connectCtx.Err() != nil {
 			r.Status, r.Detail = ctDown, fmt.Sprintf("never carried traffic in %s", connectWaitFor(c))
+			if c.tr == "wssmux" {
+				if entryAccepted {
+					r.Detail = "forwarded TCP entry accepted a connection, but no verified backend echo arrived"
+				} else {
+					r.Detail = "forwarded TCP entry never accepted a connection"
+				}
+			}
 			if c.tr == "spoof" {
 				r.Detail += " — the forged source was dropped: by the provider on the way out, " +
 					"or by a strict rp_filter on the kharej"
@@ -45,6 +53,7 @@ func ctProbe(ctx context.Context, c *connTestCase, l3Echo int, report func(ConnT
 			return r
 		}
 		if cn, err := ctDial(connectCtx, c, l3Echo); err == nil {
+			entryAccepted = true
 			echoErr := ctEchoContext(connectCtx, cn, c.udp)
 			if echoErr == nil {
 				conn = cn

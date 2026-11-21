@@ -23,8 +23,10 @@ type pooledMuxSession struct {
 	*smux.Session
 	owner        context.Context
 	idleFloor    int
+	localIdle    bool
 	pressure     func() int
 	bulk         func() bool
+	draining     func() bool
 	traceCarrier net.Conn
 }
 
@@ -121,6 +123,7 @@ type muxSession struct {
 	count        func(*int32, int32)
 	pressure     func() int
 	bulk         func() bool
+	draining     func() bool
 	traceCarrier net.Conn
 	// Only peers that negotiated support enable retirement. The callback
 	// atomically reserves one excess session's removal above the pool floor.
@@ -180,7 +183,7 @@ func (m muxSession) run(session *smux.Session) {
 	}()
 	var waiter *muxQueueWaiter
 	if m.local.waiters != nil {
-		waiter = &muxQueueWaiter{ready: make(chan struct{}, 1), slots: counter, done: session.CloseChan(), pressure: m.pressure, bulk: m.bulk}
+		waiter = &muxQueueWaiter{ready: make(chan struct{}, 1), slots: counter, done: session.CloseChan(), pressure: m.pressure, bulk: m.bulk, draining: m.draining}
 		defer m.local.leave(waiter)
 	}
 

@@ -30,6 +30,16 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - name: Replace a failed carrier under delay and loss
+        run: |
+          go test -c -o "$RUNNER_TEMP/wssmux-recovery" ./internal/e2e
+          if ! command -v ethtool >/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq ethtool
+          fi
+          sudo modprobe ifb
+          sudo env BP_WSSMUX_RECOVERY_NETEM=1 GOMAXPROCS=4 BIN="$RUNNER_TEMP/wssmux-recovery" \
+            unshare --net -- bash -eu -c 'ip link set lo up; exec "$BIN" -test.run "^TestWSSMuxReplacesOneFailedDataCarrierDuringTraffic$" -test.v -test.timeout 1m'
       - name: Bound control messages and recover silent peers
         run: >-
           go test -race ./internal/controlwire ./internal/server/transport ./internal/utils/network

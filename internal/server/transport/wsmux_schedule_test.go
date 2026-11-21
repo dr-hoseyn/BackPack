@@ -248,3 +248,16 @@ func BenchmarkWSMuxCarrierSelection(b *testing.B) {
 		})
 	}
 }
+
+func TestWSSMuxDrainPrefersOtherReadyCarriers(t *testing.T) {
+	q := newBalancedMuxLocalQueue(4)
+	drained := wsMuxWaiter(3, nil)
+	drained.draining = func() bool { return true }
+	sibling := wsMuxWaiter(0, func() int { return 8 })
+	q.wait(drained)
+	q.wait(sibling)
+	q.push(LocalTCPConn{timeCreated: 1}, nil)
+	takeScheduledWSMux(t, q, sibling, 1)
+	q.push(LocalTCPConn{timeCreated: 2}, nil)
+	takeScheduledWSMux(t, q, drained, 2)
+}

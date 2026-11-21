@@ -163,7 +163,7 @@ func (l *lifecycle) restart(teardown, reset, start func()) {
 
 // beginPoolDial reserves a place before the dial, not after it has connected.
 // Control requests and pool repair therefore share the same resource ceiling.
-func (l *lifecycle) beginPoolDial(limit int) (func(), bool) {
+func (l *lifecycle) beginPoolDial(limit int, pendingLimit ...int) (func(), bool) {
 	l.poolDialMutex.Lock()
 	defer l.poolDialMutex.Unlock()
 	// A successful dial adds to open before it removes its pending slot.
@@ -171,6 +171,9 @@ func (l *lifecycle) beginPoolDial(limit int) (func(), bool) {
 	// briefly, but cannot disappear between the two reads and admit an
 	// extra session. New reservations cannot increase pending under this lock.
 	if l.state.Ctx().Err() != nil || poolOccupancy(&l.dialingConnections, &l.poolConnections) >= max(limit, 1) {
+		return nil, false
+	}
+	if len(pendingLimit) != 0 && pendingLimit[0] > 0 && int(atomic.LoadInt32(&l.dialingConnections)) >= pendingLimit[0] {
 		return nil, false
 	}
 	atomic.AddInt32(&l.dialingConnections, 1)

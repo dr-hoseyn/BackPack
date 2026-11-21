@@ -11,6 +11,7 @@ const (
 	WSMuxOfferHeader   = "X-Backpack-Mux-Versions"
 	WSMuxVersionHeader = "X-Backpack-Mux-Version"
 	WSMuxPoolHeader    = "X-Backpack-Mux-Pool"
+	WSMuxIdleHeader    = "X-Backpack-Mux-Idle"
 )
 
 // WSMuxOptions belongs to one dial. Missing response headers identify an older
@@ -20,6 +21,7 @@ type WSMuxOptions struct {
 	PoolSize          int
 	NegotiatedVersion int
 	Retirement        bool
+	LocalIdle         bool // request per-carrier retirement; cleared unless acknowledged
 }
 
 func (o *WSMuxOptions) offer(h http.Header) {
@@ -29,12 +31,16 @@ func (o *WSMuxOptions) offer(h http.Header) {
 	}
 	h.Set(WSMuxOfferHeader, versions)
 	h.Set(WSMuxPoolHeader, strconv.Itoa(o.PoolSize))
+	if o.LocalIdle {
+		h.Set(WSMuxIdleHeader, "1")
+	}
 }
 
 func (o *WSMuxOptions) accept(h http.Header) error {
 	o.NegotiatedVersion = ResolveStaticMuxVersion(o.Version)
 	o.Retirement = false
 	if h.Get(WSMuxVersionHeader) == "" {
+		o.LocalIdle = false
 		return nil
 	}
 	v, err := strconv.Atoi(h.Get(WSMuxVersionHeader))
@@ -43,6 +49,7 @@ func (o *WSMuxOptions) accept(h http.Header) error {
 	}
 	o.NegotiatedVersion = v
 	o.Retirement = h.Get(WSMuxPoolHeader) == strconv.Itoa(o.PoolSize) && o.PoolSize > 0
+	o.LocalIdle = o.LocalIdle && o.Retirement && h.Get(WSMuxIdleHeader) == "1"
 	return nil
 }
 

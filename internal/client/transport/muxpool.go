@@ -10,15 +10,20 @@ import (
 // Entries live exactly as long as the session handler, including reconnects.
 type muxPoolSessions struct {
 	mu       sync.Mutex
-	sessions map[*smux.Session]bool
+	sessions map[*smux.Session]muxRetirement
 }
 
-func (p *muxPoolSessions) add(session *smux.Session, retirement bool) func() {
+type muxRetirement struct {
+	supported bool
+	localIdle bool
+}
+
+func (p *muxPoolSessions) add(session *smux.Session, retirement, localIdle bool) func() {
 	p.mu.Lock()
 	if p.sessions == nil {
-		p.sessions = make(map[*smux.Session]bool)
+		p.sessions = make(map[*smux.Session]muxRetirement)
 	}
-	p.sessions[session] = retirement
+	p.sessions[session] = muxRetirement{supported: retirement, localIdle: localIdle}
 	p.mu.Unlock()
 	return func() {
 		p.mu.Lock()
@@ -27,16 +32,18 @@ func (p *muxPoolSessions) add(session *smux.Session, retirement bool) func() {
 	}
 }
 
-func (p *muxPoolSessions) snapshot() (active, total int, retirement bool) {
+func (p *muxPoolSessions) snapshot() (active, total int, retirement, localIdle bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	retirement = len(p.sessions) > 0
-	for session, supported := range p.sessions {
+	localIdle = retirement
+	for session, policy := range p.sessions {
 		total++
 		if session.NumStreams() > 0 {
 			active++
 		}
-		retirement = retirement && supported
+		retirement = retirement && policy.supported
+		localIdle = localIdle && policy.localIdle
 	}
 	return
 }

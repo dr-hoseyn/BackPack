@@ -175,6 +175,48 @@ throughput is not an optimization. For delay/loss tests, use the existing
 `BP_RESOURCE_NETEM` fixture only in a disposable network namespace: it changes
 the namespace's loopback MTU, offloads and qdiscs.
 
+## Recovery, live diagnostics and planned drain
+
+With two or more configured addresses, a WSS Mux data-dial round shares the
+configured `dial_timeout`. It tries up to three routes with an 800 ms limit
+per quick attempt, then gives one route that timed out the remaining budget.
+The control address stays in place. At most 16 WSS Mux upgrades are in flight
+at a time, including requests from pool repair and the control channel.
+
+Updated peers negotiate per-carrier idle retirement. After a peak, an unused
+carrier can retire even while a different carrier still carries a long-lived
+stream. The negotiated pool floor, open streams and queued users are preserved.
+With a peer that does not acknowledge this behavior, retirement follows the
+previous whole-tunnel activity rule.
+
+Health distinguishes the authenticated control channel from data carrier
+availability and shows recent data-route results. The metrics JSON includes
+`wsmux_data` on the client and `wsmux_admission` on the server. The latter
+counts queue timeouts and successful retries of slow opens. An idle carrier
+count describes carriers without an open stream. It can differ from the number
+ready to take a user at an exact instant. The authenticated address probe checks
+the Upgrade; Connection Test sends a verified echo through the forwarded TCP
+entry and reports whether TCP connected before an echo failed. For a first
+reply breakdown, use the existing admission trace described above.
+
+To drain selected incoming carriers during planned maintenance, set
+`BP_WSSMUX_DRAIN_PEERS` in the WSS Mux server process environment to the absolute
+path of a local operator-controlled file. List the established data-carrier
+peer addresses, including their source ports, one per line, as observed by the
+server. The WSS Mux debug log lists these peers when this setting is enabled.
+Write replacements atomically. The scheduler picks an unmarked available
+carrier first, preserves existing streams, and can still use a marked carrier
+if it is the only available choice. Clear the file to resume normal scheduling.
+This setting is optional and changes only stream admission.
+
+The opt-in `TestWSSMuxDedicatedLivePath` fixture supports
+`BP_WSSMUX_LIVE_COMPARE=1`. It verifies 40 fresh TCP echoes while a single
+existing stream transfers verified data with a capped offered load. Compare
+matched baseline and candidate runs on the same two hosts. Report failure
+counts, p50/p95/p99 for fresh echoes, and one-direction application echo
+goodput. The live fixture uses dedicated ports and does not reconfigure the
+network or the running service.
+
 Last verified against Backpack v1.27.0 (2026-11-21)
 
 <div dir="rtl">

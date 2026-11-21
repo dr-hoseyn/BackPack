@@ -1,6 +1,9 @@
 package metrics
 
-import "sync/atomic"
+import (
+	"sync/atomic"
+	"time"
+)
 
 // What the connection pool is actually doing.
 //
@@ -22,6 +25,8 @@ import "sync/atomic"
 // pool" looks like — the panel then shows nothing rather than "0 of 0".
 
 var (
+	wsMuxData      atomic.Pointer[WSMuxDataStats]
+	wsMuxAdmission atomic.Pointer[WSMuxAdmissionStats]
 	poolLive       atomic.Int64 // connections open right now
 	poolTarget     atomic.Int64 // size the pool is currently aiming for
 	poolConfigured atomic.Int64 // size the operator asked for
@@ -40,6 +45,7 @@ func ReportPool(live, target, configured, mbps int) {
 // ClearPool forgets the pool state on disconnect or restart, so a stale size is
 // not reported as current.
 func ClearPool() {
+	wsMuxData.Store(nil)
 	poolLive.Store(0)
 	poolTarget.Store(0)
 	poolConfigured.Store(0)
@@ -50,4 +56,35 @@ func ClearPool() {
 func PoolState() (live, target, configured, mbps int) {
 	return int(poolLive.Load()), int(poolTarget.Load()),
 		int(poolConfigured.Load()), int(poolMbps.Load())
+}
+
+// WSMuxDataStats separates authenticated data upgrades from the control
+// connection. Idle counts established carriers without an active stream.
+type WSMuxDataStats struct {
+	Pending int               `json:"pending"`
+	Idle    int               `json:"idle"`
+	Routes  []WSMuxRouteStats `json:"routes,omitempty"`
+}
+
+type WSMuxRouteStats struct {
+	Endpoint string    `json:"endpoint"`
+	LastOK   bool      `json:"last_ok"`
+	Attempts uint64    `json:"attempts"`
+	Failures uint64    `json:"failures"`
+	RetryAt  time.Time `json:"retry_at,omitzero"`
+}
+
+// ReportWSMuxData takes ownership of stats and its route slice.
+func ReportWSMuxData(stats WSMuxDataStats) {
+	wsMuxData.Store(&stats)
+}
+
+type WSMuxAdmissionStats struct {
+	Carriers      int    `json:"carriers"`
+	QueueTimeouts uint64 `json:"queue_timeouts"`
+	OpenRetries   uint64 `json:"open_retries"`
+}
+
+func ReportWSMuxAdmission(stats WSMuxAdmissionStats) {
+	wsMuxAdmission.Store(&stats)
 }
