@@ -19,26 +19,28 @@ type muxLocalQueue struct {
 	waiters map[*muxQueueWaiter]struct{}
 	// WebSocket mux spreads new users over healthy carriers; it must not
 	// inherit TCP Forward's preference for concentrating work on a warm pair.
-	balanced      bool
-	retrySlowOpen bool            // only secure WebSocket mux admissions
-	head, tail    *muxQueueWaiter // readiness order for WebSocket carriers
-	selected      *muxQueueWaiter
-	lastUse       uint64
-	warm          [num3WarmCarriers]*muxQueueWaiter
-	warmTimer     *time.Timer
-	warmWaited    bool
+	balanced        bool
+	interactivePort int
+	retrySlowOpen   bool            // only secure WebSocket mux admissions
+	head, tail      *muxQueueWaiter // readiness order for WebSocket carriers
+	selected        *muxQueueWaiter
+	lastUse         uint64
+	warm            [num3WarmCarriers]*muxQueueWaiter
+	warmTimer       *time.Timer
+	warmWaited      bool
 }
 
 type muxQueueWaiter struct {
-	ready      chan struct{}
-	slots      chan struct{}
-	done       <-chan struct{}
-	lastUse    uint64
-	warm       bool
-	pressure   func() int
-	bulk       func() bool
-	draining   func() bool
-	prev, next *muxQueueWaiter // linked only while waiting on a balanced queue
+	ready       chan struct{}
+	slots       chan struct{}
+	done        <-chan struct{}
+	lastUse     uint64
+	warm        bool
+	interactive bool
+	pressure    func() int
+	bulk        func() bool
+	draining    func() bool
+	prev, next  *muxQueueWaiter // linked only while waiting on a balanced queue
 }
 
 func (w *muxQueueWaiter) isClosed() bool { return muxCarrierClosed(w.done) }
@@ -137,7 +139,14 @@ func (q *muxLocalQueue) notify() {
 			return
 		}
 		if q.balanced {
-			if next := q.chooseReadyCarrier(); next != nil {
+			var next *muxQueueWaiter
+			if q.interactivePort != 0 {
+				next = q.chooseInteractiveCarrier()
+			}
+			if next == nil {
+				next = q.chooseReadyCarrier()
+			}
+			if next != nil {
 				q.selected = next
 				next.ready <- struct{}{}
 			}
@@ -221,6 +230,27 @@ func (q *muxLocalQueue) chooseReadyCarrier() *muxQueueWaiter {
 		return draining
 	}
 	return next
+}
+
+// chooseInteractiveCarrier is used only for a configured interactive port.
+// A busy class falls back to the normal congestion-aware scheduler.
+func (q *muxLocalQueue) chooseInteractiveCarrier() *muxQueueWaiter {
+	local := q.entries.Front().Value.(LocalTCPConn)
+	if local.conn == nil {
+		return nil
+	}
+	interactive := localForwardPort(local.conn) == q.interactivePort
+	for waiter := q.head; waiter != nil; waiter = waiter.next {
+		if waiter.interactive != interactive || waiter.isClosed() ||
+			(waiter.draining != nil && waiter.draining()) {
+			continue
+		}
+		if (waiter.pressure == nil || waiter.pressure() == 0) &&
+			(waiter.bulk == nil || !waiter.bulk()) {
+			return waiter
+		}
+	}
+	return nil
 }
 
 func (q *muxLocalQueue) warmCarrier(waiter *muxQueueWaiter) {

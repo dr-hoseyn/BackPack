@@ -2,6 +2,7 @@ package transport
 
 import (
 	"fmt"
+	"net"
 	"testing"
 )
 
@@ -260,4 +261,47 @@ func TestWSSMuxDrainPrefersOtherReadyCarriers(t *testing.T) {
 	takeScheduledWSMux(t, q, sibling, 1)
 	q.push(LocalTCPConn{timeCreated: 2}, nil)
 	takeScheduledWSMux(t, q, drained, 2)
+}
+
+type wsMuxEntryConn struct {
+	net.Conn
+	port int
+}
+
+func (c wsMuxEntryConn) LocalAddr() net.Addr {
+	return &net.TCPAddr{Port: c.port}
+}
+
+func TestWSMuxInteractiveCarrierPreference(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		port         int
+		reservedOnly bool
+		wantReserved bool
+	}{
+		{"interactive entry", 9001, false, true},
+		{"ordinary entry", 9002, false, false},
+		{"ordinary entry borrows spare", 9002, true, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			q := newBalancedMuxLocalQueue(2)
+			q.interactivePort = 9001
+			ordinary, reserved := wsMuxWaiter(0, nil), wsMuxWaiter(0, nil)
+			reserved.interactive = true
+			if !tc.reservedOnly {
+				q.wait(ordinary)
+			}
+			q.wait(reserved)
+			if !q.push(LocalTCPConn{conn: wsMuxEntryConn{port: tc.port}}, nil) {
+				t.Fatal("queue rejected test entry")
+			}
+			expected := ordinary
+			if tc.wantReserved {
+				expected = reserved
+			}
+			if q.selected != expected {
+				t.Fatal("queue selected the wrong class of carrier")
+			}
+		})
+	}
 }

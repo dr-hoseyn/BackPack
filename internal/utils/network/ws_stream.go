@@ -52,6 +52,32 @@ func WSMuxAnnouncementStream(conn *websocket.Conn) net.Conn {
 	return conn.NetConn()
 }
 
+// WSMuxAdmissionStream keeps smux writes behind the negotiated admission
+// message. The caller resolves the gate on both successful and failed enqueue.
+func WSMuxAdmissionStream(conn *websocket.Conn) (net.Conn, func(bool) error) {
+	stream := &webSocketStream{conn: conn, announceOpen: true}
+	stream.writeMu.Lock()
+	return stream, func(accepted bool) error {
+		defer stream.writeMu.Unlock()
+		if !accepted {
+			return stream.Close()
+		}
+		if err := conn.SetWriteDeadline(time.Now().Add(5 * time.Second)); err != nil {
+			stream.Close()
+			return err
+		}
+		if err := conn.WriteMessage(websocket.BinaryMessage, []byte{wsMuxAdmitted}); err != nil {
+			stream.Close()
+			return err
+		}
+		if err := conn.SetWriteDeadline(time.Time{}); err != nil {
+			stream.Close()
+			return err
+		}
+		return conn.NetConn().SetWriteDeadline(time.Time{})
+	}
+}
+
 type webSocketStream struct {
 	conn     *websocket.Conn
 	readMu   sync.Mutex

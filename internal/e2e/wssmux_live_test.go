@@ -51,20 +51,22 @@ func TestWSSMuxDedicatedLivePath(t *testing.T) {
 	tunnelspec.ApplyPreset(&profile, tunnelspec.PresetThroughput)
 	switch role {
 	case "client":
-		backend, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(backendPort)))
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer backend.Close()
-		go func() {
-			for {
-				c, e := backend.Accept()
-				if e != nil {
-					return
-				}
-				go func() { defer c.Close(); io.Copy(c, c) }()
+		if os.Getenv("BP_WSSMUX_LIVE_EXTERNAL_BACKEND") != "1" {
+			backend, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(backendPort)))
+			if err != nil {
+				t.Fatal(err)
 			}
-		}()
+			defer backend.Close()
+			go func() {
+				for {
+					c, e := backend.Accept()
+					if e != nil {
+						return
+					}
+					go func() { defer c.Close(); io.Copy(c, c) }()
+				}
+			}()
+		}
 		cfg := baseClientConfig("wssmux", os.Getenv("BP_WSSMUX_LIVE_REMOTE"), token, nil)
 		cfg.ConnectionPool, cfg.WSMuxMaxSessions = 2, 2
 		if throughput {
@@ -106,6 +108,10 @@ func TestWSSMuxDedicatedLivePath(t *testing.T) {
 		cfg.LogLevel = "error"
 		engine := server.NewServer(cfg, ctx)
 		wg.Go(engine.Start)
+		if os.Getenv("BP_WSSMUX_LIVE_SERVICE_ONLY") == "1" {
+			<-ctx.Done()
+			return
+		}
 		tun := &tunnel{Entry: net.JoinHostPort("127.0.0.1", strconv.Itoa(entryPort))}
 		if err := tun.waitReady(25 * time.Second); err != nil {
 			t.Fatal(err)

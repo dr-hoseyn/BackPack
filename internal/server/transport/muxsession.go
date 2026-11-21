@@ -106,10 +106,11 @@ func enqueueMuxEntry(queue chan pooledMuxSession, entry pooledMuxSession) bool {
 // transport and outlive any one session — a session that ends must leave them
 // where the next one can see them.
 type muxSession struct {
-	ctx        context.Context
-	local      *muxLocalQueue
-	usage      *traffic.Usage
-	reqNewConn chan struct{}
+	interactive bool
+	ctx         context.Context
+	local       *muxLocalQueue
+	usage       *traffic.Usage
+	reqNewConn  chan struct{}
 
 	// muxCon is how many streams one session may carry at once.
 	muxCon int
@@ -187,7 +188,7 @@ func (m muxSession) run(session *smux.Session) {
 	}()
 	var waiter *muxQueueWaiter
 	if m.local.waiters != nil {
-		waiter = &muxQueueWaiter{ready: make(chan struct{}, 1), slots: counter, done: session.CloseChan(), pressure: m.pressure, bulk: m.bulk, draining: m.draining}
+		waiter = &muxQueueWaiter{ready: make(chan struct{}, 1), slots: counter, done: session.CloseChan(), pressure: m.pressure, bulk: m.bulk, draining: m.draining, interactive: m.interactive}
 		defer m.local.leave(waiter)
 	}
 
