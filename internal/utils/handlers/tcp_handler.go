@@ -91,9 +91,9 @@ func awaitRelay(ctx context.Context, done <-chan struct{}, ends ...io.Closer) {
 // It prefers the zero-copy path, which needs a real socket at each end: the
 // counting wrapper is unwrapped for it (the loop below counts instead), but a
 // bandwidth-limited connection is not, because pacing bytes means looking at
-// them. Anything that is not two plain TCP sockets â€” a mux stream, a KCP
+// them. Anything that is not two plain TCP sockets — a mux stream, a KCP
 // session, a websocket, a rate-limited conn, or any platform that is not
-// Linux â€” falls through to the buffered copy, which is also where the fast
+// Linux — falls through to the buffered copy, which is also where the fast
 // path lands if the kernel declines it.
 func transferData(from net.Conn, to net.Conn, logger *logrus.Logger, usage *traffic.Usage, remotePort int, sniffer bool) {
 	transferDataFramed(from, to, logger, usage, remotePort, sniffer, 0, false)
@@ -139,7 +139,7 @@ func copyBuffered(from net.Conn, to net.Conn, buffer *relayCopyBuffer, logger *l
 		// says plainly that the bytes come first: process them, then the error.
 		// Returning here on the error threw away whatever it had just read, so a
 		// connection whose last read carries data and EOF in one call loses that
-		// data â€” the final record of a response, silently, on a path that
+		// data — the final record of a response, silently, on a path that
 		// otherwise carries everything faithfully.
 		//
 		// None of the readers on this path does it today: noiseConn, smux and
@@ -209,8 +209,8 @@ func spliceTransfer(from net.Conn, to net.Conn, logger *logrus.Logger, usage *tr
 	}
 
 	// Unwrapping the counter is safe because onChunk below counts exactly what
-	// it would have. Unwrapping anything else would not be â€” a bandwidth cap
-	// disappears if the bytes stop passing through it â€” so nothing else is
+	// it would have. Unwrapping anything else would not be — a bandwidth cap
+	// disappears if the bytes stop passing through it — so nothing else is
 	// unwrapped, and a limited connection simply is not a *net.TCPConn here.
 	fromConn, fromCounted := metrics.Uncount(from)
 	toConn, toCounted := metrics.Uncount(to)
