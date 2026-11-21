@@ -507,16 +507,19 @@ func (s *WsMuxTransport) handleLoop(g *wsMuxGen) {
 					return s.retireIdleSession(g.ctx, session.owner, &s.sessionCounter, session.idleFloor)
 				}
 			}
-			select {
-			case g.interactiveSlots <- struct{}{}:
-				loop.interactive = true
-				go func() {
-					defer func() { <-g.interactiveSlots }()
-					loop.run(session.Session)
-				}()
-			default:
-				go loop.run(session.Session)
+			if g.interactiveSlots != nil {
+				select {
+				case g.interactiveSlots <- struct{}{}:
+					loop.interactive = true
+					go func() {
+						defer func() { <-g.interactiveSlots }()
+						loop.run(session.Session)
+					}()
+					continue
+				default:
+				}
 			}
+			go loop.run(session.Session)
 		}
 	}
 }

@@ -278,8 +278,8 @@ observed slow handshakes, within the total configured round deadline.
 For a dedicated interactive listener, optionally set the server process
 environment variable BP_WSSMUX_INTERACTIVE_PORT to its local listening port.
 One physical carrier is preferred for that listener when healthy. Ordinary
-listeners use another available carrier first and can borrow the reserved one
-when no ordinary carrier is ready. Leave the variable unset for the default
+listeners use a healthy ordinary carrier first and can borrow the reserved one
+when no healthy ordinary carrier is ready. Leave the variable unset for the default
 scheduler. Compare fresh p95/p99 and sustained verified goodput on your path.
 
 ## Experimental stream resume sidecar

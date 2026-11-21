@@ -139,7 +139,14 @@ func (q *muxLocalQueue) notify() {
 			return
 		}
 		if q.balanced {
-			if next := q.chooseReadyCarrier(); next != nil {
+			var next *muxQueueWaiter
+			if q.interactivePort != 0 {
+				next = q.chooseInteractiveCarrier()
+			}
+			if next == nil {
+				next = q.chooseReadyCarrier()
+			}
+			if next != nil {
 				q.selected = next
 				next.ready <- struct{}{}
 			}
@@ -194,22 +201,11 @@ func (q *muxLocalQueue) notify() {
 // The first idle carrier with zero pressure is optimal. If all carriers are
 // busy, use the best one immediately.
 func (q *muxLocalQueue) chooseReadyCarrier() *muxQueueWaiter {
-	if q.interactivePort > 0 && q.entries.Front() != nil {
-		if local, ok := q.entries.Front().Value.(LocalTCPConn); ok && local.conn != nil {
-			if waiter := q.findReadyCarrier(true, localForwardPort(local.conn) == q.interactivePort); waiter != nil {
-				return waiter
-			}
-		}
-	}
-	return q.findReadyCarrier(false, false)
-}
-
-func (q *muxLocalQueue) findReadyCarrier(preferClass, interactive bool) *muxQueueWaiter {
 	var next, draining *muxQueueWaiter
 	var bestPressure int
 	var bestBulk bool
 	for waiter := q.head; waiter != nil; waiter = waiter.next {
-		if waiter.isClosed() || (preferClass && waiter.interactive != interactive) {
+		if waiter.isClosed() {
 			continue
 		}
 		if waiter.draining != nil && waiter.draining() {
@@ -230,13 +226,31 @@ func (q *muxLocalQueue) findReadyCarrier(preferClass, interactive bool) *muxQueu
 			next, bestPressure, bestBulk = waiter, pressure, bulk
 		}
 	}
-	if preferClass && (next == nil || (interactive && (bestPressure > 0 || bestBulk))) {
-		return nil
-	}
 	if next == nil {
 		return draining
 	}
 	return next
+}
+
+// chooseInteractiveCarrier is used only for a configured interactive port.
+// A busy class falls back to the normal congestion-aware scheduler.
+func (q *muxLocalQueue) chooseInteractiveCarrier() *muxQueueWaiter {
+	local := q.entries.Front().Value.(LocalTCPConn)
+	if local.conn == nil {
+		return nil
+	}
+	interactive := localForwardPort(local.conn) == q.interactivePort
+	for waiter := q.head; waiter != nil; waiter = waiter.next {
+		if waiter.interactive != interactive || waiter.isClosed() ||
+			(waiter.draining != nil && waiter.draining()) {
+			continue
+		}
+		if (waiter.pressure == nil || waiter.pressure() == 0) &&
+			(waiter.bulk == nil || !waiter.bulk()) {
+			return waiter
+		}
+	}
+	return nil
 }
 
 func (q *muxLocalQueue) warmCarrier(waiter *muxQueueWaiter) {
