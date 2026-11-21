@@ -209,9 +209,19 @@ func (f portForwarder) admitUDP(conn net.Conn, target string) bool {
 
 func (f portForwarder) offer(local LocalTCPConn) bool {
 	if f.muxQueue != nil {
-		p := &queuedMuxPairing{}
+		p := &queuedMuxPairing{checkSlowOpen: f.muxQueue.retrySlowOpen && !isUDPFlow(local.conn)}
 		local.pairing = p
-		p.expire = func() { f.expireQueued(local) }
+		p.finish = func(retry bool) bool {
+			if !retry {
+				f.expireQueued(local)
+				return true
+			}
+			next := local
+			// Use another ownership record so the original opener
+			// cannot claim this socket when its SYN eventually returns.
+			next.pairing = &queuedMuxPairing{finish: p.finish}
+			return f.muxQueue.pushLocal(next, nil, true)
+		}
 		return f.muxQueue.push(local, f.queued)
 	}
 	select {

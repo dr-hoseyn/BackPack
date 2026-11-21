@@ -47,15 +47,21 @@ func nowMillis() int64 { return time.Now().UnixMilli() }
 // queuedMuxPairing owns a socket's deadline from queue admission through
 // stream opening. Only one of expiry, pairing or generation drain takes it.
 type queuedMuxPairing struct {
-	mu      sync.Mutex
-	timer   *time.Timer
-	expired bool
-	expire  func()
-	remove  func()
+	mu            sync.Mutex
+	timer         *time.Timer
+	released      bool // the deadline or another carrier owns the local socket
+	opening       bool
+	checkSlowOpen bool
+	finish        func(retry bool) bool
+	remove        func()
 }
 
-// arm is called under mu. The timer identity prevents an old callback from
-// expiring a connection that was claimed and then requeued.
+// Leave time for a second carrier to open a stream under the original
+// admission deadline. The typical path still has just one timer.
+const slowMuxOpenDelay = 250 * time.Millisecond
+
+// arm is called under mu. The timer identity prevents a stale callback from
+// expiring a claimed or requeued connection.
 func (p *queuedMuxPairing) arm(created int64) {
 	var timer *time.Timer
 	timer = time.AfterFunc(pairingWait(created), func() {
@@ -65,18 +71,43 @@ func (p *queuedMuxPairing) arm(created int64) {
 			return
 		}
 		p.timer = nil
-		p.expired = true
+		if p.opening {
+			p.opening = false
+			p.checkSlowOpen = false
+			if pairingWait(created) >= slowMuxOpenDelay && p.finish(true) {
+				p.released = true
+				p.remove = nil
+				return
+			}
+			p.arm(created)
+			return
+		}
+		p.released = true
 		p.remove()
 		p.remove = nil
-		p.expire()
+		p.finish(false)
 	})
 	p.timer = timer
 }
 
-func (p *queuedMuxPairing) isExpired() bool {
+func (p *queuedMuxPairing) startOpen(created int64) bool {
+	if p == nil {
+		return true
+	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return p.expired
+	if p.released {
+		return false
+	}
+	if p.checkSlowOpen && p.timer != nil && pairingWait(created) >= 2*slowMuxOpenDelay {
+		// Reuse the admission timer. If it already fired while we were
+		// taking ownership, its original callback still owns the expiry.
+		p.opening = p.timer.Reset(slowMuxOpenDelay)
+		if !p.opening {
+			p.timer.Stop()
+		}
+	}
+	return true
 }
 
 // claim stops expiry and gives the caller responsibility for the socket.
@@ -86,9 +117,10 @@ func (p *queuedMuxPairing) claim() bool {
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.expired {
+	if p.released {
 		return false
 	}
+	p.opening = false
 	if p.timer != nil {
 		p.timer.Stop()
 		p.timer = nil

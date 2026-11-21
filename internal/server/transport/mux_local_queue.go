@@ -19,13 +19,14 @@ type muxLocalQueue struct {
 	waiters map[*muxQueueWaiter]struct{}
 	// WebSocket mux spreads new users over healthy carriers; it must not
 	// inherit TCP Forward's preference for concentrating work on a warm pair.
-	balanced   bool
-	head, tail *muxQueueWaiter // readiness order for WebSocket carriers
-	selected   *muxQueueWaiter
-	lastUse    uint64
-	warm       [num3WarmCarriers]*muxQueueWaiter
-	warmTimer  *time.Timer
-	warmWaited bool
+	balanced      bool
+	retrySlowOpen bool            // only secure WebSocket mux admissions
+	head, tail    *muxQueueWaiter // readiness order for WebSocket carriers
+	selected      *muxQueueWaiter
+	lastUse       uint64
+	warm          [num3WarmCarriers]*muxQueueWaiter
+	warmTimer     *time.Timer
+	warmWaited    bool
 }
 
 type muxQueueWaiter struct {
@@ -69,6 +70,10 @@ func newBalancedMuxLocalQueue(limit int) *muxLocalQueue {
 }
 
 func (q *muxLocalQueue) push(local LocalTCPConn, queued func()) bool {
+	return q.pushLocal(local, queued, false)
+}
+
+func (q *muxLocalQueue) pushLocal(local LocalTCPConn, queued func(), requireWaiter bool) bool {
 	p := local.pairing
 	if p != nil {
 		p.mu.Lock()
@@ -78,6 +83,17 @@ func (q *muxLocalQueue) push(local LocalTCPConn, queued func()) bool {
 	if q.closed || q.entries.Len() >= q.limit {
 		q.mu.Unlock()
 		return false
+	}
+	if requireWaiter {
+		// A WSSMux opener is off this list until OpenStream returns.
+		waiter := q.head
+		for waiter != nil && waiter.isClosed() {
+			waiter = waiter.next
+		}
+		if waiter == nil {
+			q.mu.Unlock()
+			return false
+		}
 	}
 	entry := q.entries.PushBack(local)
 	q.notify()
