@@ -40,6 +40,61 @@ func TestWSMuxReadyOrderMatchesFullCongestionOrdering(t *testing.T) {
 	}
 }
 
+func BenchmarkWSMuxCongestedCarrierSelection(b *testing.B) {
+	for _, count := range []int{8, 32, 128} {
+		b.Run(fmt.Sprint(count), func(b *testing.B) {
+			q := newBalancedMuxLocalQueue(1)
+			epoch := time.Now()
+			for i := range count {
+				waiter := wsMuxWaiter(16, func() int { return i%8 + 1 })
+				// Recent-bulk checks read an atomic timestamp and a
+				// monotonic clock on the actual framed carrier.
+				waiter.bulk = func() bool { return time.Since(epoch) >= 0 }
+				q.wait(waiter)
+			}
+			b.ReportAllocs()
+			for b.Loop() {
+				if q.chooseReadyCarrier() == nil {
+					b.Fatal("no ready carrier")
+				}
+			}
+		})
+	}
+}
+
+func TestWSMuxBulkTiebreakerMatchesFullRanking(t *testing.T) {
+	q := newBalancedMuxLocalQueue(1)
+	const count = 4
+	levels := [...]int{0, 1, 8, 64}
+	type signal struct {
+		pressure int
+		bulk     bool
+	}
+	var signals [count]signal
+	var carriers [count]*muxQueueWaiter
+	for i := range carriers {
+		carriers[i] = wsMuxWaiter(0, func() int { return signals[i].pressure })
+		carriers[i].bulk = func() bool { return signals[i].bulk }
+		q.wait(carriers[i])
+	}
+	for state := range 1 << (3 * count) {
+		for i := range signals {
+			encoded := (state >> (3 * i)) & 7
+			signals[i] = signal{pressure: levels[encoded/2], bulk: encoded%2 != 0}
+		}
+		best := 0
+		for i := 1; i < count; i++ {
+			a, b := signals[i], signals[best]
+			if a.pressure < b.pressure || (a.pressure == b.pressure && b.bulk && !a.bulk) {
+				best = i
+			}
+		}
+		if q.chooseReadyCarrier() != carriers[best] {
+			t.Fatalf("state %d changed congestion, bulk or readiness order", state)
+		}
+	}
+}
+
 func TestWSMuxQuietUsersDoNotDisplaceAnOlderHealthyWaiter(t *testing.T) {
 	q := newBalancedMuxLocalQueue(2)
 	older, newer := wsMuxWaiter(100, nil), wsMuxWaiter(0, nil)
@@ -261,26 +316,4 @@ func TestWSSMuxDrainPrefersOtherReadyCarriers(t *testing.T) {
 	takeScheduledWSMux(t, q, sibling, 1)
 	q.push(LocalTCPConn{timeCreated: 2}, nil)
 	takeScheduledWSMux(t, q, drained, 2)
-}
-
-func BenchmarkWSMuxCongestedCarrierSelection(b *testing.B) {
-	for _, count := range []int{8, 32, 128} {
-		b.Run(fmt.Sprint(count), func(b *testing.B) {
-			q := newBalancedMuxLocalQueue(1)
-			epoch := time.Now()
-			for i := range count {
-				waiter := wsMuxWaiter(16, func() int { return i%8 + 1 })
-				// Recent-bulk checks read an atomic timestamp and a
-				// monotonic clock on the actual framed carrier.
-				waiter.bulk = func() bool { return time.Since(epoch) >= 0 }
-				q.wait(waiter)
-			}
-			b.ReportAllocs()
-			for b.Loop() {
-				if q.chooseReadyCarrier() == nil {
-					b.Fatal("no ready carrier")
-				}
-			}
-		})
-	}
 }
