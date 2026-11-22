@@ -166,3 +166,33 @@ func TestPresetDoesNotTouchTheClamp(t *testing.T) {
 		}
 	}
 }
+
+// WS Mux and WSS Mux share one physical session between unrelated users. A
+// stream window equal to the session window lets one stalled stream hold the
+// whole session's receive credit, so the bulk profile must leave room for the
+// others while still covering the single-stream bandwidth-delay target.
+func TestThroughputLeavesSessionCreditForOtherStreamsOnWSMux(t *testing.T) {
+	const requiredBytes = 500_000_000 / 8 / 5 // 500 Mbit/s at 200 ms
+	for _, transport := range []string{"wsmux", "wssmux"} {
+		s := Spec{Transport: transport}
+		ApplyPreset(&s, PresetThroughput)
+		if s.MuxStreamBuffer*2 > s.MuxRecvBuffer {
+			t.Errorf("%s: stream window %d leaves less than half of the %d session window to other streams",
+				transport, s.MuxStreamBuffer, s.MuxRecvBuffer)
+		}
+		if s.MuxStreamBuffer < requiredBytes {
+			t.Errorf("%s: stream window %d no longer covers the bulk target", transport, s.MuxStreamBuffer)
+		}
+		if s.ConnectionPool != 64 || s.MuxCon != 512 || s.MuxRecvBuffer != 32<<20 {
+			t.Errorf("%s: pool/slots/session window changed: %d/%d/%d", transport, s.ConnectionPool, s.MuxCon, s.MuxRecvBuffer)
+		}
+	}
+	// Every other transport keeps its current 32 MiB stream window.
+	for _, transport := range []string{"", "tcpmux", "kcp", "quic"} {
+		s := Spec{Transport: transport}
+		ApplyPreset(&s, PresetThroughput)
+		if s.MuxStreamBuffer != 32<<20 {
+			t.Errorf("%q: stream window = %d, want 32 MiB", transport, s.MuxStreamBuffer)
+		}
+	}
+}
