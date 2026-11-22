@@ -250,7 +250,7 @@ func (c *WsMuxTransport) tunnelDialer() {
 	}
 	tunnelWSConn, err := c.dialTunnel(c.state.Ctx(), &mux)
 	if err != nil {
-		if !errors.Is(err, network.ErrWSMuxCapacity) {
+		if !errors.Is(err, network.ErrWSMuxCapacity) && !errors.Is(err, errWSMuxCooldown) {
 			c.logger.Errorf("tunnel server dialer: %v", err)
 		}
 		return
@@ -316,7 +316,19 @@ func (c *WsMuxTransport) dialTunnel(ctx context.Context, mux *network.WSMuxOptio
 	var err error
 	attempts := 0
 	var slowRoute string
+	quickAttempt := func(addr string) time.Duration {
+		budget := c.dataRoutes.quickBudget(addr, timeout, cfg.DialTimeOut)
+		if deadline, ok := ctx.Deadline(); ok && cfg.Mode == config.WSSMUX {
+			remaining := min(cfg.Endpoints.Len(), maxAttempts) - attempts
+			return min(budget, time.Until(deadline)/time.Duration(max(1, remaining)))
+		}
+		return budget
+	}
 	try := func(addr string, timeout time.Duration) *websocket.Conn {
+		if timeout <= 0 && cfg.Mode == config.WSSMUX {
+			err = context.DeadlineExceeded
+			return nil
+		}
 		attempts++
 		start := time.Now()
 		conn, dialErr := dial(addr, 1, timeout)
@@ -334,7 +346,7 @@ func (c *WsMuxTransport) dialTunnel(ctx context.Context, mux *network.WSMuxOptio
 		return conn
 	}
 	if c.dataRoutes.available(first, time.Now()) {
-		if conn := try(first, c.dataRoutes.quickBudget(first, timeout, cfg.DialTimeOut)); conn != nil {
+		if conn := try(first, quickAttempt(first)); conn != nil {
 			return conn, nil
 		}
 	}
@@ -357,7 +369,7 @@ func (c *WsMuxTransport) dialTunnel(ctx context.Context, mux *network.WSMuxOptio
 		if addr == first || !c.dataRoutes.available(addr, time.Now()) {
 			continue
 		}
-		if conn := try(addr, c.dataRoutes.quickBudget(addr, timeout, cfg.DialTimeOut)); conn != nil {
+		if conn := try(addr, quickAttempt(addr)); conn != nil {
 			return conn, nil
 		}
 	}
@@ -367,7 +379,13 @@ func (c *WsMuxTransport) dialTunnel(ctx context.Context, mux *network.WSMuxOptio
 		if c.dataRoutes.atCapacity(first, time.Now()) {
 			return nil, network.ErrWSMuxCapacity
 		}
-		conn := try(first, c.dataRoutes.quickBudget(first, timeout, cfg.DialTimeOut))
+		if cfg.Mode == config.WSSMUX {
+			if !c.dataRoutes.probing.CompareAndSwap(false, true) {
+				return nil, errWSMuxCooldown
+			}
+			defer c.dataRoutes.probing.Store(false)
+		}
+		conn := try(first, quickAttempt(first))
 		if conn != nil {
 			return conn, nil
 		}
@@ -382,19 +400,22 @@ func (c *WsMuxTransport) dialTunnel(ctx context.Context, mux *network.WSMuxOptio
 const wsMuxDataRetryDelay = 2 * time.Second
 
 type wsMuxDataRoute struct {
-	started   time.Time
-	retryAt   time.Time
-	attempts  uint64
-	failures  uint64
-	capacity  uint64
-	fullUntil time.Time
-	handshake time.Duration
+	started       time.Time
+	lastFailure   string
+	lastFailureAt time.Time
+	retryAt       time.Time
+	attempts      uint64
+	failures      uint64
+	capacity      uint64
+	fullUntil     time.Time
+	handshake     time.Duration
 }
 
 type wsMuxDataRoutes struct {
 	mu             sync.Mutex
 	routes         map[string]wsMuxDataRoute
 	fallbackCursor atomic.Uint64
+	probing        atomic.Bool
 }
 
 func (r *wsMuxDataRoutes) available(addr string, now time.Time) bool {
@@ -429,6 +450,7 @@ func (r *wsMuxDataRoutes) record(addr string, started time.Time, success bool) {
 }
 
 var errWSMuxRoute = errors.New("websocket mux data route failed")
+var errWSMuxCooldown = errors.New("websocket mux route recovery probe already running")
 
 func (r *wsMuxDataRoutes) recordResult(addr string, started time.Time, err error) {
 	r.mu.Lock()
@@ -449,6 +471,19 @@ func (r *wsMuxDataRoutes) recordResult(addr string, started time.Time, err error
 		state.started = started
 		state.retryAt = time.Time{}
 		state.fullUntil = time.Time{}
+		if err != nil {
+			state.lastFailureAt = now
+			switch {
+			case full:
+				state.lastFailure = "BackPack admission limit"
+			case errors.Is(err, network.ErrWSMuxUnavailable):
+				state.lastFailure = "HTTP 503 from endpoint or proxy"
+			case errors.Is(err, context.DeadlineExceeded):
+				state.lastFailure = "dial deadline exceeded"
+			default:
+				state.lastFailure = "connection or upgrade failed"
+			}
+		}
 		switch {
 		case full:
 			state.fullUntil = now.Add(wsMuxDataRetryDelay + rand.N(time.Second))
@@ -475,6 +510,7 @@ func (r *wsMuxDataRoutes) snapshot(endpoints []string) []metrics.WSMuxRouteStats
 			routes = append(routes, metrics.WSMuxRouteStats{
 				Endpoint: addr, LastOK: route.retryAt.IsZero(), RetryAt: route.retryAt,
 				Attempts: route.attempts, Failures: route.failures, CapacityRejected: route.capacity, CapacityRetryAt: route.fullUntil,
+				LastFailure: route.lastFailure, LastFailureAt: route.lastFailureAt,
 			})
 		}
 	}

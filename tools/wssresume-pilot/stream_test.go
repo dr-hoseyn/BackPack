@@ -46,7 +46,7 @@ func TestResumedStreamKeepsTheSameUserAndBackendSockets(t *testing.T) {
 	relay := &relay{key: key, target: backend.Addr().(*net.TCPAddr), sessions: make(map[[16]byte]*stream)}
 	go pilotAccept(exit, relay.accept)
 	var attached atomic.Int32
-	original := make(chan *net.TCPConn, 1)
+	carriers := make(chan *net.TCPConn, 3)
 	go pilotAccept(proxy, func(c *net.TCPConn) {
 		defer c.Close()
 		exitConn, err := connect(exit.Addr().(*net.TCPAddr), time.Second)
@@ -54,9 +54,8 @@ func TestResumedStreamKeepsTheSameUserAndBackendSockets(t *testing.T) {
 			return
 		}
 		defer exitConn.Close()
-		if attached.Add(1) == 1 {
-			original <- c
-		}
+		attached.Add(1)
+		carriers <- c
 		unwound := make(chan struct{})
 		go func() {
 			_, _ = io.Copy(exitConn, c)
@@ -97,14 +96,19 @@ func TestResumedStreamKeepsTheSameUserAndBackendSockets(t *testing.T) {
 	if err := check([]byte("open and verify the original carrier")); err != nil {
 		t.Fatal(err)
 	}
-	first := <-original
 	after := bytes.Repeat([]byte("continuing the same byte stream"), 80000)
-	go func() {
-		time.Sleep(5 * time.Millisecond)
-		_ = first.Close()
-	}()
-	if err := check(after); err != nil {
-		t.Fatal(err)
+	for outage := range 2 {
+		var carrier *net.TCPConn
+		select {
+		case carrier = <-carriers:
+		case <-time.After(2 * time.Second):
+			t.Fatalf("missing carrier for outage %d", outage+1)
+		}
+		timer := time.AfterFunc(5*time.Millisecond, func() { _ = carrier.Close() })
+		if err := check(after); err != nil {
+			timer.Stop()
+			t.Fatal(err)
+		}
 	}
 	if err := user.CloseWrite(); err != nil {
 		t.Fatal(err)
@@ -115,7 +119,60 @@ func TestResumedStreamKeepsTheSameUserAndBackendSockets(t *testing.T) {
 	if n := backendOpens.Load(); n != 1 {
 		t.Fatalf("backend was opened %d times", n)
 	}
-	if n := attached.Load(); n != 2 {
-		t.Fatalf("expected original and replacement carriers, observed %d", n)
+	if n := attached.Load(); n != 3 {
+		t.Fatalf("expected original and two replacement carriers, observed %d", n)
+	}
+}
+
+func TestResumeExpiredCarrierReleasesBackend(t *testing.T) {
+	backend := pilotListener(t)
+	exit := pilotListener(t)
+	key := []byte("a-test-only-hmac-key-at-least-32-bytes")
+	r := &relay{key: key, target: backend.Addr().(*net.TCPAddr), sessions: make(map[[16]byte]*stream)}
+	go pilotAccept(exit, r.accept)
+
+	carrier, err := connect(exit.Addr().(*net.TCPAddr), time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer carrier.Close()
+	_ = carrier.SetDeadline(time.Now().Add(3 * time.Second))
+	req := handshake{id: [16]byte{1}, nonce: [16]byte{2}, flags: openFlag}
+	if err := req.write(carrier, key, 'Q'); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readHandshake(carrier, key, 'R'); err != nil {
+		t.Fatal(err)
+	}
+
+	_ = backend.SetDeadline(time.Now().Add(time.Second))
+	app, err := backend.AcceptTCP()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Close()
+
+	disconnected := time.Now()
+	_ = carrier.Close()
+	_ = app.SetReadDeadline(disconnected.Add(resumeTimeout + 2*time.Second))
+	if n, err := app.Read(make([]byte, 1)); n != 0 || err != io.EOF {
+		t.Fatalf("backend was not released on resume expiry: %d bytes / %v", n, err)
+	}
+	if time.Since(disconnected) < resumeTimeout-time.Second {
+		t.Fatal("backend closed before the resume window")
+	}
+	late, err := connect(exit.Addr().(*net.TCPAddr), time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer late.Close()
+	_ = late.SetDeadline(time.Now().Add(time.Second))
+	req.nonce[0]++
+	req.flags = 0
+	if err := req.write(late, key, 'Q'); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readHandshake(late, key, 'R'); err != io.EOF {
+		t.Fatalf("expired session accepted a resume or kept the carrier open: %v", err)
 	}
 }

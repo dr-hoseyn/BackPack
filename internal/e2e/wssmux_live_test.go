@@ -97,6 +97,12 @@ func TestWSSMuxDedicatedLivePath(t *testing.T) {
 		cfg := baseServerConfig("wssmux", tunnelPort, entryPort, net.JoinHostPort("127.0.0.1", strconv.Itoa(backendPort)), token)
 		cfg.BindAddr = net.JoinHostPort("0.0.0.0", strconv.Itoa(tunnelPort))
 		cfg.Ports = []string{net.JoinHostPort("127.0.0.1", strconv.Itoa(entryPort)) + "=" + net.JoinHostPort("127.0.0.1", strconv.Itoa(backendPort))}
+		bulkEntry := ""
+		if os.Getenv("BP_WSSMUX_LIVE_BULK_PORT") != "" {
+			bulkPort := port("BP_WSSMUX_LIVE_BULK_PORT", 0)
+			bulkEntry = net.JoinHostPort("127.0.0.1", strconv.Itoa(bulkPort))
+			cfg.Ports = append(cfg.Ports, bulkEntry+"="+net.JoinHostPort("127.0.0.1", strconv.Itoa(backendPort)))
+		}
 		cfg.MuxCon, cfg.MaxConnections, cfg.BandwidthMbps = 8, 4, 20
 		if throughput {
 			cfg.ChannelSize, cfg.MuxCon = profile.ChannelSize, profile.MuxCon
@@ -130,7 +136,10 @@ func TestWSSMuxDedicatedLivePath(t *testing.T) {
 					time.Sleep(100 * time.Millisecond)
 				}
 			}
-			compareWSSMuxLive(t, tun)
+			if bulkEntry == "" {
+				bulkEntry = tun.Entry
+			}
+			compareWSSMuxLive(t, tun, bulkEntry)
 		}
 		for _, size := range []int{128, 64 << 10, 256 << 10} {
 			start := time.Now()
@@ -146,9 +155,9 @@ func TestWSSMuxDedicatedLivePath(t *testing.T) {
 
 // The capped offered load is deliberately small enough for shared live hosts.
 // Server-side timing includes TCP entry, mux admission and the verified echo.
-func compareWSSMuxLive(t *testing.T, tun *tunnel) {
+func compareWSSMuxLive(t *testing.T, tun *tunnel, bulkEntry string) {
 	t.Helper()
-	conn, err := net.DialTimeout("tcp", tun.Entry, time.Second)
+	conn, err := net.DialTimeout("tcp", bulkEntry, time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}

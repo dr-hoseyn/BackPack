@@ -305,3 +305,36 @@ func TestWSMuxInteractiveCarrierPreference(t *testing.T) {
 		})
 	}
 }
+
+func TestWSMuxInteractiveQueueBoundsBurstAndReservesAdmission(t *testing.T) {
+	q := newBalancedMuxLocalQueue(8)
+	q.interactivePort = 9001
+	push := func(port int) bool {
+		return q.push(LocalTCPConn{conn: wsMuxEntryConn{port: port}}, nil)
+	}
+	for range 7 {
+		if !push(9002) {
+			t.Fatal("bulk queue stopped before reaching its limit")
+		}
+	}
+	if push(9002) || !push(9001) {
+		t.Fatal("bulk must leave space available for one interactive request")
+	}
+	for range 4 {
+		if _, ok := q.pop(); !ok {
+			t.Fatal("queue drained early")
+		}
+	}
+	for range 4 {
+		if !push(9001) {
+			t.Fatal("interactive queue rejected under its limit")
+		}
+	}
+	q.interactiveRun = 0
+	for _, want := range []int{9001, 9001, 9001, 9002, 9001} {
+		entry, ok := q.pop()
+		if !ok || localForwardPort(entry.conn) != want {
+			t.Fatalf("admission order differed at port %d", want)
+		}
+	}
+}

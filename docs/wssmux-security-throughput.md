@@ -245,16 +245,16 @@ Last verified against Backpack v1.27.0 (2026-11-21)
 
 <div dir="rtl">
 
-**خلاصهٔ فارسی**
+**ط®ظ„ط§طµظ‡ظ” ظپط§ط±ط³غŒ**
 
-دو سمت جدید، داده را داخل فریم معتبر WebSocket می‌فرستند؛ سمت قدیمی فقط با
-قالب قدیمی خودش سازگار می‌ماند. ابتدا سرور را ارتقا دهید: کلاینت جدید از اولین
-اتصال اثبات هویت سرور می‌خواهد. در simple_auth، گواهی و نام سرور پیش از ارسال
-توکن بررسی می‌شود و برای گواهی خصوصی باید wss_ca_file را در کلاینت تعیین کنید.
-پروفایل نمونه برای هدف ۶۰۰ مگابیت، نسخه mux برابر ۲، پنجره هر جریان ۱۶ مگابایت،
-هشت اتصال گرم و سقف شانزده اتصال دارد؛ ظرفیت مسیر واقعی و مصرف حافظه باید
-اندازه‌گیری شوند. این تغییرات تضمین شناسایی‌نشدن نیستند. بارگذاری آزمایشی و تغییر
-MTU یا صف شبکه را روی سرویس دارای کاربر اجرا نکنید.
+ط¯ظˆ ط³ظ…طھ ط¬ط¯غŒط¯طŒ ط¯ط§ط¯ظ‡ ط±ط§ ط¯ط§ط®ظ„ ظپط±غŒظ… ظ…ط¹طھط¨ط± WebSocket ظ…غŒâ€Œظپط±ط³طھظ†ط¯ط› ط³ظ…طھ ظ‚ط¯غŒظ…غŒ ظپظ‚ط· ط¨ط§
+ظ‚ط§ظ„ط¨ ظ‚ط¯غŒظ…غŒ ط®ظˆط¯ط´ ط³ط§ط²ع¯ط§ط± ظ…غŒâ€Œظ…ط§ظ†ط¯. ط§ط¨طھط¯ط§ ط³ط±ظˆط± ط±ط§ ط§ط±طھظ‚ط§ ط¯ظ‡غŒط¯: ع©ظ„ط§غŒظ†طھ ط¬ط¯غŒط¯ ط§ط² ط§ظˆظ„غŒظ†
+ط§طھطµط§ظ„ ط§ط«ط¨ط§طھ ظ‡ظˆغŒطھ ط³ط±ظˆط± ظ…غŒâ€Œط®ظˆط§ظ‡ط¯. ط¯ط± simple_authطŒ ع¯ظˆط§ظ‡غŒ ظˆ ظ†ط§ظ… ط³ط±ظˆط± ظ¾غŒط´ ط§ط² ط§ط±ط³ط§ظ„
+طھظˆع©ظ† ط¨ط±ط±ط³غŒ ظ…غŒâ€Œط´ظˆط¯ ظˆ ط¨ط±ط§غŒ ع¯ظˆط§ظ‡غŒ ط®طµظˆطµغŒ ط¨ط§غŒط¯ wss_ca_file ط±ط§ ط¯ط± ع©ظ„ط§غŒظ†طھ طھط¹غŒغŒظ† ع©ظ†غŒط¯.
+ظ¾ط±ظˆظپط§غŒظ„ ظ†ظ…ظˆظ†ظ‡ ط¨ط±ط§غŒ ظ‡ط¯ظپ غ¶غ°غ° ظ…ع¯ط§ط¨غŒطھطŒ ظ†ط³ط®ظ‡ mux ط¨ط±ط§ط¨ط± غ²طŒ ظ¾ظ†ط¬ط±ظ‡ ظ‡ط± ط¬ط±غŒط§ظ† غ±غ¶ ظ…ع¯ط§ط¨ط§غŒطھطŒ
+ظ‡ط´طھ ط§طھطµط§ظ„ ع¯ط±ظ… ظˆ ط³ظ‚ظپ ط´ط§ظ†ط²ط¯ظ‡ ط§طھطµط§ظ„ ط¯ط§ط±ط¯ط› ط¸ط±ظپغŒطھ ظ…ط³غŒط± ظˆط§ظ‚ط¹غŒ ظˆ ظ…طµط±ظپ ط­ط§ظپط¸ظ‡ ط¨ط§غŒط¯
+ط§ظ†ط¯ط§ط²ظ‡â€Œع¯غŒط±غŒ ط´ظˆظ†ط¯. ط§غŒظ† طھط؛غŒغŒط±ط§طھ طھط¶ظ…غŒظ† ط´ظ†ط§ط³ط§غŒغŒâ€Œظ†ط´ط¯ظ† ظ†غŒط³طھظ†ط¯. ط¨ط§ط±ع¯ط°ط§ط±غŒ ط¢ط²ظ…ط§غŒط´غŒ ظˆ طھط؛غŒغŒط±
+MTU غŒط§ طµظپ ط´ط¨ع©ظ‡ ط±ط§ ط±ظˆغŒ ط³ط±ظˆغŒط³ ط¯ط§ط±ط§غŒ ع©ط§ط±ط¨ط± ط§ط¬ط±ط§ ظ†ع©ظ†غŒط¯.
 
 </div>
 
@@ -264,23 +264,25 @@ Set BP_WSSMUX_CONFIRM_ADMISSION=1 on a WSSMux client to try the negotiated
 carrier confirmation. An upgraded server sends it before the client marks the
 carrier ready. Keep this experiment disabled for the default deployment until
 its tail latency improves. Legacy peers keep their original wire format.
-The client reports HTTP 503 responses on data upgrades as capacity separately
-from failed dials and briefly cools down the route with jitter. A generic proxy
-can also return 503. Compare the client's response counts with the server's
-physical-slot counters before attributing the response to BackPack. Set the
-server ceiling at or above the required client floor.
+The client counts a data upgrade as an admission-limit response when BackPack
+marks its HTTP 503 response. A plain 503 from an endpoint or proxy counts as
+a route failure. The diagnostic view shows the last failure and the active
+retry window. Set the server ceiling at or above the required client floor.
 
 The authenticated /probe measures the upgrade route. Use a verified forwarded
 backend reply to verify that the data path can actually serve traffic. On
 multi-endpoint clients, the initial dial budget can grow for an endpoint with
-observed slow handshakes, within the total configured round deadline.
+observed slow handshakes. The round reserves time for alternative endpoints,
+and a cooling pool allows at most one early recovery probe at a time.
 
 For a dedicated interactive listener, optionally set the server process
 environment variable BP_WSSMUX_INTERACTIVE_PORT to its local listening port.
 One physical carrier is preferred for that listener when healthy. Ordinary
 listeners use a healthy ordinary carrier first and can borrow the reserved one
-when no healthy ordinary carrier is ready. Leave the variable unset for the default
-scheduler. Compare fresh p95/p99 and sustained verified goodput on your path.
+when no healthy ordinary carrier is ready. The two request classes share the
+queue limit. Bulk leaves space for one interactive request when the queue has
+at least two slots, and a waiting bulk request gets a turn after at most three
+interactive admissions. Leave the variable unset for the default FIFO scheduler. Compare fresh p95/p99 and sustained verified goodput on your path.
 
 ## Experimental stream resume sidecar
 
@@ -291,5 +293,16 @@ Set that forwarding rule's destination to the exit's loopback listener on the
 client host, and set the exit target to the backend's loopback address. Both
 roles accept -listen, -target, and -key-file. Use a separate shared key file
 with at least 32 bytes. The authenticated replay connection has a bounded
-resume window and bounded replay buffers. Existing unwrapped WSSMux ports
-continue using the standard stream protocol.
+resume window of seven seconds after carrier loss, a 2 MiB replay window per
+stream direction and a shared 128 MiB budget for live replay blocks per sidecar
+process. Each role admits up to 2,048 sessions. These bounds exclude kernel
+socket buffers and other process allocations. Restarting a sidecar ends its
+in-memory sessions. Existing unwrapped WSSMux ports continue using the standard
+stream protocol.
+
+A WSSMux UDP forward shares the ordered TCP connection and can pause during
+TCP retransmission. For a latency-sensitive UDP service, the existing reverse
+UDP transport can run as a separate tunnel with its own bind address and UDP
+mapping, while TCP ports continue over WSSMux. The endpoints must support UDP
+on that path. Measure datagram loss and p95 separately from the TCP
+throughput measurement.

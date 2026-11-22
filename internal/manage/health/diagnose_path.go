@@ -338,6 +338,12 @@ func wssMuxPathChecks(g string, snap metrics.Snapshot) []Check {
 			if !route.LastOK {
 				check.Level = CheckWarn
 			}
+			if route.LastFailure != "" {
+				check.Detail += fmt.Sprintf(", last failure: %s at %s", route.LastFailure, route.LastFailureAt.UTC().Format(time.RFC3339))
+			}
+			if route.RetryAt.After(time.Now()) {
+				check.Detail += fmt.Sprintf(", cooling down until %s", route.RetryAt.UTC().Format(time.RFC3339))
+			}
 			if route.CapacityRejected > 0 {
 				check.Detail += fmt.Sprintf(", %d capacity responses", route.CapacityRejected)
 			}

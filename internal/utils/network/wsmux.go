@@ -17,6 +17,7 @@ const (
 	WSMuxPoolHeader      = "X-Backpack-Mux-Pool"
 	WSMuxIdleHeader      = "X-Backpack-Mux-Idle"
 	WSMuxAdmissionHeader = "X-Backpack-Mux-Admission"
+	WSMuxCapacityHeader  = "X-Backpack-Mux-Capacity"
 )
 
 // WSMuxOptions belongs to one dial. Missing response headers identify an older

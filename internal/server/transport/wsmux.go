@@ -352,6 +352,7 @@ func (s *WsMuxTransport) tunnelListener(g *wsMuxGen) {
 					}()
 				default:
 					g.admissionRejected.Add(1)
+					w.Header().Set(network.WSMuxCapacityHeader, "exhausted")
 					http.Error(w, "websocket mux capacity exhausted", http.StatusServiceUnavailable)
 					return
 				}

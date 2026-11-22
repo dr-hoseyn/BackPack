@@ -72,6 +72,8 @@ type WSMuxRouteStats struct {
 	Attempts         uint64    `json:"attempts"`
 	Failures         uint64    `json:"failures"`
 	RetryAt          time.Time `json:"retry_at,omitzero"`
+	LastFailure      string    `json:"last_failure,omitempty"`
+	LastFailureAt    time.Time `json:"last_failure_at,omitzero"`
 	CapacityRejected uint64    `json:"capacity_rejected,omitempty"`
 	CapacityRetryAt  time.Time `json:"capacity_retry_at,omitzero"`
 }

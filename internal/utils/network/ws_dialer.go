@@ -17,8 +17,11 @@ import (
 	utls "github.com/refraction-networking/utls"
 )
 
-// ErrWSMuxCapacity identifies a WSSMux data upgrade rejected with HTTP 503.
+// ErrWSMuxCapacity identifies a data upgrade rejected by a Backpack admission limit.
 var ErrWSMuxCapacity = errors.New("wssmux data capacity unavailable (HTTP 503)")
+
+// ErrWSMuxUnavailable identifies an unclassified 503, including proxy failures.
+var ErrWSMuxUnavailable = errors.New("wssmux data upgrade unavailable (HTTP 503)")
 
 func WebSocketDialer(ctx context.Context, out *Outbound, addr string, edgeIP string, path string, timeout time.Duration, keepalive time.Duration, nodelay bool, token string, mode config.TransportType, simpleAuth bool, retry int, SO_RCVBUF int, SO_SNDBUF int, mss int, options ...WSDialOption) (*websocket.Conn, error) {
 	var tunnelWSConn *websocket.Conn
@@ -298,7 +301,10 @@ func attemptDialWebSocket(ctx context.Context, out *Outbound, addr string, edgeI
 	tunnelWSConn, resp, err := dialer.DialContext(ctx, wsURL, headers)
 	if err != nil {
 		if mode == config.WSSMUX && strings.HasPrefix(path, "/tunnel") && resp != nil && resp.StatusCode == http.StatusServiceUnavailable {
-			return nil, ErrWSMuxCapacity
+			if resp.Header.Get(WSMuxCapacityHeader) == "exhausted" {
+				return nil, ErrWSMuxCapacity
+			}
+			return nil, ErrWSMuxUnavailable
 		}
 		return nil, err
 	}
