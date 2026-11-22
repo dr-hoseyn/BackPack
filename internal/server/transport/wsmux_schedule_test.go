@@ -3,6 +3,7 @@ package transport
 import (
 	"fmt"
 	"testing"
+	"time"
 )
 
 func TestWSMuxReadyOrderMatchesFullCongestionOrdering(t *testing.T) {
@@ -260,4 +261,26 @@ func TestWSSMuxDrainPrefersOtherReadyCarriers(t *testing.T) {
 	takeScheduledWSMux(t, q, sibling, 1)
 	q.push(LocalTCPConn{timeCreated: 2}, nil)
 	takeScheduledWSMux(t, q, drained, 2)
+}
+
+func BenchmarkWSMuxCongestedCarrierSelection(b *testing.B) {
+	for _, count := range []int{8, 32, 128} {
+		b.Run(fmt.Sprint(count), func(b *testing.B) {
+			q := newBalancedMuxLocalQueue(1)
+			epoch := time.Now()
+			for i := range count {
+				waiter := wsMuxWaiter(16, func() int { return i%8 + 1 })
+				// Recent-bulk checks read an atomic timestamp and a
+				// monotonic clock on the actual framed carrier.
+				waiter.bulk = func() bool { return time.Since(epoch) >= 0 }
+				q.wait(waiter)
+			}
+			b.ReportAllocs()
+			for b.Loop() {
+				if q.chooseReadyCarrier() == nil {
+					b.Fatal("no ready carrier")
+				}
+			}
+		})
+	}
 }

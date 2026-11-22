@@ -21,8 +21,11 @@ func WSMuxPressure(conn net.Conn) func() int {
 }
 
 func muxPressure(conn net.Conn, interval time.Duration) func() int {
-	conn = tcpMuxPressureConn(conn)
-	return muxPressureSampler(func() (int, bool) { return tcpMuxSocketPressure(conn) }, interval)
+	sample := newTCPMuxPressureReader(tcpMuxPressureConn(conn))
+	if sample == nil {
+		return func() int { return 0 }
+	}
+	return muxPressureSampler(sample, interval)
 }
 
 func tcpMuxPressureConn(conn net.Conn) net.Conn {
