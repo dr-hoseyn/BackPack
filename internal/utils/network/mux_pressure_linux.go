@@ -82,6 +82,13 @@ func readMuxTCPInfo(conn net.Conn) *unix.TCPInfo {
 	return info
 }
 
+func tcpMuxSocketPressure(conn net.Conn) (int, bool) {
+	if info := readMuxTCPInfo(conn); info != nil {
+		return tcpMuxQueuePressure(info), info.Notsent_bytes != 0 || tcpMuxRetransmissionStalled(info)
+	}
+	return 0, false
+}
+
 // newTCPMuxPressureReader captures the socket and callback once per carrier.
 // muxPressureSampler serializes calls, including access to the sampled fields.
 func newTCPMuxPressureReader(conn net.Conn) func() (int, bool) {
