@@ -20,6 +20,15 @@ and additional reservations for stopped services or fixed UDP services.
 | Aggressive | 32 / 512 | 16 MiB / 32 MiB | Bursty interactive traffic |
 | Throughput | 64 / 512 | 32 MiB / 32 MiB | Sustained bulk traffic; needs RAM |
 
+On **WS Mux and WSS Mux**, Throughput uses a 16 MiB stream window under the
+same 32 MiB session window. These transports place many users' streams on one
+physical session, and smux stops reading a session once its buffered data
+reaches the session window. With equal windows, one stream whose consumer has
+stalled can hold the whole session's receive credit and freeze every other user
+sharing that carrier. 16 MiB still covers 600 Mbit/s at 200 ms for a single
+stream. Existing configurations keep their values; reapply the preset on both
+peers, or set `mux_streambuffer = 16777216` on both.
+
 Throughput is available for all supported reverse transports: TCP, Stealth,
 TCP Mux, WS/WSS, WS/WSS Mux, KCP, XDI, PCK, UDP and QUIC. Managed HTTPS modes
 use the TCP reverse profile. Short HTTPS keeps its fixed spare pool at no more

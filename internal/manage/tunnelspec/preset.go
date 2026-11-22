@@ -128,6 +128,17 @@ func ApplyPreset(s *Spec, preset string) {
 		s.MuxFrameSize = 65535
 		s.MuxRecvBuffer, s.MuxStreamBuffer = 32<<20, 32<<20
 	}
+	if preset == PresetThroughput && sharesMuxSessionAcrossUsers(s.Transport) {
+		// WS Mux and WSS Mux place many users' streams on one physical
+		// session, and smux stops reading that session once buffered data
+		// reaches mux_recievebuffer. With the stream window equal to the
+		// session window, a single stream whose consumer stalls can hold the
+		// entire session credit and freeze every other user sharing the
+		// carrier. 16 MiB still covers 600 Mbit/s at 200 ms for one stream
+		// and leaves half the session window to the rest; this is the bounded
+		// profile in docs/wssmux-security-throughput.md.
+		s.MuxStreamBuffer = 16 << 20
+	}
 	if config.IsTCPForward(config.TransportType(s.Transport)) {
 		s.ConnectionPool = config.TCPFWDDefaultPool
 		s.Heartbeat = config.TCPFWDDefaultHeartbeat
@@ -136,6 +147,17 @@ func ApplyPreset(s *Spec, preset string) {
 		s.MuxVersion = 0 // use the XMPP profile's negotiated default
 	}
 	ApplyKCPPreset(s, preset)
+}
+
+// sharesMuxSessionAcrossUsers reports the transports whose physical mux
+// sessions are shared by unrelated forwarded connections under a common
+// session receive window.
+func sharesMuxSessionAcrossUsers(transport string) bool {
+	switch config.TransportType(transport) {
+	case config.WSMUX, config.WSSMUX:
+		return true
+	}
+	return false
 }
 
 // ApplyKCPPreset fills the KCP-only knobs. They are written to the config only
