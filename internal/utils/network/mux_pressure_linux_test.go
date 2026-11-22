@@ -5,6 +5,8 @@ package network
 import (
 	"errors"
 	"net"
+	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -152,5 +154,85 @@ func TestWSMuxTCPSnapshotFindsTheSocketUnderClientUpgradeAndTLS(t *testing.T) {
 	defer upgrade.releaseReader()
 	if sample := SampleMuxTCP(upgrade); !sample.Available || sample.RTTUS == 0 {
 		t.Fatalf("missing TCP snapshot through client wrappers: %+v", sample)
+	}
+}
+
+func BenchmarkMuxPressureSampling(b *testing.B) {
+	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer listener.Close()
+	conn, err := net.DialTimeout("tcp4", listener.Addr().String(), time.Second)
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer conn.Close()
+	peer, err := listener.Accept()
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer peer.Close()
+
+	b.Run("TCP_INFO", func(b *testing.B) {
+		pressure := muxPressure(conn, 0)
+		b.ReportAllocs()
+		for b.Loop() {
+			pressure()
+		}
+	})
+	b.Run("Cached", func(b *testing.B) {
+		pressure := muxPressure(conn, time.Hour)
+		b.ReportAllocs()
+		for b.Loop() {
+			pressure()
+		}
+	})
+}
+
+type countedMuxSocket struct {
+	*net.TCPConn
+	handles int
+}
+
+func (c *countedMuxSocket) SyscallConn() (syscall.RawConn, error) {
+	c.handles++
+	return c.TCPConn.SyscallConn()
+}
+
+func TestWSMuxPressureReusesTheTCPHandleAndToleratesClose(t *testing.T) {
+	listener, err := net.ListenTCP("tcp4", &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	conn, err := net.DialTCP("tcp4", nil, listener.Addr().(*net.TCPAddr))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	peer, err := listener.AcceptTCP()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer peer.Close()
+
+	socket := &countedMuxSocket{TCPConn: conn}
+	pressure := muxPressure(socket, 0)
+	var samples sync.WaitGroup
+	for range 8 {
+		samples.Go(func() {
+			for range 32 {
+				pressure()
+			}
+		})
+	}
+	_ = conn.Close()
+	samples.Wait()
+	if got := pressure(); got != 0 {
+		t.Fatalf("closed socket still reports pressure %d", got)
+	}
+	if socket.handles != 1 {
+		t.Fatalf("created %d raw handles, want one per carrier", socket.handles)
 	}
 }

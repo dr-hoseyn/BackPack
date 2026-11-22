@@ -10,7 +10,8 @@ import (
 // scheduler samples each carrier at most five times a second, without adding
 // work to each application read or write.
 func TCPMuxPressure(conn net.Conn) func() int {
-	return muxPressure(conn, 200*time.Millisecond)
+	conn = tcpMuxPressureConn(conn)
+	return tcpMuxPressureSampler(func() (int, bool) { return tcpMuxSocketPressure(conn) })
 }
 
 // WSMuxPressure observes a congestion change before another short-connection
@@ -21,8 +22,11 @@ func WSMuxPressure(conn net.Conn) func() int {
 }
 
 func muxPressure(conn net.Conn, interval time.Duration) func() int {
-	conn = tcpMuxPressureConn(conn)
-	return muxPressureSampler(func() (int, bool) { return tcpMuxSocketPressure(conn) }, interval)
+	sample := newTCPMuxPressureReader(tcpMuxPressureConn(conn))
+	if sample == nil {
+		return func() int { return 0 }
+	}
+	return muxPressureSampler(sample, interval)
 }
 
 func tcpMuxPressureConn(conn net.Conn) net.Conn {

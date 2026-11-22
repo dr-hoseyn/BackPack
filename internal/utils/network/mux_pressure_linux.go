@@ -89,6 +89,37 @@ func tcpMuxSocketPressure(conn net.Conn) (int, bool) {
 	return 0, false
 }
 
+// newTCPMuxPressureReader captures the socket and callback once per carrier.
+// muxPressureSampler serializes calls, including access to the sampled fields.
+func newTCPMuxPressureReader(conn net.Conn) func() (int, bool) {
+	socket, ok := conn.(syscall.Conn)
+	if !ok {
+		return nil
+	}
+	raw, err := socket.SyscallConn()
+	if err != nil {
+		return nil
+	}
+
+	var pressure int
+	var queued bool
+	sample := func(fd uintptr) {
+		info, err := unix.GetsockoptTCPInfo(int(fd), unix.IPPROTO_TCP, unix.TCP_INFO)
+		if err != nil {
+			pressure, queued = 0, false
+			return
+		}
+		pressure = tcpMuxQueuePressure(info)
+		queued = info.Notsent_bytes != 0 || tcpMuxRetransmissionStalled(info)
+	}
+	return func() (int, bool) {
+		if err := raw.Control(sample); err != nil {
+			return 0, false
+		}
+		return pressure, queued
+	}
+}
+
 func sampleMuxTCP(conn net.Conn) MuxTCPSnapshot {
 	if info := readMuxTCPInfo(conn); info != nil {
 		return MuxTCPSnapshot{
