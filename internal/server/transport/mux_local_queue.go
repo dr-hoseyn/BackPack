@@ -209,11 +209,6 @@ func (q *muxLocalQueue) chooseReadyCarrier() *muxQueueWaiter {
 		if waiter.pressure != nil {
 			pressure = waiter.pressure()
 		}
-		// Bulk activity is a tiebreaker. Skip its timestamp read when
-		// this carrier cannot beat the current pressure and readiness.
-		if next != nil && (pressure > bestPressure || (pressure == bestPressure && !bestBulk)) {
-			continue
-		}
 		bulk := waiter.bulk != nil && waiter.bulk()
 		if pressure == 0 && !bulk {
 			return waiter
