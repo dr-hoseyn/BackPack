@@ -422,6 +422,14 @@ func setupWSMuxNetem(t *testing.T, tunnelPort int) {
 		}
 		seed = raw
 	}
+	loss := "0.1%"
+	if raw := os.Getenv("BP_RESOURCE_NETEM_LOSS_PERCENT"); raw != "" {
+		value, err := strconv.ParseFloat(raw, 64)
+		if err != nil || math.IsNaN(value) || value < 0 || value > 100 {
+			t.Fatal("invalid netem loss percentage")
+		}
+		loss = strconv.FormatFloat(value, 'f', -1, 64) + "%"
+	}
 	// Use receiver ingress, as tc-netem requires for realistic TCP/TSQ
 	// results. MTU and offload settings make loss apply to wire-sized
 	// packets instead of giant loopback/GSO packets. Everything below is
@@ -432,7 +440,7 @@ func setupWSMuxNetem(t *testing.T, tunnelPort int) {
 		{"ip", "link", "set", "bpifb", "mtu", "1500", "up"},
 		{"ethtool", "-K", "lo", "tso", "off", "gso", "off", "gro", "off"},
 		{"ethtool", "-K", "bpifb", "tso", "off", "gso", "off", "gro", "off"},
-		{"tc", "qdisc", "add", "dev", "bpifb", "root", "netem", "delay", "40ms", "loss", "0.1%", "rate", "200mbit", "limit", "10000", "seed", seed},
+		{"tc", "qdisc", "add", "dev", "bpifb", "root", "netem", "delay", "40ms", "loss", loss, "rate", "200mbit", "limit", "10000", "seed", seed},
 		{"tc", "qdisc", "add", "dev", "lo", "handle", "ffff:", "ingress"},
 	}
 	for _, direction := range []string{"dport", "sport"} {
