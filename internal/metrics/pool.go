@@ -67,11 +67,15 @@ type WSMuxDataStats struct {
 }
 
 type WSMuxRouteStats struct {
-	Endpoint string    `json:"endpoint"`
-	LastOK   bool      `json:"last_ok"`
-	Attempts uint64    `json:"attempts"`
-	Failures uint64    `json:"failures"`
-	RetryAt  time.Time `json:"retry_at,omitzero"`
+	Endpoint         string    `json:"endpoint"`
+	LastOK           bool      `json:"last_ok"`
+	Attempts         uint64    `json:"attempts"`
+	Failures         uint64    `json:"failures"`
+	RetryAt          time.Time `json:"retry_at,omitzero"`
+	LastFailure      string    `json:"last_failure,omitempty"`
+	LastFailureAt    time.Time `json:"last_failure_at,omitzero"`
+	CapacityRejected uint64    `json:"capacity_rejected,omitempty"`
+	CapacityRetryAt  time.Time `json:"capacity_retry_at,omitzero"`
 }
 
 // ReportWSMuxData takes ownership of stats and its route slice.

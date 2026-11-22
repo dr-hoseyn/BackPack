@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -34,6 +35,7 @@ type wsMuxGen struct {
 	openRetries       atomic.Uint64
 	admissionRejected atomic.Uint64
 	admissionSlots    chan struct{}
+	interactiveSlots  chan struct{}
 	ctx               context.Context
 	tunnelChannel     chan pooledMuxSession
 	localChannel      *muxLocalQueue
@@ -167,7 +169,17 @@ func (s *WsMuxTransport) newGen(ctx context.Context) *wsMuxGen {
 	queue := newBalancedMuxLocalQueue(s.config.ChannelSize)
 	queue.retrySlowOpen = s.config.Mode == config.WSSMUX
 	var drain *wsMuxDrain
+	var interactiveSlots chan struct{}
 	if s.config.Mode == config.WSSMUX {
+		if port := os.Getenv("BP_WSSMUX_INTERACTIVE_PORT"); port != "" {
+			number, err := strconv.Atoi(port)
+			if err != nil || number < 1 || number > 65535 {
+				s.logger.Warn("ignoring invalid BP_WSSMUX_INTERACTIVE_PORT")
+			} else {
+				queue.interactivePort = number
+				interactiveSlots = make(chan struct{}, 1)
+			}
+		}
 		if path := os.Getenv("BP_WSSMUX_DRAIN_PEERS"); path != "" {
 			drain = &wsMuxDrain{}
 			drain.reload(path, s.logger)
@@ -179,13 +191,14 @@ func (s *WsMuxTransport) newGen(ctx context.Context) *wsMuxGen {
 		slots = make(chan struct{}, s.config.MaxSessions)
 	}
 	return &wsMuxGen{
-		admissionSlots: slots,
-		ctx:            ctx,
-		tunnelChannel:  make(chan pooledMuxSession, s.config.ChannelSize),
-		localChannel:   queue,
-		drain:          drain,
-		reqNewConnChan: make(chan struct{}, s.config.ChannelSize),
-		usageMonitor:   s.usageMonitor(ctx),
+		admissionSlots:   slots,
+		interactiveSlots: interactiveSlots,
+		ctx:              ctx,
+		tunnelChannel:    make(chan pooledMuxSession, s.config.ChannelSize),
+		localChannel:     queue,
+		drain:            drain,
+		reqNewConnChan:   make(chan struct{}, s.config.ChannelSize),
+		usageMonitor:     s.usageMonitor(ctx),
 	}
 }
 
@@ -295,6 +308,7 @@ func (s *WsMuxTransport) tunnelListener(g *wsMuxGen) {
 				owner = g.seat.client()
 			}
 			version, floor := s.smuxConfig.Version, 0
+			confirmAdmission := false
 			localIdle := false
 			if r.URL.Path != "/channel" {
 				var err error
@@ -308,6 +322,12 @@ func (s *WsMuxTransport) tunnelListener(g *wsMuxGen) {
 						response = make(http.Header)
 					}
 					response.Set(network.WSMuxVersionHeader, strconv.Itoa(version))
+					confirmAdmission = s.config.Mode == config.WSSMUX &&
+						r.Header.Get(network.WSMuxAdmissionHeader) == "1" &&
+						slices.Contains(websocket.Subprotocols(r), network.WSMuxBinaryProtocol)
+					if confirmAdmission {
+						response.Set(network.WSMuxAdmissionHeader, "1")
+					}
 					if floor > 0 {
 						response.Set(network.WSMuxPoolHeader, strconv.Itoa(floor))
 						localIdle = s.config.Mode == config.WSSMUX && r.Header.Get(network.WSMuxIdleHeader) == "1"
@@ -332,6 +352,7 @@ func (s *WsMuxTransport) tunnelListener(g *wsMuxGen) {
 					}()
 				default:
 					g.admissionRejected.Add(1)
+					w.Header().Set(network.WSMuxCapacityHeader, "exhausted")
 					http.Error(w, "websocket mux capacity exhausted", http.StatusServiceUnavailable)
 					return
 				}
@@ -361,13 +382,22 @@ func (s *WsMuxTransport) tunnelListener(g *wsMuxGen) {
 			} else if strings.HasPrefix(r.URL.Path, "/tunnel") {
 				cfg := *s.smuxConfig
 				cfg.Version = version
-				wire := network.WSMuxStream(conn)
-				if s.config.Mode == config.WSSMUX {
+				var wire net.Conn
+				var confirm func(bool) error
+				switch {
+				case confirmAdmission:
+					wire, confirm = network.WSMuxAdmissionStream(conn)
+				case s.config.Mode == config.WSSMUX:
 					wire = network.WSMuxAnnouncementStream(conn)
+				default:
+					wire = network.WSMuxStream(conn)
 				}
 				session, err := network.NewWatchedMuxSession(wire, &cfg, smux.Client)
 				if err != nil {
 					s.logger.Errorf("failed to create MUX session for connection %s: %v", conn.RemoteAddr().String(), err)
+					if confirm != nil {
+						_ = confirm(false)
+					}
 					conn.Close()
 					return
 				}
@@ -391,6 +421,11 @@ func (s *WsMuxTransport) tunnelListener(g *wsMuxGen) {
 					})
 				})
 				handedOff = accepted
+				if confirm != nil {
+					if err := confirm(accepted); err != nil {
+						session.Close()
+					}
+				}
 				if !accepted {
 					g.admissionRejected.Add(1)
 					s.logger.Debugf("websocket mux pool is full or its client changed, closing connection from %s", conn.RemoteAddr().String())
@@ -471,6 +506,18 @@ func (s *WsMuxTransport) handleLoop(g *wsMuxGen) {
 						}
 					}
 					return s.retireIdleSession(g.ctx, session.owner, &s.sessionCounter, session.idleFloor)
+				}
+			}
+			if g.interactiveSlots != nil {
+				select {
+				case g.interactiveSlots <- struct{}{}:
+					loop.interactive = true
+					go func() {
+						defer func() { <-g.interactiveSlots }()
+						loop.run(session.Session)
+					}()
+					continue
+				default:
 				}
 			}
 			go loop.run(session.Session)

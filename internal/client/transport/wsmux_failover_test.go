@@ -2,6 +2,7 @@ package transport
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -200,12 +201,25 @@ func TestWSSMuxControlFallsBackWithinOneBudgetAfterTwoStalledHandshakes(t *testi
 }
 
 func TestWSSMuxOrdinaryDataFallbackKeepsControlOnPrimary(t *testing.T) {
+	testOrdinaryDataFallback(t, false)
+}
+
+func TestWSSMuxShortDialBudgetReservesTimeForBackup(t *testing.T) {
+	testOrdinaryDataFallback(t, true)
+}
+
+func testOrdinaryDataFallback(t *testing.T, stall bool) {
+	t.Helper()
 	const token = "ordinary-data-fallback-test-token"
 	upgrader := websocket.Upgrader{Subprotocols: []string{network.WSMuxBinaryProtocol}}
 	var rejectedData atomic.Int32
 	primary := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/channel" {
 			rejectedData.Add(1)
+			if stall {
+				<-r.Context().Done()
+				return
+			}
 			http.Error(w, "data route unavailable", http.StatusServiceUnavailable)
 			return
 		}
@@ -273,6 +287,13 @@ func TestWSSMuxOrdinaryDataFallbackKeepsControlOnPrimary(t *testing.T) {
 			t.Fatalf("fallback data route = %s, negotiated options = %+v", got, mux)
 		}
 	}
+	if !stall {
+		stats := client.dataRoutes.snapshot([]string{primaryAddr})
+		if len(stats) != 1 || stats[0].CapacityRejected != 0 || stats[0].Failures != 1 ||
+			stats[0].LastFailure != "HTTP 503 from endpoint or proxy" {
+			t.Fatalf("generic 503 must be reported separately from admission rejection: %+v", stats)
+		}
+	}
 	if got := rejectedData.Load(); got != 1 {
 		t.Fatalf("primary data route was tried %d times, want 1", got)
 	}
@@ -326,4 +347,71 @@ func TestWSSMuxOrdinaryDataFallbackKeepsControlOnPrimary(t *testing.T) {
 			t.Fatalf("connected to %s, want last backup %s", got, backupAddr)
 		}
 	})
+}
+
+func TestWSSMuxCapacityDoesNotCountAsRouteFailure(t *testing.T) {
+	var routes wsMuxDataRoutes
+	now := time.Now()
+	routes.recordResult("full", now, network.ErrWSMuxCapacity)
+	routes.recordResult("backup", now.Add(-1500*time.Millisecond), nil)
+	if routes.available("full", now) || !routes.atCapacity("full", now) {
+		t.Fatal("route with no capacity must cool down")
+	}
+	if got := routes.quickBudget("backup", 800*time.Millisecond, 5*time.Second); got < 2*time.Second || got > 3*time.Second {
+		t.Fatalf("known slow route got a %v handshake budget", got)
+	}
+	stats := routes.snapshot([]string{"full"})
+	if len(stats) != 1 || stats[0].CapacityRejected != 1 || stats[0].Failures != 0 {
+		t.Fatalf("capacity response polluted reachability statistics: %+v", stats)
+	}
+}
+
+func TestWSSMuxCoolingPoolAllowsOneRecoveryProbe(t *testing.T) {
+	probing := make(chan struct{}, 2)
+	release := make(chan struct{})
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		probing <- struct{}{}
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
+	})
+	first, second := httptest.NewTLSServer(handler), httptest.NewTLSServer(handler)
+	defer first.Close()
+	defer second.Close()
+	defer close(release)
+	primary, backup := first.Listener.Addr().String(), second.Listener.Addr().String()
+	client := &WsMuxTransport{
+		config: &WsMuxConfig{
+			Endpoints: network.NewEndpoints(primary, backup),
+			Token:     "only-for-tests", Mode: config.WSSMUX, DialTimeOut: 2 * time.Second,
+		},
+	}
+	client.logger = logrus.New()
+	now := time.Now()
+	client.dataRoutes.record(primary, now, false)
+	client.dataRoutes.record(backup, now, false)
+	done := make(chan error, 1)
+	go func() {
+		_, err := client.dialTunnel(t.Context(), &network.WSMuxOptions{Version: 2, PoolSize: 2})
+		done <- err
+	}()
+	select {
+	case <-probing:
+	case <-time.After(time.Second):
+		t.Fatal("no recovery probe reached the server")
+	}
+	_, err := client.dialTunnel(t.Context(), &network.WSMuxOptions{Version: 2, PoolSize: 2})
+	if !errors.Is(err, errWSMuxCooldown) {
+		t.Fatalf("parallel recovery probe was not suppressed: %v", err)
+	}
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("unavailable route unexpectedly succeeded")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("recovery probe exceeded its round budget")
+	}
 }

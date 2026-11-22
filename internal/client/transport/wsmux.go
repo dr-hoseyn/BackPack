@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"net"
 	"os"
 	"slices"
@@ -27,13 +28,14 @@ type WsMuxTransport struct {
 	// lifecycle.go.
 	lifecycle
 
-	config     *WsMuxConfig
-	smuxConfig *smux.Config
-	sessions   muxPoolSessions
-	poolLost   chan struct{}
-	poolReady  chan struct{}
-	dataRoutes wsMuxDataRoutes
-	tracePort  int
+	config           *WsMuxConfig
+	smuxConfig       *smux.Config
+	sessions         muxPoolSessions
+	poolLost         chan struct{}
+	poolReady        chan struct{}
+	dataRoutes       wsMuxDataRoutes
+	tracePort        int
+	confirmAdmission bool
 }
 type WsMuxConfig struct {
 	RemoteAddr string
@@ -86,6 +88,7 @@ func NewWSMuxClient(parentCtx context.Context, cfg *WsMuxConfig, logger *logrus.
 
 	if cfg.Mode == config.WSSMUX {
 		client.poolReady = make(chan struct{}, 1)
+		client.confirmAdmission = os.Getenv("BP_WSSMUX_CONFIRM_ADMISSION") == "1"
 		if port, err := strconv.ParseUint(os.Getenv("BP_WSSMUX_TRACE_BACKEND_PORT"), 10, 16); err == nil {
 			client.tracePort = int(port)
 		}
@@ -243,12 +246,13 @@ func (c *WsMuxTransport) tunnelDialer() {
 	c.logger.Debugf("initiating new %s tunnel connection to address %s", c.config.Mode, c.config.RemoteAddr)
 
 	mux := network.WSMuxOptions{
-		Version: c.config.MuxVersion, PoolSize: c.config.ConnPoolSize, LocalIdle: c.config.Mode == config.WSSMUX,
+		Version: c.config.MuxVersion, PoolSize: c.config.ConnPoolSize, LocalIdle: c.config.Mode == config.WSSMUX, ConfirmAdmission: c.confirmAdmission,
 	}
 	tunnelWSConn, err := c.dialTunnel(c.state.Ctx(), &mux)
 	if err != nil {
-		c.logger.Errorf("tunnel server dialer: %v", err)
-
+		if !errors.Is(err, network.ErrWSMuxCapacity) && !errors.Is(err, errWSMuxCooldown) {
+			c.logger.Errorf("tunnel server dialer: %v", err)
+		}
 		return
 	}
 
@@ -287,9 +291,12 @@ func (c *WsMuxTransport) dialTunnel(ctx context.Context, mux *network.WSMuxOptio
 	first := cfg.Endpoints.Next()
 	if cfg.Endpoints.Len() < 2 {
 		started := time.Now()
+		if cfg.Mode == config.WSSMUX && c.dataRoutes.atCapacity(first, started) {
+			return nil, network.ErrWSMuxCapacity
+		}
 		conn, err := dial(first, maxAttempts, cfg.DialTimeOut)
 		if cfg.Mode == config.WSSMUX && ctx.Err() == nil {
-			c.dataRoutes.record(first, started, err == nil)
+			c.dataRoutes.recordResult(first, started, err)
 		}
 		return conn, err
 	}
@@ -309,7 +316,19 @@ func (c *WsMuxTransport) dialTunnel(ctx context.Context, mux *network.WSMuxOptio
 	var err error
 	attempts := 0
 	var slowRoute string
+	quickAttempt := func(addr string) time.Duration {
+		budget := c.dataRoutes.quickBudget(addr, timeout, cfg.DialTimeOut)
+		if deadline, ok := ctx.Deadline(); ok && cfg.Mode == config.WSSMUX {
+			remaining := min(cfg.Endpoints.Len(), maxAttempts) - attempts
+			return min(budget, time.Until(deadline)/time.Duration(max(1, remaining)))
+		}
+		return budget
+	}
 	try := func(addr string, timeout time.Duration) *websocket.Conn {
+		if timeout <= 0 && cfg.Mode == config.WSSMUX {
+			err = context.DeadlineExceeded
+			return nil
+		}
 		attempts++
 		start := time.Now()
 		conn, dialErr := dial(addr, 1, timeout)
@@ -319,7 +338,7 @@ func (c *WsMuxTransport) dialTunnel(ctx context.Context, mux *network.WSMuxOptio
 			slowRoute = addr
 		}
 		if ctx.Err() == nil {
-			c.dataRoutes.record(addr, start, dialErr == nil)
+			c.dataRoutes.recordResult(addr, start, dialErr)
 		}
 		if dialErr != nil {
 			c.logger.Debugf("tunnel endpoint %s failed: %v", addr, dialErr)
@@ -327,7 +346,7 @@ func (c *WsMuxTransport) dialTunnel(ctx context.Context, mux *network.WSMuxOptio
 		return conn
 	}
 	if c.dataRoutes.available(first, time.Now()) {
-		if conn := try(first, timeout); conn != nil {
+		if conn := try(first, quickAttempt(first)); conn != nil {
 			return conn, nil
 		}
 	}
@@ -350,14 +369,23 @@ func (c *WsMuxTransport) dialTunnel(ctx context.Context, mux *network.WSMuxOptio
 		if addr == first || !c.dataRoutes.available(addr, time.Now()) {
 			continue
 		}
-		if conn := try(addr, timeout); conn != nil {
+		if conn := try(addr, quickAttempt(addr)); conn != nil {
 			return conn, nil
 		}
 	}
 	// If every route is cooling down, probe one instead of waiting for the
 	// entire cooldown to end. Next() still rotates that probe across routes.
 	if attempts == 0 {
-		conn := try(first, timeout)
+		if c.dataRoutes.atCapacity(first, time.Now()) {
+			return nil, network.ErrWSMuxCapacity
+		}
+		if cfg.Mode == config.WSSMUX {
+			if !c.dataRoutes.probing.CompareAndSwap(false, true) {
+				return nil, errWSMuxCooldown
+			}
+			defer c.dataRoutes.probing.Store(false)
+		}
+		conn := try(first, quickAttempt(first))
 		if conn != nil {
 			return conn, nil
 		}
@@ -372,25 +400,59 @@ func (c *WsMuxTransport) dialTunnel(ctx context.Context, mux *network.WSMuxOptio
 const wsMuxDataRetryDelay = 2 * time.Second
 
 type wsMuxDataRoute struct {
-	started  time.Time
-	retryAt  time.Time
-	attempts uint64
-	failures uint64
+	started       time.Time
+	lastFailure   string
+	lastFailureAt time.Time
+	retryAt       time.Time
+	attempts      uint64
+	failures      uint64
+	capacity      uint64
+	fullUntil     time.Time
+	handshake     time.Duration
 }
 
 type wsMuxDataRoutes struct {
 	mu             sync.Mutex
 	routes         map[string]wsMuxDataRoute
 	fallbackCursor atomic.Uint64
+	probing        atomic.Bool
 }
 
 func (r *wsMuxDataRoutes) available(addr string, now time.Time) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return !now.Before(r.routes[addr].retryAt)
+	state := r.routes[addr]
+	return !now.Before(state.retryAt) && !now.Before(state.fullUntil)
+}
+
+func (r *wsMuxDataRoutes) atCapacity(addr string, now time.Time) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return now.Before(r.routes[addr].fullUntil)
+}
+
+func (r *wsMuxDataRoutes) quickBudget(addr string, fallback, limit time.Duration) time.Duration {
+	r.mu.Lock()
+	duration := r.routes[addr].handshake
+	r.mu.Unlock()
+	if duration == 0 || limit <= fallback {
+		return fallback
+	}
+	return min(limit, max(fallback, min(3*time.Second, 2*duration)))
 }
 
 func (r *wsMuxDataRoutes) record(addr string, started time.Time, success bool) {
+	var err error
+	if !success {
+		err = errWSMuxRoute
+	}
+	r.recordResult(addr, started, err)
+}
+
+var errWSMuxRoute = errors.New("websocket mux data route failed")
+var errWSMuxCooldown = errors.New("websocket mux route recovery probe already running")
+
+func (r *wsMuxDataRoutes) recordResult(addr string, started time.Time, err error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.routes == nil {
@@ -398,14 +460,42 @@ func (r *wsMuxDataRoutes) record(addr string, started time.Time, success bool) {
 	}
 	state := r.routes[addr]
 	state.attempts++
-	if !success {
+	now := time.Now()
+	full := errors.Is(err, network.ErrWSMuxCapacity)
+	if full {
+		state.capacity++
+	} else if err != nil {
 		state.failures++
 	}
 	if !started.Before(state.started) {
 		state.started = started
 		state.retryAt = time.Time{}
-		if !success {
-			state.retryAt = time.Now().Add(wsMuxDataRetryDelay)
+		state.fullUntil = time.Time{}
+		if err != nil {
+			state.lastFailureAt = now
+			switch {
+			case full:
+				state.lastFailure = "BackPack admission limit"
+			case errors.Is(err, network.ErrWSMuxUnavailable):
+				state.lastFailure = "HTTP 503 from endpoint or proxy"
+			case errors.Is(err, context.DeadlineExceeded):
+				state.lastFailure = "dial deadline exceeded"
+			default:
+				state.lastFailure = "connection or upgrade failed"
+			}
+		}
+		switch {
+		case full:
+			state.fullUntil = now.Add(wsMuxDataRetryDelay + rand.N(time.Second))
+		case err != nil:
+			state.retryAt = now.Add(wsMuxDataRetryDelay)
+		default:
+			elapsed := now.Sub(started)
+			if state.handshake == 0 {
+				state.handshake = elapsed
+			} else {
+				state.handshake = (3*state.handshake + elapsed) / 4
+			}
 		}
 	}
 	r.routes[addr] = state
@@ -419,7 +509,8 @@ func (r *wsMuxDataRoutes) snapshot(endpoints []string) []metrics.WSMuxRouteStats
 		if route := r.routes[addr]; route.attempts != 0 {
 			routes = append(routes, metrics.WSMuxRouteStats{
 				Endpoint: addr, LastOK: route.retryAt.IsZero(), RetryAt: route.retryAt,
-				Attempts: route.attempts, Failures: route.failures,
+				Attempts: route.attempts, Failures: route.failures, CapacityRejected: route.capacity, CapacityRetryAt: route.fullUntil,
+				LastFailure: route.lastFailure, LastFailureAt: route.lastFailureAt,
 			})
 		}
 	}

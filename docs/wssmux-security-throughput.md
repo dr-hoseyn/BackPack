@@ -257,3 +257,52 @@ Last verified against Backpack v1.27.0 (2026-11-21)
 MTU یا صف شبکه را روی سرویس دارای کاربر اجرا نکنید.
 
 </div>
+
+## Diagnosing data admission and capacity
+
+Set BP_WSSMUX_CONFIRM_ADMISSION=1 on a WSSMux client to try the negotiated
+carrier confirmation. An upgraded server sends it before the client marks the
+carrier ready. Keep this experiment disabled for the default deployment until
+its tail latency improves. Legacy peers keep their original wire format.
+The client counts a data upgrade as an admission-limit response when BackPack
+marks its HTTP 503 response. A plain 503 from an endpoint or proxy counts as
+a route failure. The diagnostic view shows the last failure and the active
+retry window. Set the server ceiling at or above the required client floor.
+
+The authenticated /probe measures the upgrade route. Use a verified forwarded
+backend reply to verify that the data path can actually serve traffic. On
+multi-endpoint clients, the initial dial budget can grow for an endpoint with
+observed slow handshakes. The round reserves time for alternative endpoints,
+and a cooling pool allows at most one early recovery probe at a time.
+
+For a dedicated interactive listener, optionally set the server process
+environment variable BP_WSSMUX_INTERACTIVE_PORT to its local listening port.
+One physical carrier is preferred for that listener when healthy. Ordinary
+listeners use a healthy ordinary carrier first and can borrow the reserved one
+when no healthy ordinary carrier is ready. The two request classes share the
+queue limit. Bulk leaves space for one interactive request when the queue has
+at least two slots, and a waiting bulk request gets a turn after at most three
+interactive admissions. Leave the variable unset for the default FIFO scheduler. Compare fresh p95/p99 and sustained verified goodput on your path.
+
+## Experimental stream resume sidecar
+
+Build the optional sidecar with go build ./tools/wssresume-pilot. Its edge and
+exit roles wrap a dedicated TCP forwarding rule over WSSMux. Run the edge on
+the server host with a loopback listener and set its target to the WSSMux entry.
+Set that forwarding rule's destination to the exit's loopback listener on the
+client host, and set the exit target to the backend's loopback address. Both
+roles accept -listen, -target, and -key-file. Use a separate shared key file
+with at least 32 bytes. The authenticated replay connection has a bounded
+resume window of seven seconds after carrier loss, a 2 MiB replay window per
+stream direction and a shared 128 MiB budget for live replay blocks per sidecar
+process. Each role admits up to 2,048 sessions. These bounds exclude kernel
+socket buffers and other process allocations. Restarting a sidecar ends its
+in-memory sessions. Existing unwrapped WSSMux ports continue using the standard
+stream protocol.
+
+A WSSMux UDP forward shares the ordered TCP connection and can pause during
+TCP retransmission. For a latency-sensitive UDP service, the existing reverse
+UDP transport can run as a separate tunnel with its own bind address and UDP
+mapping, while TCP ports continue over WSSMux. The endpoints must support UDP
+on that path. Measure datagram loss and p95 separately from the TCP
+throughput measurement.
