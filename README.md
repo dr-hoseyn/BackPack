@@ -1,5 +1,9 @@
 # dr-hoseyn fork
 
+**v1.27.1** improves WSSMux carrier recovery and diagnostics, adds optional
+physical session limits, and supports per-endpoint connection settings.
+[Release notes](CHANGELOG.md#v1271--2026-11-24).
+
 **v1.27.0** improves WSSMux admission and data-path failover, reduces heap
 use for idle streams, and adds managed Short HTTPS TCP resume on eligible
 sibling paths. [Release notes](CHANGELOG.md#v1270--2026-11-21).

@@ -1,5 +1,26 @@
 # Changelog
 
+## v1.27.1 — 2026-11-24
+
+- Improve WSSMux carrier recovery across configured endpoints while preserving
+  the established retry behavior for single-endpoint deployments.
+- Retire idle carriers with updated peers while keeping the warm pool and
+  active streams. Allow operators to prefer other carriers during a planned drain.
+- Add an optional server limit for pending and live physical WSSMux sessions,
+  and support per-endpoint edge IP and TLS hostname settings.
+- Report control and data-carrier health separately, with data-route and
+  admission diagnostics.
+
+<div dir="rtl">
+
+بازیابی اتصال WSSMux در پیکربندی‌های چندمسیره بهتر شده و رفتار تلاش مجدد
+برای پیکربندی تک‌مسیره حفظ می‌شود. با به‌روزرسانی هر دو سمت، حامل‌های بیکار
+آزاد می‌شوند و اتصال‌های فعال برقرار می‌مانند. سقف اختیاری نشست‌های فیزیکی،
+تنظیم IP و نام TLS برای هر مقصد، و گزارش جداگانهٔ سلامت مسیر کنترل و داده
+هم اضافه شده‌اند.
+
+</div>
+
 ## v1.27.0 — 2026-11-21
 
 - Resume eligible managed Short HTTPS TCP streams on a verified sibling path.
