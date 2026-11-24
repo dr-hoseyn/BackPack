@@ -241,7 +241,7 @@ counts, p50/p95/p99 for fresh echoes, and one-direction application echo
 goodput. The live fixture uses dedicated ports and does not reconfigure the
 network or the running service.
 
-Last verified against Backpack v1.27.0 (2026-11-21)
+Last verified against Backpack v1.27.1 (2026-11-24)
 
 <div dir="rtl">
 

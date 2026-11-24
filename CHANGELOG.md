@@ -10,6 +10,7 @@
   and support per-endpoint edge IP and TLS hostname settings.
 - Report control and data-carrier health separately, with data-route and
   admission diagnostics.
+- Update Gorilla WebSocket to address GO-2026-6278.
 
 <div dir="rtl">
 
@@ -18,6 +19,7 @@
 آزاد می‌شوند و اتصال‌های فعال برقرار می‌مانند. سقف اختیاری نشست‌های فیزیکی،
 تنظیم IP و نام TLS برای هر مقصد، و گزارش جداگانهٔ سلامت مسیر کنترل و داده
 هم اضافه شده‌اند.
+وابستگی Gorilla WebSocket هم برای رفع مشکل امنیتی به‌روز شده است.
 
 </div>
 
